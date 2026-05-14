@@ -146,3 +146,8 @@ This project builds on and incorporates open source software from the following 
 | [RadioLib](https://github.com/jgromes/RadioLib) | MIT | SX1262 LoRa radio driver |
 | [Arduino Crypto](https://github.com/rweather/arduinolibs) | MIT | AES/SHA for MeshCore packet encryption |
 | [Google Test](https://github.com/google/googletest) | BSD-3-Clause | Unit testing framework |
+| [ed25519](https://github.com/orlp/ed25519) | zlib/libpng | Embedded Ed25519 crypto (Orson Peters) — bundled in MeshCore at `lib/meshcore/lib/ed25519/` |
+| [ESP32 Arduino Core](https://github.com/espressif/arduino-esp32) | LGPL-2.1 | ESP32-S3 hardware abstraction and Arduino framework (LGPL→GPLv2+ bridge compatible) |
+| [PlatformIO](https://github.com/platformio/platformio-core) | Apache 2.0 | Build system (not linked into firmware) |
+
+> **License compliance policy:** All external code must be verified against GPLv3 compatibility before inclusion. See the `open-source-licenses` skill for the full dependency audit and compatibility matrix.

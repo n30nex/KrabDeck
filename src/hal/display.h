@@ -20,6 +20,14 @@
 
 #include <cstdint>
 
+// ── Display lifecycle ───────────────────────────────────
 bool slopos_display_init();
 void slopos_display_loop();
 uint32_t slopos_display_millis();
+
+// ── Auto-off (power saving) ─────────────────────────────
+// After AUTO_OFF_MS of no user input, turns off backlight.
+// Touch or keyboard input automatically wakes the display.
+// Call slopos_display_wake() from input handlers to reset timer.
+void slopos_display_wake();
+bool slopos_display_is_on();

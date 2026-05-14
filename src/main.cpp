@@ -18,8 +18,10 @@
 
 
 #include <Arduino.h>
+#include <SPIFFS.h>
 #include "hal/tdeck_pins.h"
 #include "hal/tdeck_board.h"
+#include "hal/prefs.h"
 #include "hal/display.h"
 #include "hal/battery.h"
 #include "hal/gps.h"
@@ -29,6 +31,31 @@
 #include "ui/ui.h"
 
 static slopos::TDeckBoard board;
+static slopos::NodePrefs prefs;
+
+// ── SPIFFS persistence ──────────────────────────────
+static const char* PREFS_PATH = "/slopos.prefs";
+
+static void prefs_load() {
+    prefs.set_defaults();
+    if (!SPIFFS.exists(PREFS_PATH)) return;
+
+    File f = SPIFFS.open(PREFS_PATH, "r");
+    if (!f) return;
+    if (f.readBytes((char*)&prefs, sizeof(prefs)) != sizeof(prefs)) {
+        prefs.set_defaults();
+    }
+    f.close();
+    Serial.printf("Loaded prefs: name=%s freq=%.3f SF=%d\n",
+                  prefs.node_name, prefs.freq, prefs.sf);
+}
+
+static void prefs_save() {
+    File f = SPIFFS.open(PREFS_PATH, "w");
+    if (!f) return;
+    f.write((uint8_t*)&prefs, sizeof(prefs));
+    f.close();
+}
 
 void setup()
 {
@@ -40,6 +67,14 @@ void setup()
     // ── Board init ──────────────────────────────────
     board.begin();
     slopos_battery_init();
+
+    // ── SPIFFS mount ────────────────────────────────
+    if (!SPIFFS.begin(true)) {
+        Serial.println("WARNING: SPIFFS mount failed — preferences not persisted");
+    } else {
+        Serial.println("SPIFFS mounted");
+        prefs_load();
+    }
 
     // ── GPS module ───────────────────────────────────
     slopos_gps_init();
@@ -58,6 +93,7 @@ void setup()
     }
 
     // ── MeshCore networking ─────────────────────────
+    slopos::mesh::set_own_name(prefs.node_name);
     if (!slopos::mesh::init()) {
         Serial.println("WARNING: Radio init failed — mesh disabled");
     } else {
@@ -72,6 +108,9 @@ void setup()
         slopos_map_init();
     }
 
+    // Persist prefs after boot (ensures SPIFFS is working)
+    prefs_save();
+
     Serial.println("SlopOS T-Deck ready");
 }
 
@@ -83,7 +122,7 @@ void loop()
     // GPS NMEA parsing
     slopos_gps_loop();
 
-    // LVGL UI rendering
+    // LVGL UI rendering (includes auto-off timer)
     slopos_display_loop();
 
     // UI logic (screen transitions, etc.)

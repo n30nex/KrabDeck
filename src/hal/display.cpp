@@ -83,6 +83,16 @@ static LGFX_SlopOS tft;
 static lv_display_t* lv_disp = nullptr;
 static lv_color_t draw_buf[TFT_WIDTH * 20];
 
+// ── Auto-off timer ──────────────────────────────────
+// Based on MeshCore's AUTO_OFF_MILLIS pattern (MIT license)
+static constexpr uint32_t AUTO_OFF_MS  = 15000;  // 15 seconds
+static uint32_t            auto_off_at = 0;
+static bool                display_on  = true;
+
+static void reset_auto_off() {
+    auto_off_at = millis() + AUTO_OFF_MS;
+}
+
 // ── LVGL flush callback ─────────────────────────────────
 static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map)
 {
@@ -104,6 +114,7 @@ static void lvgl_touch_cb(lv_indev_t* indev, lv_indev_data_t* data)
         data->point.x = x;
         data->point.y = y;
         data->state = LV_INDEV_STATE_PRESSED;
+        slopos_display_wake();
     } else {
         data->state = LV_INDEV_STATE_RELEASED;
     }
@@ -116,6 +127,7 @@ static void lvgl_kb_cb(lv_indev_t* indev, lv_indev_data_t* data)
     if (key != 0 && slopos_keyboard_has_new_event()) {
         data->key = key;
         data->state = LV_INDEV_STATE_PRESSED;
+        slopos_display_wake();
     } else {
         data->state = LV_INDEV_STATE_RELEASED;
     }
@@ -151,6 +163,9 @@ bool slopos_display_init()
     // Initialize keyboard matrix scanner
     slopos_keyboard_init();
 
+    display_on = true;
+    reset_auto_off();
+
     return true;
 }
 
@@ -158,6 +173,13 @@ void slopos_display_loop()
 {
     slopos_touch_loop();
     slopos_keyboard_scan();
+
+    // Auto-off: turn off backlight after inactivity
+    if (display_on && millis() > auto_off_at) {
+        tft.setBrightness(0);
+        display_on = false;
+    }
+
     uint32_t next = lv_timer_handler();
     delay(next > 5 ? 5 : next);
 }
@@ -165,4 +187,18 @@ void slopos_display_loop()
 uint32_t slopos_display_millis()
 {
     return millis();
+}
+
+void slopos_display_wake()
+{
+    if (!display_on) {
+        tft.setBrightness(255);
+        display_on = true;
+    }
+    reset_auto_off();
+}
+
+bool slopos_display_is_on()
+{
+    return display_on;
 }

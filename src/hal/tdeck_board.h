@@ -46,8 +46,8 @@ public:
         pinMode(PIN_PERIPH_PWR, OUTPUT);
         digitalWrite(PIN_PERIPH_PWR, HIGH);
 
-        // Trackball button as input
-        pinMode(PIN_TRACKBALL, INPUT_PULLUP);
+        // Trackball button as input (T-Deck has external pull-up on GPIO 0)
+        pinMode(PIN_TRACKBALL, INPUT);
 
         // LoRa DIO1 pullup
         pinMode(PIN_LORA_DIO1, INPUT_PULLUP);
@@ -58,6 +58,17 @@ public:
 
         // I2C for touch / RTC
         Wire.begin(PIN_TOUCH_SDA, PIN_TOUCH_SCL);
+
+        // Detect wake from deep sleep (matches MeshCore TDeckBoard pattern)
+        esp_reset_reason_t reason = esp_reset_reason();
+        if (reason == ESP_RST_DEEPSLEEP) {
+            uint64_t wakeup_source = esp_sleep_get_ext1_wakeup_status();
+            if (wakeup_source & (1ULL << PIN_LORA_DIO1)) {
+                _startup_reason = BD_STARTUP_RX_PACKET;
+            }
+            rtc_gpio_hold_dis((gpio_num_t)PIN_LORA_NSS);
+            rtc_gpio_deinit((gpio_num_t)PIN_LORA_DIO1);
+        }
     }
 
     uint16_t getBattMilliVolts() override {

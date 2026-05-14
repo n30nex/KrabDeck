@@ -122,7 +122,16 @@ pio device monitor -b 115200
 
 ## License
 
-MIT
+GPL-3.0-or-later
+
+This project is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+Dependencies remain under their original licenses (MIT, FreeBSD, LGPL-2.1,
+zlib/libpng, BSD-3-Clause) — see [Open Source Acknowledgments](#open-source-acknowledgments)
+below for the full audit.
 
 ## Open Source Acknowledgments
 

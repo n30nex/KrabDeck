@@ -4,9 +4,8 @@
 
 void slopos_battery_init()
 {
-    pinMode(PIN_BAT_ADC, INPUT);
-    analogReadResolution(12);
-    adcAttachPin(PIN_BAT_ADC);
+    // ADC pin already configured by TDeckBoard::begin()
+    // (analogReadResolution(12), adcAttachPin, pinMode)
 }
 
 uint16_t slopos_battery_mv()

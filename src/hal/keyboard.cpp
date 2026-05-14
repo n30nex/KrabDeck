@@ -32,7 +32,6 @@ static constexpr uint32_t KEYMAP[ROWS][COLS] = {
 // ── Debounce state ───────────────────────────────────────
 static int   debounce_count[ROWS][COLS] = {{0}};
 static bool  stable_keys[ROWS][COLS]   = {{false}};
-static bool  prev_keys[ROWS][COLS]     = {{false}};
 static uint32_t last_scan_ms = 0;
 static bool  has_new_event   = false;
 
@@ -60,7 +59,6 @@ void slopos_keyboard_init()
 
     memset(debounce_count, 0, sizeof(debounce_count));
     memset(stable_keys, 0, sizeof(stable_keys));
-    memset(prev_keys, 0, sizeof(prev_keys));
     current_key = 0;
     shift_held = false;
     ctrl_held  = false;
@@ -141,8 +139,7 @@ void slopos_keyboard_scan()
         }
     }
 
-    // Track previous state for edge detection
-    memcpy(prev_keys, stable_keys, sizeof(prev_keys));
+    // Edge detection is handled by debounce state machine above
 }
 
 uint32_t slopos_keyboard_get_key()

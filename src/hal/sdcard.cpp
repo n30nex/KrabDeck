@@ -11,9 +11,8 @@ static uint64_t free_bytes = 0;
 
 bool slopos_sdcard_init()
 {
-    // Init SPI for SD card (shared bus)
-    SPI.begin(PIN_LORA_SCLK, PIN_LORA_MISO, PIN_LORA_MOSI, PIN_SD_CS);
-
+    // SPI bus is shared with LoRa and display — already initialized
+    // by mesh_wrapper during radio init. Just init the SD card.
     if (!SD.begin(PIN_SD_CS)) {
         mounted = false;
         return false;

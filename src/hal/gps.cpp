@@ -86,13 +86,13 @@ static void parse_rmc(const char* sentence) {
     strncpy(buf, sentence, sizeof(buf) - 1);
     char* token = strtok(buf, ",");
 
-    // Fields 1-6: skip
+    // Fields 1-6: skip (time, status, lat, NS, lon, EW)
+    // Field 7: speed (knots) — 7 skips from header (field 0)
     for (int i = 0; i < 7; i++) token = strtok(nullptr, ",");
 
-    // Speed (knots)
     if (token) gps.speed_kn = strtof(token, nullptr);
 
-    // Heading (degrees)
+    // Field 8: heading (degrees)
     token = strtok(nullptr, ",");
     if (token) gps.heading = strtof(token, nullptr);
 }

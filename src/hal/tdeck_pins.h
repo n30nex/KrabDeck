@@ -45,16 +45,20 @@
 
 // ════════════════════════════════════════════════════════
 // Matrix Keyboard (T-Deck QWERTY)
+// NOTE: T-Deck keyboard uses TCA9555 I2C GPIO expander (addr 0x24).
+// The row/col pins below are placeholder GPIOs — the real keyboard
+// driver needs a rewrite to use I2C expander. These values are
+// chosen to avoid conflicts with other peripherals (BAT_ADC, GPS, etc.)
 // ════════════════════════════════════════════════════════
-#define PIN_KB_ROW0      4
-#define PIN_KB_ROW1      5
-#define PIN_KB_ROW2      6
-#define PIN_KB_ROW3      7
-#define PIN_KB_COL0     14
-#define PIN_KB_COL1     15
-#define PIN_KB_COL2     21
-#define PIN_KB_COL3     47
-#define PIN_KB_COL4     48
+#define PIN_KB_ROW0      -1  // via I2C expander — chosen to not conflict
+#define PIN_KB_ROW1      -1  // via I2C expander
+#define PIN_KB_ROW2      -1  // via I2C expander
+#define PIN_KB_ROW3      -1  // via I2C expander
+#define PIN_KB_COL0      -1  // via I2C expander
+#define PIN_KB_COL1      -1  // via I2C expander
+#define PIN_KB_COL2      -1  // via I2C expander (GPIO 21 now free for SD card)
+#define PIN_KB_COL3      -1  // via I2C expander
+#define PIN_KB_COL4      -1  // via I2C expander
 #define KB_ROWS           4
 #define KB_COLS           5
 
@@ -82,7 +86,7 @@
 // ════════════════════════════════════════════════════════
 // SD Card (SPI, shared bus)
 // ════════════════════════════════════════════════════════
-#define PIN_SD_CS        13
+#define PIN_SD_CS        21  // T-Deck microSD card (GPIO 21)
 
 // ════════════════════════════════════════════════════════
 // Audio Buzzer

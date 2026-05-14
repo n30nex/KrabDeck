@@ -22,7 +22,6 @@ static Screen pop_history() {
     if (history_top < 0) return Screen::Home;
     Screen s = history[history_top];
     history_top--;
-    if (history_top < -1) history_top = -1;
     return s;
 }
 

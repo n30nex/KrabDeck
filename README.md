@@ -1,5 +1,7 @@
 # SlopOS T-Deck
 
+DISCLAIMER: This is entirely AI generated and I haven't yet recieved my T-Deck to test it out! Only flash this if you are willing to deal with the potential consequences.
+
 Standalone off-grid LoRa mesh messaging firmware for the **LilyGo T-Deck** (ESP32-S3 + SX1262 + ST7789 320x240 touchscreen + physical QWERTY keyboard).
 
 Built on the [MeshCore](https://github.com/meshcore-dev/MeshCore) mesh networking protocol — fully interoperable with existing MeshCore repeaters, room servers, and companion radios.

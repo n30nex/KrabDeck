@@ -5,6 +5,7 @@
 #include "hal/battery.h"
 #include "hal/gps.h"
 #include "hal/sdcard.h"
+#include "app/map_renderer.h"
 #include "mesh/mesh_wrapper.h"
 #include "ui/ui.h"
 
@@ -46,6 +47,11 @@ void setup()
 
     // ── UI splash screen ────────────────────────────
     slopos::ui::init();
+
+    // ── Map renderer ──────────────────────────────────
+    if (slopos_sdcard_mounted()) {
+        slopos_map_init();
+    }
 
     Serial.println("SlopOS T-Deck ready");
 }

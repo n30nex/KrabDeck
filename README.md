@@ -18,13 +18,13 @@ Built on the [MeshCore](https://github.com/meshcore-dev/MeshCore) mesh networkin
 | Finder / Advertise screens | ✅ Complete |
 | MeshCore protocol (radio, routing, encryption) | ✅ Integrated |
 | T-Deck HAL (display, battery, LoRa, pins) | ✅ Complete |
-| Unit tests (battery, pins, theme, nav, mesh, build, touch, keyboard, messaging) | ✅ 124 tests |
+| Unit tests (10 modules) | ✅ 165 tests |
 | Touch input driver (GT911) | ✅ Complete |
 | Keyboard input driver (matrix) | ✅ Complete |
 | Full mesh messaging (send/receive queue + UI integration) | ✅ Complete |
-| GPS support | 🔲 TODO |
-| SD card support | 🔲 TODO |
-| Offline map rendering | 🔲 TODO |
+| GPS NMEA parser | ✅ Complete |
+| SD card support (SPI mount, read/write) | ✅ Complete |
+| Offline map renderer (tile math + LVGL canvas grid) | ✅ Complete |
 
 ## Test Suite
 

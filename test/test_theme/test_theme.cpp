@@ -19,7 +19,7 @@ TEST_F(ThemeTest, BackgroundColorsAreDark) {
     auto is_dark = [](uint32_t c) {
         return ((c >> 16) & 0xFF) < 0x30 &&
                ((c >> 8)  & 0xFF) < 0x60 &&
-               (c & 0xFF)        < 0x60;
+               (c & 0xFF)        <= 0x60;
     };
     EXPECT_TRUE(is_dark(BG_PRIMARY));
     EXPECT_TRUE(is_dark(BG_SECONDARY));

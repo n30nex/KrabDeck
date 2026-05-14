@@ -1,9 +1,9 @@
 /**
  * Unit tests for screen navigation state machine
- * Tests: routing correctness, back navigation, same-screen guard
+ * Tests: routing correctness, back navigation with history stack, same-screen guard
  *
  * NOTE: These tests validate the navigation logic by replicating
- * the state machine behavior. Full LVGL integration is tested
+ * the stack-based history behavior. Full LVGL integration is tested
  * on-hardware since the mock layer doesn't render screens.
  */
 #include <gtest/gtest.h>
@@ -19,24 +19,46 @@ enum class Screen {
 };
 
 static Screen current = Screen::Home;
-static Screen previous = Screen::Home;
-static std::vector<std::string> nav_log; // track navigation events
+
+// Stack-based history (matches navigation.cpp)
+static constexpr int MAX_HISTORY = 8;
+static Screen history[MAX_HISTORY];
+static int   history_top = -1;
+static std::vector<std::string> nav_log;
+
+static void push_history(Screen s) {
+    history_top = (history_top + 1) % MAX_HISTORY;
+    history[history_top] = s;
+}
+
+static Screen pop_history() {
+    if (history_top < 0) return Screen::Home;
+    Screen s = history[history_top];
+    history_top--;
+    return s;
+}
+
+static bool history_empty() {
+    return history_top < 0;
+}
 
 void navigate_to(Screen screen) {
     if (screen == current) return;
-    previous = current;
+    push_history(current);
     current = screen;
     nav_log.push_back("nav:" + std::to_string((int)screen));
 }
 
 void go_back() {
-    if (previous == current) return; // no previous
-    navigate_to(previous);
+    if (history_empty()) return;
+    Screen target = pop_history();
+    current = target;
+    nav_log.push_back("back:" + std::to_string((int)target));
 }
 
 void reset_nav() {
     current = Screen::Home;
-    previous = Screen::Home;
+    history_top = -1;
     nav_log.clear();
 }
 
@@ -48,7 +70,7 @@ protected:
 // ── Initial state ───────────────────────────────────────
 TEST_F(NavigationTest, InitialStateIsHome) {
     EXPECT_EQ(current, Screen::Home);
-    EXPECT_EQ(previous, Screen::Home);
+    EXPECT_TRUE(history_empty());
     EXPECT_TRUE(nav_log.empty());
 }
 
@@ -56,15 +78,15 @@ TEST_F(NavigationTest, InitialStateIsHome) {
 TEST_F(NavigationTest, NavigateToChatUpdatesState) {
     navigate_to(Screen::Chat);
     EXPECT_EQ(current, Screen::Chat);
-    EXPECT_EQ(previous, Screen::Home);
+    EXPECT_FALSE(history_empty());
     EXPECT_EQ(nav_log.size(), 1u);
 }
 
 TEST_F(NavigationTest, NavigateToSameScreenIsNoop) {
     navigate_to(Screen::Home);  // already home
     EXPECT_EQ(current, Screen::Home);
-    EXPECT_EQ(previous, Screen::Home);
-    EXPECT_TRUE(nav_log.empty()); // no event logged
+    EXPECT_TRUE(history_empty()); // no push
+    EXPECT_TRUE(nav_log.empty());
 }
 
 TEST_F(NavigationTest, NavigateToAllScreens) {
@@ -78,38 +100,40 @@ TEST_F(NavigationTest, NavigateToAllScreens) {
         reset_nav();
         navigate_to(s);
         EXPECT_EQ(current, s);
-        EXPECT_EQ(previous, Screen::Home);
+        EXPECT_FALSE(history_empty()); // Home pushed onto stack
     }
 }
 
-// ── Back navigation ─────────────────────────────────────
+// ── Back navigation (stack-based) ────────────────────────
 TEST_F(NavigationTest, GoBackReturnsToPrevious) {
     navigate_to(Screen::Chat);
     go_back();
     EXPECT_EQ(current, Screen::Home);
-    EXPECT_EQ(previous, Screen::Chat);
 }
 
 TEST_F(NavigationTest, GoBackFromHomeIsNoop) {
-    go_back(); // already home, no previous
+    go_back(); // stack empty, nowhere to go
     EXPECT_EQ(current, Screen::Home);
-    EXPECT_EQ(previous, Screen::Home);
 }
 
 TEST_F(NavigationTest, DeepNavigationAndBack) {
-    // Home → Chat → Settings → Home (via back, back)
-    navigate_to(Screen::Chat);
-    navigate_to(Screen::Settings);
+    // Home → Chat → Settings → Terminal → back ×3 → Home
+    navigate_to(Screen::Chat);      // stack: [Home]
+    navigate_to(Screen::Settings);  // stack: [Home, Chat]
+    navigate_to(Screen::Terminal);  // stack: [Home, Chat, Settings]
+    EXPECT_EQ(current, Screen::Terminal);
+
+    go_back();  // pop Settings → current=Settings
     EXPECT_EQ(current, Screen::Settings);
-    EXPECT_EQ(previous, Screen::Chat);
 
-    go_back();
+    go_back();  // pop Chat → current=Chat
     EXPECT_EQ(current, Screen::Chat);
-    EXPECT_EQ(previous, Screen::Settings);
 
-    go_back();
+    go_back();  // pop Home → current=Home
     EXPECT_EQ(current, Screen::Home);
-    EXPECT_EQ(previous, Screen::Chat);
+
+    // Stack should be empty now
+    EXPECT_TRUE(history_empty());
 }
 
 // ── Rapid navigation ────────────────────────────────────
@@ -122,6 +146,17 @@ TEST_F(NavigationTest, RapidNavigationDoesNotLoseState) {
     EXPECT_NE(current, Screen::COUNT);
 }
 
+// ── Stack overflow (circular buffer) ─────────────────────
+TEST_F(NavigationTest, HistoryStackWrapsOnOverflow) {
+    // Fill the stack with 10 entries (more than MAX_HISTORY=8)
+    for (int i = 0; i < 10; i++) {
+        navigate_to((Screen)((i % 12) + 1));
+    }
+    // After 10 forward navigations, current is valid
+    EXPECT_NE(current, Screen::COUNT);
+    EXPECT_GE(history_top, 0);
+}
+
 // ── Navigation to every screen from every screen ────────
 TEST_F(NavigationTest, AllScreenPairsWork) {
     for (int from = 0; from < (int)Screen::COUNT; from++) {
@@ -130,11 +165,11 @@ TEST_F(NavigationTest, AllScreenPairsWork) {
             navigate_to((Screen)from);
             navigate_to((Screen)to);
             if (from == to) {
-                // Should have stayed at 'from' since same-screen is noop
                 EXPECT_EQ(current, (Screen)from);
             } else {
                 EXPECT_EQ(current, (Screen)to);
-                EXPECT_EQ(previous, (Screen)from);
+                // Stack should have: Home (if from != Home) + from
+                EXPECT_FALSE(history_empty());
             }
         }
     }
@@ -142,7 +177,6 @@ TEST_F(NavigationTest, AllScreenPairsWork) {
 
 // ── Screen count matches expected ───────────────────────
 TEST_F(NavigationTest, ScreenCountIs13) {
-    // Home + 12 app screens = 13
     EXPECT_EQ((int)Screen::COUNT, 13);
 }
 

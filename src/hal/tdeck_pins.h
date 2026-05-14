@@ -20,6 +20,8 @@
 #define PIN_TFT_DC       11
 #define PIN_TFT_RST      -1
 #define PIN_TFT_BL       42
+#define PIN_TFT_SCL      PIN_LORA_SCLK   // shared SPI clock
+#define PIN_TFT_SDA      PIN_LORA_MOSI   // shared SPI data
 #define TFT_WIDTH       320
 #define TFT_HEIGHT      240
 
@@ -36,6 +38,10 @@
 #define TOUCH_SWAP_XY    true
 #define TOUCH_MIRROR_X   false
 #define TOUCH_MIRROR_Y   false
+
+// ── I2C bus aliases (shared with touch) ──────────────────
+#define PIN_I2C_SDA      PIN_TOUCH_SDA
+#define PIN_I2C_SCL      PIN_TOUCH_SCL
 
 // ════════════════════════════════════════════════════════
 // Matrix Keyboard (T-Deck QWERTY)

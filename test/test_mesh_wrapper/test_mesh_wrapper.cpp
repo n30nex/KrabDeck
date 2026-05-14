@@ -6,6 +6,7 @@
  * these tests validate the API surface and mock behavior.
  */
 #include <gtest/gtest.h>
+#include "Arduino.h"
 #include <cstdint>
 
 // Include our mesh wrapper header (uses mocks for MeshCore)

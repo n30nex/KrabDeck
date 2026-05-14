@@ -61,7 +61,18 @@ inline int analogRead(uint8_t pin) {
 inline void adcAttachPin(uint8_t pin) { (void)pin; }
 
 // ── Serial ───────────────────────────────────────────────
-class HardwareSerial {
+class Stream {
+public:
+    virtual ~Stream() = default;
+    virtual int available() { return 0; }
+    virtual int read() { return -1; }
+    virtual int peek() { return -1; }
+    virtual void flush() {}
+    virtual size_t write(uint8_t) { return 1; }
+    size_t write(const uint8_t* buf, size_t len) { (void)buf; return len; }
+};
+
+class HardwareSerial : public Stream {
 public:
     void begin(unsigned long) {}
     void print(const char*) {}

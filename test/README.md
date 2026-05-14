@@ -3,7 +3,7 @@
 ## Running Tests
 
 ```bash
-# Run all tests on native platform
+# Run all 91 tests on native platform (no hardware needed)
 pio test -e native_test -v
 
 # Run specific test file

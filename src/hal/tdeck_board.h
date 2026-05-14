@@ -1,6 +1,8 @@
 #pragma once
 
+#ifdef SLOPOS_TDECK
 #include <MeshCore.h>
+#endif
 #include <Arduino.h>
 #ifdef ESP32_PLATFORM
 #include <driver/rtc_io.h>
@@ -9,6 +11,7 @@
 
 namespace slopos {
 
+#ifdef SLOPOS_TDECK
 class TDeckBoard : public mesh::MainBoard {
     uint8_t  _startup_reason;
     bool     _inhibit_sleep;
@@ -80,5 +83,6 @@ public:
 
     void setInhibitSleep(bool inhibit) { _inhibit_sleep = inhibit; }
 };
+#endif // SLOPOS_TDECK
 
 } // namespace slopos

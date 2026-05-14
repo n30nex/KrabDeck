@@ -18,14 +18,20 @@ typedef uint32_t lv_opa_t;
 inline lv_color_t lv_color_hex(uint32_t hex) { return hex; }
 inline lv_color_t lv_color_make(uint8_t r, uint8_t g, uint8_t b) { return (r << 16) | (g << 8) | b; }
 
-// ── Opaque object type ──────────────────────────────────
-struct _lv_obj_t;
+// ── Object type (complete, not opaque — needed for static locals in stubs) ──
+struct _lv_obj_t {
+    int dummy;
+};
 typedef _lv_obj_t lv_obj_t;
 
-struct _lv_display_t;
+struct _lv_display_t {
+    int dummy;
+};
 typedef _lv_display_t lv_display_t;
 
-struct _lv_indev_t;
+struct _lv_indev_t {
+    int dummy;
+};
 typedef _lv_indev_t lv_indev_t;
 
 // ── Event ────────────────────────────────────────────────

@@ -1,7 +1,9 @@
 #include "ui.h"
 #include "home_screen.h"
+#include "chat_screen.h"
 #include "navigation.h"
 #include "theme.h"
+#include "../mesh/mesh_wrapper.h"
 #include <lvgl.h>
 
 namespace slopos {
@@ -70,6 +72,21 @@ void loop()
     if (home_shown && (millis() - last_update > 30000)) {
         last_update = millis();
         // TODO: read actual battery, signal from mesh layer
+        // home_screen_update_battery(slopos_battery_pct());
+        // home_screen_update_signal(slopos::mesh::get_last_rssi());
+    }
+
+    // Poll for new mesh messages and feed to chat
+    if (home_shown) {
+        static uint32_t last_msg_poll = 0;
+        if (millis() - last_msg_poll > 1000) {
+            last_msg_poll = millis();
+            slopos::mesh::MeshMessage msgs[4];
+            int n = slopos::mesh::poll_messages(msgs, 4);
+            for (int i = 0; i < n; i++) {
+                chat_screen_add_msg(msgs[i].sender, msgs[i].text, msgs[i].is_self);
+            }
+        }
     }
 }
 

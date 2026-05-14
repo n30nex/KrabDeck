@@ -1,4 +1,6 @@
 #include "display.h"
+#include "touch.h"
+#include "keyboard.h"
 #include "tdeck_pins.h"
 #include <lvgl.h>
 
@@ -77,15 +79,27 @@ static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px
 // ── Touch read callback ──────────────────────────────────
 static void lvgl_touch_cb(lv_indev_t* indev, lv_indev_data_t* data)
 {
-    // TODO: GT911 I2C touch driver
-    data->state = LV_INDEV_STATE_RELEASED;
+    int x, y;
+    bool pressed = false;
+    if (slopos_touch_get(&x, &y, &pressed) && pressed) {
+        data->point.x = x;
+        data->point.y = y;
+        data->state = LV_INDEV_STATE_PRESSED;
+    } else {
+        data->state = LV_INDEV_STATE_RELEASED;
+    }
 }
 
 // ── Keyboard read callback ───────────────────────────────
 static void lvgl_kb_cb(lv_indev_t* indev, lv_indev_data_t* data)
 {
-    // TODO: matrix keyboard scan
-    data->state = LV_INDEV_STATE_RELEASED;
+    uint32_t key = slopos_keyboard_get_key();
+    if (key != 0 && slopos_keyboard_has_new_event()) {
+        data->key = key;
+        data->state = LV_INDEV_STATE_PRESSED;
+    } else {
+        data->state = LV_INDEV_STATE_RELEASED;
+    }
 }
 
 // ── Public API ───────────────────────────────────────────
@@ -110,11 +124,21 @@ bool slopos_display_init()
     lv_indev_set_type(kb, LV_INDEV_TYPE_KEYPAD);
     lv_indev_set_read_cb(kb, lvgl_kb_cb);
 
+    // Initialize touch controller
+    if (!slopos_touch_init()) {
+        // Touch init failed — device works with keyboard only
+    }
+
+    // Initialize keyboard matrix scanner
+    slopos_keyboard_init();
+
     return true;
 }
 
 void slopos_display_loop()
 {
+    slopos_touch_loop();
+    slopos_keyboard_scan();
     uint32_t next = lv_timer_handler();
     delay(next > 5 ? 5 : next);
 }

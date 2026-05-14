@@ -10,6 +10,8 @@
 #include "hal/tdeck_board.h"
 #include "hal/battery.h"
 #include "hal/display.h"
+#include "hal/touch.h"
+#include "hal/keyboard.h"
 #include "mesh/mesh_wrapper.h"
 #include "ui/theme.h"
 #include "ui/navigation.h"

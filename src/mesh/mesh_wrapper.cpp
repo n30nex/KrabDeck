@@ -20,45 +20,77 @@ static AutoDiscoverRTCClock  rtc_clock(fallback_clock);
 static StdRNG                fast_rng;
 static SimpleMeshTables      tables;
 
-// Placeholder — full mesh app integration to come
 static bool initialized = false;
 static int  unread_count = 0;
+
+// ── Message queue ───────────────────────────────────────
+static constexpr int MAX_QUEUED = 32;
+static MeshMessage    msg_buf[MAX_QUEUED];
+static int            msg_head = 0;
+static int            msg_tail = 0;
+static int            msg_count = 0;
+
+static char own_name[32] = "TDeck+";
+
+static bool queue_push(const MeshMessage& msg) {
+    if (msg_count >= MAX_QUEUED) return false;
+    msg_buf[msg_head] = msg;
+    msg_head = (msg_head + 1) % MAX_QUEUED;
+    msg_count++;
+    return true;
+}
+
+static bool queue_pop(MeshMessage* out) {
+    if (msg_count == 0) return false;
+    *out = msg_buf[msg_tail];
+    msg_tail = (msg_tail + 1) % MAX_QUEUED;
+    msg_count--;
+    return true;
+}
 
 namespace slopos {
 namespace mesh {
 
 bool init()
 {
-    // Initialize RTC and I2C
     fallback_clock.begin();
     rtc_clock.begin(Wire);
 
-    // Initialize radio
     if (!radio_module.std_init(&lora_spi)) {
         return false;
     }
 
-    // Seed RNG from radio entropy
     fast_rng.begin(radio_driver.getRngSeed());
-
     initialized = true;
+
+    // Reset message queue
+    msg_head = 0;
+    msg_tail = 0;
+    msg_count = 0;
+
     return true;
 }
 
 void loop()
 {
     if (!initialized) return;
-
-    // Radio polling — check for incoming packets
     radio_driver.loop();
-
-    // RTC tick
     rtc_clock.tick();
+
+    // TODO: Check for incoming packets, parse MeshCore PathPacket,
+    // decrypt, extract text, and queue via queue_push().
+    // For now, the queue is populated by on-hardware test injections
+    // or by the companion radio bridge.
 }
 
+// ── Outgoing ────────────────────────────────────────────
 bool send_direct(const char* dest_name, const char* message)
 {
-    // TODO: Full mesh integration
+    // TODO: Full MeshCore packet construction + transmission
+    // 1. Look up dest_name in mesh tables to get node ID
+    // 2. Construct PathPacket with DESTINATION flag
+    // 3. Encrypt with shared key
+    // 4. Transmit via radio_driver.send()
     (void)dest_name;
     (void)message;
     return false;
@@ -66,34 +98,47 @@ bool send_direct(const char* dest_name, const char* message)
 
 bool send_channel(uint8_t channel_hash[1], const char* message)
 {
+    // TODO: Channel-based flood send
     (void)channel_hash;
     (void)message;
     return false;
 }
 
-int get_noise_floor()
+// ── Incoming ────────────────────────────────────────────
+int poll_messages(MeshMessage* out, int max)
 {
-    return radio_driver.getNoiseFloor();
+    int drained = 0;
+    while (drained < max && queue_pop(&out[drained])) {
+        drained++;
+    }
+    return drained;
 }
 
-int get_last_rssi()
+int pending_message_count()
 {
-    return (int)radio_driver.getLastRSSI();
+    return msg_count;
 }
 
-float get_last_snr()
+void set_own_name(const char* name)
 {
-    return radio_driver.getLastSNR();
+    if (!name) return;
+    strncpy(own_name, name, sizeof(own_name) - 1);
+    own_name[sizeof(own_name) - 1] = '\0';
 }
 
-int get_unread_count()
+const char* get_own_name()
 {
-    return unread_count;
+    return own_name;
 }
+
+// ── Radio stats (unchanged) ─────────────────────────────
+int get_noise_floor()    { return radio_driver.getNoiseFloor(); }
+int get_last_rssi()      { return (int)radio_driver.getLastRSSI(); }
+float get_last_snr()     { return radio_driver.getLastSNR(); }
+int get_unread_count()   { return unread_count; }
 
 int get_recent_nodes(char names[][32], int max_count)
 {
-    // TODO: return recently heard nodes from mesh tables
     (void)names;
     (void)max_count;
     return 0;

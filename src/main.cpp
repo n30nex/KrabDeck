@@ -1,42 +1,51 @@
 #include <Arduino.h>
 #include "hal/tdeck_pins.h"
+#include "hal/tdeck_board.h"
 #include "hal/display.h"
+#include "hal/battery.h"
+#include "mesh/mesh_wrapper.h"
+#include "ui/ui.h"
 
-// Forward declares from UI module (to be implemented)
-namespace slopos::ui {
-    void init();
-    void loop();
-}
+static slopos::TDeckBoard board;
 
 void setup()
 {
     Serial.begin(115200);
-    delay(1000);
+    delay(500);
 
-    // Enable peripheral power
-    pinMode(PIN_PERIPH_PWR, OUTPUT);
-    digitalWrite(PIN_PERIPH_PWR, HIGH);
+    Serial.println("SlopOS T-Deck — booting...");
 
-    // Battery ADC
-    pinMode(PIN_BAT_ADC, INPUT);
-    analogReadResolution(12);
-    adcAttachPin(PIN_BAT_ADC);
+    // ── Board init ──────────────────────────────────
+    board.begin();
+    slopos_battery_init();
 
-    // Trackball button
-    pinMode(PIN_TRACKBALL, INPUT_PULLUP);
-
-    // Initialize display + LVGL
+    // ── Display + LVGL ──────────────────────────────
     if (!slopos_display_init()) {
         Serial.println("FATAL: Display init failed");
         while (1) delay(1000);
     }
 
-    Serial.println("SlopOS T-Deck booted");
+    // ── MeshCore networking ─────────────────────────
+    if (!slopos::mesh::init()) {
+        Serial.println("WARNING: Radio init failed — mesh disabled");
+    } else {
+        Serial.println("MeshCore radio initialized");
+    }
+
+    // ── UI splash screen ────────────────────────────
     slopos::ui::init();
+
+    Serial.println("SlopOS T-Deck ready");
 }
 
 void loop()
 {
+    // Mesh networking tick
+    slopos::mesh::loop();
+
+    // LVGL UI rendering
     slopos_display_loop();
+
+    // UI logic (screen transitions, etc.)
     slopos::ui::loop();
 }

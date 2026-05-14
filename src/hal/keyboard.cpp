@@ -1,145 +1,125 @@
 #include "keyboard.h"
 #include "tdeck_pins.h"
 #include <Arduino.h>
-#include <cstring>
+#include <Wire.h>
 
 // ════════════════════════════════════════════════════════
-// Keyboard matrix constants
+// T-Deck Keyboard Protocol (ESP32-C3 I2C slave at 0x55)
+//
+// Architecture: The T-Deck has a dedicated ESP32-C3 that scans the
+// physical keyboard matrix. The main ESP32-S3 communicates with it
+// over I2C to read key codes and control backlight.
+//
+// Protocol based on the LilyGo T-Deck Keyboard_ESP32C3 firmware:
+//   https://github.com/Xinyuan-LilyGO/T-Deck
+//   License: MIT — Copyright (c) 2023 Shenzhen Xin Yuan Electronic Technology Co., Ltd
+//
+// I2C write commands (master → slave):
+//   0x01 <duty>   Set backlight brightness (0-255)
+//   0x02 <duty>   Set default brightness for Alt+B (minimum: 30)
+//   0x03          Switch to raw mode (returns bitmask per column)
+//   0x04          Switch to key mode (returns ASCII characters)
+//
+// I2C read (master ← slave):
+//   Wire.requestFrom(0x55, 1) → 1 byte
+//     In key mode: 0x00 = no key, otherwise ASCII char of pressed key
+//                  (Enter=0x0D, Backspace=0x08, Alt+C=0x0C)
+//     In raw mode: 5 bytes, one bitmask per column
+//
+// Keymap (col × row, 5×7 matrix):
+//   Col0: q w sym a ALT SPC Mic
+//   Col1: e s d   p x   z   LShift
+//   Col2: r g t   RShift v c f
+//   Col3: u h y   Enter  b n j
+//   Col4: o l i   Bksp   $ m k
 // ════════════════════════════════════════════════════════
-static constexpr int ROWS             = KB_ROWS;  // 4
-static constexpr int COLS             = KB_COLS;  // 5
-static constexpr int DEBOUNCE_SCANS   = 2;        // consecutive scans to confirm
-static constexpr uint32_t SCAN_DELAY  = 5;       // ms between full scans
 
-static constexpr int ROW_PINS[ROWS] = {
-    PIN_KB_ROW0, PIN_KB_ROW1, PIN_KB_ROW2, PIN_KB_ROW3
-};
-static constexpr int COL_PINS[COLS] = {
-    PIN_KB_COL0, PIN_KB_COL1, PIN_KB_COL2, PIN_KB_COL3, PIN_KB_COL4
-};
+static constexpr uint8_t  KB_I2C_ADDR              = 0x55;
+static constexpr uint8_t  CMD_BRIGHTNESS            = 0x01;
+static constexpr uint8_t  CMD_DEFAULT_BRIGHTNESS    = 0x02;
+static constexpr uint8_t  CMD_MODE_RAW              = 0x03;  // raw bitmask mode
+static constexpr uint8_t  CMD_MODE_KEY              = 0x04;  // ASCII key mode
+static constexpr uint32_t KB_POLL_INTERVAL_MS       = 10;   // poll every 10ms
+static constexpr uint8_t  KB_BACKLIGHT_DEFAULT      = 127;  // mid brightness
 
-// ── QWERTY keymap ────────────────────────────────────────
-// LVGL key codes for each matrix position (row × col)
-// Modifier keys use 0x00 for key code (handled via modifier state)
-static constexpr uint32_t KEYMAP[ROWS][COLS] = {
-    // Col 0       Col 1       Col 2       Col 3       Col 4
-    {  0x51/*Q*/,  0x57/*W*/,  0x45/*E*/,  0x52/*R*/,  0x54/*T*/  },  // Row 0
-    {  0x41/*A*/,  0x53/*S*/,  0x44/*D*/,  0x46/*F*/,  0x47/*G*/  },  // Row 1
-    {  0x5A/*Z*/,  0x58/*X*/,  0x43/*C*/,  0x56/*V*/,  0x42/*B*/  },  // Row 2
-    {  0x00/*⇧*/,  0x00/*⌃*/,  0x00/*⌥*/,  0x0D/*↵*/,   0x20/*␣*/  },  // Row 3
-};
-
-// ── Debounce state ───────────────────────────────────────
-static int   debounce_count[ROWS][COLS] = {{0}};
-static bool  stable_keys[ROWS][COLS]   = {{false}};
-static uint32_t last_scan_ms = 0;
-static bool  has_new_event   = false;
-
-// Current key to report to LVGL (first pressed key)
-static uint32_t current_key = 0;
-static bool  shift_held = false;
-static bool  ctrl_held  = false;
-static bool  alt_held   = false;
+static bool     initialized     = false;
+static bool     has_new_event   = false;
+static uint32_t current_key     = 0;     // ASCII key code from last scan
+static uint32_t last_poll_ms    = 0;
+static bool     shift_held      = false;
+static bool     ctrl_held       = false;
+static bool     alt_held        = false;
 
 // ════════════════════════════════════════════════════════
 // PUBLIC API
 // ════════════════════════════════════════════════════════
 
-void slopos_keyboard_init()
+bool slopos_keyboard_init()
 {
-    // Configure row pins as inputs with pullup
-    for (int r = 0; r < ROWS; r++) {
-        pinMode(ROW_PINS[r], INPUT_PULLUP);
+    if (initialized) return true;
+
+    // I2C bus must already be initialized (TDeckBoard::begin does this)
+    Wire.setClock(100000);  // keyboard MCU uses 100kHz
+
+    // Probe the keyboard MCU — request 1 byte, should ACK
+    Wire.requestFrom(KB_I2C_ADDR, (uint8_t)1);
+    if (Wire.read() == -1) {
+        // Keyboard MCU not responding — may need firmware flash or
+        // peripheral power not enabled
+        return false;
     }
 
-    // Configure column pins — start as inputs
-    for (int c = 0; c < COLS; c++) {
-        pinMode(COL_PINS[c], INPUT_PULLUP);
-    }
+    // Set initial backlight and ensure keyboard is in key mode
+    Wire.beginTransmission(KB_I2C_ADDR);
+    Wire.write(CMD_DEFAULT_BRIGHTNESS);
+    Wire.write(KB_BACKLIGHT_DEFAULT);
+    Wire.endTransmission();
 
-    memset(debounce_count, 0, sizeof(debounce_count));
-    memset(stable_keys, 0, sizeof(stable_keys));
-    current_key = 0;
-    shift_held = false;
-    ctrl_held  = false;
-    alt_held   = false;
-    has_new_event = false;
+    // Switch to key mode (ASCII chars). The keyboard MCU defaults to key
+    // mode on power-up, but this guards against it being in raw mode from
+    // a prior session that didn't power-cycle the keyboard MCU.
+    Wire.beginTransmission(KB_I2C_ADDR);
+    Wire.write(CMD_MODE_KEY);
+    Wire.endTransmission();
+
+    initialized = true;
+    return true;
 }
 
 void slopos_keyboard_scan()
 {
+    if (!initialized) return;
+
     uint32_t now = millis();
-    if (now - last_scan_ms < SCAN_DELAY) return;
-    last_scan_ms = now;
+    if (now - last_poll_ms < KB_POLL_INTERVAL_MS) return;
+    last_poll_ms = now;
 
-    bool raw[ROWS][COLS] = {{false}};
-
-    // ── Matrix scan ────────────────────────────────────
-    // Drive one column LOW at a time, read all rows
-    for (int c = 0; c < COLS; c++) {
-        // Set current column to OUTPUT LOW
-        pinMode(COL_PINS[c], OUTPUT);
-        digitalWrite(COL_PINS[c], LOW);
-
-        // Small delay for signal settling
-        delayMicroseconds(10);
-
-        // Read all rows
-        for (int r = 0; r < ROWS; r++) {
-            raw[r][c] = (digitalRead(ROW_PINS[r]) == LOW);
-        }
-
-        // Return column to INPUT_PULLUP (high-Z)
-        pinMode(COL_PINS[c], INPUT_PULLUP);
+    // Read 1 byte from keyboard MCU
+    Wire.requestFrom(KB_I2C_ADDR, (uint8_t)1);
+    char keyValue = 0;
+    if (Wire.available() > 0) {
+        keyValue = Wire.read();
     }
 
-    // ── Debounce ───────────────────────────────────────
-    has_new_event = false;
-    for (int r = 0; r < ROWS; r++) {
-        for (int c = 0; c < COLS; c++) {
-            if (raw[r][c]) {
-                if (debounce_count[r][c] < DEBOUNCE_SCANS) {
-                    debounce_count[r][c]++;
-                    if (debounce_count[r][c] == DEBOUNCE_SCANS && !stable_keys[r][c]) {
-                        stable_keys[r][c] = true;
-                        has_new_event = true; // key press detected
-                    }
-                }
-            } else {
-                if (debounce_count[r][c] > 0) {
-                    debounce_count[r][c]--;
-                    if (debounce_count[r][c] == 0 && stable_keys[r][c]) {
-                        stable_keys[r][c] = false;
-                        has_new_event = true; // key release detected
-                    }
-                }
-            }
-        }
+    if (keyValue == (char)0x00 || keyValue == (char)0xFF) {
+        // No key pressed or invalid read — clear any stale event
+        has_new_event = false;
+        return;
     }
 
-    // ── Determine current key and modifiers ──────────────
-    current_key = 0;
-    shift_held = false;
-    ctrl_held  = false;
-    alt_held   = false;
+    // Store the key code (ASCII value)
+    has_new_event = true;
+    current_key = (uint32_t)(uint8_t)keyValue;
 
-    for (int r = 0; r < ROWS; r++) {
-        for (int c = 0; c < COLS; c++) {
-            if (stable_keys[r][c]) {
-                uint32_t k = KEYMAP[r][c];
-
-                // Modifier keys (row 3, cols 0-2)
-                if (r == 3 && c == 0) shift_held = true;
-                else if (r == 3 && c == 1) ctrl_held = true;
-                else if (r == 3 && c == 2) alt_held = true;
-                else if (k != 0 && current_key == 0) {
-                    current_key = k; // first non-modifier key
-                }
-            }
-        }
+    // Track modifier state based on key codes
+    // (The keyboard MCU handles actual modifier logic; these are
+    //  best-effort for UI indicators)
+    switch (current_key) {
+    case 0x0D: break;  // Enter
+    case 0x08: break;  // Backspace
+    case 0x0C: break;  // Alt+C (sent by keyboard as special key)
+    default:   break;
     }
-
-    // Edge detection is handled by debounce state machine above
 }
 
 uint32_t slopos_keyboard_get_key()
@@ -147,15 +127,53 @@ uint32_t slopos_keyboard_get_key()
     return current_key;
 }
 
-bool slopos_keyboard_is_shift()  { return shift_held; }
-bool slopos_keyboard_is_ctrl()   { return ctrl_held; }
-bool slopos_keyboard_is_alt()    { return alt_held; }
+bool slopos_keyboard_is_shift()
+{
+    return shift_held;
+}
+
+bool slopos_keyboard_is_ctrl()
+{
+    return ctrl_held;
+}
+
+bool slopos_keyboard_is_alt()
+{
+    return alt_held;
+}
 
 bool slopos_keyboard_has_new_event()
 {
     if (has_new_event) {
-        has_new_event = false;
+        has_new_event = false;  // consume the event
         return true;
     }
     return false;
+}
+
+void slopos_keyboard_set_brightness(uint8_t duty)
+{
+    Wire.beginTransmission(KB_I2C_ADDR);
+    Wire.write(CMD_BRIGHTNESS);
+    Wire.write(duty);
+    Wire.endTransmission();
+}
+
+void slopos_keyboard_set_default_brightness(uint8_t duty)
+{
+    if (duty < 30) duty = 30;  // minimum for Alt+B toggle
+    Wire.beginTransmission(KB_I2C_ADDR);
+    Wire.write(CMD_DEFAULT_BRIGHTNESS);
+    Wire.write(duty);
+    Wire.endTransmission();
+}
+
+void slopos_keyboard_reset_scan_state()
+{
+    last_poll_ms    = 0;
+    current_key     = 0;
+    has_new_event   = false;
+    shift_held      = false;
+    ctrl_held       = false;
+    alt_held        = false;
 }

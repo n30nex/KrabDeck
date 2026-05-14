@@ -21,8 +21,6 @@ TEST_F(PinsTest, AllDefinedPinsInValidGPIORange) {
         PIN_LORA_SCLK, PIN_LORA_MISO, PIN_LORA_MOSI,
         PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_BL,
         PIN_TOUCH_SDA, PIN_TOUCH_SCL, PIN_TOUCH_INT,
-        PIN_KB_ROW0, PIN_KB_ROW1, PIN_KB_ROW2, PIN_KB_ROW3,
-        PIN_KB_COL0, PIN_KB_COL1, PIN_KB_COL2, PIN_KB_COL3, PIN_KB_COL4,
         PIN_TRACKBALL, PIN_PERIPH_PWR, PIN_BAT_ADC,
         PIN_GPS_RX, PIN_GPS_TX,
         PIN_SD_CS, PIN_BUZZER,
@@ -62,8 +60,6 @@ TEST_F(PinsTest, NoDuplicateGPIOPins) {
         PIN_LORA_SCLK, PIN_LORA_MISO, PIN_LORA_MOSI,
         PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_BL,
         PIN_TOUCH_INT,
-        PIN_KB_ROW0, PIN_KB_ROW1, PIN_KB_ROW2, PIN_KB_ROW3,
-        PIN_KB_COL0, PIN_KB_COL1, PIN_KB_COL2, PIN_KB_COL3, PIN_KB_COL4,
         PIN_TRACKBALL, PIN_PERIPH_PWR, PIN_BAT_ADC,
         PIN_GPS_RX, PIN_GPS_TX,
         PIN_SD_CS, PIN_BUZZER,
@@ -96,12 +92,6 @@ TEST_F(PinsTest, BatteryPinIsADC1Capable) {
     // ESP32-S3 ADC1 channels: GPIO 1-10
     EXPECT_GE(PIN_BAT_ADC, 1);
     EXPECT_LE(PIN_BAT_ADC, 10);
-}
-
-// ── Keyboard matrix consistency ─────────────────────────
-TEST_F(PinsTest, KeyboardMatrixDimensionsMatch) {
-    EXPECT_EQ(KB_ROWS, 4);
-    EXPECT_EQ(KB_COLS, 5);
 }
 
 // ── Display dimensions are sensible ─────────────────────

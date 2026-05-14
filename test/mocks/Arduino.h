@@ -88,6 +88,65 @@ class TwoWire {
 public:
     void begin() {}
     void begin(int, int) {}
+    void setClock(uint32_t) {}
+
+    // Master write
+    void beginTransmission(uint8_t addr) {
+        _tx_addr = addr;
+        _tx_len = 0;
+    }
+    size_t write(uint8_t val) {
+        if (_tx_len < 32) _tx_buf[_tx_len++] = val;
+        return 1;
+    }
+    uint8_t endTransmission(bool stopBit = true) {
+        (void)stopBit;
+        return _end_error;
+    }
+
+    // Master read
+    uint8_t requestFrom(uint8_t addr, uint8_t len) {
+        _rx_addr = addr;
+        _rx_pos = 0;
+        // Copy queued bytes to read buffer
+        uint8_t actual = (_q_len < len) ? _q_len : len;
+        _rx_len = actual;
+        for (uint8_t i = 0; i < actual; i++) {
+            _rx_buf[i] = _q_buf[i];
+        }
+        _q_len = 0;  // consume queue
+        return _rx_len;
+    }
+    int available() { return (int)(_rx_len - _rx_pos); }
+    int read() {
+        if (_rx_pos < _rx_len) return _rx_buf[_rx_pos++];
+        return -1;
+    }
+
+    // ── Test control ──────────────────────────────────
+    void mock_set_error(uint8_t err) { _end_error = err; }
+    void mock_queue_rx_byte(uint8_t val) {
+        if (_q_len < 32) _q_buf[_q_len++] = val;
+    }
+    uint8_t mock_last_tx_addr() const { return _tx_addr; }
+    uint8_t mock_last_tx_data(int i) const {
+        return (i >= 0 && i < (int)_tx_len) ? _tx_buf[i] : 0;
+    }
+    int mock_tx_len() const { return (int)_tx_len; }
+
+private:
+    uint8_t _tx_addr = 0;
+    uint8_t _tx_buf[32] = {};
+    size_t  _tx_len = 0;
+    uint8_t _end_error = 0;
+
+    uint8_t _rx_addr = 0;
+    uint8_t _rx_buf[32] = {};
+    size_t  _rx_pos = 0;
+    size_t  _rx_len = 0;
+
+    uint8_t _q_buf[32] = {};
+    size_t  _q_len = 0;
 };
 extern TwoWire Wire;
 

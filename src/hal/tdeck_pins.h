@@ -44,23 +44,9 @@
 #define PIN_I2C_SCL      PIN_TOUCH_SCL
 
 // ════════════════════════════════════════════════════════
-// Matrix Keyboard (T-Deck QWERTY)
-// NOTE: T-Deck keyboard uses TCA9555 I2C GPIO expander (addr 0x24).
-// The row/col pins below are placeholder GPIOs — the real keyboard
-// driver needs a rewrite to use I2C expander. These values are
-// chosen to avoid conflicts with other peripherals (BAT_ADC, GPS, etc.)
+// T-Deck Keyboard (ESP32-C3 I2C slave at 0x55)
 // ════════════════════════════════════════════════════════
-#define PIN_KB_ROW0      -1  // via I2C expander — chosen to not conflict
-#define PIN_KB_ROW1      -1  // via I2C expander
-#define PIN_KB_ROW2      -1  // via I2C expander
-#define PIN_KB_ROW3      -1  // via I2C expander
-#define PIN_KB_COL0      -1  // via I2C expander
-#define PIN_KB_COL1      -1  // via I2C expander
-#define PIN_KB_COL2      -1  // via I2C expander (GPIO 21 now free for SD card)
-#define PIN_KB_COL3      -1  // via I2C expander
-#define PIN_KB_COL4      -1  // via I2C expander
-#define KB_ROWS           4
-#define KB_COLS           5
+#define TDECK_KB_I2C_ADDR  0x55   // keyboard MCU I2C address
 
 // ════════════════════════════════════════════════════════
 // Trackball / User Button

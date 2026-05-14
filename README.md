@@ -123,3 +123,17 @@ pio device monitor -b 115200
 ## License
 
 MIT
+
+## Open Source Acknowledgments
+
+This project builds on and incorporates open source software from the following projects:
+
+| Project | License | Usage in SlopOS |
+|---------|---------|-----------------|
+| [MeshCore](https://github.com/meshcore-dev/MeshCore) | MIT | Mesh networking protocol (routing, radio, encryption) — integrated as git submodule at `lib/meshcore/` |
+| [LilyGo T-Deck Keyboard_ESP32C3](https://github.com/Xinyuan-LilyGO/T-Deck) | MIT | I2C keyboard protocol reference — our `keyboard.cpp` driver is based on the command set and keymap from this firmware (© 2023 Shenzhen Xin Yuan Electronic Technology Co., Ltd) |
+| [LVGL](https://github.com/lvgl/lvgl) | MIT | Embedded GUI framework (v9.5) |
+| [LovyanGFX](https://github.com/lovyan03/LovyanGFX) | FreeBSD | Display driver for ST7789 TFT |
+| [RadioLib](https://github.com/jgromes/RadioLib) | MIT | SX1262 LoRa radio driver |
+| [Arduino Crypto](https://github.com/rweather/arduinolibs) | MIT | AES/SHA for MeshCore packet encryption |
+| [Google Test](https://github.com/google/googletest) | BSD-3-Clause | Unit testing framework |

@@ -4,6 +4,7 @@
 #include "hal/display.h"
 #include "hal/battery.h"
 #include "hal/gps.h"
+#include "hal/sdcard.h"
 #include "mesh/mesh_wrapper.h"
 #include "ui/ui.h"
 
@@ -22,6 +23,13 @@ void setup()
 
     // ── GPS module ───────────────────────────────────
     slopos_gps_init();
+
+    // ── SD card ──────────────────────────────────────
+    if (!slopos_sdcard_init()) {
+        Serial.println("INFO: No SD card detected");
+    } else {
+        Serial.println("SD card mounted");
+    }
 
     // ── Display + LVGL ──────────────────────────────
     if (!slopos_display_init()) {

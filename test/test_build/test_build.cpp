@@ -13,6 +13,7 @@
 #include "hal/touch.h"
 #include "hal/keyboard.h"
 #include "hal/gps.h"
+#include "hal/sdcard.h"
 #include "mesh/mesh_wrapper.h"
 #include "ui/theme.h"
 #include "ui/navigation.h"

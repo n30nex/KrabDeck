@@ -22,7 +22,7 @@ Built on the [MeshCore](https://github.com/meshcore-dev/MeshCore) mesh networkin
 | T-Deck HAL (display, battery, LoRa, pins) | ✅ Complete |
 | Unit tests (10 modules) | ✅ 165 tests |
 | Touch input driver (GT911) | ✅ Complete |
-| Keyboard input driver (matrix) | ✅ Complete |
+| Keyboard input driver (I2C, ESP32-C3 MCU) | ✅ Complete |
 | Full mesh messaging (send/receive queue + UI integration) | ✅ Complete |
 | GPS NMEA parser | ✅ Complete |
 | SD card support (SPI mount, read/write) | ✅ Complete |

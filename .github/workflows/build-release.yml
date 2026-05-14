@@ -37,12 +37,13 @@ jobs:
       - name: Build firmware
         run: pio run -e SlopOS_TDeck
 
-      - name: Upload firmware artifact
+      - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
           name: slopos-tdeck-firmware
           path: |
             .pio/build/SlopOS_TDeck/firmware.bin
+            .pio/build/SlopOS_TDeck/firmware-merged.bin
           if-no-files-found: error
 
   release:
@@ -63,8 +64,16 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
+          body: |
+            **SlopOS T-Deck Firmware** — ${{ github.ref_name }}
+
+            | File | Use |
+            |------|-----|
+            | `firmware.bin` | OTA update (app only, flash at 0x10000) |
+            | `firmware-merged.bin` | Full flash (bootloader + partitions + app, flash at 0x0) |
           draft: false
           prerelease: true
           generate_release_notes: true
           files: |
             firmware.bin
+            firmware-merged.bin

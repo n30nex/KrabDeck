@@ -97,3 +97,14 @@
 #define LORA_SF           8
 #define LORA_CR           5
 #define LORA_TX_PWR      22
+
+// ════════════════════════════════════════════════════════
+// MeshCore expects P_ prefix for radio pins
+// ════════════════════════════════════════════════════════
+#define P_LORA_NSS    PIN_LORA_NSS
+#define P_LORA_DIO_1  PIN_LORA_DIO1
+#define P_LORA_RESET  PIN_LORA_RESET
+#define P_LORA_BUSY   PIN_LORA_BUSY
+#define P_LORA_SCLK   PIN_LORA_SCLK
+#define P_LORA_MISO   PIN_LORA_MISO
+#define P_LORA_MOSI   PIN_LORA_MOSI

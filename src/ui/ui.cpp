@@ -4,6 +4,7 @@
 #include "navigation.h"
 #include "theme.h"
 #include "../mesh/mesh_wrapper.h"
+#include <Arduino.h>
 #include <lvgl.h>
 
 namespace slopos {

@@ -70,8 +70,8 @@ void slopos_map_init() {
     lv_obj_set_size(map_canvas, TFT_WIDTH, TFT_HEIGHT);
     lv_obj_align(map_canvas, LV_ALIGN_CENTER, 0, 0);
 
-    // Allocate draw buffer (320×240×2 = 153KB in LV_COLOR_FORMAT_RGB565)
-    size_t buf_size = LV_CANVAS_BUF_SIZE(TFT_WIDTH, TFT_HEIGHT, 16);
+    // Allocate draw buffer (320×240×2 = 153KB for RGB565)
+    size_t buf_size = (size_t)TFT_WIDTH * TFT_HEIGHT * 2;
     canvas_pixels = (uint8_t*)lv_malloc(buf_size);
     if (canvas_pixels) {
         lv_canvas_set_buffer(map_canvas, canvas_pixels,
@@ -186,13 +186,12 @@ void slopos_map_render() {
     line_dsc.width = 1;
     line_dsc.opa = LV_OPA_50;
 
-    lv_point_t p1, p2;
-    p1.x = center_px - 12; p1.y = center_py;
-    p2.x = center_px + 12; p2.y = center_py;
-    lv_draw_line(&layer, &line_dsc, &p1, &p2);
-    p1.x = center_px; p1.y = center_py - 12;
-    p2.x = center_px; p2.y = center_py + 12;
-    lv_draw_line(&layer, &line_dsc, &p1, &p2);
+    line_dsc.p1.x = center_px - 12; line_dsc.p1.y = center_py;
+    line_dsc.p2.x = center_px + 12; line_dsc.p2.y = center_py;
+    lv_draw_line(&layer, &line_dsc);
+    line_dsc.p1.x = center_px; line_dsc.p1.y = center_py - 12;
+    line_dsc.p2.x = center_px; line_dsc.p2.y = center_py + 12;
+    lv_draw_line(&layer, &line_dsc);
 
     lv_canvas_finish_layer(map_canvas, &layer);
 }

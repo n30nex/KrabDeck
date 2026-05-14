@@ -1,7 +1,9 @@
 #include "home_screen.h"
 #include "navigation.h"
 #include "theme.h"
+#include "../hal/tdeck_pins.h"
 #include <lvgl.h>
+#include <cstdio>
 
 namespace slopos::ui {
 

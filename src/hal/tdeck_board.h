@@ -1,18 +1,19 @@
 #pragma once
 
-#ifdef SLOPOS_TDECK
-#include <MeshCore.h>
-#endif
 #include <Arduino.h>
+#include <Wire.h>
 #ifdef ESP32_PLATFORM
 #include <driver/rtc_io.h>
+#endif
+#ifdef SLOPOS_TDECK
+#include <helpers/ESP32Board.h>
 #endif
 #include "tdeck_pins.h"
 
 namespace slopos {
 
 #ifdef SLOPOS_TDECK
-class TDeckBoard : public mesh::MainBoard {
+class TDeckBoard : public ESP32Board {
     uint8_t  _startup_reason;
     bool     _inhibit_sleep;
 

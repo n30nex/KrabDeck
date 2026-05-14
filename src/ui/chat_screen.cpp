@@ -1,5 +1,6 @@
 #include "chat_screen.h"
 #include "theme.h"
+#include "../hal/tdeck_pins.h"
 #include <lvgl.h>
 #include <cstring>
 
@@ -96,11 +97,11 @@ static lv_obj_t* create_bubble(lv_obj_t* parent, const char* sender,
     if (is_self) {
         lv_obj_set_style_bg_color(bubble, lv_color_hex(ACCENT), 0);
         lv_obj_set_style_bg_opa(bubble, LV_OPA_30, 0);
-        lv_obj_align(bubble, LV_ALIGN_FLEX_END, 0, 0);
+        lv_obj_align(bubble, LV_ALIGN_RIGHT_MID, 0, 0);
     } else {
         lv_obj_set_style_bg_color(bubble, lv_color_hex(BG_TERTIARY), 0);
         lv_obj_set_style_bg_opa(bubble, LV_OPA_COVER, 0);
-        lv_obj_align(bubble, LV_ALIGN_FLEX_START, 0, 0);
+        lv_obj_align(bubble, LV_ALIGN_LEFT_MID, 0, 0);
     }
 
     lv_obj_t* msg_text = lv_label_create(bubble);

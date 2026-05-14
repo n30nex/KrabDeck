@@ -8,12 +8,17 @@
 #include <helpers/radiolib/RadioLibWrappers.h>
 #include <helpers/radiolib/CustomSX1262Wrapper.h>
 #include <helpers/AutoDiscoverRTCClock.h>
+#include <helpers/ESP32Board.h>
+#include <helpers/ArduinoHelpers.h>
+
+using slopos::mesh::MeshMessage;
 
 // ── Global objects ──────────────────────────────────────
 static slopos::TDeckBoard    board;
 static SPIClass              lora_spi;
-static CustomSX1262          radio_module(PIN_LORA_NSS, PIN_LORA_DIO1,
-                                          PIN_LORA_RESET, PIN_LORA_BUSY, lora_spi);
+static Module*               lora_mod = new Module(P_LORA_NSS, P_LORA_DIO_1,
+                                                   P_LORA_RESET, P_LORA_BUSY, lora_spi);
+static CustomSX1262          radio_module(lora_mod);
 static CustomSX1262Wrapper   radio_driver(radio_module, board);
 static ESP32RTCClock         fallback_clock;
 static AutoDiscoverRTCClock  rtc_clock(fallback_clock);
@@ -60,7 +65,7 @@ bool init()
         return false;
     }
 
-    fast_rng.begin(radio_driver.getRngSeed());
+    fast_rng.begin(radio_module.random(0x7FFFFFFF));
     initialized = true;
 
     // Reset message queue

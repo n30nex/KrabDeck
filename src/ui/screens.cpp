@@ -3,6 +3,7 @@
 #include "theme.h"
 #include "../hal/tdeck_pins.h"
 #include "../mesh/mesh_wrapper.h"
+#include <Arduino.h>
 #include <lvgl.h>
 #include <cstdio>
 
@@ -104,7 +105,7 @@ void contacts_screen_show()
 
     const char* contacts[] = {"Alice", "Bob", "Charlie", "Repeater-01", "RoomServer"};
     for (auto& c : contacts) {
-        lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_USER, c);
+        lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_FILE, c);
         lv_obj_set_style_bg_color(item, lv_color_hex(BG_TERTIARY), 0);
     }
 
@@ -218,7 +219,7 @@ void map_screen_show()
     lv_label_set_text(info, "Offline Maps\n\nLoad .mbtiles or\nraster tiles to SD card\n/maps/ directory");
     lv_obj_set_style_text_color(info, lv_color_hex(TEXT_SECONDARY), 0);
     lv_obj_set_style_text_font(info, &lv_font_montserrat_14, 0);
-    lv_label_set_align(info, LV_TEXT_ALIGN_CENTER);
+    lv_obj_set_style_text_align(info, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(info, LV_ALIGN_CENTER, 0, 30);
 
     show_screen(scr);
@@ -360,7 +361,7 @@ void finder_screen_show()
     lv_obj_align(info, LV_ALIGN_TOP_LEFT, 8, 30);
 
     // Scan indicator
-    lv_obj_t* spinner = lv_spinner_create(scr, 1000, 60);
+    lv_obj_t* spinner = lv_spinner_create(scr);
     lv_obj_set_size(spinner, 40, 40);
     lv_obj_align(spinner, LV_ALIGN_CENTER, 0, 0);
     lv_obj_set_style_arc_color(spinner, lv_color_hex(ACCENT), 0);

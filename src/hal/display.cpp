@@ -7,10 +7,6 @@
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
 
-static LGFX tft;
-static lv_display_t* lv_disp = nullptr;
-static lv_color_t draw_buf[TFT_WIDTH * 20];
-
 // ── LovyanGFX configuration for T-Deck ST7789 ────────────
 class LGFX_SlopOS : public lgfx::LGFX_Device
 {
@@ -23,7 +19,7 @@ public:
     {
         {
             auto cfg = _bus.config();
-            cfg.spi_host   = VSPI_HOST;
+            cfg.spi_host   = SPI3_HOST;
             cfg.spi_mode   = 0;
             cfg.freq_write = 40000000;
             cfg.freq_read  = 16000000;
@@ -63,6 +59,10 @@ public:
         setPanel(&_panel);
     }
 };
+
+static LGFX_SlopOS tft;
+static lv_display_t* lv_disp = nullptr;
+static lv_color_t draw_buf[TFT_WIDTH * 20];
 
 // ── LVGL flush callback ─────────────────────────────────
 static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map)

@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <cstddef>
 
 // Initialize SD card over SPI
 // Returns true if card detected and mounted

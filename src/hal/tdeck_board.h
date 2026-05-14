@@ -2,7 +2,9 @@
 
 #include <MeshCore.h>
 #include <Arduino.h>
+#ifdef ESP32_PLATFORM
 #include <driver/rtc_io.h>
+#endif
 #include "tdeck_pins.h"
 
 namespace slopos {

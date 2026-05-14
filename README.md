@@ -18,13 +18,34 @@ Built on the [MeshCore](https://github.com/meshcore-dev/MeshCore) mesh networkin
 | Finder / Advertise screens | ✅ Complete |
 | MeshCore protocol (radio, routing, encryption) | ✅ Integrated |
 | T-Deck HAL (display, battery, LoRa, pins) | ✅ Complete |
-| Unit tests | 🔲 TODO |
+| Unit tests (battery, pins, theme, nav, mesh, build) | ✅ 64 tests |
 | Touch input driver (GT911) | 🔲 TODO |
 | Keyboard input driver (matrix) | 🔲 TODO |
 | GPS support | 🔲 TODO |
 | SD card support | 🔲 TODO |
 | Full mesh messaging (send/receive) | 🔲 TODO |
 | Offline map rendering | 🔲 TODO |
+
+## Test Suite
+
+```bash
+# Run all 64 tests on native platform (no hardware needed)
+pio test -e native_test -v
+
+# Run a specific test module
+pio test -e native_test -f test_battery -v
+```
+
+| Test Module | Tests | What's Covered |
+|-------------|-------|----------------|
+| `test_battery` | 15 | mV→% conversion, clamping, monotonicity, edge cases, ADC math |
+| `test_pins` | 13 | GPIO ranges, SPI/I2C bus conflicts, duplicate detection, LoRa params |
+| `test_theme` | 9 | Color darkness, vibrancy, distinctness, readability hierarchy |
+| `test_navigation` | 9 | Forward/back routing, noop guards, deep nav, all 156 screen pairs |
+| `test_mesh_wrapper` | 11 | API signatures, return value ranges, unread count init |
+| `test_build` | 7 | All headers compile together, cross-module API consistency |
+
+Full test documentation: [`test/README.md`](test/README.md)
 
 ## Hardware
 

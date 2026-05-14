@@ -3,6 +3,7 @@
 #include "hal/tdeck_board.h"
 #include "hal/display.h"
 #include "hal/battery.h"
+#include "hal/gps.h"
 #include "mesh/mesh_wrapper.h"
 #include "ui/ui.h"
 
@@ -18,6 +19,9 @@ void setup()
     // ── Board init ──────────────────────────────────
     board.begin();
     slopos_battery_init();
+
+    // ── GPS module ───────────────────────────────────
+    slopos_gps_init();
 
     // ── Display + LVGL ──────────────────────────────
     if (!slopos_display_init()) {
@@ -42,6 +46,9 @@ void loop()
 {
     // Mesh networking tick
     slopos::mesh::loop();
+
+    // GPS NMEA parsing
+    slopos_gps_loop();
 
     // LVGL UI rendering
     slopos_display_loop();

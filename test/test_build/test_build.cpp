@@ -12,6 +12,7 @@
 #include "hal/display.h"
 #include "hal/touch.h"
 #include "hal/keyboard.h"
+#include "hal/gps.h"
 #include "mesh/mesh_wrapper.h"
 #include "ui/theme.h"
 #include "ui/navigation.h"

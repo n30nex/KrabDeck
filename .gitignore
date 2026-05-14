@@ -1,0 +1,17 @@
+.pio
+.pioenvs
+.piolibdeps
+*.bin
+*.elf
+*.hex
+*.uf2
+out/
+CMakeLists.txt
+cmake-build-*/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

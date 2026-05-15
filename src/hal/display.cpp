@@ -86,7 +86,7 @@ static lv_color_t draw_buf[TFT_WIDTH * LVGL_DRAW_BUF_LINES];
 
 // ── Auto-off timer ──────────────────────────────────
 // Based on MeshCore's AUTO_OFF_MILLIS pattern (MIT license)
-static constexpr uint32_t AUTO_OFF_MS  = 15000;  // 15 seconds
+static constexpr uint32_t AUTO_OFF_MS  = 30000;  // 30 seconds
 static uint32_t            auto_off_at = 0;
 static bool                display_on  = true;
 
@@ -173,6 +173,11 @@ bool slopos_display_init()
 
     display_on = true;
     reset_auto_off();
+
+    // Backlight pulse: brief off→on to confirm display is alive
+    tft.setBrightness(0);
+    delay(50);
+    tft.setBrightness(255);
 
     return true;
 }

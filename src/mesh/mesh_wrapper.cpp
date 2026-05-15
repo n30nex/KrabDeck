@@ -120,12 +120,16 @@ bool init()
     fallback_clock.begin();
     rtc_clock.begin(Wire);
 
-    // ── Radio safety: require explicit user configuration ──
+    // ── Radio configuration: use compile-time defaults if not configured ──
     const slopos::NodePrefs& p = slopos::prefs_get();
+    float   freq     = p.configured ? p.freq  : LORA_FREQ;
+    float   bw       = p.configured ? p.bw    : LORA_BW;
+    int     sf       = p.configured ? p.sf    : LORA_SF;
+    int     cr       = p.configured ? p.cr    : LORA_CR;
+    int     tx_power = p.configured ? p.tx_power_dbm : LORA_TX_PWR;
+
     if (!p.configured) {
-        Serial.println("[mesh] Radio NOT configured — open Settings to set frequency/power");
-        Serial.println("[mesh] Device will not transmit until radio is configured.");
-        return false;
+        Serial.println("[mesh] Using compile-time defaults — open Settings to customize");
     }
 
     // ── SX1262 hard reset: radio may retain state across ESP32 reboots.
@@ -147,18 +151,17 @@ bool init()
         return false;
     }
 
-    // Override compile-time defaults with user-configured values
-    int16_t cr_enum = (p.cr == 5) ? RADIOLIB_SX126X_LORA_CR_4_5 :
-                      (p.cr == 6) ? RADIOLIB_SX126X_LORA_CR_4_6 :
-                      (p.cr == 7) ? RADIOLIB_SX126X_LORA_CR_4_7 :
-                                    RADIOLIB_SX126X_LORA_CR_4_8;
-    radio_module.setFrequency(p.freq);
-    radio_module.setBandwidth(p.bw);
-    radio_module.setSpreadingFactor(p.sf);
+    int16_t cr_enum = (cr == 5) ? RADIOLIB_SX126X_LORA_CR_4_5 :
+                      (cr == 6) ? RADIOLIB_SX126X_LORA_CR_4_6 :
+                      (cr == 7) ? RADIOLIB_SX126X_LORA_CR_4_7 :
+                                  RADIOLIB_SX126X_LORA_CR_4_8;
+    radio_module.setFrequency(freq);
+    radio_module.setBandwidth(bw);
+    radio_module.setSpreadingFactor(sf);
     radio_module.setCodingRate(cr_enum);
-    radio_module.setOutputPower(p.tx_power_dbm);
+    radio_module.setOutputPower(tx_power);
     Serial.printf("[mesh] Radio: %.3f MHz / %.1f kHz / SF%d / CR4/%d / %d dBm\n",
-                  p.freq, p.bw, p.sf, p.cr, p.tx_power_dbm);
+                  freq, bw, sf, cr, tx_power);
 
     fast_rng.begin(radio_module.random(0x7FFFFFFF));
 

@@ -21,6 +21,7 @@
 #include "navigation.h"
 #include "theme.h"
 #include "../hal/tdeck_pins.h"
+#include "../hal/battery.h"
 #include "../hal/sdcard.h"
 #include "../hal/gps.h"
 #include "../hal/prefs.h"
@@ -35,40 +36,144 @@ namespace slopos::ui {
 
 using namespace theme;
 
-// ── Helper: create a screen with back button ────────────
-static lv_obj_t* make_screen(const char* title)
+// ── Layout constants (all screens share these) ────────────
+static constexpr int BAR_TOP_H  = 22;
+static constexpr int BAR_BOT_H  = 20;
+static constexpr int DIV_H      = 1;
+static constexpr int CONTENT_Y  = BAR_TOP_H + DIV_H;                              // 23
+static constexpr int CONTENT_H  = TFT_HEIGHT - CONTENT_Y - DIV_H - BAR_BOT_H;    // 196
+
+// ════════════════════════════════════════════════════════
+// make_screen_full — builds consistent top+bottom bars
+// ════════════════════════════════════════════════════════
+static lv_obj_t* make_screen_full(const char* title)
 {
     lv_obj_t* scr = lv_obj_create(nullptr);
     apply_dark_bg(scr);
 
-    // Top bar
-    lv_obj_t* bar = lv_obj_create(scr);
-    lv_obj_set_size(bar, LV_PCT(100), 24);
-    lv_obj_align(bar, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_color(bar, lv_color_hex(BG_SECONDARY), 0);
-    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
-    lv_obj_set_style_pad_all(bar, 0, 0);
-    lv_obj_set_style_border_width(bar, 0, 0);
+    // ── Top bar ──────────────────────────────────────────
+    lv_obj_t* top = lv_obj_create(scr);
+    lv_obj_set_size(top, LV_PCT(100), BAR_TOP_H);
+    lv_obj_align(top, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_style_bg_color(top, lv_color_hex(BG_SECONDARY), 0);
+    lv_obj_set_style_bg_opa(top, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_all(top, 0, 0);
+    lv_obj_set_style_border_width(top, 0, 0);
 
-    // Back button
-    lv_obj_t* back = lv_btn_create(bar);
-    lv_obj_set_size(back, 40, 20);
-    lv_obj_align(back, LV_ALIGN_LEFT_MID, 2, 0);
-    lv_obj_set_style_bg_color(back, lv_color_hex(BG_TERTIARY), 0);
-    lv_obj_set_style_radius(back, 4, 0);
-    lv_obj_set_style_border_width(back, 0, 0);
-    lv_obj_t* bl = lv_label_create(back);
-    lv_label_set_text(bl, LV_SYMBOL_LEFT);
-    lv_obj_set_style_text_font(bl, &lv_font_montserrat_14, 0);
-    lv_obj_center(bl);
-    lv_obj_add_event_cb(back, [](lv_event_t*) { go_back(); }, LV_EVENT_CLICKED, nullptr);
+    // ≡ hamburger — tapping goes back on secondary screens
+    lv_obj_t* menu = lv_label_create(top);
+    lv_label_set_text(menu, LV_SYMBOL_LIST);
+    lv_obj_set_style_text_color(menu, lv_color_hex(TEXT_SECONDARY), 0);
+    lv_obj_align(menu, LV_ALIGN_LEFT_MID, 4, 0);
+    lv_obj_add_flag(menu, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(menu, [](lv_event_t*) { go_back(); }, LV_EVENT_CLICKED, nullptr);
 
-    // Title
-    lv_obj_t* tt = lv_label_create(bar);
-    lv_label_set_text(tt, title);
-    lv_obj_set_style_text_color(tt, lv_color_hex(TEXT_PRIMARY), 0);
-    lv_obj_set_style_text_font(tt, &lv_font_montserrat_14, 0);
-    lv_obj_align(tt, LV_ALIGN_CENTER, 0, 0);
+    // Dynamic channel hashtags (snapshot at screen creation)
+    char ch_buf[100] = "";
+    {
+        char names[8][32];
+        int n = slopos::mesh::exportChannels(names, 8);
+        int pos = 0;
+        for (int i = 0; i < n && pos < 90; i++) {
+            const char* nm = names[i];
+            pos += snprintf(ch_buf + pos, sizeof(ch_buf) - pos,
+                            "%s%s*  ", nm[0] == '#' ? "" : "#", nm);
+        }
+        while (pos > 0 && ch_buf[pos-1] == ' ') ch_buf[--pos] = '\0';
+        if (ch_buf[0] == '\0') snprintf(ch_buf, sizeof(ch_buf), "no channels");
+    }
+    lv_obj_t* ch_lbl = lv_label_create(top);
+    lv_label_set_text(ch_lbl, ch_buf);
+    lv_obj_set_style_text_color(ch_lbl, lv_color_hex(CHANNEL_HASH), 0);
+    lv_obj_set_style_text_font(ch_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_align(ch_lbl, LV_ALIGN_LEFT_MID, 22, 0);
+
+    // Time (24h snapshot)
+    {
+        uint32_t epoch = slopos::mesh::getCurrentTime();
+        char t[8];
+        if (epoch == 0) {
+            snprintf(t, sizeof(t), "--:--");
+        } else {
+            uint32_t sec = epoch % 86400;
+            snprintf(t, sizeof(t), "%02d:%02d", (sec/3600)%24, (sec/60)%60);
+        }
+        lv_obj_t* tl = lv_label_create(top);
+        lv_label_set_text(tl, t);
+        lv_obj_set_style_text_color(tl, lv_color_hex(TEXT_PRIMARY), 0);
+        lv_obj_set_style_text_font(tl, &lv_font_montserrat_14, 0);
+        lv_obj_align(tl, LV_ALIGN_RIGHT_MID, -4, 0);
+    }
+
+    // Screen title (small, centered — sits behind channel text but visible when no channels)
+    if (title && title[0]) {
+        lv_obj_t* ttl = lv_label_create(top);
+        lv_label_set_text(ttl, title);
+        lv_obj_set_style_text_color(ttl, lv_color_hex(TEXT_SECONDARY), 0);
+        lv_obj_set_style_text_font(ttl, &lv_font_montserrat_12, 0);
+        lv_obj_align(ttl, LV_ALIGN_CENTER, 0, 0);
+    }
+
+    // Top divider
+    lv_obj_t* tdiv = lv_obj_create(scr);
+    lv_obj_set_size(tdiv, LV_PCT(100), DIV_H);
+    lv_obj_align(tdiv, LV_ALIGN_TOP_MID, 0, BAR_TOP_H);
+    lv_obj_set_style_bg_color(tdiv, lv_color_hex(DIVIDER), 0);
+    lv_obj_set_style_bg_opa(tdiv, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(tdiv, 0, 0);
+
+    // ── Bottom bar ───────────────────────────────────────
+    lv_obj_t* bot = lv_obj_create(scr);
+    lv_obj_set_size(bot, LV_PCT(100), BAR_BOT_H);
+    lv_obj_align(bot, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_bg_color(bot, lv_color_hex(BG_SECONDARY), 0);
+    lv_obj_set_style_bg_opa(bot, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_all(bot, 0, 0);
+    lv_obj_set_style_border_width(bot, 0, 0);
+
+    // Device name (left)
+    lv_obj_t* dev = lv_label_create(bot);
+    lv_label_set_text(dev, slopos::mesh::getOwnName());
+    lv_obj_set_style_text_color(dev, lv_color_hex(TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_font(dev, &lv_font_montserrat_12, 0);
+    lv_obj_align(dev, LV_ALIGN_LEFT_MID, 4, 0);
+
+    // Signal bars (center, snapshot)
+    {
+        int rssi = slopos::mesh::getLastRSSI();
+        const char* bars;
+        if (rssi > -70)       bars = "▂▄▆█";
+        else if (rssi > -85)  bars = "▂▄▆ ";
+        else if (rssi > -100) bars = "▂▄  ";
+        else if (rssi > -115) bars = "▂   ";
+        else                  bars = "    ";
+        lv_obj_t* sig = lv_label_create(bot);
+        lv_label_set_text(sig, bars);
+        lv_obj_set_style_text_color(sig, lv_color_hex(ACCENT), 0);
+        lv_obj_set_style_text_font(sig, &lv_font_montserrat_12, 0);
+        lv_obj_align(sig, LV_ALIGN_CENTER, -20, 0);
+    }
+
+    // Battery % (right, snapshot)
+    {
+        char batt[8];
+        int pct = slopos_battery_pct();
+        snprintf(batt, sizeof(batt), "%d%%", pct);
+        lv_obj_t* bl = lv_label_create(bot);
+        lv_label_set_text(bl, batt);
+        lv_obj_set_style_text_color(bl,
+            lv_color_hex(pct > 20 ? ACCENT : ACCENT_RED), 0);
+        lv_obj_set_style_text_font(bl, &lv_font_montserrat_12, 0);
+        lv_obj_align(bl, LV_ALIGN_RIGHT_MID, -4, 0);
+    }
+
+    // Bottom divider
+    lv_obj_t* bdiv = lv_obj_create(scr);
+    lv_obj_set_size(bdiv, LV_PCT(100), DIV_H);
+    lv_obj_align(bdiv, LV_ALIGN_TOP_MID, 0, TFT_HEIGHT - BAR_BOT_H - DIV_H);
+    lv_obj_set_style_bg_color(bdiv, lv_color_hex(DIVIDER), 0);
+    lv_obj_set_style_bg_opa(bdiv, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(bdiv, 0, 0);
 
     return scr;
 }
@@ -79,18 +184,69 @@ static void show_screen(lv_obj_t* scr)
 }
 
 // ════════════════════════════════════════════════════════
-// Heard — Master node list with signal bars
+// Heard — tabular node list with search bar
 // ════════════════════════════════════════════════════════
 void heard_screen_show()
 {
-    lv_obj_t* scr = make_screen("Heard Nodes");
+    lv_obj_t* scr = make_screen_full("Heard");
 
-    lv_obj_t* list = lv_list_create(scr);
-    lv_obj_set_size(list, LV_PCT(100), TFT_HEIGHT - 28);
-    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, 26);
+    static constexpr int SEARCH_H  = 22;
+    static constexpr int HEADER_H  = 16;
+    static constexpr int ROW_H     = 26;
+    int list_y = CONTENT_Y + SEARCH_H + DIV_H + HEADER_H;
+    int list_h = TFT_HEIGHT - list_y - DIV_H - BAR_BOT_H;
+
+    // Search bar
+    lv_obj_t* search = lv_textarea_create(scr);
+    lv_obj_set_size(search, LV_PCT(100), SEARCH_H);
+    lv_obj_align(search, LV_ALIGN_TOP_MID, 0, CONTENT_Y);
+    lv_obj_set_style_bg_color(search, lv_color_hex(BG_INPUT), 0);
+    lv_obj_set_style_bg_opa(search, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_color(search, lv_color_hex(TEXT_PRIMARY), 0);
+    lv_obj_set_style_text_font(search, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_border_width(search, 0, 0);
+    lv_obj_set_style_pad_all(search, 4, 0);
+    lv_textarea_set_one_line(search, true);
+    lv_textarea_set_placeholder_text(search, LV_SYMBOL_EYE_OPEN "  Search nodes...");
+
+    // Search divider
+    lv_obj_t* sdiv = lv_obj_create(scr);
+    lv_obj_set_size(sdiv, LV_PCT(100), DIV_H);
+    lv_obj_align(sdiv, LV_ALIGN_TOP_MID, 0, CONTENT_Y + SEARCH_H);
+    lv_obj_set_style_bg_color(sdiv, lv_color_hex(DIVIDER), 0);
+    lv_obj_set_style_bg_opa(sdiv, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(sdiv, 0, 0);
+
+    // Column headers
+    lv_obj_t* hdr = lv_obj_create(scr);
+    lv_obj_set_size(hdr, LV_PCT(100), HEADER_H);
+    lv_obj_align(hdr, LV_ALIGN_TOP_MID, 0, CONTENT_Y + SEARCH_H + DIV_H);
+    lv_obj_set_style_bg_color(hdr, lv_color_hex(BG_SECONDARY), 0);
+    lv_obj_set_style_bg_opa(hdr, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_all(hdr, 0, 0);
+    lv_obj_set_style_border_width(hdr, 0, 0);
+
+    static const struct { const char* txt; int x; } cols[] = {
+        {"NAME",  4},  {"SIG", 130}, {"DIST", 174}, {"TIME", 230}
+    };
+    for (auto& c : cols) {
+        lv_obj_t* cl = lv_label_create(hdr);
+        lv_label_set_text(cl, c.txt);
+        lv_obj_set_style_text_color(cl, lv_color_hex(TEXT_MUTED), 0);
+        lv_obj_set_style_text_font(cl, &lv_font_montserrat_12, 0);
+        lv_obj_align(cl, LV_ALIGN_LEFT_MID, c.x, 0);
+    }
+
+    // Scrollable list area
+    lv_obj_t* list = lv_obj_create(scr);
+    lv_obj_set_size(list, LV_PCT(100), list_h);
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, list_y);
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list, 0, 0);
-    lv_obj_set_style_text_color(list, lv_color_hex(TEXT_PRIMARY), 0);
+    lv_obj_set_style_pad_all(list, 0, 0);
+    lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scroll_dir(list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
 
     slopos::mesh::ContactInfo contacts[32];
     int n = slopos::mesh::exportContactsFull(contacts, 32);
@@ -99,29 +255,71 @@ void heard_screen_show()
     for (int i = 0; i < n-1; i++)
         for (int j = i+1; j < n; j++)
             if (contacts[j].rssi > contacts[i].rssi) {
-                auto tmp = contacts[i];
-                contacts[i] = contacts[j];
-                contacts[j] = tmp;
+                auto tmp = contacts[i]; contacts[i] = contacts[j]; contacts[j] = tmp;
             }
 
     if (n == 0) {
-        lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_WARNING, "No nodes heard yet");
-        lv_obj_set_style_bg_color(item, lv_color_hex(BG_TERTIARY), 0);
+        lv_obj_t* empty = lv_label_create(list);
+        lv_label_set_text(empty, "No nodes heard yet.\nWaiting for mesh traffic...");
+        lv_obj_set_style_text_color(empty, lv_color_hex(TEXT_SECONDARY), 0);
+        lv_obj_set_style_text_font(empty, &lv_font_montserrat_14, 0);
+        lv_obj_align(empty, LV_ALIGN_TOP_LEFT, 8, 8);
     } else {
-        char buf[80];
+        uint32_t now = slopos::mesh::getCurrentTime();
         for (int i = 0; i < n; i++) {
             auto& c = contacts[i];
-            // Signal bar: ▁▂▃▄▅▆▇█ based on RSSI
+
+            lv_obj_t* row = lv_obj_create(list);
+            lv_obj_set_size(row, LV_PCT(100), ROW_H);
+            lv_obj_set_style_bg_color(row,
+                lv_color_hex(i % 2 == 0 ? BG_TERTIARY : BG_PRIMARY), 0);
+            lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
+            lv_obj_set_style_border_width(row, 0, 0);
+            lv_obj_set_style_pad_all(row, 0, 0);
+
+            // Name
+            lv_obj_t* name_l = lv_label_create(row);
+            lv_label_set_text(name_l, c.name);
+            lv_obj_set_style_text_color(name_l, lv_color_hex(TEXT_PRIMARY), 0);
+            lv_obj_set_style_text_font(name_l, &lv_font_montserrat_12, 0);
+            lv_obj_align(name_l, LV_ALIGN_LEFT_MID, 4, 0);
+
+            // Signal bars
             const char* bars;
-            if (c.rssi > -70)       bars = "▆█";
-            else if (c.rssi > -85)  bars = "▄▆ ";
-            else if (c.rssi > -100) bars = "▂▄ ";
-            else if (c.rssi > -115) bars = "▁  ";
-            else                    bars = "   ";
-            snprintf(buf, sizeof(buf), "%s %ddBm  %s", bars, c.rssi, c.name);
-            lv_obj_t* item = lv_list_add_btn(list, nullptr, buf);
-            lv_obj_set_style_bg_color(item, lv_color_hex(BG_TERTIARY), 0);
-            lv_obj_set_style_bg_opa(item, LV_OPA_30, 0);
+            if (c.rssi > -70)       bars = "▂▄▆█";
+            else if (c.rssi > -85)  bars = "▂▄▆ ";
+            else if (c.rssi > -100) bars = "▂▄  ";
+            else if (c.rssi > -115) bars = "▂   ";
+            else                    bars = "    ";
+            lv_obj_t* sig_l = lv_label_create(row);
+            lv_label_set_text(sig_l, bars);
+            lv_obj_set_style_text_color(sig_l, lv_color_hex(ACCENT), 0);
+            lv_obj_set_style_text_font(sig_l, &lv_font_montserrat_12, 0);
+            lv_obj_align(sig_l, LV_ALIGN_LEFT_MID, 130, 0);
+
+            // Distance (show "—" — GPS distance not implemented)
+            lv_obj_t* dist_l = lv_label_create(row);
+            lv_label_set_text(dist_l, "\xe2\x80\x94");  // em dash "—"
+            lv_obj_set_style_text_color(dist_l, lv_color_hex(TEXT_MUTED), 0);
+            lv_obj_set_style_text_font(dist_l, &lv_font_montserrat_12, 0);
+            lv_obj_align(dist_l, LV_ALIGN_LEFT_MID, 174, 0);
+
+            // Time since last seen
+            char time_buf[16];
+            if (now > 0 && c.last_seen > 0) {
+                int32_t age = (int32_t)(now - c.last_seen);
+                if (age < 0) age = 0;
+                if (age < 60)          snprintf(time_buf, sizeof(time_buf), "%ds", age);
+                else if (age < 3600)   snprintf(time_buf, sizeof(time_buf), "%dm", age/60);
+                else                   snprintf(time_buf, sizeof(time_buf), "%dh", age/3600);
+            } else {
+                snprintf(time_buf, sizeof(time_buf), "--");
+            }
+            lv_obj_t* time_l = lv_label_create(row);
+            lv_label_set_text(time_l, time_buf);
+            lv_obj_set_style_text_color(time_l, lv_color_hex(TEXT_SECONDARY), 0);
+            lv_obj_set_style_text_font(time_l, &lv_font_montserrat_12, 0);
+            lv_obj_align(time_l, LV_ALIGN_LEFT_MID, 230, 0);
         }
     }
 
@@ -129,11 +327,11 @@ void heard_screen_show()
 }
 
 // ════════════════════════════════════════════════════════
-// Contacts — Tap-to-message directory, sorted by name
+// Contacts — tap-to-message directory
 // ════════════════════════════════════════════════════════
 void contacts_screen_show()
 {
-    lv_obj_t* scr = make_screen("Contacts");
+    lv_obj_t* scr = make_screen_full("Contacts");
 
     char names[32][32];
     int n = slopos::mesh::exportContacts(names, 32);
@@ -151,29 +349,28 @@ void contacts_screen_show()
     if (n == 0) {
         lv_obj_t* info = lv_label_create(scr);
         lv_label_set_text(info,
-            "No contacts yet.\n"
+            "No contacts yet.\n\n"
             "Nodes appear here once\n"
             "they broadcast an advert\n"
-            "or send a message.\n\n"
-            "Tap to send a direct\n"
-            "message.");
+            "or send you a message.\n\n"
+            "Tap to send a direct message.");
         lv_obj_set_style_text_color(info, lv_color_hex(TEXT_PRIMARY), 0);
         lv_obj_set_style_text_font(info, &lv_font_montserrat_14, 0);
-        lv_obj_align(info, LV_ALIGN_TOP_LEFT, 8, 30);
+        lv_obj_align(info, LV_ALIGN_TOP_LEFT, 8, CONTENT_Y + 4);
         show_screen(scr);
         return;
     }
 
     lv_obj_t* list = lv_list_create(scr);
-    lv_obj_set_size(list, LV_PCT(100), TFT_HEIGHT - 28);
-    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, 26);
+    lv_obj_set_size(list, LV_PCT(100), CONTENT_H);
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, CONTENT_Y);
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list, 0, 0);
 
     for (int i = 0; i < n; i++) {
-        lv_obj_t* btn = lv_list_add_btn(list, LV_SYMBOL_FILE, names[i]);
-        lv_obj_set_style_bg_color(btn, lv_color_hex(BG_TERTIARY), 0);
-        // Navigate to chat
+        lv_obj_t* btn = lv_list_add_btn(list, LV_SYMBOL_CALL, names[i]);
+        lv_obj_set_style_bg_color(btn,
+            lv_color_hex(i % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
         lv_obj_add_event_cb(btn, [](lv_event_t*) {
             navigate_to(Screen::Chat);
         }, LV_EVENT_CLICKED, nullptr);
@@ -183,55 +380,51 @@ void contacts_screen_show()
 }
 
 // ════════════════════════════════════════════════════════
-// Network — "Nearby Now": nodes seen in last 60 seconds
+// Network — "Nearby Now": nodes seen recently
 // ════════════════════════════════════════════════════════
 void network_screen_show()
 {
-    lv_obj_t* scr = make_screen("Nearby Now");
+    lv_obj_t* scr = make_screen_full("Finder");
 
     lv_obj_t* info = lv_label_create(scr);
     lv_obj_set_style_text_color(info, lv_color_hex(TEXT_SECONDARY), 0);
     lv_obj_set_style_text_font(info, &lv_font_montserrat_12, 0);
-    lv_obj_align(info, LV_ALIGN_TOP_LEFT, 8, 28);
+    lv_obj_align(info, LV_ALIGN_TOP_LEFT, 8, CONTENT_Y + 2);
 
     slopos::mesh::ContactInfo contacts[32];
     int n = slopos::mesh::exportContactsFull(contacts, 32);
     uint32_t now = slopos::mesh::getCurrentTime();
 
-    // Filter to nodes seen in last 60s and sort by recency
-    int recent_n = 0;
-    char buf[80];
-    lv_obj_t* list = lv_list_create(scr);
-    lv_obj_set_size(list, LV_PCT(100), TFT_HEIGHT - 52);
-    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, 48);
-    lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(list, 0, 0);
-
-    // Sort by most recently seen first
+    // Sort by most recently seen
     for (int i = 0; i < n-1; i++)
         for (int j = i+1; j < n; j++)
             if (contacts[j].last_seen > contacts[i].last_seen) {
-                auto tmp = contacts[i];
-                contacts[i] = contacts[j];
-                contacts[j] = tmp;
+                auto tmp = contacts[i]; contacts[i] = contacts[j]; contacts[j] = tmp;
             }
 
+    lv_obj_t* list = lv_list_create(scr);
+    lv_obj_set_size(list, LV_PCT(100), CONTENT_H - 20);
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, CONTENT_Y + 18);
+    lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(list, 0, 0);
+
+    int recent_n = 0;
+    char buf[80];
     for (int i = 0; i < n; i++) {
-        // last_seen is RTC timestamp; compute age from current RTC time
         int32_t age_s = (int32_t)(now - contacts[i].last_seen);
-        if (age_s < 0) age_s = 0;  // clock skew guard
-        if (age_s > 120) continue; // older than 2 minutes, skip
+        if (age_s < 0) age_s = 0;
+        if (age_s > 120) continue;
         recent_n++;
         snprintf(buf, sizeof(buf), "%s  %ds ago  %ddBm",
                  contacts[i].name, age_s, contacts[i].rssi);
         lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_WIFI, buf);
-        lv_obj_set_style_bg_color(item, lv_color_hex(BG_TERTIARY), 0);
+        lv_obj_set_style_bg_color(item,
+            lv_color_hex(recent_n % 2 == 1 ? BG_TERTIARY : BG_INPUT), 0);
     }
 
     if (recent_n == 0) {
-        lv_label_set_text(info, "No nodes seen in the\nlast 2 minutes.");
-        lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_WARNING,
-            "Listening for nearby nodes...");
+        lv_label_set_text(info, "No nodes seen in the last 2 minutes.");
+        lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_AUDIO, "Listening...");
         lv_obj_set_style_bg_color(item, lv_color_hex(BG_TERTIARY), 0);
     } else {
         snprintf(buf, sizeof(buf), "%d node%s nearby",
@@ -243,21 +436,21 @@ void network_screen_show()
 }
 
 // ════════════════════════════════════════════════════════
-// Signal — radio signal details (live prefs)
+// Signal — radio statistics
 // ════════════════════════════════════════════════════════
 void signal_screen_show()
 {
-    lv_obj_t* scr = make_screen("Signal");
+    lv_obj_t* scr = make_screen_full("Signal");
 
-    int rssi = slopos::mesh::getLastRSSI();
-    float snr = slopos::mesh::getLastSNR();
-    int noise = slopos::mesh::getNoiseFloor();
+    int rssi   = slopos::mesh::getLastRSSI();
+    float snr  = slopos::mesh::getLastSNR();
+    int noise  = slopos::mesh::getNoiseFloor();
     const slopos::NodePrefs& p = slopos::prefs_get();
 
     lv_obj_t* lbl = lv_label_create(scr);
     lv_obj_set_style_text_color(lbl, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
-    lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 8, 30);
+    lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 8, CONTENT_Y + 4);
 
     char buf[512];
     if (p.configured) {
@@ -278,7 +471,7 @@ void signal_screen_show()
             "SNR:     %.1f dB\n"
             "Noise:   %d dBm\n\n"
             "Radio:   NOT CONFIGURED\n"
-            "Go to Settings -> Radio\n"
+            "Go to Settings > Radio\n"
             "to set frequency/power.",
             rssi, snr, noise);
     }
@@ -292,12 +485,11 @@ void signal_screen_show()
 // ════════════════════════════════════════════════════════
 void noise_screen_show()
 {
-    lv_obj_t* scr = make_screen("Noise Floor");
+    lv_obj_t* scr = make_screen_full("Noise Floor");
 
     int noise = slopos::mesh::getNoiseFloor();
-    int rssi = slopos::mesh::getLastRSSI();
+    int rssi  = slopos::mesh::getLastRSSI();
 
-    // Noise bar
     lv_obj_t* bar_bg = lv_obj_create(scr);
     lv_obj_set_size(bar_bg, 280, 80);
     lv_obj_align(bar_bg, LV_ALIGN_CENTER, 0, -20);
@@ -320,25 +512,25 @@ void noise_screen_show()
     lv_label_set_text(info, buf);
     lv_obj_set_style_text_color(info, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(info, &lv_font_montserrat_14, 0);
-    lv_obj_align(info, LV_ALIGN_BOTTOM_MID, 0, -30);
+    lv_obj_align(info, LV_ALIGN_BOTTOM_MID, 0, -(BAR_BOT_H + DIV_H + 8));
 
     show_screen(scr);
 }
 
 // ════════════════════════════════════════════════════════
-// Map — offline tile maps from SD card
+// Map — offline tile maps
 // ════════════════════════════════════════════════════════
 void map_screen_show()
 {
-    lv_obj_t* scr = make_screen("Map");
+    lv_obj_t* scr = make_screen_full("Map");
 
     slopos_map_init();
     slopos_map_reparent(scr);
     slopos_map_render();
 
     lv_obj_t* map = lv_obj_create(scr);
-    lv_obj_set_size(map, TFT_WIDTH, TFT_HEIGHT - 28);
-    lv_obj_align(map, LV_ALIGN_TOP_MID, 0, 26);
+    lv_obj_set_size(map, TFT_WIDTH, CONTENT_H);
+    lv_obj_align(map, LV_ALIGN_TOP_MID, 0, CONTENT_Y);
     lv_obj_set_style_bg_opa(map, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(map, 0, 0);
 
@@ -348,78 +540,86 @@ void map_screen_show()
         lv_point_t pt;
         lv_indev_get_point(indev, &pt);
         int code = lv_event_get_code(e);
-
         if (code == LV_EVENT_PRESSED) {
-            drag_start_x = pt.x;
-            drag_start_y = pt.y;
+            drag_start_x = pt.x; drag_start_y = pt.y;
         } else if (code == LV_EVENT_PRESSING) {
             int dx = drag_start_x - pt.x;
             int dy = drag_start_y - pt.y;
-            drag_start_x = pt.x;
-            drag_start_y = pt.y;
-            if (dx != 0 || dy != 0) {
-                slopos_map_pan(dx, dy);
-            }
+            drag_start_x = pt.x; drag_start_y = pt.y;
+            if (dx != 0 || dy != 0) slopos_map_pan(dx, dy);
         }
     }, LV_EVENT_ALL, nullptr);
 
+    // Zoom buttons (above bottom bar)
+    int zoom_y_base = TFT_HEIGHT - BAR_BOT_H - DIV_H - 8;
+
     lv_obj_t* zoom_in = lv_btn_create(scr);
     lv_obj_set_size(zoom_in, 32, 32);
-    lv_obj_align(zoom_in, LV_ALIGN_BOTTOM_RIGHT, -8, -8);
+    lv_obj_align(zoom_in, LV_ALIGN_BOTTOM_RIGHT, -8, -(BAR_BOT_H + DIV_H + 8));
     lv_obj_set_style_bg_color(zoom_in, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_radius(zoom_in, 16, 0);
     lv_obj_t* zi = lv_label_create(zoom_in);
-    lv_label_set_text(zi, "+");
-    lv_obj_center(zi);
+    lv_label_set_text(zi, "+"); lv_obj_center(zi);
     lv_obj_add_event_cb(zoom_in, [](lv_event_t*) { slopos_map_zoom_in(); },
-                       LV_EVENT_CLICKED, nullptr);
+                        LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t* zoom_out = lv_btn_create(scr);
     lv_obj_set_size(zoom_out, 32, 32);
-    lv_obj_align(zoom_out, LV_ALIGN_BOTTOM_RIGHT, -8, -44);
+    lv_obj_align(zoom_out, LV_ALIGN_BOTTOM_RIGHT, -8, -(BAR_BOT_H + DIV_H + 48));
     lv_obj_set_style_bg_color(zoom_out, lv_color_hex(BG_TERTIARY), 0);
     lv_obj_set_style_radius(zoom_out, 16, 0);
     lv_obj_t* zo = lv_label_create(zoom_out);
-    lv_label_set_text(zo, "-");
-    lv_obj_center(zo);
+    lv_label_set_text(zo, "-"); lv_obj_center(zo);
     lv_obj_add_event_cb(zoom_out, [](lv_event_t*) { slopos_map_zoom_out(); },
-                       LV_EVENT_CLICKED, nullptr);
+                        LV_EVENT_CLICKED, nullptr);
 
+    (void)zoom_y_base;
     show_screen(scr);
 }
 
 // ════════════════════════════════════════════════════════
-// Settings
+// Settings — status rows with alternating backgrounds
 // ════════════════════════════════════════════════════════
 void settings_screen_show()
 {
-    lv_obj_t* scr = make_screen("Settings");
+    lv_obj_t* scr = make_screen_full("Settings");
 
     lv_obj_t* list = lv_list_create(scr);
-    lv_obj_set_size(list, LV_PCT(100), TFT_HEIGHT - 28);
-    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, 26);
+    lv_obj_set_size(list, LV_PCT(100), CONTENT_H);
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, CONTENT_Y);
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list, 0, 0);
 
     const slopos::NodePrefs& p = slopos::prefs_get();
     char buf[128];
+    int row = 0;
+
+    auto add_row = [&](const char* icon, const char* text) -> lv_obj_t* {
+        lv_obj_t* btn = lv_list_add_btn(list, icon, text);
+        lv_obj_set_style_bg_color(btn,
+            lv_color_hex(row % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
+        lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+        lv_obj_set_style_text_color(btn, lv_color_hex(TEXT_PRIMARY), 0);
+        row++;
+        return btn;
+    };
 
     // Node name
     snprintf(buf, sizeof(buf), "  Name: %s", p.node_name);
-    lv_obj_t* btn0 = lv_list_add_btn(list, LV_SYMBOL_SETTINGS, buf);
-    lv_obj_set_style_bg_color(btn0, lv_color_hex(BG_TERTIARY), 0);
+    add_row(LV_SYMBOL_SETTINGS, buf);
 
-    // Radio status
+    // Radio config (tappable — opens radio setup)
     if (p.configured) {
         snprintf(buf, sizeof(buf), "  Radio: %.3f MHz / %.1f kHz / SF%d / %d dBm",
                  p.freq, p.bw, p.sf, p.tx_power_dbm);
     } else {
-        snprintf(buf, sizeof(buf), "  Radio: NOT CONFIGURED");
+        snprintf(buf, sizeof(buf), "  Radio: NOT CONFIGURED — tap to configure");
     }
-    lv_obj_t* btn_rf = lv_list_add_btn(list, LV_SYMBOL_WIFI, buf);
-    lv_obj_set_style_bg_color(btn_rf, lv_color_hex(
-        p.configured ? BG_TERTIARY : 0x4a2020), 0);
-
+    lv_obj_t* btn_rf = add_row(LV_SYMBOL_WIFI, buf);
+    if (!p.configured) {
+        lv_obj_set_style_bg_color(btn_rf, lv_color_hex(0x4a2020), 0);
+        lv_obj_set_style_bg_color(btn_rf, lv_color_hex(0x4a2020), LV_STATE_DEFAULT);
+    }
     lv_obj_add_event_cb(btn_rf, [](lv_event_t*) {
         radio_setup_screen_show();
     }, LV_EVENT_CLICKED, nullptr);
@@ -427,33 +627,32 @@ void settings_screen_show()
     // SD Card
     snprintf(buf, sizeof(buf), "  SD Card: %s",
              slopos_sdcard_mounted() ? "Mounted" : "Not mounted");
-    lv_obj_t* btn4 = lv_list_add_btn(list, LV_SYMBOL_SD_CARD, buf);
-    lv_obj_set_style_bg_color(btn4, lv_color_hex(BG_TERTIARY), 0);
+    add_row(LV_SYMBOL_SD_CARD, buf);
 
     // GPS
     snprintf(buf, sizeof(buf), "  GPS: %s",
              slopos_gps_has_fix() ? "Fix acquired" : "No fix");
-    lv_obj_t* btn5 = lv_list_add_btn(list, LV_SYMBOL_GPS, buf);
-    lv_obj_set_style_bg_color(btn5, lv_color_hex(BG_TERTIARY), 0);
+    add_row(LV_SYMBOL_GPS, buf);
 
     // Version
-    snprintf(buf, sizeof(buf), "  About SlopOS " SLOPOS_VERSION);
-    lv_obj_t* btn6 = lv_list_add_btn(list, LV_SYMBOL_HOME, buf);
-    lv_obj_set_style_bg_color(btn6, lv_color_hex(BG_TERTIARY), 0);
+    snprintf(buf, sizeof(buf), "  SlopOS " SLOPOS_VERSION);
+    add_row(LV_SYMBOL_HOME, buf);
 
     show_screen(scr);
 }
 
 // ════════════════════════════════════════════════════════
-// Terminal — serial console
+// Terminal — serial console with dark green text
 // ════════════════════════════════════════════════════════
 void terminal_screen_show()
 {
-    lv_obj_t* scr = make_screen("Terminal");
+    lv_obj_t* scr = make_screen_full("Terminal");
+
+    static constexpr int INPUT_H = 28;
 
     lv_obj_t* term = lv_textarea_create(scr);
-    lv_obj_set_size(term, LV_PCT(100), TFT_HEIGHT - 60);
-    lv_obj_align(term, LV_ALIGN_TOP_MID, 0, 26);
+    lv_obj_set_size(term, LV_PCT(100), CONTENT_H - INPUT_H - DIV_H);
+    lv_obj_align(term, LV_ALIGN_TOP_MID, 0, CONTENT_Y);
     lv_obj_set_style_bg_color(term, lv_color_hex(0x000000), 0);
     lv_obj_set_style_text_color(term, lv_color_hex(0x00ff00), 0);
     lv_obj_set_style_text_font(term, &lv_font_montserrat_12, 0);
@@ -470,9 +669,19 @@ void terminal_screen_show()
         p.configured ? "SX1262 configured" : "NOT CONFIGURED");
     lv_textarea_set_text(term, header);
 
+    // Divider between term and input
+    lv_obj_t* div = lv_obj_create(scr);
+    lv_obj_set_size(div, LV_PCT(100), DIV_H);
+    lv_obj_align(div, LV_ALIGN_TOP_MID, 0,
+                 CONTENT_Y + CONTENT_H - INPUT_H - DIV_H);
+    lv_obj_set_style_bg_color(div, lv_color_hex(DIVIDER), 0);
+    lv_obj_set_style_bg_opa(div, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(div, 0, 0);
+
     lv_obj_t* input = lv_textarea_create(scr);
-    lv_obj_set_size(input, LV_PCT(100), 28);
-    lv_obj_align(input, LV_ALIGN_BOTTOM_MID, 0, -2);
+    lv_obj_set_size(input, LV_PCT(100), INPUT_H);
+    lv_obj_align(input, LV_ALIGN_TOP_MID, 0,
+                 CONTENT_Y + CONTENT_H - INPUT_H);
     lv_obj_set_style_bg_color(input, lv_color_hex(BG_INPUT), 0);
     lv_obj_set_style_text_color(input, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(input, &lv_font_montserrat_12, 0);
@@ -482,11 +691,11 @@ void terminal_screen_show()
     lv_textarea_set_placeholder_text(input, "> enter command...");
 
     lv_obj_add_event_cb(input, [](lv_event_t* e) {
-        lv_obj_t* ta = (lv_obj_t*)lv_event_get_target(e);
+        lv_obj_t* ta   = (lv_obj_t*)lv_event_get_target(e);
         const char* cmd = lv_textarea_get_text(ta);
         if (!cmd || !cmd[0]) return;
 
-        lv_obj_t* term = (lv_obj_t*)lv_event_get_user_data(e);
+        lv_obj_t* term_ta = (lv_obj_t*)lv_event_get_user_data(e);
         char result[256] = "";
 
         if (strcmp(cmd, "help") == 0) {
@@ -495,12 +704,12 @@ void terminal_screen_show()
             int rssi = slopos::mesh::getLastRSSI();
             float snr = slopos::mesh::getLastSNR();
             int noise = slopos::mesh::getNoiseFloor();
-            int contacts = slopos::mesh::getContactCount();
-            int channels = slopos::mesh::getChannelCount();
             snprintf(result, sizeof(result),
                 "RSSI:%ddBm SNR:%.1f Noise:%ddBm\n"
                 "Contacts:%d Channels:%d\n",
-                rssi, snr, noise, contacts, channels);
+                rssi, snr, noise,
+                slopos::mesh::getContactCount(),
+                slopos::mesh::getChannelCount());
         } else if (strcmp(cmd, "advert") == 0) {
             bool ok = slopos::mesh::sendAdvert();
             snprintf(result, sizeof(result), ok ? "Advert sent\n" : "Send failed\n");
@@ -510,7 +719,7 @@ void terminal_screen_show()
             snprintf(result, sizeof(result), "Unknown: %s\nType 'help'\n", cmd);
         }
 
-        lv_textarea_add_text(term, result);
+        lv_textarea_add_text(term_ta, result);
         lv_textarea_set_text(ta, "");
     }, LV_EVENT_READY, term);
 
@@ -518,22 +727,20 @@ void terminal_screen_show()
 }
 
 // ════════════════════════════════════════════════════════
-// Trace — path trace route with result display
+// Trace — path tracing
 // ════════════════════════════════════════════════════════
 static lv_obj_t* trace_result_label = nullptr;
 
-// Clean up on screen delete
-static void trace_screen_delete_cb(lv_event_t* e) {
+static void trace_screen_delete_cb(lv_event_t*) {
     trace_result_label = nullptr;
 }
 
 void trace_screen_show()
 {
-    lv_obj_t* scr = make_screen("Trace Route");
+    lv_obj_t* scr = make_screen_full("Trace Route");
     slopos::mesh::clearTraceResult();
     trace_result_label = nullptr;
 
-    // When this screen is auto-deleted, clear our dangling pointer
     lv_obj_add_event_cb(scr, trace_screen_delete_cb, LV_EVENT_DELETE, nullptr);
 
     char names[32][32];
@@ -542,19 +749,21 @@ void trace_screen_show()
     lv_obj_t* info = lv_label_create(scr);
     lv_obj_set_style_text_color(info, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(info, &lv_font_montserrat_14, 0);
-    lv_obj_align(info, LV_ALIGN_TOP_LEFT, 8, 30);
+    lv_obj_align(info, LV_ALIGN_TOP_LEFT, 8, CONTENT_Y + 4);
 
     if (total == 0) {
-        lv_label_set_text(info, "No contacts discovered.\nWait for adverts or\nincoming messages.");
+        lv_label_set_text(info,
+            "No contacts discovered.\n"
+            "Wait for adverts or incoming messages.");
         show_screen(scr);
         return;
     }
 
-    lv_label_set_text(info, "Tap a contact to trace\nthe path to that node.");
+    lv_label_set_text(info, "Tap a contact to trace the path.");
 
     lv_obj_t* list = lv_list_create(scr);
-    lv_obj_set_size(list, LV_PCT(100), TFT_HEIGHT - 100);
-    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, 52);
+    lv_obj_set_size(list, LV_PCT(100), CONTENT_H - 26);
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, CONTENT_Y + 24);
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list, 0, 0);
 
@@ -562,9 +771,11 @@ void trace_screen_show()
     for (int i = 0; i < total; i++) {
         bool has_path = slopos::mesh::contactHasPath(i);
         snprintf(buf, sizeof(buf), "%s  %s",
-                 names[i], has_path ? "[has path]" : "[no path]");
-        lv_obj_t* btn = lv_list_add_btn(list, has_path ? LV_SYMBOL_GPS : LV_SYMBOL_WARNING, buf);
-        lv_obj_set_style_bg_color(btn, lv_color_hex(BG_TERTIARY), 0);
+                 names[i], has_path ? "[path known]" : "[no path]");
+        lv_obj_t* btn = lv_list_add_btn(list,
+            has_path ? LV_SYMBOL_GPS : LV_SYMBOL_WARNING, buf);
+        lv_obj_set_style_bg_color(btn,
+            lv_color_hex(i % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
 
         if (has_path) {
             int contact_idx = i;
@@ -572,46 +783,36 @@ void trace_screen_show()
                 int idx = (int)(intptr_t)lv_event_get_user_data(e);
                 uint32_t tag;
                 if (slopos::mesh::sendTrace(idx, &tag)) {
-                    // Poll for result on a timer
                     lv_obj_t* scr_ref = lv_obj_get_screen((lv_obj_t*)lv_event_get_target(e));
                     lv_obj_t* result_lbl = lv_label_create(scr_ref);
                     lv_obj_set_style_text_color(result_lbl, lv_color_hex(ACCENT), 0);
                     lv_obj_set_style_text_font(result_lbl, &lv_font_montserrat_12, 0);
-                    lv_obj_align(result_lbl, LV_ALIGN_BOTTOM_MID, 0, -8);
+                    lv_obj_align(result_lbl, LV_ALIGN_BOTTOM_MID, 0,
+                                 -(BAR_BOT_H + DIV_H + 8));
                     lv_label_set_text(result_lbl, "Trace sent, waiting...");
                     trace_result_label = result_lbl;
 
-                    // Create a timer to poll for result
                     lv_timer_create([](lv_timer_t* t) {
-                        if (!trace_result_label) {
-                            lv_timer_del(t);
-                            return;
-                        }
+                        if (!trace_result_label) { lv_timer_del(t); return; }
                         if (slopos::mesh::hasTraceResult()) {
                             uint8_t len = slopos::mesh::getTracePathLen();
                             uint8_t snrs[16], hashes[16];
                             slopos::mesh::getTracePath(snrs, hashes);
-
                             char res[128];
                             if (len == 0) {
-                                snprintf(res, sizeof(res), "Trace timed out — no response");
+                                snprintf(res, sizeof(res), "Trace timed out");
                             } else {
                                 int pos = snprintf(res, sizeof(res),
                                     "Trace: %d hop%s", len, len == 1 ? "" : "s");
-                                for (int h = 0; h < len && pos < (int)sizeof(res) - 10; h++) {
+                                for (int h = 0; h < len && pos < (int)sizeof(res) - 10; h++)
                                     pos += snprintf(res + pos, sizeof(res) - pos,
                                         "  [%ddBm]", snrs[h]);
-                                    if (h > 0 && pos >= (int)sizeof(res) - 10) {
-                                        pos += snprintf(res + pos, sizeof(res) - pos, "...");
-                                        break;
-                                    }
-                                }
                             }
                             lv_label_set_text(trace_result_label, res);
                             slopos::mesh::clearTraceResult();
                             lv_timer_del(t);
                         }
-                    }, 500, nullptr);  // poll every 500ms
+                    }, 500, nullptr);
                 }
             }, LV_EVENT_CLICKED, (void*)(intptr_t)contact_idx);
         }
@@ -641,7 +842,6 @@ static lv_obj_t* channel_create_dialog(lv_obj_t* parent)
     lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 4);
 
-    // Name input
     lv_obj_t* name_label = lv_label_create(dialog);
     lv_label_set_text(name_label, "Name:");
     lv_obj_set_style_text_color(name_label, lv_color_hex(TEXT_SECONDARY), 0);
@@ -657,7 +857,6 @@ static lv_obj_t* channel_create_dialog(lv_obj_t* parent)
     lv_textarea_set_one_line(name_input, true);
     lv_textarea_set_placeholder_text(name_input, "e.g. #general");
 
-    // PSK input
     lv_obj_t* psk_label = lv_label_create(dialog);
     lv_label_set_text(psk_label, "PSK (base64):");
     lv_obj_set_style_text_color(psk_label, lv_color_hex(TEXT_SECONDARY), 0);
@@ -673,13 +872,11 @@ static lv_obj_t* channel_create_dialog(lv_obj_t* parent)
     lv_textarea_set_one_line(psk_input, true);
     lv_textarea_set_placeholder_text(psk_input, "base64 key");
 
-    // Feedback label
     lv_obj_t* feedback = lv_label_create(dialog);
     lv_obj_set_style_text_color(feedback, lv_color_hex(ACCENT_RED), 0);
     lv_obj_set_style_text_font(feedback, &lv_font_montserrat_12, 0);
     lv_obj_align(feedback, LV_ALIGN_BOTTOM_MID, 0, -32);
 
-    // Create button
     lv_obj_t* create_btn = lv_btn_create(dialog);
     lv_obj_set_size(create_btn, 100, 28);
     lv_obj_align(create_btn, LV_ALIGN_BOTTOM_MID, 0, -4);
@@ -692,35 +889,28 @@ static lv_obj_t* channel_create_dialog(lv_obj_t* parent)
     lv_obj_add_event_cb(create_btn, [](lv_event_t* e) {
         lv_obj_t* dlg = lv_obj_get_parent((lv_obj_t*)lv_event_get_target(e));
         lv_obj_t* scr = lv_obj_get_screen(dlg);
-        lv_obj_t* fb = (lv_obj_t*)lv_event_get_user_data(e);  // feedback label
+        lv_obj_t* fb  = (lv_obj_t*)lv_event_get_user_data(e);
 
-        // Walk children to find name_input, psk_input
         uint32_t n = lv_obj_get_child_cnt(dlg);
         lv_obj_t* name_in = nullptr;
-        lv_obj_t* psk_in = nullptr;
+        lv_obj_t* psk_in  = nullptr;
         for (uint32_t i = 0; i < n; i++) {
             lv_obj_t* child = lv_obj_get_child(dlg, i);
             if (lv_obj_check_type(child, &lv_textarea_class)) {
                 if (!name_in) name_in = child;
-                else psk_in = child;
+                else          psk_in  = child;
             }
         }
 
         const char* name = name_in ? lv_textarea_get_text(name_in) : "";
-        const char* psk = psk_in ? lv_textarea_get_text(psk_in) : "";
+        const char* psk  = psk_in  ? lv_textarea_get_text(psk_in)  : "";
 
-        if (!name[0]) {
-            if (fb) lv_label_set_text(fb, "Enter a channel name");
-            return;
-        }
-        if (!psk[0]) {
-            if (fb) lv_label_set_text(fb, "Enter a PSK");
-            return;
-        }
+        if (!name[0]) { if (fb) lv_label_set_text(fb, "Enter a channel name"); return; }
+        if (!psk[0])  { if (fb) lv_label_set_text(fb, "Enter a PSK");          return; }
 
         bool ok = slopos::mesh::addChannel(name, psk);
         if (ok) {
-            lv_obj_del_async(dlg);  // async: safe to call from own event handler
+            lv_obj_del_async(dlg);
             for (uint32_t i = 0; i < lv_obj_get_child_cnt(scr); i++) {
                 lv_obj_t* child = lv_obj_get_child(scr, i);
                 if (lv_obj_check_type(child, &lv_list_class)) {
@@ -729,7 +919,7 @@ static lv_obj_t* channel_create_dialog(lv_obj_t* parent)
                 }
             }
         } else {
-            if (fb) lv_label_set_text(fb, "Invalid PSK (must be base64, 16 or 32 byte key)");
+            if (fb) lv_label_set_text(fb, "Invalid PSK (must be base64, 16 or 32 bytes)");
         }
     }, LV_EVENT_CLICKED, (void*)feedback);
 
@@ -739,45 +929,42 @@ static lv_obj_t* channel_create_dialog(lv_obj_t* parent)
 static void refresh_channel_list(lv_obj_t* list)
 {
     lv_obj_clean(list);
-
     char names[8][32];
     int n = slopos::mesh::exportChannels(names, 8);
-
     if (n == 0) {
         lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_WARNING, "No channels joined");
         lv_obj_set_style_bg_color(item, lv_color_hex(BG_TERTIARY), 0);
     } else {
         for (int i = 0; i < n; i++) {
             lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_LIST, names[i]);
-            lv_obj_set_style_bg_color(item, lv_color_hex(BG_TERTIARY), 0);
+            lv_obj_set_style_bg_color(item,
+                lv_color_hex(i % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
         }
     }
 }
 
 void channels_screen_show()
 {
-    lv_obj_t* scr = make_screen("Channels");
+    lv_obj_t* scr = make_screen_full("Channels");
 
     lv_obj_t* list = lv_list_create(scr);
-    lv_obj_set_size(list, LV_PCT(100), TFT_HEIGHT - 56);
-    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, 26);
+    lv_obj_set_size(list, LV_PCT(100), CONTENT_H - 36);
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, CONTENT_Y);
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list, 0, 0);
 
     refresh_channel_list(list);
 
-    // "+" button to create channel
     lv_obj_t* add_btn = lv_btn_create(scr);
-    lv_obj_set_size(add_btn, 120, 28);
-    lv_obj_align(add_btn, LV_ALIGN_BOTTOM_MID, 0, -4);
+    lv_obj_set_size(add_btn, 140, 28);
+    lv_obj_align(add_btn, LV_ALIGN_BOTTOM_MID, 0, -(BAR_BOT_H + DIV_H + 4));
     lv_obj_set_style_bg_color(add_btn, lv_color_hex(ACCENT), 0);
-    lv_obj_set_style_radius(add_btn, 4, 0);
+    lv_obj_set_style_radius(add_btn, 6, 0);
     lv_obj_t* al = lv_label_create(add_btn);
-    lv_label_set_text(al, "+ Create Channel");
+    lv_label_set_text(al, LV_SYMBOL_PLUS "  Create Channel");
     lv_obj_set_style_text_font(al, &lv_font_montserrat_12, 0);
     lv_obj_center(al);
 
-    // Capture list for dialog callback
     lv_obj_add_event_cb(add_btn, [](lv_event_t* e) {
         lv_obj_t* scr = lv_obj_get_screen((lv_obj_t*)lv_event_get_target(e));
         channel_create_dialog(scr);
@@ -791,7 +978,7 @@ void channels_screen_show()
 // ════════════════════════════════════════════════════════
 void advertise_screen_show()
 {
-    lv_obj_t* scr = make_screen("Advertise");
+    lv_obj_t* scr = make_screen_full("Advertise");
 
     lv_obj_t* info = lv_label_create(scr);
     lv_label_set_text(info,
@@ -803,15 +990,15 @@ void advertise_screen_show()
         "Tap below to send advert.");
     lv_obj_set_style_text_color(info, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(info, &lv_font_montserrat_14, 0);
-    lv_obj_align(info, LV_ALIGN_TOP_LEFT, 8, 30);
+    lv_obj_align(info, LV_ALIGN_TOP_LEFT, 8, CONTENT_Y + 4);
 
     lv_obj_t* btn = lv_btn_create(scr);
-    lv_obj_set_size(btn, 120, 36);
-    lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -30);
+    lv_obj_set_size(btn, 140, 36);
+    lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -(BAR_BOT_H + DIV_H + 8));
     lv_obj_set_style_bg_color(btn, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_radius(btn, 8, 0);
     lv_obj_t* bl = lv_label_create(btn);
-    lv_label_set_text(bl, "Advertise Now");
+    lv_label_set_text(bl, LV_SYMBOL_AUDIO "  Advertise Now");
     lv_obj_center(bl);
     lv_obj_add_event_cb(btn, [](lv_event_t*) {
         slopos::mesh::sendAdvert();
@@ -825,27 +1012,34 @@ void advertise_screen_show()
 // ════════════════════════════════════════════════════════
 void radio_setup_screen_show()
 {
-    lv_obj_t* scr = make_screen("Radio Setup");
+    lv_obj_t* scr = make_screen_full("Radio Setup");
 
     const slopos::NodePrefs& p = slopos::prefs_get();
-    float   new_freq = p.configured ? p.freq : 869.618f;
-    float   new_bw   = p.configured ? p.bw   : 62.5f;
-    (void)new_bw;  // preserved for future BW selector
-    int     new_sf   = p.configured ? p.sf   : 8;
-    int     new_cr   = p.configured ? p.cr   : 5;
-    int     new_pwr  = p.configured ? p.tx_power_dbm : 22;
 
-    auto* label = lv_label_create(scr);
-    lv_label_set_text(label,
-        "Configure your radio settings.\n"
-        "Incorrect values may be illegal\n"
-        "in your region. Check local\n"
-        "regulations before transmitting.");
-    lv_obj_set_style_text_color(label, lv_color_hex(0xccaa00), 0);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_12, 0);
-    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 8, 30);
+    static float s_freq = 869.618f;
+    static int   s_sf   = 8;
+    static int   s_cr   = 5;
+    static int   s_pwr  = 22;
+    s_freq = p.configured ? p.freq          : 869.618f;
+    s_sf   = p.configured ? p.sf            : 8;
+    s_cr   = p.configured ? p.cr            : 5;
+    s_pwr  = p.configured ? p.tx_power_dbm  : 22;
 
-    // Frequency presets — MUST be static, button callbacks store pointers here
+    auto* warn = lv_label_create(scr);
+    lv_label_set_text(warn,
+        "Check local regulations before\n"
+        "transmitting. Incorrect values\n"
+        "may be illegal in your region.");
+    lv_obj_set_style_text_color(warn, lv_color_hex(0xccaa00), 0);
+    lv_obj_set_style_text_font(warn, &lv_font_montserrat_12, 0);
+    lv_obj_align(warn, LV_ALIGN_TOP_LEFT, 8, CONTENT_Y + 2);
+
+    auto* fl = lv_label_create(scr);
+    lv_label_set_text(fl, "Frequency:");
+    lv_obj_set_style_text_color(fl, lv_color_hex(TEXT_PRIMARY), 0);
+    lv_obj_set_style_text_font(fl, &lv_font_montserrat_12, 0);
+    lv_obj_align(fl, LV_ALIGN_TOP_LEFT, 8, CONTENT_Y + 50);
+
     static const struct { const char* label; float freq; } freqs[] = {
         {"868.000 MHz (EU)", 868.000f},
         {"869.525 MHz (UK)", 869.525f},
@@ -853,23 +1047,8 @@ void radio_setup_screen_show()
         {"915.000 MHz (US)", 915.000f},
         {"433.500 MHz (EU)", 433.500f},
     };
-    auto* fl = lv_label_create(scr);
-    lv_label_set_text(fl, "Frequency:");
-    lv_obj_set_style_text_color(fl, lv_color_hex(TEXT_PRIMARY), 0);
-    lv_obj_set_style_text_font(fl, &lv_font_montserrat_12, 0);
-    lv_obj_align(fl, LV_ALIGN_TOP_LEFT, 8, 105);
 
-    // Store mutable state in static locals (screen is recreated each visit)
-    static float s_freq = 869.618f;
-    static int   s_sf   = 8;
-    static int   s_cr   = 5;
-    static int   s_pwr  = 22;
-    s_freq = new_freq;
-    s_sf   = new_sf;
-    s_cr   = new_cr;
-    s_pwr  = new_pwr;
-
-    int y = 128;
+    int y = CONTENT_Y + 64;
     for (auto& f : freqs) {
         auto* btn = lv_btn_create(scr);
         lv_obj_set_size(btn, 200, 22);
@@ -893,45 +1072,40 @@ void radio_setup_screen_show()
 
     // SF selector
     char buf[64];
-    int sf_y = y + 10;
-    snprintf(buf, sizeof(buf), "SF: %d  (tap +/-)", s_sf);
+    snprintf(buf, sizeof(buf), "SF: %d", s_sf);
     auto* sf_lbl = lv_label_create(scr);
     lv_label_set_text(sf_lbl, buf);
     lv_obj_set_style_text_color(sf_lbl, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(sf_lbl, &lv_font_montserrat_12, 0);
-    lv_obj_align(sf_lbl, LV_ALIGN_TOP_LEFT, 8, sf_y);
+    lv_obj_align(sf_lbl, LV_ALIGN_TOP_LEFT, 8, y + 8);
 
     auto* sf_plus = lv_btn_create(scr);
     lv_obj_set_size(sf_plus, 30, 22);
-    lv_obj_align(sf_plus, LV_ALIGN_TOP_LEFT, 100, sf_y - 2);
+    lv_obj_align(sf_plus, LV_ALIGN_TOP_LEFT, 80, y + 6);
     lv_obj_set_style_bg_color(sf_plus, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_radius(sf_plus, 4, 0);
     auto* spl = lv_label_create(sf_plus); lv_label_set_text(spl, "+"); lv_obj_center(spl);
     lv_obj_add_event_cb(sf_plus, [](lv_event_t* e) {
-        if (s_sf < 12) {
-            s_sf++;
-            char b[24]; snprintf(b, sizeof(b), "SF: %d  (tap +/-)", s_sf);
-            lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b);
-        }
+        if (s_sf < 12) { s_sf++;
+            char b[16]; snprintf(b, sizeof(b), "SF: %d", s_sf);
+            lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b); }
     }, LV_EVENT_CLICKED, (void*)sf_lbl);
 
     auto* sf_minus = lv_btn_create(scr);
     lv_obj_set_size(sf_minus, 30, 22);
-    lv_obj_align(sf_minus, LV_ALIGN_TOP_LEFT, 135, sf_y - 2);
+    lv_obj_align(sf_minus, LV_ALIGN_TOP_LEFT, 115, y + 6);
     lv_obj_set_style_bg_color(sf_minus, lv_color_hex(ACCENT_RED), 0);
     lv_obj_set_style_radius(sf_minus, 4, 0);
     auto* sml = lv_label_create(sf_minus); lv_label_set_text(sml, "-"); lv_obj_center(sml);
     lv_obj_add_event_cb(sf_minus, [](lv_event_t* e) {
-        if (s_sf > 6) {
-            s_sf--;
-            char b[24]; snprintf(b, sizeof(b), "SF: %d  (tap +/-)", s_sf);
-            lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b);
-        }
+        if (s_sf > 6) { s_sf--;
+            char b[16]; snprintf(b, sizeof(b), "SF: %d", s_sf);
+            lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b); }
     }, LV_EVENT_CLICKED, (void*)sf_lbl);
 
     // Power selector
-    int pwr_y = sf_y + 30;
-    snprintf(buf, sizeof(buf), "TX Power: %d dBm  (tap +/-)", s_pwr);
+    int pwr_y = y + 34;
+    snprintf(buf, sizeof(buf), "TX: %d dBm", s_pwr);
     auto* pwr_lbl = lv_label_create(scr);
     lv_label_set_text(pwr_lbl, buf);
     lv_obj_set_style_text_color(pwr_lbl, lv_color_hex(TEXT_PRIMARY), 0);
@@ -940,50 +1114,46 @@ void radio_setup_screen_show()
 
     auto* pwr_plus = lv_btn_create(scr);
     lv_obj_set_size(pwr_plus, 30, 22);
-    lv_obj_align(pwr_plus, LV_ALIGN_TOP_LEFT, 120, pwr_y - 2);
+    lv_obj_align(pwr_plus, LV_ALIGN_TOP_LEFT, 80, pwr_y - 2);
     lv_obj_set_style_bg_color(pwr_plus, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_radius(pwr_plus, 4, 0);
     auto* ppl = lv_label_create(pwr_plus); lv_label_set_text(ppl, "+"); lv_obj_center(ppl);
     lv_obj_add_event_cb(pwr_plus, [](lv_event_t* e) {
-        if (s_pwr < 22) {
-            s_pwr++;
-            char b[32]; snprintf(b, sizeof(b), "TX Power: %d dBm  (tap +/-)", s_pwr);
-            lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b);
-        }
+        if (s_pwr < 22) { s_pwr++;
+            char b[24]; snprintf(b, sizeof(b), "TX: %d dBm", s_pwr);
+            lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b); }
     }, LV_EVENT_CLICKED, (void*)pwr_lbl);
 
     auto* pwr_minus = lv_btn_create(scr);
     lv_obj_set_size(pwr_minus, 30, 22);
-    lv_obj_align(pwr_minus, LV_ALIGN_TOP_LEFT, 155, pwr_y - 2);
+    lv_obj_align(pwr_minus, LV_ALIGN_TOP_LEFT, 115, pwr_y - 2);
     lv_obj_set_style_bg_color(pwr_minus, lv_color_hex(ACCENT_RED), 0);
     lv_obj_set_style_radius(pwr_minus, 4, 0);
     auto* pml = lv_label_create(pwr_minus); lv_label_set_text(pml, "-"); lv_obj_center(pml);
     lv_obj_add_event_cb(pwr_minus, [](lv_event_t* e) {
-        if (s_pwr > 2) {
-            s_pwr--;
-            char b[32]; snprintf(b, sizeof(b), "TX Power: %d dBm  (tap +/-)", s_pwr);
-            lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b);
-        }
+        if (s_pwr > 2) { s_pwr--;
+            char b[24]; snprintf(b, sizeof(b), "TX: %d dBm", s_pwr);
+            lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b); }
     }, LV_EVENT_CLICKED, (void*)pwr_lbl);
 
-    // Save button
+    // Save & Reboot button
     auto* save_btn = lv_btn_create(scr);
     lv_obj_set_size(save_btn, 160, 36);
-    lv_obj_align(save_btn, LV_ALIGN_BOTTOM_MID, 0, -20);
+    lv_obj_align(save_btn, LV_ALIGN_BOTTOM_MID, 0, -(BAR_BOT_H + DIV_H + 4));
     lv_obj_set_style_bg_color(save_btn, lv_color_hex(ACCENT_GREEN), 0);
     lv_obj_set_style_radius(save_btn, 8, 0);
     auto* svl = lv_label_create(save_btn);
-    lv_label_set_text(svl, "Save & Reboot");
+    lv_label_set_text(svl, LV_SYMBOL_SAVE "  Save & Reboot");
     lv_obj_center(svl);
     lv_obj_add_event_cb(save_btn, [](lv_event_t*) {
         slopos::NodePrefs np;
         np.set_defaults();
-        np.freq = s_freq;
-        np.bw   = 62.5f;
-        np.sf   = (uint8_t)s_sf;
-        np.cr   = (uint8_t)s_cr;
+        np.freq         = s_freq;
+        np.bw           = 62.5f;
+        np.sf           = (uint8_t)s_sf;
+        np.cr           = (uint8_t)s_cr;
         np.tx_power_dbm = (int8_t)s_pwr;
-        np.configured = true;
+        np.configured   = true;
         strncpy(np.node_name, "SlopOS T-Deck", sizeof(np.node_name) - 1);
         np.node_name[sizeof(np.node_name) - 1] = '\0';
         slopos::prefs_set(np);

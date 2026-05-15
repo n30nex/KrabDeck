@@ -89,6 +89,17 @@ void loop()
         last_update = millis();
         home_screen_update_battery(slopos_battery_pct());
         home_screen_update_signal(slopos::mesh::getLastRSSI());
+        {
+            uint32_t epoch = slopos::mesh::getCurrentTime();
+            char tbuf[8];
+            if (epoch == 0) {
+                snprintf(tbuf, sizeof(tbuf), "--:--");
+            } else {
+                uint32_t sec = epoch % 86400;
+                snprintf(tbuf, sizeof(tbuf), "%02d:%02d", (sec/3600)%24, (sec/60)%60);
+            }
+            home_screen_update_time(tbuf);
+        }
         // Persist mesh state (contacts, identity) every 5 min
         static uint8_t save_counter = 0;
         if (++save_counter >= 10) {

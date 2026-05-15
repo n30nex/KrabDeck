@@ -21,6 +21,7 @@
 #include "navigation.h"
 #include "theme.h"
 #include "../hal/tdeck_pins.h"
+#include "../hal/battery.h"
 #include "../mesh/mesh_wrapper.h"
 #include <lvgl.h>
 #include <cstring>
@@ -38,10 +39,14 @@ static lv_obj_t* input_bar = nullptr;
 static lv_obj_t* input_field = nullptr;
 
 static constexpr int TOP_H      = 24;
+static constexpr int BOT_BAR_H  = 20;
 static constexpr int DIVIDER_H  = 1;
 static constexpr int INPUT_H    = 36;
 static constexpr int BUBBLE_PAD = 6;
 static constexpr int MAX_MSGS   = 50;
+// Message list sits between top bar and input bar (above bottom bar)
+static constexpr int MSG_LIST_Y = TOP_H + DIVIDER_H;
+static constexpr int MSG_LIST_H = TFT_HEIGHT - TOP_H - DIVIDER_H - INPUT_H - DIVIDER_H - BOT_BAR_H;
 
 // ════════════════════════════════════════════════════
 // Dynamic channels — pulled from mesh, sorted by MRU
@@ -266,9 +271,8 @@ static lv_obj_t* create_bubble(lv_obj_t* parent, const char* sender,
 static void create_message_list()
 {
     msg_list = lv_obj_create(scr);
-    lv_obj_set_size(msg_list, LV_PCT(100),
-                    TFT_HEIGHT - TOP_H - DIVIDER_H - INPUT_H);
-    lv_obj_align(msg_list, LV_ALIGN_TOP_MID, 0, TOP_H + DIVIDER_H);
+    lv_obj_set_size(msg_list, LV_PCT(100), MSG_LIST_H);
+    lv_obj_align(msg_list, LV_ALIGN_TOP_MID, 0, MSG_LIST_Y);
     lv_obj_set_style_bg_opa(msg_list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(msg_list, 0, 0);
     lv_obj_set_style_pad_all(msg_list, 2, 0);
@@ -315,9 +319,12 @@ static void do_send()
 // ════════════════════════════════════════════════════
 static void create_input_bar()
 {
+    // Input bar sits above the bottom status bar
+    int input_y = TFT_HEIGHT - BOT_BAR_H - INPUT_H - DIVIDER_H;
+
     input_bar = lv_obj_create(scr);
     lv_obj_set_size(input_bar, LV_PCT(100), INPUT_H);
-    lv_obj_align(input_bar, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_align(input_bar, LV_ALIGN_TOP_MID, 0, input_y + DIVIDER_H);
     lv_obj_set_style_bg_color(input_bar, lv_color_hex(BG_SECONDARY), 0);
     lv_obj_set_style_bg_opa(input_bar, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(input_bar, 4, 0);
@@ -326,8 +333,8 @@ static void create_input_bar()
     // Divider at top of input bar
     lv_obj_t* div = lv_obj_create(scr);
     lv_obj_set_size(div, LV_PCT(100), DIVIDER_H);
-    lv_obj_align(div, LV_ALIGN_TOP_MID, 0, TFT_HEIGHT - INPUT_H);
-    lv_obj_set_style_bg_color(div, lv_color_hex(0x2a2a2a), 0);
+    lv_obj_align(div, LV_ALIGN_TOP_MID, 0, input_y);
+    lv_obj_set_style_bg_color(div, lv_color_hex(theme::DIVIDER), 0);
     lv_obj_set_style_bg_opa(div, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(div, 0, 0);
 
@@ -416,6 +423,57 @@ static void rebuild_channel_ribbon()
 }
 
 // ════════════════════════════════════════════════════
+// Bottom status bar (matches all other screens)
+// ════════════════════════════════════════════════════
+static void create_bottom_bar()
+{
+    lv_obj_t* bot = lv_obj_create(scr);
+    lv_obj_set_size(bot, LV_PCT(100), BOT_BAR_H);
+    lv_obj_align(bot, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_bg_color(bot, lv_color_hex(BG_SECONDARY), 0);
+    lv_obj_set_style_bg_opa(bot, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_all(bot, 0, 0);
+    lv_obj_set_style_border_width(bot, 0, 0);
+
+    lv_obj_t* dev = lv_label_create(bot);
+    lv_label_set_text(dev, slopos::mesh::getOwnName());
+    lv_obj_set_style_text_color(dev, lv_color_hex(TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_font(dev, &lv_font_montserrat_12, 0);
+    lv_obj_align(dev, LV_ALIGN_LEFT_MID, 4, 0);
+
+    int rssi = slopos::mesh::getLastRSSI();
+    const char* bars;
+    if (rssi > -70)       bars = "▂▄▆█";
+    else if (rssi > -85)  bars = "▂▄▆ ";
+    else if (rssi > -100) bars = "▂▄  ";
+    else if (rssi > -115) bars = "▂   ";
+    else                  bars = "    ";
+    lv_obj_t* sig = lv_label_create(bot);
+    lv_label_set_text(sig, bars);
+    lv_obj_set_style_text_color(sig, lv_color_hex(ACCENT), 0);
+    lv_obj_set_style_text_font(sig, &lv_font_montserrat_12, 0);
+    lv_obj_align(sig, LV_ALIGN_CENTER, -20, 0);
+
+    char batt_buf[8];
+    int pct = slopos_battery_pct();
+    snprintf(batt_buf, sizeof(batt_buf), "%d%%", pct);
+    lv_obj_t* bl = lv_label_create(bot);
+    lv_label_set_text(bl, batt_buf);
+    lv_obj_set_style_text_color(bl,
+        lv_color_hex(pct > 20 ? ACCENT : ACCENT_RED), 0);
+    lv_obj_set_style_text_font(bl, &lv_font_montserrat_12, 0);
+    lv_obj_align(bl, LV_ALIGN_RIGHT_MID, -4, 0);
+
+    // Divider at top of bottom bar
+    lv_obj_t* div = lv_obj_create(scr);
+    lv_obj_set_size(div, LV_PCT(100), DIVIDER_H);
+    lv_obj_align(div, LV_ALIGN_TOP_MID, 0, TFT_HEIGHT - BOT_BAR_H - DIVIDER_H);
+    lv_obj_set_style_bg_color(div, lv_color_hex(theme::DIVIDER), 0);
+    lv_obj_set_style_bg_opa(div, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(div, 0, 0);
+}
+
+// ════════════════════════════════════════════════════
 // Public API
 // ════════════════════════════════════════════════════
 void chat_screen_show()
@@ -428,6 +486,7 @@ void chat_screen_show()
     create_top_bar();
     create_message_list();
     create_input_bar();
+    create_bottom_bar();
 
     lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_LEFT, 200, 0, true);
 }

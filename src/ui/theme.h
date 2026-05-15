@@ -47,6 +47,9 @@ constexpr uint32_t TEXT_LINK      = 0x00aff4;
 constexpr uint32_t CHANNEL_HASH   = 0x00bfff;  // cyan hashtags
 constexpr uint32_t CHANNEL_ACTIVE = 0xffffff;
 
+// ── Structural ───────────────────────────────────────────
+constexpr uint32_t DIVIDER        = 0x2a2a2a;
+
 // ── Apply dark theme to a screen ────────────────────────
 inline void apply_dark_bg(lv_obj_t* obj) {
     lv_obj_set_style_bg_color(obj, lv_color_hex(BG_PRIMARY), 0);

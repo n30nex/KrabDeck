@@ -1,8 +1,8 @@
 # SlopOS T-Deck
 
-DISCLAIMER: This is entirely AI generated and I haven't yet recieved my T-Deck to test it out! Only flash this if you are willing to deal with the potential consequences.
+**Status: Beta testing** — several users have flashed successfully. See [Known Issues](#known-issues) below.
 
-Standalone off-grid LoRa mesh messaging firmware for the **LilyGo T-Deck** (ESP32-S3 + SX1262 + ST7789 320x240 touchscreen + physical QWERTY keyboard).
+Standalone off-grid LoRa mesh messaging firmware for the **LilyGo T-Deck** (ESP32-S3 + SX1262 + ST7789 240×320 TFT touchscreen + physical QWERTY keyboard).
 
 Built on the [MeshCore](https://github.com/meshcore-dev/MeshCore) mesh networking protocol — fully interoperable with existing MeshCore repeaters, room servers, and companion radios.
 
@@ -20,7 +20,7 @@ Built on the [MeshCore](https://github.com/meshcore-dev/MeshCore) mesh networkin
 | Finder / Advertise screens | ✅ Complete |
 | MeshCore protocol (radio, routing, encryption) | ✅ Integrated |
 | T-Deck HAL (display, battery, LoRa, pins) | ✅ Complete |
-| Unit tests (10 modules) | ✅ 165 tests |
+| Unit tests (12 modules) | ✅ 161 tests |
 | Touch input driver (GT911) | ✅ Complete |
 | Keyboard input driver (I2C, ESP32-C3 MCU) | ✅ Complete |
 | Full mesh messaging (send/receive queue + UI integration) | ✅ Complete |
@@ -31,7 +31,7 @@ Built on the [MeshCore](https://github.com/meshcore-dev/MeshCore) mesh networkin
 ## Test Suite
 
 ```bash
-# Run all 64 tests on native platform (no hardware needed)
+# Run all 161 tests on native platform (no hardware needed)
 pio test -e native_test -v
 
 # Run a specific test module
@@ -40,13 +40,17 @@ pio test -e native_test -f test_battery -v
 
 | Test Module | Tests | What's Covered |
 |-------------|-------|----------------|
-| `test_battery` | 15 | mV→% conversion, clamping, monotonicity, edge cases, ADC math |
-| `test_pins` | 13 | GPIO ranges, SPI/I2C bus conflicts, duplicate detection, LoRa params |
-| `test_theme` | 9 | Color darkness, vibrancy, distinctness, readability hierarchy |
-|| `test_touch` | 22 | GT911 coordinate mapping, multitouch parsing, press→release lifecycle |
-|| `test_keyboard` | 21 | Matrix scan, keymap, debounce, ghost detection, LVGL mapping |
+| `test_touch` | 22 | GT911 coordinate mapping, multitouch parsing, press→release lifecycle |
+| `test_keyboard` | 19 | Matrix scan, keymap, debounce, ghost detection, LVGL mapping |
+| `test_battery` | 16 | mV→% conversion, clamping, monotonicity, edge cases, ADC math |
+| `test_sdcard` | 15 | SPI init, mount, read/write, directory listing, edge cases |
+| `test_mesh_messaging` | 15 | Message queue, send/receive, channel ops, contact export |
+| `test_map` | 14 | Tile math (lat/lon→tile), zoom levels, bounding box |
+| `test_mesh_wrapper` | 13 | API signatures, return value ranges, unread count init |
 | `test_navigation` | 12 | Forward/back with history stack, deep nav chains, all pairs |
-| `test_mesh_wrapper` | 11 | API signatures, return value ranges, unread count init |
+| `test_gps` | 12 | NMEA parsing, coordinate conversion, fix detection |
+| `test_pins` | 9 | GPIO ranges, SPI/I2C bus conflicts, duplicate detection, LoRa params |
+| `test_theme` | 7 | Color darkness, vibrancy, distinctness, readability hierarchy |
 | `test_build` | 7 | All headers compile together, cross-module API consistency |
 
 Full test documentation: [`test/README.md`](test/README.md)
@@ -56,7 +60,7 @@ Full test documentation: [`test/README.md`](test/README.md)
 | Component | Detail |
 |-----------|--------|
 | MCU | ESP32-S3, 240 MHz, 16 MB Flash, 8 MB PSRAM |
-| Display | ST7789 320×240 TFT |
+| Display | ST7789 240×320 TFT (landscape via rotation) |
 | Touch | GT911 capacitive (I2C) |
 | Keyboard | Physical QWERTY matrix |
 | LoRa | SX1262 (SPI) |
@@ -66,30 +70,37 @@ Full test documentation: [`test/README.md`](test/README.md)
 ## Architecture
 
 ```
-slopos-tdeck/
-├── lib/meshcore/          ← Git submodule: MeshCore protocol (routing, radio, encryption)
+SlopOS-tdeck/
+├── firmware/               ← Pre-built merged binaries (flash at 0x0)
+├── lib/meshcore/           ← Git submodule: MeshCore protocol (routing, radio, encryption)
 ├── src/
-│   ├── main.cpp           ← Boot sequence (board → display → mesh → UI)
-│   ├── lv_conf.h          ← LVGL v9 config (16-bit, partial render)
+│   ├── main.cpp            ← Boot sequence (board → display → mesh → UI)
+│   ├── lv_conf.h           ← LVGL v9 config (16-bit, partial render)
 │   ├── hal/
-│   │   ├── tdeck_pins.h   ← Complete T-Deck pinout
-│   │   ├── tdeck_board.h  ← TDeckBoard :: mesh::MainBoard
-│   │   ├── display.cpp/h  ← LovyanGFX ST7789 + LVGL driver
-│   │   ├── battery.cpp/h  ← ADC battery (mV + %)
-│   │   ├── touch.cpp/h    ← GT911 touch controller (I2C)
-│   │   └── keyboard.cpp/h ← QWERTY matrix keyboard scanner
+│   │   ├── tdeck_pins.h    ← Complete T-Deck pinout + version string
+│   │   ├── tdeck_board.h   ← TDeckBoard :: mesh::MainBoard
+│   │   ├── display.cpp/h   ← LovyanGFX ST7789 + LVGL driver
+│   │   ├── battery.cpp/h   ← ADC battery (mV + %)
+│   │   ├── touch.cpp/h     ← GT911 touch controller (I2C)
+│   │   ├── keyboard.cpp/h  ← QWERTY matrix keyboard scanner
+│   │   ├── gps.cpp/h       ← NMEA GPS parser (Serial1)
+│   │   ├── sdcard.cpp/h    ← microSD card (SPI)
+│   │   └── prefs.cpp/h     ← NVS preferences (radio config, identity)
 │   ├── mesh/
-│   │   └── mesh_wrapper.cpp/h ← SX1262 radio init, RTC, mesh API
+│   │   ├── mesh_wrapper.cpp/h  ← SX1262 radio init, RTC, mesh API
+│   │   └── slop_mesh.h     ← SlopMesh : mesh::Mesh subclass
+│   ├── app/
+│   │   └── map_renderer.cpp/h  ← Offline map tile renderer
 │   └── ui/
-│       ├── theme.h        ← Discord-inspired dark palette
+│       ├── theme.h         ← Discord-inspired dark palette
 │       ├── home_screen.cpp/h   ← 3×4 icon grid + top/bottom bars
 │       ├── chat_screen.cpp/h   ← Discord-like chat (channels, bubbles, input)
-│       ├── screens.cpp/h  ← All 11 other screens
+│       ├── screens.cpp/h   ← All 11 other screens
 │       ├── navigation.cpp/h    ← Screen routing with animations
-│       └── ui.cpp/h       ← Splash → Home transition
-├── boards/t-deck.json     ← PlatformIO board definition
-├── platformio.ini         ← Build config (ESP32-S3 + LVGL + MeshCore)
-└── test/                  ← Unit test directory
+│       └── ui.cpp/h        ← Splash → Home transition
+├── boards/t-deck.json      ← PlatformIO board definition
+├── platformio.ini          ← Build config (ESP32-S3 + LVGL + MeshCore)
+└── test/                   ← Unit test directory (12 modules, 161 tests)
 ```
 
 ## Build & Flash
@@ -194,6 +205,29 @@ After cloning, these files must exist or the build will fail:
 | `boards/t-deck.json` | Board definition (16 MB flash, QIO, ESP32-S3) |
 | `lib/meshcore/src/Mesh.h` | MeshCore submodule (must not be empty) |
 | `platformio.ini` | Build configuration |
+
+## Pre-built Firmware
+
+Pre-built merged binaries are in [`firmware/`](firmware/). Flash directly with esptool — no PlatformIO needed:
+
+```bash
+pip install esptool
+esptool.py --chip esp32s3 --port COM21 --baud 921600 \
+  --before default_reset --after hard_reset write_flash \
+  --flash_mode qio --flash_freq 80m --flash_size 16MB \
+  0x0 firmware/slopos-tdeck-merged.bin
+```
+
+See [`firmware/README.md`](firmware/README.md) for details.
+
+## Known Issues
+
+| Issue | Workaround |
+|-------|------------|
+| **Touch calibration may be off** after orientation fix (beta-0.1.18) | Report coordinates on serial — calibration in progress |
+| **Radio requires first-boot NVS init** (beta-0.1.17 fixed this) | Fixed: uses compile-time defaults on clean devices |
+| **No SD card = expected warning** | Normal — `[boot] INFO: No SD card detected` is not an error |
+| **GPS requires external antenna** | No fix yet — T-Deck GPS is weak without active antenna |
 
 ## License
 

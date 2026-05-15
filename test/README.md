@@ -3,7 +3,7 @@
 ## Running Tests
 
 ```bash
-# Run all 91 tests on native platform (no hardware needed)
+# Run all 161 tests on native platform (no hardware needed)
 pio test -e native_test -v
 
 # Run specific test file
@@ -17,37 +17,47 @@ pio test -e native_test -vv
 
 ```
 test/
-├── mocks/                  # Mock headers for native testing (no hardware needed)
-│   ├── Arduino.h           # Mock Arduino core (millis, GPIO, Serial, SPI, Wire)
-│   ├── lvgl.h              # Mock LVGL v9 API (all UI objects stubbed)
-│   ├── RadioLib.h          # Mock SX1262 radio driver
-│   ├── LovyanGFX.hpp       # Mock LovyanGFX display driver
-│   ├── MeshCore.h          # Mock MeshCore base classes
-│   └── mesh_helpers.h      # Mock AutoDiscoverRTCClock, StdRNG
-├── unit/
-│   ├── test_battery.cpp    # Battery mV→% conversion, ADC math, edge cases
-│   ├── test_theme.cpp      # Color constants validation, distinctness, brightness
-│   ├── test_pins.cpp       # Pin conflicts, GPIO ranges, bus consistency
-│   ├── test_navigation.cpp # Screen routing state machine, back nav, edge cases
-│   └── test_mesh_wrapper.cpp # Mesh API contract, return value ranges
-└── integration/
-    └── test_build.cpp      # All headers include together, cross-module consistency
+├── mocks/                     # Mock headers for native testing (no hardware needed)
+│   ├── Arduino.h              # Mock Arduino core (millis, GPIO, Serial, SPI, Wire)
+│   ├── lvgl.h                 # Mock LVGL v9 API (all UI objects stubbed)
+│   ├── RadioLib.h             # Mock SX1262 radio driver
+│   ├── LovyanGFX.hpp          # Mock LovyanGFX display driver
+│   ├── MeshCore.h             # Mock MeshCore base classes
+│   └── mesh_helpers.h         # Mock AutoDiscoverRTCClock, StdRNG
+├── test_battery/              # Battery mV→% conversion, ADC math, edge cases
+├── test_build/                # All headers compile together, cross-module consistency
+├── test_gps/                  # NMEA parsing, coordinate conversion, fix detection
+├── test_keyboard/             # Matrix scan, keymap, debounce, ghost detection
+├── test_map/                  # Tile math (lat/lon→tile), zoom levels
+├── test_mesh_messaging/       # Message queue, send/receive, channel ops
+├── test_mesh_wrapper/         # Mesh API contract, return value ranges
+├── test_navigation/           # Screen routing state machine, back nav
+├── test_pins/                 # Pin conflicts, GPIO ranges, bus consistency
+├── test_sdcard/               # SPI init, mount, read/write, edge cases
+├── test_theme/                # Color constants, distinctness, brightness
+└── test_touch/                # GT911 coordinate mapping, multitouch, lifecycle
 ```
 
 ## What's Tested
 
 | Module | Tests | Coverage |
 |--------|-------|----------|
-| Battery HAL | 15 | mV→%, clamping, monotonicity, ADC math |
-| Theme constants | 9 | darkness, vibrancy, distinctness, readability |
-| Pin definitions | 13 | GPIO range, SPI/I2C conflicts, duplicates, LoRa params |
-| Navigation | 9 | forward/back, noop guard, deep nav, all pairs, enumeration |
-| Mesh wrapper | 11 | API signatures, return ranges, unread count init |
-| Build integration | 7 | header inclusion, API existence, cross-module consistency |
+| Touch (GT911) | 22 | Coordinate mapping, multitouch, press→release, edge cases |
+| Keyboard | 19 | Matrix scan, keymap, debounce, ghost detection, LVGL mapping |
+| Battery HAL | 16 | mV→%, clamping, monotonicity, ADC math, edge cases |
+| SD Card | 15 | SPI init, mount, read/write, directory listing, edge cases |
+| Mesh messaging | 15 | Message queue, send/receive, channel ops, contact export |
+| Map renderer | 14 | Tile math (lat/lon→tile), zoom levels, bounding box |
+| Mesh wrapper | 13 | API signatures, return ranges, unread count init |
+| Navigation | 12 | Forward/back, history stack, deep nav, all pairs |
+| GPS | 12 | NMEA parsing, coordinate conversion, fix detection |
+| Pin definitions | 9 | GPIO range, SPI/I2C conflicts, duplicates, LoRa params |
+| Theme constants | 7 | Darkness, vibrancy, distinctness, readability |
+| Build integration | 7 | Header inclusion, API existence, cross-module consistency |
 
 ## Adding New Tests
 
-1. Create `test/unit/test_newthing.cpp`
+1. Create `test/test_newthing/` directory with `main.cpp` + `test_newthing.cpp`
 2. Include the header(s) under test + `gtest/gtest.h`
 3. Use `arduino_mock::reset()` in SetUp for clean state
 4. Follow AAA pattern: Arrange, Act, Assert

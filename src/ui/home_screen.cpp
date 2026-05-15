@@ -52,8 +52,8 @@ struct IconDef {
 static const IconDef icons[] = {
     {"Chat",       "\xF0\x9F\x92\xAC", true,  Screen::Chat},       // 💬
     {"Contacts",   "\xF0\x9F\x91\xA5", false, Screen::Contacts},   // 👥
-    {"Repeaters",  "\xF0\x9F\x94\x84", false, Screen::Repeaters},  // 🔄
-    {"Finder",     "\xF0\x9F\x94\x8D", false, Screen::Finder},     // 🔍
+    {"Channels",   "\xF0\x9F\x93\xA1", false, Screen::Channels},  // 📡
+    {"Network",    "\xF0\x9F\x8C\x90", false, Screen::Network},   // 🌐
     {"Heard",      "\xF0\x9F\x91\x82", false, Screen::Heard},      // 👂
     {"Map",        "\xF0\x9F\x97\xBA", false, Screen::Map},        // 🗺
     {"Advertise",  "\xF0\x9F\x93\xA2", false, Screen::Advertise},  // 📢

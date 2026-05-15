@@ -33,7 +33,7 @@ namespace {
 
 // ── Replicate the navigation state machine for pure testing ──
 enum class Screen {
-    Home, Chat, Contacts, Repeaters, Finder, Heard,
+    Home, Chat, Contacts, Channels, Network, Heard,
     Map, Advertise, Settings, Trace, Terminal, Noise, Signal, RadioSetup, COUNT
 };
 
@@ -110,7 +110,7 @@ TEST_F(NavigationTest, NavigateToSameScreenIsNoop) {
 
 TEST_F(NavigationTest, NavigateToAllScreens) {
     std::vector<Screen> screens = {
-        Screen::Chat, Screen::Contacts, Screen::Repeaters, Screen::Finder,
+        Screen::Chat, Screen::Contacts, Screen::Channels, Screen::Network,
         Screen::Heard, Screen::Map, Screen::Advertise, Screen::Settings,
         Screen::Trace, Screen::Terminal, Screen::Noise, Screen::Signal
     };

@@ -28,8 +28,8 @@ void map_screen_show();
 void settings_screen_show();
 void terminal_screen_show();
 void trace_screen_show();
-void repeaters_screen_show();
-void finder_screen_show();
+void channels_screen_show();
+void network_screen_show();
 void advertise_screen_show();
 void radio_setup_screen_show();
 } // namespace slopos::ui

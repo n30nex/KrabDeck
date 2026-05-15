@@ -282,6 +282,10 @@ bool sendAdvert() {
     return true;
 }
 
+uint32_t getCurrentTime() {
+    return initialized ? rtc_clock.getCurrentTime() : 0;
+}
+
 static uint32_t trace_tag_counter = 0;
 
 bool sendTrace(int contact_idx, uint32_t* out_tag) {

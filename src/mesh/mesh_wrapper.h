@@ -50,6 +50,9 @@ float getLastSNR();
 bool sendAdvert();
 void saveState();
 
+// RTC time for UI comparisons
+uint32_t getCurrentTime();
+
 // Trace route
 bool sendTrace(int contact_idx, uint32_t* out_tag);
 bool hasTraceResult();

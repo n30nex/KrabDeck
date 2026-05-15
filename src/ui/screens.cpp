@@ -408,23 +408,55 @@ void terminal_screen_show()
 }
 
 // ════════════════════════════════════════════════════════
-// Trace — path trace tool
+// Trace — path trace route tool
 // ════════════════════════════════════════════════════════
 void trace_screen_show()
 {
     lv_obj_t* scr = make_screen("Trace Route");
+    slopos::mesh::clearTraceResult();  // fresh start
+
+    // Get contacts with known paths
+    char names[32][32];
+    int total = slopos::mesh::exportContacts(names, 32);
 
     lv_obj_t* info = lv_label_create(scr);
-    lv_label_set_text(info,
-        "Trace Route Tool\n\n"
-        "Send a trace packet to\n"
-        "map the path through the\n"
-        "mesh network.\n\n"
-        "Select a target node\n"
-        "to begin.");
     lv_obj_set_style_text_color(info, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(info, &lv_font_montserrat_14, 0);
     lv_obj_align(info, LV_ALIGN_TOP_LEFT, 8, 30);
+
+    if (total == 0) {
+        lv_label_set_text(info, "No contacts discovered.\nWait for adverts or\nincoming messages.");
+        show_screen(scr);
+        return;
+    }
+
+    // Build contact list with path indicators
+    lv_obj_t* list = lv_list_create(scr);
+    lv_obj_set_size(list, LV_PCT(100), TFT_HEIGHT - 60);
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, 28);
+    lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(list, 0, 0);
+
+    char buf[48];
+    for (int i = 0; i < total; i++) {
+        bool has_path = slopos::mesh::contactHasPath(i);
+        snprintf(buf, sizeof(buf), "%s  %s",
+                 names[i], has_path ? "[has path]" : "[no path]");
+        lv_obj_t* btn = lv_list_add_btn(list, has_path ? LV_SYMBOL_GPS : LV_SYMBOL_WARNING, buf);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(BG_TERTIARY), 0);
+
+        if (has_path) {
+            // Make clickable — send trace to this contact
+            lv_obj_add_event_cb(btn, [](lv_event_t* e) {
+                int idx = (int)(intptr_t)lv_event_get_user_data(e);
+                uint32_t tag;
+                if (slopos::mesh::sendTrace(idx, &tag)) {
+                    // Trace sent — poll for result
+                    // In a real implementation, we'd set a timer to check hasTraceResult()
+                }
+            }, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+        }
+    }
 
     show_screen(scr);
 }

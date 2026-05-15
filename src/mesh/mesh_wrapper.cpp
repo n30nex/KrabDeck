@@ -259,6 +259,28 @@ bool sendAdvert() {
     return true;
 }
 
+static uint32_t trace_tag_counter = 0;
+
+bool sendTrace(int contact_idx, uint32_t* out_tag) {
+    if (!g_mesh) return false;
+    uint32_t tag = ++trace_tag_counter;
+    if (out_tag) *out_tag = tag;
+    return g_mesh->sendTrace(contact_idx, tag);
+}
+
+bool hasTraceResult()   { return g_mesh ? g_mesh->hasTraceResult() : false; }
+uint8_t getTracePathLen() { return g_mesh ? g_mesh->getTracePathLen() : 0; }
+void getTracePath(uint8_t* snrs, uint8_t* hashes) {
+    if (g_mesh) g_mesh->getTracePath(snrs, hashes);
+}
+void clearTraceResult() { if (g_mesh) g_mesh->clearTraceResult(); }
+
+bool contactHasPath(int idx) {
+    if (!g_mesh) return false;
+    auto* c = g_mesh->getContact(idx);
+    return c && c->out_path_len != OUT_PATH_UNKNOWN;
+}
+
 void saveState() {
     if (g_mesh) saveIdentity(g_mesh->self_id);
 }

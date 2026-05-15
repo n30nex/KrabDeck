@@ -16,6 +16,7 @@ namespace mesh {
 
 static constexpr int SLOP_MAX_CONTACTS  = 64;
 static constexpr int SLOP_MAX_CHANNELS  = 8;
+#define OUT_PATH_UNKNOWN  0xFF
 
 struct SlopContact {
     ::mesh::Identity id;
@@ -23,6 +24,8 @@ struct SlopContact {
     char     name[32];
     uint32_t last_seen;    // RTC timestamp of last advert
     int      last_rssi;    // RSSI of last received packet (dBm)
+    uint8_t  out_path_len; // OUT_PATH_UNKNOWN if no known direct path
+    uint8_t  out_path[MAX_PATH_SIZE];
 };
 
 // Mirrors MeshCore's ChannelDetails for group channel storage
@@ -44,6 +47,13 @@ class SlopMesh : public ::mesh::Mesh {
 
     slopos::NodePrefs _prefs;
     void (*_onMessage)(const char* sender, const char* text);
+
+    // Trace result storage
+    bool     _has_trace_result = false;
+    uint32_t _last_trace_tag = 0;
+    uint8_t  _last_trace_len = 0;
+    uint8_t  _last_trace_snrs[MAX_PATH_SIZE];
+    uint8_t  _last_trace_hashes[MAX_PATH_SIZE];
 
 protected:
     // ── Peer DB ──────────────────────────────────────
@@ -140,9 +150,63 @@ public:
           _onMessage(nullptr)
     {
         _prefs.set_defaults();
+        for (int i = 0; i < SLOP_MAX_CONTACTS; i++) {
+            _contacts[i].out_path_len = OUT_PATH_UNKNOWN;
+        }
     }
 
     void setMessageCallback(void (*cb)(const char* sender, const char* text)) { _onMessage = cb; }
+
+    // ── Path learning ────────────────────────────────
+    void onPathRecv(::mesh::Packet* pkt, ::mesh::Identity& sender,
+                    uint8_t* path, uint8_t path_len,
+                    uint8_t extra_type, uint8_t* extra, uint8_t extra_len) override
+    {
+        // Find contact by matching identity
+        for (int i = 0; i < _nContacts; i++) {
+            if (_contacts[i].id.matches(sender)) {
+                if (path_len < MAX_PATH_SIZE) {
+                    memcpy(_contacts[i].out_path, path, path_len);
+                }
+                _contacts[i].out_path_len = path_len;
+                return;
+            }
+        }
+    }
+
+    // ── Trace route ──────────────────────────────────
+    bool sendTrace(int contact_idx, uint32_t tag) {
+        if (contact_idx < 0 || contact_idx >= _nContacts) return false;
+        SlopContact& c = _contacts[contact_idx];
+        if (c.out_path_len == OUT_PATH_UNKNOWN) return false;
+
+        ::mesh::Packet* pkt = createTrace(tag, 0, 0);  // auth_code=0 for now
+        if (!pkt) return false;
+        sendDirect(pkt, c.out_path, c.out_path_len);
+        return true;
+    }
+
+    // Called when a trace reaches its destination (us) and we have the full path
+    void onTraceRecv(::mesh::Packet*, uint32_t tag, uint32_t auth_code, uint8_t flags,
+                     const uint8_t* path_snrs, const uint8_t* path_hashes, uint8_t path_len) override
+    {
+        // Store the trace result for the UI to display
+        _last_trace_tag = tag;
+        _last_trace_len = path_len;
+        if (path_len > MAX_PATH_SIZE) path_len = MAX_PATH_SIZE;
+        memcpy(_last_trace_snrs, path_snrs, path_len);
+        memcpy(_last_trace_hashes, path_hashes, path_len);
+        _has_trace_result = true;
+    }
+
+    bool hasTraceResult() const { return _has_trace_result; }
+    uint32_t getTraceTag() const { return _last_trace_tag; }
+    uint8_t  getTracePathLen() const { return _last_trace_len; }
+    void getTracePath(uint8_t* snrs_out, uint8_t* hashes_out) const {
+        memcpy(snrs_out, _last_trace_snrs, _last_trace_len);
+        memcpy(hashes_out, _last_trace_hashes, _last_trace_len);
+    }
+    void clearTraceResult() { _has_trace_result = false; }
 
     // ── Send helpers ──────────────────────────────────
     bool sendTextTo(const char* dest_name, const char* text) {

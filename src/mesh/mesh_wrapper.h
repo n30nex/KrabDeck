@@ -50,5 +50,13 @@ float getLastSNR();
 bool sendAdvert();
 void saveState();
 
+// Trace route
+bool sendTrace(int contact_idx, uint32_t* out_tag);
+bool hasTraceResult();
+uint8_t getTracePathLen();
+void   getTracePath(uint8_t* snrs_out, uint8_t* hashes_out);
+void   clearTraceResult();
+bool   contactHasPath(int contact_idx);
+
 } // namespace mesh
 } // namespace slopos

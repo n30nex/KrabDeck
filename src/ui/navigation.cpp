@@ -74,6 +74,7 @@ void navigate_to(Screen screen)
     case Screen::Terminal:   terminal_screen_show();   break;
     case Screen::Noise:      noise_screen_show();      break;
     case Screen::Signal:     signal_screen_show();     break;
+    case Screen::RadioSetup: radio_setup_screen_show(); break;
     default: break;
     }
 }
@@ -100,6 +101,7 @@ void go_back()
     case Screen::Terminal:   terminal_screen_show();   break;
     case Screen::Noise:      noise_screen_show();      break;
     case Screen::Signal:     signal_screen_show();     break;
+    case Screen::RadioSetup: radio_setup_screen_show(); break;
     default: break;
     }
 }

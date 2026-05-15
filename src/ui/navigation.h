@@ -36,6 +36,7 @@ enum class Screen {
     Terminal,
     Noise,
     Signal,
+    RadioSetup,
     COUNT
 };
 

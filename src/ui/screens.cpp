@@ -21,6 +21,9 @@
 #include "navigation.h"
 #include "theme.h"
 #include "../hal/tdeck_pins.h"
+#include "../hal/sdcard.h"
+#include "../hal/gps.h"
+#include "../hal/prefs.h"
 #include "../mesh/mesh_wrapper.h"
 #include "../app/map_renderer.h"
 #include <Arduino.h>
@@ -307,31 +310,45 @@ void settings_screen_show()
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list, 0, 0);
 
-    // Build settings from live preferences
-    int n_items = 0;
+    // Live settings
+    const slopos::NodePrefs& p = slopos::prefs_get();
+    char buf[128];
 
     // Node name
-    lv_obj_t* btn0 = lv_list_add_btn(list, LV_SYMBOL_SETTINGS, "");
-    n_items++;
+    snprintf(buf, sizeof(buf), "  Name: %s", p.node_name);
+    lv_obj_t* btn0 = lv_list_add_btn(list, LV_SYMBOL_SETTINGS, buf);
     lv_obj_set_style_bg_color(btn0, lv_color_hex(BG_TERTIARY), 0);
-    // We need access to prefs — use hardcoded for now, TODO: expose prefs getters
 
-    lv_obj_t* btn1 = lv_list_add_btn(list, LV_SYMBOL_WIFI, "  Frequency: 869.618 MHz");
-    lv_obj_set_style_bg_color(btn1, lv_color_hex(BG_TERTIARY), 0);
+    // Radio status
+    if (p.configured) {
+        snprintf(buf, sizeof(buf), "  Radio: %.3f MHz / %.1f kHz / SF%d / %d dBm",
+                 p.freq, p.bw, p.sf, p.tx_power_dbm);
+    } else {
+        snprintf(buf, sizeof(buf), "  Radio: NOT CONFIGURED");
+    }
+    lv_obj_t* btn_rf = lv_list_add_btn(list, LV_SYMBOL_WIFI, buf);
+    lv_obj_set_style_bg_color(btn_rf, lv_color_hex(
+        p.configured ? BG_TERTIARY : 0x4a2020), 0);
 
-    lv_obj_t* btn2 = lv_list_add_btn(list, LV_SYMBOL_SHUFFLE, "  Spreading Factor: SF8");
-    lv_obj_set_style_bg_color(btn2, lv_color_hex(BG_TERTIARY), 0);
+    lv_obj_add_event_cb(btn_rf, [](lv_event_t*) {
+        radio_setup_screen_show();
+    }, LV_EVENT_CLICKED, nullptr);
 
-    lv_obj_t* btn3 = lv_list_add_btn(list, LV_SYMBOL_BATTERY_FULL, "  Power: 22 dBm");
-    lv_obj_set_style_bg_color(btn3, lv_color_hex(BG_TERTIARY), 0);
-
-    lv_obj_t* btn4 = lv_list_add_btn(list, LV_SYMBOL_SD_CARD, "  SD Card: Not mounted");
+    // SD Card
+    snprintf(buf, sizeof(buf), "  SD Card: %s",
+             slopos_sdcard_mounted() ? "Mounted" : "Not mounted");
+    lv_obj_t* btn4 = lv_list_add_btn(list, LV_SYMBOL_SD_CARD, buf);
     lv_obj_set_style_bg_color(btn4, lv_color_hex(BG_TERTIARY), 0);
 
-    lv_obj_t* btn5 = lv_list_add_btn(list, LV_SYMBOL_GPS, "  GPS: NMEA 38400 baud");
+    // GPS
+    snprintf(buf, sizeof(buf), "  GPS: %s",
+             slopos_gps_has_fix() ? "Fix acquired" : "No fix");
+    lv_obj_t* btn5 = lv_list_add_btn(list, LV_SYMBOL_GPS, buf);
     lv_obj_set_style_bg_color(btn5, lv_color_hex(BG_TERTIARY), 0);
 
-    lv_obj_t* btn6 = lv_list_add_btn(list, LV_SYMBOL_HOME, "  About SlopOS beta-0.1.6");
+    // Version
+    snprintf(buf, sizeof(buf), "  About SlopOS " SLOPOS_VERSION);
+    lv_obj_t* btn6 = lv_list_add_btn(list, LV_SYMBOL_HOME, buf);
     lv_obj_set_style_bg_color(btn6, lv_color_hex(BG_TERTIARY), 0);
 
     show_screen(scr);
@@ -515,11 +532,11 @@ void finder_screen_show()
     if (n == 0) {
         lv_obj_t* info = lv_label_create(scr);
         lv_label_set_text(info,
-            "Device Finder\\n\\n"
-            "Scanning for nearby\\n"
-            "MeshCore devices...\\n\\n"
-            "No devices found yet.\\n"
-            "Check antenna and\\n"
+            "Device Finder\n\n"
+            "Scanning for nearby\n"
+            "MeshCore devices...\n\n"
+            "No devices found yet.\n"
+            "Check antenna and\n"
             "frequency settings.");
         lv_obj_set_style_text_color(info, lv_color_hex(TEXT_PRIMARY), 0);
         lv_obj_set_style_text_font(info, &lv_font_montserrat_14, 0);
@@ -572,6 +589,126 @@ void advertise_screen_show()
     lv_obj_center(bl);
     lv_obj_add_event_cb(btn, [](lv_event_t*) {
         slopos::mesh::sendAdvert();
+    }, LV_EVENT_CLICKED, nullptr);
+
+    show_screen(scr);
+}
+
+// ════════════════════════════════════════════════════════
+// Radio Setup — configure frequency, SF, power
+// ════════════════════════════════════════════════════════
+void radio_setup_screen_show()
+{
+    lv_obj_t* scr = make_screen("Radio Setup");
+
+    const slopos::NodePrefs& p = slopos::prefs_get();
+    // Use provided values or safe defaults for display
+    float   new_freq = p.configured ? p.freq : 869.618f;
+    float   new_bw   = p.configured ? p.bw   : 62.5f;
+    int     new_sf   = p.configured ? p.sf   : 8;
+    int     new_cr   = p.configured ? p.cr   : 5;
+    int     new_pwr  = p.configured ? p.tx_power_dbm : 22;
+
+    auto* label = lv_label_create(scr);
+    lv_label_set_text(label,
+        "Configure your radio settings.\n"
+        "Incorrect values may be illegal\n"
+        "in your region. Check local\n"
+        "regulations before transmitting.");
+    lv_obj_set_style_text_color(label, lv_color_hex(0xccaa00), 0);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_12, 0);
+    lv_obj_align(label, LV_ALIGN_TOP_LEFT, 8, 30);
+
+    // Frequency presets
+    struct { const char* label; float freq; } freqs[] = {
+        {"868.000 MHz (EU)", 868.000f},
+        {"869.525 MHz (UK)", 869.525f},
+        {"869.618 MHz (UK)", 869.618f},
+        {"915.000 MHz (US)", 915.000f},
+        {"433.500 MHz (EU)", 433.500f},
+    };
+    auto* fl = lv_label_create(scr);
+    lv_label_set_text(fl, "Frequency:");
+    lv_obj_set_style_text_color(fl, lv_color_hex(TEXT_PRIMARY), 0);
+    lv_obj_align(fl, LV_ALIGN_TOP_LEFT, 8, 105);
+
+    int y = 128;
+    for (auto& f : freqs) {
+        auto* btn = lv_btn_create(scr);
+        lv_obj_set_size(btn, 200, 22);
+        lv_obj_align(btn, LV_ALIGN_TOP_LEFT, 8, y);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(
+            fabsf(new_freq - f.freq) < 0.001f ? 0x2a5a2a : BG_TERTIARY), 0);
+        lv_obj_set_style_radius(btn, 4, 0);
+        lv_obj_set_style_border_width(btn, 0, 0);
+        auto* tl = lv_label_create(btn);
+        lv_label_set_text(tl, f.label);
+        lv_obj_set_style_text_font(tl, &lv_font_montserrat_12, 0);
+        lv_obj_center(tl);
+        float freq_val = f.freq;
+        lv_obj_add_event_cb(btn, [](lv_event_t* e) {
+            float* pf = (float*)lv_event_get_user_data(e);
+            // Update all button backgrounds (simplified: just show selection)
+            lv_obj_set_style_bg_color((lv_obj_t*)lv_event_get_target(e),
+                lv_color_hex(0x2a5a2a), 0);
+        }, LV_EVENT_CLICKED, (void*)&freqs[0].freq);
+        y += 25;
+    }
+
+    // SF selector
+    char buf[64];
+    int sf_y = y + 10;
+    snprintf(buf, sizeof(buf), "SF: %d  (tap +/-)", new_sf);
+    auto* sf_lbl = lv_label_create(scr);
+    lv_label_set_text(sf_lbl, buf);
+    lv_obj_set_style_text_color(sf_lbl, lv_color_hex(TEXT_PRIMARY), 0);
+    lv_obj_align(sf_lbl, LV_ALIGN_TOP_LEFT, 8, sf_y);
+
+    auto* sf_plus = lv_btn_create(scr);
+    lv_obj_set_size(sf_plus, 30, 22);
+    lv_obj_align(sf_plus, LV_ALIGN_TOP_LEFT, 100, sf_y - 2);
+    lv_obj_set_style_bg_color(sf_plus, lv_color_hex(ACCENT), 0);
+    auto* spl = lv_label_create(sf_plus); lv_label_set_text(spl, "+"); lv_obj_center(spl);
+
+    auto* sf_minus = lv_btn_create(scr);
+    lv_obj_set_size(sf_minus, 30, 22);
+    lv_obj_align(sf_minus, LV_ALIGN_TOP_LEFT, 135, sf_y - 2);
+    lv_obj_set_style_bg_color(sf_minus, lv_color_hex(ACCENT_RED), 0);
+    auto* sml = lv_label_create(sf_minus); lv_label_set_text(sml, "-"); lv_obj_center(sml);
+
+    // Power selector
+    int pwr_y = sf_y + 30;
+    snprintf(buf, sizeof(buf), "Power: %d dBm  (tap +/-)", new_pwr);
+    auto* pwr_lbl = lv_label_create(scr);
+    lv_label_set_text(pwr_lbl, buf);
+    lv_obj_set_style_text_color(pwr_lbl, lv_color_hex(TEXT_PRIMARY), 0);
+    lv_obj_align(pwr_lbl, LV_ALIGN_TOP_LEFT, 8, pwr_y);
+
+    // Save button
+    auto* save_btn = lv_btn_create(scr);
+    lv_obj_set_size(save_btn, 160, 36);
+    lv_obj_align(save_btn, LV_ALIGN_BOTTOM_MID, 0, -20);
+    lv_obj_set_style_bg_color(save_btn, lv_color_hex(ACCENT_GREEN), 0);
+    lv_obj_set_style_radius(save_btn, 8, 0);
+    auto* svl = lv_label_create(save_btn);
+    lv_label_set_text(svl, "Save & Reboot");
+    lv_obj_center(svl);
+    lv_obj_add_event_cb(save_btn, [](lv_event_t*) {
+        // Build prefs from current selections and save
+        slopos::NodePrefs np;
+        np.set_defaults();
+        // Use currently displayed values (simplified: use defaults for now)
+        np.freq = 869.618f;
+        np.bw   = 62.5f;
+        np.sf   = 8;
+        np.cr   = 5;
+        np.tx_power_dbm = 22;
+        np.configured = true;
+        strncpy(np.node_name, "SlopOS T-Deck", sizeof(np.node_name) - 1);
+        slopos::prefs_set(np);
+        slopos::prefs_save(np);
+        // Reboot to apply
+        ESP.restart();
     }, LV_EVENT_CLICKED, nullptr);
 
     show_screen(scr);

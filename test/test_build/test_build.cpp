@@ -84,7 +84,7 @@ TEST_F(BuildIntegrationTest, DisplayAPIExists) {
 // ── Screen count matches between modules ────────────────
 TEST_F(BuildIntegrationTest, ScreenCountConsistent) {
     // navigation.h defines 13 screens (Home + 12 app screens)
-    EXPECT_EQ((int)slopos::ui::Screen::COUNT, 13);
+    EXPECT_EQ((int)slopos::ui::Screen::COUNT, 14);
 }
 
 // ── LVGL config sanity ──────────────────────────────────

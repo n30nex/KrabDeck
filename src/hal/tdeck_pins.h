@@ -117,3 +117,6 @@
 #define P_LORA_SCLK   PIN_LORA_SCLK
 #define P_LORA_MISO   PIN_LORA_MISO
 #define P_LORA_MOSI   PIN_LORA_MOSI
+
+// Firmware version — displayed in Settings > About
+#define SLOPOS_VERSION  "beta-0.1.13"

@@ -8,6 +8,7 @@
 #include "hal/tdeck_board.h"
 #include "hal/tdeck_pins.h"
 #include "hal/gps.h"
+#include "hal/prefs.h"
 #include "slop_mesh.h"
 
 #include <SPIFFS.h>
@@ -119,11 +120,32 @@ bool init()
     fallback_clock.begin();
     rtc_clock.begin(Wire);
 
+    // ── Radio safety: require explicit user configuration ──
+    const slopos::NodePrefs& p = slopos::prefs_get();
+    if (!p.configured) {
+        Serial.println("[mesh] Radio NOT configured — open Settings to set frequency/power");
+        Serial.println("[mesh] Device will not transmit until radio is configured.");
+        return false;
+    }
+
     lora_spi.begin(P_LORA_SCLK, P_LORA_MISO, P_LORA_MOSI);
     if (!radio_module.std_init(&lora_spi)) {
         Serial.println("[mesh] ERROR: Radio init failed");
         return false;
     }
+
+    // Override compile-time defaults with user-configured values
+    int16_t cr_enum = (p.cr == 5) ? RADIOLIB_SX126X_LORA_CR_4_5 :
+                      (p.cr == 6) ? RADIOLIB_SX126X_LORA_CR_4_6 :
+                      (p.cr == 7) ? RADIOLIB_SX126X_LORA_CR_4_7 :
+                                    RADIOLIB_SX126X_LORA_CR_4_8;
+    radio_module.setFrequency(p.freq);
+    radio_module.setBandwidth(p.bw);
+    radio_module.setSpreadingFactor(p.sf);
+    radio_module.setCodingRate(cr_enum);
+    radio_module.setOutputPower(p.tx_power_dbm);
+    Serial.printf("[mesh] Radio: %.3f MHz / %.1f kHz / SF%d / CR4/%d / %d dBm\n",
+                  p.freq, p.bw, p.sf, p.cr, p.tx_power_dbm);
 
     fast_rng.begin(radio_module.random(0x7FFFFFFF));
 

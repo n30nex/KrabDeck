@@ -21,6 +21,7 @@
 #include "navigation.h"
 #include "theme.h"
 #include "../hal/tdeck_pins.h"
+#include "../mesh/mesh_wrapper.h"
 #include <lvgl.h>
 #include <cstring>
 
@@ -176,6 +177,33 @@ static void create_message_list()
     lv_obj_set_scroll_dir(msg_list, LV_DIR_VER);
 }
 
+// ── Send helper ──────────────────────────────────────────
+static void do_send()
+{
+    const char* text = lv_textarea_get_text(input_field);
+    if (!text || !text[0]) return;
+
+    const char* chan = channels[active_channel];
+    bool is_dm = (strncmp(chan, "DM: ", 4) == 0);
+    const char* dest = is_dm ? (chan + 4) : chan;
+
+    bool ok;
+    if (is_dm) {
+        ok = slopos::mesh::sendMessage(dest, text);
+    } else {
+        ok = slopos::mesh::sendChannelMessage(dest, text);
+    }
+
+    // Echo sent message locally
+    create_bubble(msg_list, slopos::mesh::getOwnName(), text, true);
+    lv_textarea_set_text(input_field, "");
+
+    // Scroll to bottom
+    lv_obj_t* last = lv_obj_get_child(msg_list,
+                        lv_obj_get_child_cnt(msg_list) - 1);
+    if (last) lv_obj_scroll_to_view(last, LV_ANIM_ON);
+}
+
 // ── Input bar ───────────────────────────────────────────
 static void create_input_bar()
 {
@@ -215,30 +243,18 @@ static void create_input_bar()
     lv_label_set_text(send_label, LV_SYMBOL_UPLOAD);
     lv_obj_set_style_text_font(send_label, &lv_font_montserrat_16, 0);
     lv_obj_center(send_label);
-}
 
-// ── Populate with sample messages ───────────────────────
-static void add_sample_messages()
-{
-    struct { const char* sender; const char* text; bool self; } msgs[] = {
-        {"Alice",   "Hey, anyone on #hertford?", false},
-        {"You",     "Yeah, I'm near the canal bridge", true},
-        {"Bob",     "Signal's great up here by the church", false},
-        {"Alice",   "Perfect, let's meet at the pub at 7?", false},
-        {"You",     "Sounds good, see you there", true},
-        {"Charlie", "Anyone got a repeater near #london* ?", false},
-        {"Alice",   "There's one on the hill, 2 hops away", false},
-        {"You",     "I can see it on the map, RSSI is -98", true},
-    };
+    // Wire send button
+    lv_obj_add_event_cb(send_btn, [](lv_event_t*) {
+        do_send();
+    }, LV_EVENT_CLICKED, nullptr);
 
-    for (auto& m : msgs) {
-        create_bubble(msg_list, m.sender, m.text, m.self);
-    }
-
-    // Scroll to bottom
-    lv_obj_scroll_to_view(lv_obj_get_child(msg_list,
-                            lv_obj_get_child_cnt(msg_list) - 1),
-                          LV_ANIM_OFF);
+    // Wire Enter key on input field
+    lv_obj_add_event_cb(input_field, [](lv_event_t* e) {
+        if (lv_event_get_code(e) == LV_EVENT_READY) {
+            do_send();
+        }
+    }, LV_EVENT_ALL, nullptr);
 }
 
 // ── Public API ──────────────────────────────────────────
@@ -252,7 +268,6 @@ void chat_screen_show()
     create_top_bar();
     create_message_list();
     create_input_bar();
-    add_sample_messages();
 
     lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_LEFT, 200, 0, true);
 }

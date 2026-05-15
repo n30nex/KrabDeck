@@ -34,7 +34,7 @@ namespace {
 // ── Replicate the navigation state machine for pure testing ──
 enum class Screen {
     Home, Chat, Contacts, Repeaters, Finder, Heard,
-    Map, Advertise, Settings, Trace, Terminal, Noise, Signal, COUNT
+    Map, Advertise, Settings, Trace, Terminal, Noise, Signal, RadioSetup, COUNT
 };
 
 static Screen current = Screen::Home;
@@ -196,7 +196,7 @@ TEST_F(NavigationTest, AllScreenPairsWork) {
 
 // ── Screen count matches expected ───────────────────────
 TEST_F(NavigationTest, ScreenCountIs13) {
-    EXPECT_EQ((int)Screen::COUNT, 13);
+    EXPECT_EQ((int)Screen::COUNT, 14);
 }
 
 // ── Screen enum values are contiguous ───────────────────
@@ -204,7 +204,7 @@ TEST_F(NavigationTest, ScreenEnumValuesAreContiguous) {
     EXPECT_EQ((int)Screen::Home, 0);
     EXPECT_EQ((int)Screen::Chat, 1);
     EXPECT_EQ((int)Screen::Signal, 12);
-    EXPECT_EQ((int)Screen::COUNT, 13);
+    EXPECT_EQ((int)Screen::COUNT, 14);
 }
 
 } // anonymous namespace

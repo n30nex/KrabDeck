@@ -22,6 +22,7 @@
 #include "theme.h"
 #include "../hal/tdeck_pins.h"
 #include "../mesh/mesh_wrapper.h"
+#include "../app/map_renderer.h"
 #include <Arduino.h>
 #include <lvgl.h>
 #include <cstdio>
@@ -225,29 +226,69 @@ void noise_screen_show()
 }
 
 // ════════════════════════════════════════════════════════
-// Map — placeholder for offline tile maps
+// Map — offline tile maps from SD card
 // ════════════════════════════════════════════════════════
 void map_screen_show()
 {
     lv_obj_t* scr = make_screen("Map");
 
-    lv_obj_t* holder = lv_obj_create(scr);
-    lv_obj_set_size(holder, LV_PCT(100), TFT_HEIGHT - 50);
-    lv_obj_align(holder, LV_ALIGN_TOP_MID, 0, 26);
-    lv_obj_set_style_bg_color(holder, lv_color_hex(BG_TERTIARY), 0);
-    lv_obj_set_style_border_width(holder, 0, 0);
+    // Initialize map renderer if not already
+    slopos_map_init();
+    slopos_map_render();
 
-    lv_obj_t* icon = lv_label_create(holder);
-    lv_label_set_text(icon, "\xF0\x9F\x97\xBA");
-    lv_obj_set_style_text_font(icon, &lv_font_montserrat_28, 0);
-    lv_obj_align(icon, LV_ALIGN_CENTER, 0, -16);
+    // Show the map canvas
+    lv_obj_t* map = lv_obj_create(scr);
+    lv_obj_set_size(map, TFT_WIDTH, TFT_HEIGHT - 28);
+    lv_obj_align(map, LV_ALIGN_TOP_MID, 0, 26);
+    lv_obj_set_style_bg_opa(map, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(map, 0, 0);
 
-    lv_obj_t* info = lv_label_create(holder);
-    lv_label_set_text(info, "Offline Maps\n\nLoad .mbtiles or\nraster tiles to SD card\n/maps/ directory");
-    lv_obj_set_style_text_color(info, lv_color_hex(TEXT_SECONDARY), 0);
-    lv_obj_set_style_text_font(info, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_align(info, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(info, LV_ALIGN_CENTER, 0, 30);
+    // Touch pan handler — drag to pan the map
+    static int drag_start_x = 0, drag_start_y = 0;
+    lv_obj_add_event_cb(map, [](lv_event_t* e) {
+        lv_indev_t* indev = lv_indev_get_act();
+        lv_point_t pt;
+        lv_indev_get_point(indev, &pt);
+        int code = lv_event_get_code(e);
+
+        if (code == LV_EVENT_PRESSED) {
+            drag_start_x = pt.x;
+            drag_start_y = pt.y;
+        } else if (code == LV_EVENT_PRESSING) {
+            int dx = drag_start_x - pt.x;
+            int dy = drag_start_y - pt.y;
+            drag_start_x = pt.x;
+            drag_start_y = pt.y;
+            if (dx != 0 || dy != 0) {
+                slopos_map_pan(dx, dy);
+            }
+        }
+    }, LV_EVENT_ALL, nullptr);
+
+    // Zoom buttons
+    lv_obj_t* zoom_in = lv_btn_create(scr);
+    lv_obj_set_size(zoom_in, 32, 32);
+    lv_obj_align(zoom_in, LV_ALIGN_BOTTOM_RIGHT, -8, -8);
+    lv_obj_set_style_bg_color(zoom_in, lv_color_hex(ACCENT), 0);
+    lv_obj_set_style_radius(zoom_in, 16, 0);
+    lv_obj_t* zi = lv_label_create(zoom_in);
+    lv_label_set_text(zi, "+");
+    lv_obj_center(zi);
+    lv_obj_add_event_cb(zoom_in, [](lv_event_t*) {
+        slopos_map_zoom_in();
+    }, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t* zoom_out = lv_btn_create(scr);
+    lv_obj_set_size(zoom_out, 32, 32);
+    lv_obj_align(zoom_out, LV_ALIGN_BOTTOM_RIGHT, -8, -44);
+    lv_obj_set_style_bg_color(zoom_out, lv_color_hex(BG_TERTIARY), 0);
+    lv_obj_set_style_radius(zoom_out, 16, 0);
+    lv_obj_t* zo = lv_label_create(zoom_out);
+    lv_label_set_text(zo, "-");
+    lv_obj_center(zo);
+    lv_obj_add_event_cb(zoom_out, [](lv_event_t*) {
+        slopos_map_zoom_out();
+    }, LV_EVENT_CLICKED, nullptr);
 
     show_screen(scr);
 }

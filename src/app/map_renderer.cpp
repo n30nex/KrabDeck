@@ -23,18 +23,22 @@
 #include <lvgl.h>
 #include <cmath>
 #include <cstdio>
+#include <SD.h>
+
+#ifdef ESP32_PLATFORM
+#include <esp32/rom/tjpgd.h>
+#endif
 
 // ── Constants ─────────────────────────────────────────────
-static constexpr int TILE_SIZE    = 256;   // standard tile size
+static constexpr int TILE_SIZE    = 256;   // standard tile size (pixels)
 static constexpr int MAX_ZOOM     = 18;
 static constexpr int MIN_ZOOM     = 0;
 static constexpr double MAX_LAT   = 85.0511;
 static constexpr double MIN_LAT   = -85.0511;
 static constexpr double MAX_LON   = 180.0;
 static constexpr double MIN_LON   = -180.0;
-static constexpr double PI        = 3.14159265358979323846;
 
-// ── State ─────────────────────────────────────────────────
+// Note: PI is defined by Arduino.h as a macro
 static lv_obj_t* map_canvas = nullptr;
 static lv_draw_buf_t draw_buf;
 static uint8_t*   canvas_pixels = nullptr;
@@ -43,6 +47,11 @@ static double center_lat = 51.5074;  // London
 static double center_lon = -0.1278;
 static int    zoom_level = 10;
 static bool   initialized = false;
+
+// ── JPEG tile decode buffer (PSRAM on ESP32) ──────────────
+static uint16_t* tile_rgb565 = nullptr;  // 256×256×2 = 131KB
+static uint8_t*  jpeg_inbuf  = nullptr;  // input buffer (~32KB typical JPEG)
+static JDEC       jdec;
 
 // ── Web Mercator helpers ──────────────────────────────────
 static double lon_to_tile_x(double lon, int z) {
@@ -78,6 +87,133 @@ static double clamp_d(double val, double lo, double hi) {
     return val;
 }
 
+// ── JPEG decode helpers (TJpgDec callbacks) ───────────────
+
+struct JpegInputCtx {
+    File file;
+    size_t total;
+};
+
+static UINT jpeg_input_func(JDEC* jd, BYTE* buf, UINT nbytes) {
+    JpegInputCtx* ctx = (JpegInputCtx*)jd->device;
+    if (!ctx || !ctx->file) return 0;
+    if (buf) {
+        return (UINT)ctx->file.read(buf, nbytes);
+    } else {
+        // Seek: skip nbytes
+        ctx->file.seek(ctx->file.position() + nbytes);
+        return nbytes;
+    }
+}
+
+static UINT jpeg_output_func(JDEC* jd, void* bitmap, JRECT* rect) {
+    // bitmap points to RGB565 pixel data for the rectangle
+    // Store into our tile_rgb565 buffer
+    uint16_t* src = (uint16_t*)bitmap;
+    uint16_t* dst = tile_rgb565;
+    for (int y = rect->top; y <= rect->bottom; y++) {
+        for (int x = rect->left; x <= rect->right; x++) {
+            dst[y * TILE_SIZE + x] = *src++;
+        }
+    }
+    return 1;  // continue
+}
+
+// ── Tile loading ──────────────────────────────────────────
+
+static bool load_tile_jpeg(int zoom, int tx, int ty) {
+    if (!tile_rgb565 || !jpeg_inbuf) return false;
+
+    // Try .jpg first, then .png fallback
+    char path[64];
+    snprintf(path, sizeof(path), "/maps/%d/%d/%d.jpg", zoom, tx, ty);
+
+    if (!SD.exists(path)) {
+        // Try alternate filename (some tools use different naming)
+        snprintf(path, sizeof(path), "/maps/%d/%d/%d.jpeg", zoom, tx, ty);
+        if (!SD.exists(path)) return false;
+    }
+
+    JpegInputCtx ctx;
+    ctx.file = SD.open(path, FILE_READ);
+    if (!ctx.file) return false;
+    ctx.total = ctx.file.size();
+
+    // Prepare JPEG decoder
+    JRESULT rc = jd_prepare(&jdec, jpeg_input_func, jpeg_inbuf, 4096, &ctx);
+    if (rc != JDR_OK) {
+        ctx.file.close();
+        return false;
+    }
+
+    // Decode to tile_rgb565
+    rc = jd_decomp(&jdec, jpeg_output_func, 0);  // scale=0 (full size)
+    ctx.file.close();
+
+    return (rc == JDR_OK);
+}
+
+// ── Draw tile to LVGL layer ───────────────────────────────
+
+static void draw_tile_pixels(lv_layer_t* layer, int screen_x, int screen_y,
+                              int tile_w, int tile_h,
+                              int src_x, int src_y, int src_w, int src_h) {
+    if (!tile_rgb565) return;
+
+    // Clamp to screen bounds
+    int x1 = screen_x;
+    int y1 = screen_y;
+    int x2 = screen_x + tile_w - 1;
+    int y2 = screen_y + tile_h - 1;
+
+    if (x1 < 0) { src_x -= x1; src_w += x1; x1 = 0; }
+    if (y1 < 0) { src_y -= y1; src_h += y1; y1 = 0; }
+    if (x2 >= TFT_WIDTH)  { src_w -= (x2 - TFT_WIDTH + 1);  x2 = TFT_WIDTH - 1; }
+    if (y2 >= TFT_HEIGHT) { src_h -= (y2 - TFT_HEIGHT + 1); y2 = TFT_HEIGHT - 1; }
+    if (src_w <= 0 || src_h <= 0) return;
+    if (src_x < 0) src_x = 0;
+    if (src_y < 0) src_y = 0;
+
+    // Draw pixel by pixel through LVGL image descriptor
+    // For each row, draw as a horizontal line of pixels
+    lv_draw_image_dsc_t img_dsc;
+    lv_draw_image_dsc_init(&img_dsc);
+    img_dsc.opa = LV_OPA_COVER;
+
+    lv_area_t area;
+    area.x1 = x1;
+    area.y1 = y1;
+    area.x2 = x2;
+    area.y2 = y2;
+
+    // Create a temporary image buffer for the visible portion
+    size_t px_count = (size_t)(area.x2 - area.x1 + 1) * (area.y2 - area.y1 + 1);
+    size_t buf_size = px_count * 2;  // RGB565 = 2 bytes/pixel
+
+    uint16_t* img_buf = (uint16_t*)lv_malloc(buf_size);
+    if (!img_buf) return;
+
+    // Copy visible pixels from tile buffer
+    int idx = 0;
+    for (int y = src_y; y < src_y + src_h; y++) {
+        for (int x = src_x; x < src_x + src_w; x++) {
+            img_buf[idx++] = tile_rgb565[y * TILE_SIZE + x];
+        }
+    }
+
+    lv_image_dsc_t img;
+    img.header.w = (uint32_t)(src_w);
+    img.header.h = (uint32_t)(src_h);
+    img.header.stride = (uint32_t)(src_w * 2);
+    img.header.cf = LV_COLOR_FORMAT_RGB565;
+    img.data = (const uint8_t*)img_buf;
+    img.data_size = (uint32_t)buf_size;
+
+    lv_draw_image(layer, &img_dsc, &area);
+
+    lv_free(img_buf);
+}
+
 // ════════════════════════════════════════════════════════
 // PUBLIC API
 // ════════════════════════════════════════════════════════
@@ -96,6 +232,10 @@ void slopos_map_init() {
         lv_canvas_set_buffer(map_canvas, canvas_pixels,
                              TFT_WIDTH, TFT_HEIGHT, LV_COLOR_FORMAT_RGB565);
     }
+
+    // Allocate JPEG tile decode buffers (use PSRAM if available)
+    tile_rgb565 = (uint16_t*)lv_malloc(TILE_SIZE * TILE_SIZE * 2);  // 131KB
+    jpeg_inbuf  = (uint8_t*)lv_malloc(4096);  // 4KB input buffer
 
     initialized = true;
 }
@@ -134,74 +274,83 @@ void slopos_map_render() {
     double center_tx = lon_to_tile_x(center_lon, zoom_level);
     double center_ty = lat_to_tile_y(center_lat, zoom_level);
 
-    // Tile offset in pixels from center
     double px_per_tile = TILE_SIZE;
-    int tiles_across = 1 + TFT_WIDTH / TILE_SIZE + 1;  // +1 for partial tiles
+    int tiles_across = 1 + TFT_WIDTH / TILE_SIZE + 1;
     int tiles_down   = 1 + TFT_HEIGHT / TILE_SIZE + 1;
 
     int center_px = TFT_WIDTH / 2;
     int center_py = TFT_HEIGHT / 2;
+
+    bool any_tile_loaded = false;
 
     for (int ty = -1; ty <= tiles_down; ty++) {
         for (int tx = -1; tx <= tiles_across; tx++) {
             int tile_x = (int)(center_tx + tx);
             int tile_y = (int)(center_ty + ty);
 
+            // Clamp tile coordinates to valid range
+            int n = 1 << zoom_level;
+            if (tile_x < 0 || tile_x >= n || tile_y < 0 || tile_y >= n) continue;
+
             int screen_x = (int)(center_px + (tx * px_per_tile) -
                                  (center_tx - (int)center_tx) * px_per_tile);
             int screen_y = (int)(center_py + (ty * px_per_tile) -
                                  (center_ty - (int)center_ty) * px_per_tile);
 
-            // Skip if off-screen
-            if (screen_x + (int)px_per_tile < 0 || screen_x > TFT_WIDTH ||
-                screen_y + (int)px_per_tile < 0 || screen_y > TFT_HEIGHT) {
+            // Skip if completely off-screen
+            if (screen_x + TILE_SIZE < 0 || screen_x > TFT_WIDTH ||
+                screen_y + TILE_SIZE < 0 || screen_y > TFT_HEIGHT) {
                 continue;
             }
 
-            // Try to load tile from SD card
-            char path[64];
-            snprintf(path, sizeof(path), "/maps/%d/%d/%d.png",
-                     zoom_level, tile_x, tile_y);
+            // Try to load and render the JPEG tile
+            if (slopos_sdcard_mounted() && load_tile_jpeg(zoom_level, tile_x, tile_y)) {
+                draw_tile_pixels(&layer, screen_x, screen_y,
+                                 TILE_SIZE, TILE_SIZE, 0, 0, TILE_SIZE, TILE_SIZE);
+                any_tile_loaded = true;
+            } else {
+                // Fallback: placeholder grid
+                lv_draw_rect_dsc_t rect_dsc;
+                lv_draw_rect_dsc_init(&rect_dsc);
+                rect_dsc.bg_color = lv_color_hex(
+                    ((tile_x + tile_y) & 1) ? 0x1a1a2e : 0x16213e);
+                rect_dsc.bg_opa = LV_OPA_COVER;
+                rect_dsc.radius = 0;
 
-            // Draw tile placeholder (grid with coordinates)
-            lv_draw_rect_dsc_t rect_dsc;
-            lv_draw_rect_dsc_init(&rect_dsc);
-            rect_dsc.bg_color = lv_color_hex(
-                ((tile_x + tile_y) & 1) ? 0x1a1a2e : 0x16213e);
-            rect_dsc.bg_opa = LV_OPA_COVER;
-            rect_dsc.radius = 0;
+                lv_area_t area;
+                area.x1 = screen_x;
+                area.y1 = screen_y;
+                area.x2 = screen_x + TILE_SIZE - 1;
+                area.y2 = screen_y + TILE_SIZE - 1;
 
-            lv_area_t area;
-            area.x1 = screen_x;
-            area.y1 = screen_y;
-            area.x2 = screen_x + (int)px_per_tile - 1;
-            area.y2 = screen_y + (int)px_per_tile - 1;
-
-            lv_draw_rect(&layer, &rect_dsc, &area);
-
-            // Tile coordinate label
-            char label[16];
-            snprintf(label, sizeof(label), "%d/%d", tile_x, tile_y);
-            lv_draw_label_dsc_t label_dsc;
-            lv_draw_label_dsc_init(&label_dsc);
-            label_dsc.color = lv_color_hex(0x5c6067);
-            label_dsc.text = label;
-            label_dsc.text_local = true;
-
-            lv_area_t label_area;
-            label_area.x1 = screen_x + 4;
-            label_area.y1 = screen_y + (int)px_per_tile / 2 - 8;
-            label_area.x2 = screen_x + (int)px_per_tile - 1;
-            label_area.y2 = screen_y + (int)px_per_tile - 1;
-
-            lv_draw_label(&layer, &label_dsc, &label_area);
+                lv_draw_rect(&layer, &rect_dsc, &area);
+            }
         }
+    }
+
+    // If no tiles loaded at all, show status message
+    if (!any_tile_loaded) {
+        lv_draw_label_dsc_t label_dsc;
+        lv_draw_label_dsc_init(&label_dsc);
+        label_dsc.color = lv_color_hex(0x8e9297);
+        label_dsc.text = slopos_sdcard_mounted() ?
+            "No map tiles found\nCopy maps/ folder\nto SD card root" :
+            "No SD card\nInsert SD card with\nmaps/ folder";
+        label_dsc.text_local = true;
+
+        lv_area_t label_area;
+        label_area.x1 = 20;
+        label_area.y1 = TFT_HEIGHT / 2 - 24;
+        label_area.x2 = TFT_WIDTH - 20;
+        label_area.y2 = TFT_HEIGHT / 2 + 24;
+
+        lv_draw_label(&layer, &label_dsc, &label_area);
     }
 
     // ── Center crosshair ──────────────────────────────
     lv_draw_line_dsc_t line_dsc;
     lv_draw_line_dsc_init(&line_dsc);
-    line_dsc.color = lv_color_hex(0x5865f2); // blurple
+    line_dsc.color = lv_color_hex(0x5865f2);
     line_dsc.width = 1;
     line_dsc.opa = LV_OPA_50;
 
@@ -216,7 +365,13 @@ void slopos_map_render() {
 }
 
 bool slopos_map_tiles_available() {
-    return slopos_sdcard_mounted();
+    if (!slopos_sdcard_mounted()) return false;
+    // Check for at least one tile at current zoom
+    int tx = (int)lon_to_tile_x(center_lon, zoom_level);
+    int ty = (int)lat_to_tile_y(center_lat, zoom_level);
+    char path[64];
+    snprintf(path, sizeof(path), "/maps/%d/%d/%d.jpg", zoom_level, tx, ty);
+    return SD.exists(path);
 }
 
 void slopos_map_pixel_to_latlon(int px, int py, double* out_lat, double* out_lon) {

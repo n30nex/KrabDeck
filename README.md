@@ -96,29 +96,104 @@ slopos-tdeck/
 
 ### Prerequisites
 - [PlatformIO](https://platformio.org/) (VS Code extension or CLI)
-- LilyGo T-Deck
+- LilyGo T-Deck with USB-C cable
+
+### Windows Setup
+
+Install everything from a PowerShell terminal:
+
+```powershell
+# 1. Git
+winget install Git.Git
+
+# 2. Python 3.12
+winget install Python.Python.3.12
+
+# 3. PlatformIO CLI
+pip install platformio
+
+# 4. CP210x USB driver (for T-Deck USB-to-UART)
+# Download from: https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers
+# Unzip → right-click silabser.inf → Install
+#
+# Verify: Device Manager → Ports (COM & LPT) → "Silicon Labs CP210x USB to UART Bridge"
+```
+
+Restart your terminal after installing Python, then verify:
+
+```powershell
+git --version
+python --version
+pio --version
+```
+
+### Linux Setup
+
+```bash
+# Ubuntu/Debian
+sudo apt install git python3 python3-pip
+pip install platformio
+
+# Arch
+sudo pacman -S git python python-pip
+pip install platformio
+```
+
+No USB driver needed on Linux — the CP210x kernel module ships with the kernel.
+
+### macOS Setup
+
+```bash
+# Homebrew
+brew install git python platformio
+```
+
+No USB driver needed on macOS — the CP210x driver is built into the OS.
 
 ### Clone with submodule
+
 ```bash
 git clone --recurse-submodules https://github.com/hermes-gadget/slopos-tdeck.git
 cd slopos-tdeck
 ```
 
+If `lib/meshcore/` is empty after clone, run:
+
+```bash
+git submodule update --init --recursive
+```
+
 ### Build
+
 ```bash
 pio run -e SlopOS_TDeck
 ```
 
+First build downloads the ESP32-S3 toolchain (~800 MB). Subsequent builds are fast.
+
 ### Flash
+
+Put the T-Deck in download mode: **hold the trackball button while plugging in USB** (or hold BOOT + tap RESET). The screen stays black — that's correct.
+
 ```bash
-# Put T-Deck in DFU mode (hold trackball while powering on)
 pio run -e SlopOS_TDeck -t upload
 ```
 
 ### Monitor
+
 ```bash
 pio device monitor -b 115200
 ```
+
+### Sanity Check
+
+After cloning, these files must exist or the build will fail:
+
+| File | Purpose |
+|------|---------|
+| `boards/t-deck.json` | Board definition (16 MB flash, QIO, ESP32-S3) |
+| `lib/meshcore/src/Mesh.h` | MeshCore submodule (must not be empty) |
+| `platformio.ini` | Build configuration |
 
 ## License
 

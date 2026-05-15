@@ -75,6 +75,7 @@ public:
             cfg.pwm_channel = 0;
             _light.config(cfg);
         }
+        _panel.setLight(&_light);
         setPanel(&_panel);
     }
 };
@@ -143,6 +144,7 @@ bool slopos_display_init()
     tft.fillScreen(TFT_BLACK);
 
     lv_init();
+    lv_tick_set_cb(slopos_display_millis);
     lv_disp = lv_display_create(TFT_WIDTH, TFT_HEIGHT);
     lv_display_set_flush_cb(lv_disp, lvgl_flush_cb);
     lv_display_set_buffers(lv_disp, draw_buf, nullptr, sizeof(draw_buf),

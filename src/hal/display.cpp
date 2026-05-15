@@ -56,15 +56,15 @@ public:
             auto cfg = _panel.config();
             cfg.pin_cs    = PIN_TFT_CS;
             cfg.pin_rst   = PIN_TFT_RST;
-            cfg.panel_width  = TFT_WIDTH;
-            cfg.panel_height = TFT_HEIGHT;
+            cfg.panel_width  = 240;   // ST7789 native portrait
+            cfg.panel_height = 320;
             cfg.offset_x  = 0;
             cfg.offset_y  = 0;
             cfg.offset_rotation = 0;
             cfg.invert    = true;
             cfg.rgb_order = false;
-            cfg.memory_width  = 320;
-            cfg.memory_height = 240;
+            cfg.memory_width  = 240;  // must match native portrait
+            cfg.memory_height = 320;
             _panel.config(cfg);
         }
         {
@@ -139,7 +139,7 @@ static void lvgl_kb_cb(lv_indev_t* indev, lv_indev_data_t* data)
 bool slopos_display_init()
 {
     tft.init();
-    tft.setRotation(0);
+    tft.setRotation(1);  // 90° CW: native portrait (240×320) → landscape (320×240)
     tft.setBrightness(255);
     tft.fillScreen(TFT_BLACK);
 

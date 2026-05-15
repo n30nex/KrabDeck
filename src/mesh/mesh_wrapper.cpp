@@ -97,8 +97,12 @@ static void saveIdentity(::mesh::LocalIdentity& id) {
     size_t len = id.writeTo(buf, sizeof(buf));
     File f = SPIFFS.open("/mesh_id", "w");
     if (!f) return;
-    f.write(buf, len);
+    size_t written = f.write(buf, len);
     f.close();
+    if (written != len) {
+        // Partial write — file may be corrupted, remove it
+        SPIFFS.remove("/mesh_id");
+    }
 }
 
 // ════════════════════════════════════════════════════

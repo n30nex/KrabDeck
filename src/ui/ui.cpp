@@ -78,14 +78,9 @@ void loop()
 {
     // Transition from splash to home after 2 seconds
     if (!home_shown && (millis() - splash_start > 2000)) {
-        home_screen_create();
-        lv_scr_load_anim(lv_scr_act(), LV_SCR_LOAD_ANIM_FADE_ON, 300, 0, false);
+        home_screen_create();   // creates new screen, animates, deletes old
         home_shown = true;
-
-        if (splash_scr) {
-            lv_obj_del(splash_scr);
-            splash_scr = nullptr;
-        }
+        splash_scr = nullptr;   // old screen already deleted by home_screen_create()
     }
 
     // Periodic status bar updates (every 30s)

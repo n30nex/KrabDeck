@@ -82,7 +82,7 @@ bool slopos_keyboard_init()
 
     // Probe the keyboard MCU — request 1 byte, should ACK
     Wire.requestFrom(KB_I2C_ADDR, (uint8_t)1);
-    if (Wire.read() == -1) {
+    if (Wire.available() == 0 || Wire.read() == -1) {
         // Keyboard MCU not responding — may need firmware flash or
         // peripheral power not enabled
         return false;
@@ -189,7 +189,9 @@ void slopos_keyboard_set_brightness(uint8_t duty)
     Wire.beginTransmission(KB_I2C_ADDR);
     Wire.write(CMD_BRIGHTNESS);
     Wire.write(duty);
-    Wire.endTransmission();
+    if (Wire.endTransmission() != 0) {
+        // Non-critical: backlight brightness update failed, device still usable
+    }
 }
 
 void slopos_keyboard_set_default_brightness(uint8_t duty)
@@ -198,7 +200,9 @@ void slopos_keyboard_set_default_brightness(uint8_t duty)
     Wire.beginTransmission(KB_I2C_ADDR);
     Wire.write(CMD_DEFAULT_BRIGHTNESS);
     Wire.write(duty);
-    Wire.endTransmission();
+    if (Wire.endTransmission() != 0) {
+        // Non-critical: default brightness update failed, device still usable
+    }
 }
 
 void slopos_keyboard_reset_scan_state()

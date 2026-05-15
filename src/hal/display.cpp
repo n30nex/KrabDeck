@@ -167,7 +167,9 @@ bool slopos_display_init()
     }
 
     // Initialize keyboard matrix scanner
-    slopos_keyboard_init();
+    if (!slopos_keyboard_init()) {
+        // Keyboard init failed — device works with touch only
+    }
 
     display_on = true;
     reset_auto_off();

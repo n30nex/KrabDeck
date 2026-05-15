@@ -54,8 +54,8 @@
 #define TOUCH_I2C_ADDR  0x5D
 #define TOUCH_MAX_X     TFT_WIDTH
 #define TOUCH_MAX_Y     TFT_HEIGHT
-#define TOUCH_SWAP_XY    true
-#define TOUCH_MIRROR_X   false
+#define TOUCH_SWAP_XY    false   // rotation(1) handles axis mapping
+#define TOUCH_MIRROR_X   true    // physical X→Y flip for 90°CW rotation
 #define TOUCH_MIRROR_Y   false
 
 // ── I2C bus aliases (shared with touch) ──────────────────
@@ -119,4 +119,4 @@
 #define P_LORA_MOSI   PIN_LORA_MOSI
 
 // Firmware version — displayed in Settings > About
-#define SLOPOS_VERSION  "beta-0.1.18"
+#define SLOPOS_VERSION  "beta-0.1.19"

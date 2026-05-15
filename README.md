@@ -224,7 +224,7 @@ See [`firmware/README.md`](firmware/README.md) for details.
 
 | Issue | Workaround |
 |-------|------------|
-| **Touch calibration may be off** after orientation fix (beta-0.1.18) | Report coordinates on serial — calibration in progress |
+| **Touch calibration may be off** after orientation fix (beta-0.1.18) | Fixed in beta-0.1.19 — touch now matches display rotation |
 | **Radio requires first-boot NVS init** (beta-0.1.17 fixed this) | Fixed: uses compile-time defaults on clean devices |
 | **No SD card = expected warning** | Normal — `[boot] INFO: No SD card detected` is not an error |
 | **GPS requires external antenna** | No fix yet — T-Deck GPS is weak without active antenna |

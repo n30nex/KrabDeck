@@ -38,9 +38,10 @@ static lv_obj_t* signal_label = nullptr;
 
 static constexpr int GRID_COLS = 3;
 static constexpr int GRID_ROWS = 4;
-static constexpr int TOP_BAR_H = 24;
+static constexpr int TOP_BAR_H = 22;
 static constexpr int BOT_BAR_H = 20;
-static constexpr int GRID_PAD = 4;
+static constexpr int GRID_PAD = 3;
+static constexpr int DIVIDER_H = 1;
 
 struct IconDef {
     const char* label;
@@ -50,18 +51,18 @@ struct IconDef {
 };
 
 static const IconDef icons[] = {
-    {"Chat",       "\xF0\x9F\x92\xAC", true,  Screen::Chat},       // 💬
-    {"Contacts",   "\xF0\x9F\x91\xA5", false, Screen::Contacts},   // 👥
-    {"Channels",   "\xF0\x9F\x93\xA1", false, Screen::Channels},  // 📡
-    {"Network",    "\xF0\x9F\x8C\x90", false, Screen::Network},   // 🌐
-    {"Heard",      "\xF0\x9F\x91\x82", false, Screen::Heard},      // 👂
-    {"Map",        "\xF0\x9F\x97\xBA", false, Screen::Map},        // 🗺
-    {"Advertise",  "\xF0\x9F\x93\xA2", false, Screen::Advertise},  // 📢
-    {"Settings",   "\xE2\x9A\x99",      false, Screen::Settings},  // ⚙
-    {"Trace",      "\xF0\x9F\x93\x8D", false, Screen::Trace},      // 📍
-    {"Terminal",   "\xF0\x9F\x92\xBB", false, Screen::Terminal},   // 💻
-    {"Noise",      "\xF0\x9F\x93\x8A", false, Screen::Noise},      // 📊
-    {"Signal",     "\xF0\x9F\x93\xB6", false, Screen::Signal},     // 📶
+    {"CHAT",       "\xF0\x9F\x92\xAC", true,  Screen::Chat},       // 💬
+    {"CONTACTS",   "\xF0\x9F\x91\xA4", false, Screen::Contacts},   // 👤
+    {"REPEATERS",  "\xF0\x9F\x93\xA1", false, Screen::Channels},   // 📡
+    {"FINDER",     "\xF0\x9F\x94\x8D", false, Screen::Network},    // 🔍
+    {"HEARD",      "\xF0\x9F\x91\x82", false, Screen::Heard},      // 👂
+    {"MAP",        "\xF0\x9F\x93\x8D", false, Screen::Map},        // 📍
+    {"ADVERTISE",  "\xF0\x9F\x93\xA2", false, Screen::Advertise},  // 📢
+    {"SETTINGS",   "\xE2\x9A\x99",     false, Screen::Settings},   // ⚙
+    {"TRACE",      "\xF0\x9F\x91\xA3", false, Screen::Trace},      // 👣
+    {"TERMINAL",   "\xF0\x9F\x92\xBB", false, Screen::Terminal},   // 💻
+    {"NOISE",      "\xF0\x9F\x93\x8A", false, Screen::Noise},      // 📊
+    {"SIGNAL",     "\xF0\x9F\x93\xB6", false, Screen::Signal},     // 📶
 };
 
 // ── Icon click handler ──────────────────────────────────
@@ -101,6 +102,14 @@ static void create_top_bar()
     lv_obj_set_style_text_color(time_label, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(time_label, &lv_font_montserrat_14, 0);
     lv_obj_align(time_label, LV_ALIGN_RIGHT_MID, -4, 0);
+
+    // Subtle divider at bottom of top bar
+    lv_obj_t* div = lv_obj_create(scr);
+    lv_obj_set_size(div, LV_PCT(100), DIVIDER_H);
+    lv_obj_align(div, LV_ALIGN_TOP_MID, 0, TOP_BAR_H);
+    lv_obj_set_style_bg_color(div, lv_color_hex(0x2a2a2a), 0);
+    lv_obj_set_style_bg_opa(div, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(div, 0, 0);
 }
 
 // ── Bottom bar ──────────────────────────────────────────
@@ -122,15 +131,23 @@ static void create_bottom_bar()
 
     signal_label = lv_label_create(bottom_bar);
     lv_label_set_text(signal_label, "▂▄▆█");
-    lv_obj_set_style_text_color(signal_label, lv_color_hex(ACCENT_GREEN), 0);
+    lv_obj_set_style_text_color(signal_label, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_text_font(signal_label, &lv_font_montserrat_12, 0);
     lv_obj_align(signal_label, LV_ALIGN_CENTER, -20, 0);
 
     batt_label = lv_label_create(bottom_bar);
     lv_label_set_text(batt_label, "85%");
-    lv_obj_set_style_text_color(batt_label, lv_color_hex(ACCENT_GREEN), 0);
+    lv_obj_set_style_text_color(batt_label, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_text_font(batt_label, &lv_font_montserrat_12, 0);
     lv_obj_align(batt_label, LV_ALIGN_RIGHT_MID, -4, 0);
+
+    // Subtle divider at top of bottom bar
+    lv_obj_t* div = lv_obj_create(scr);
+    lv_obj_set_size(div, LV_PCT(100), DIVIDER_H);
+    lv_obj_align(div, LV_ALIGN_TOP_MID, 0, TFT_HEIGHT - BOT_BAR_H - DIVIDER_H);
+    lv_obj_set_style_bg_color(div, lv_color_hex(0x2a2a2a), 0);
+    lv_obj_set_style_bg_opa(div, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(div, 0, 0);
 }
 
 // ── Create a single icon tile ───────────────────────────
@@ -147,16 +164,16 @@ static lv_obj_t* create_icon_tile(lv_obj_t* parent, const IconDef& icon, int idx
     lv_obj_add_flag(tile, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(tile, on_icon_click, LV_EVENT_CLICKED, (void*)(intptr_t)idx);
 
-    lv_obj_t* emoji = lv_label_create(tile);
-    lv_label_set_text(emoji, icon.emoji);
-    lv_obj_set_style_text_font(emoji, &lv_font_montserrat_24, 0);
-    lv_obj_align(emoji, LV_ALIGN_CENTER, 0, -8);
+    lv_obj_t* icon_label = lv_label_create(tile);
+    lv_label_set_text(icon_label, icon.emoji);
+    lv_obj_set_style_text_font(icon_label, &lv_font_montserrat_20, 0);
+    lv_obj_align(icon_label, LV_ALIGN_CENTER, 0, -6);
 
     lv_obj_t* label = lv_label_create(tile);
     lv_label_set_text(label, icon.label);
     lv_obj_set_style_text_color(label, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_12, 0);
-    lv_obj_align(label, LV_ALIGN_BOTTOM_MID, 0, -4);
+    lv_obj_align(label, LV_ALIGN_BOTTOM_MID, 0, -2);
 
     if (icon.badge) {
         lv_obj_t* badge = lv_obj_create(tile);
@@ -174,18 +191,21 @@ static lv_obj_t* create_icon_tile(lv_obj_t* parent, const IconDef& icon, int idx
 // ── 3x4 Grid ────────────────────────────────────────────
 static void create_icon_grid()
 {
+    int grid_h = TFT_HEIGHT - TOP_BAR_H - DIVIDER_H - BOT_BAR_H - DIVIDER_H;
+
     grid = lv_obj_create(scr);
     lv_obj_set_style_bg_opa(grid, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(grid, 0, 0);
     lv_obj_set_style_pad_all(grid, GRID_PAD, 0);
-    lv_obj_set_size(grid, LV_PCT(100), TFT_HEIGHT - TOP_BAR_H - BOT_BAR_H);
-    lv_obj_align(grid, LV_ALIGN_TOP_MID, 0, TOP_BAR_H);
+    lv_obj_set_size(grid, LV_PCT(100), grid_h);
+    lv_obj_align(grid, LV_ALIGN_TOP_MID, 0, TOP_BAR_H + DIVIDER_H);
     lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(grid, LV_FLEX_ALIGN_SPACE_EVENLY,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_scroll_dir(grid, LV_DIR_NONE);  // no scrolling — must fit one page
 
-    int gw = TFT_WIDTH - (GRID_PAD * (GRID_COLS + 1));
-    int gh = (TFT_HEIGHT - TOP_BAR_H - BOT_BAR_H) - (GRID_PAD * (GRID_ROWS + 1));
+    int gw = TFT_WIDTH - (GRID_PAD * 2) - (GRID_PAD * (GRID_COLS - 1));
+    int gh = grid_h - (GRID_PAD * 2) - (GRID_PAD * (GRID_ROWS - 1));
     int tw = gw / GRID_COLS;
     int th = gh / GRID_ROWS;
 
@@ -223,7 +243,7 @@ void home_screen_update_battery(int pct)
     snprintf(buf, sizeof(buf), "%d%%", pct);
     lv_label_set_text(batt_label, buf);
     lv_obj_set_style_text_color(batt_label,
-        pct > 20 ? lv_color_hex(ACCENT_GREEN) : lv_color_hex(ACCENT_RED), 0);
+        pct > 20 ? lv_color_hex(ACCENT) : lv_color_hex(ACCENT_RED), 0);
 }
 
 void home_screen_update_time(const char* time_str)

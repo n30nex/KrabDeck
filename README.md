@@ -153,8 +153,8 @@ No USB driver needed on macOS — the CP210x driver is built into the OS.
 ### Clone with submodule
 
 ```bash
-git clone --recurse-submodules https://github.com/hermes-gadget/SlopOS-TDeck.git
-cd SlopOS-TDeck
+git clone --recurse-submodules https://github.com/hermes-gadget/SlopOS-tdeck.git
+cd SlopOS-tdeck
 ```
 
 If `lib/meshcore/` is empty after clone, run:

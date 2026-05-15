@@ -128,7 +128,20 @@ bool init()
         return false;
     }
 
+    // ── SX1262 hard reset: radio may retain state across ESP32 reboots.
+    //     If BUSY pin is stuck HIGH from a previous crash, std_init() hangs
+    //     in waitForBusyPin() → watchdog reset → infinite bootloop.
+    //     Solution: assert RST LOW for 100µs, release, wait 10ms for TCXO.
+    Serial.println("[mesh] hard-resetting SX1262 via RST pin...");
+    pinMode(P_LORA_RESET, OUTPUT);
+    digitalWrite(P_LORA_RESET, LOW);
+    delayMicroseconds(100);
+    digitalWrite(P_LORA_RESET, HIGH);
+    delay(10);  // TCXO stabilization + radio calibration
+
+    Serial.println("[mesh] initializing LoRa SPI bus...");
     lora_spi.begin(P_LORA_SCLK, P_LORA_MISO, P_LORA_MOSI);
+    Serial.println("[mesh] calling radio_module.std_init()...");
     if (!radio_module.std_init(&lora_spi)) {
         Serial.println("[mesh] ERROR: Radio init failed");
         return false;

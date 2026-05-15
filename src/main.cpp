@@ -57,6 +57,17 @@ void setup()
 
 void loop()
 {
+    // Low-battery auto-shutdown (matches MeshCore pattern)
+    static uint32_t last_batt_check = 0;
+    if (millis() - last_batt_check > 30000) {  // every 30s
+        last_batt_check = millis();
+        if (board.isBatteryCritical()) {
+            Serial.println("CRITICAL: Battery low — entering deep sleep");
+            board.sleep(0);  // sleep indefinitely until charged
+            return;
+        }
+    }
+
     slopos::mesh::loop();
     slopos_gps_loop();
     slopos_display_loop();

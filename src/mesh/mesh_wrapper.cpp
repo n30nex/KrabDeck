@@ -159,8 +159,16 @@ bool sendMessage(const char* dest, const char* text) {
     return g_mesh ? g_mesh->sendTextTo(dest, text) : false;
 }
 
-bool sendChannelMessage(const char* ch, const char* text) {
-    (void)ch; (void)text; return false;  // TODO: channels
+bool sendChannelMessage(const char* channel_name, const char* text) {
+    if (!g_mesh) return false;
+    // Find channel by name
+    for (int i = 0; i < g_mesh->getChannelCount(); i++) {
+        auto* ch = g_mesh->getChannel(i);
+        if (ch && strcmp(ch->name, channel_name) == 0) {
+            return g_mesh->sendGroupText(i, text);
+        }
+    }
+    return false;
 }
 
 // ── Message queue ───────────────────────────────
@@ -187,11 +195,41 @@ int exportContacts(char names[][32], int max) {
     return n;
 }
 
+// ContactInfo is declared in mesh_wrapper.h — exportContactsFull uses it
+
+int exportContactsFull(ContactInfo* out, int max) {
+    if (!g_mesh) return 0;
+    int n = 0;
+    for (int i = 0; i < g_mesh->getContactCount() && n < max; i++) {
+        auto* c = g_mesh->getContact(i);
+        if (c && c->name[0]) {
+            strncpy(out[n].name, c->name, 31);
+            out[n].name[31] = '\0';
+            out[n].rssi = c->last_rssi;
+            out[n].last_seen = c->last_seen;
+            n++;
+        }
+    }
+    return n;
+}
+
 // ── Channels ────────────────────────────────────
 
-int getChannelCount() { return 0; }
-int exportChannels(char names[][32], int max) { return 0; }
-bool addChannel(const char* name, const char* psk) { return false; }
+int getChannelCount() { return g_mesh ? g_mesh->getChannelCount() : 0; }
+
+int exportChannels(char names[][32], int max) {
+    if (!g_mesh) return 0;
+    int n = 0;
+    for (int i = 0; i < g_mesh->getChannelCount() && n < max; i++) {
+        auto* ch = g_mesh->getChannel(i);
+        if (ch) { strncpy(names[n], ch->name, 31); names[n][31] = '\0'; n++; }
+    }
+    return n;
+}
+
+bool addChannel(const char* name, const char* psk) {
+    return g_mesh ? g_mesh->addChannel(name, psk) : false;
+}
 
 // ── Identity ────────────────────────────────────
 

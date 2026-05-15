@@ -36,11 +36,16 @@ class TDeckBoard : public ESP32Board {
     uint8_t  _startup_reason;
     bool     _inhibit_sleep;
 
+    // Low-battery auto-shutdown (matches MeshCore's AUTO_SHUTDOWN_MILLIVOLTS pattern)
+    static constexpr uint16_t AUTO_SHUTDOWN_MV = 3200;   // 3.2V — critical battery level
+    bool _shutdown_pending = false;
+
 public:
     TDeckBoard() : _startup_reason(BD_STARTUP_NORMAL), _inhibit_sleep(false) {}
 
     void begin() {
         _startup_reason = BD_STARTUP_NORMAL;
+        _shutdown_pending = false;
 
         // Enable peripheral power
         pinMode(PIN_PERIPH_PWR, OUTPUT);
@@ -69,6 +74,17 @@ public:
             rtc_gpio_hold_dis((gpio_num_t)PIN_LORA_NSS);
             rtc_gpio_deinit((gpio_num_t)PIN_LORA_DIO1);
         }
+    }
+
+    // Returns true if battery is critically low and device should shut down
+    bool isBatteryCritical() {
+        if (_shutdown_pending) return true;
+        uint16_t mv = getBattMilliVolts();
+        if (mv > 0 && mv < AUTO_SHUTDOWN_MV) {
+            _shutdown_pending = true;
+            return true;
+        }
+        return false;
     }
 
     uint16_t getBattMilliVolts() override {

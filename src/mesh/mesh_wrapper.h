@@ -17,6 +17,12 @@ struct MeshMessage {
     bool is_self;
 };
 
+struct ContactInfo {
+    char name[32];
+    int  rssi;
+    uint32_t last_seen;
+};
+
 bool init();
 void loop();
 
@@ -28,6 +34,7 @@ int  pendingMessageCount();
 
 int  getContactCount();
 int  exportContacts(char names[][32], int max);
+int  exportContactsFull(ContactInfo* out, int max);
 
 int  getChannelCount();
 int  exportChannels(char names[][32], int max);

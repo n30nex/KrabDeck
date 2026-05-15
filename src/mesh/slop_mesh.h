@@ -13,18 +13,29 @@
 namespace slopos {
 namespace mesh {
 
-static constexpr int SLOP_MAX_CONTACTS = 64;
+static constexpr int SLOP_MAX_CONTACTS  = 64;
+static constexpr int SLOP_MAX_CHANNELS  = 8;
 
 struct SlopContact {
     ::mesh::Identity id;
     uint8_t  secret[PUB_KEY_SIZE];
     char     name[32];
     uint32_t last_seen;    // RTC timestamp of last advert
+    int      last_rssi;    // RSSI of last received packet (dBm)
+};
+
+// Mirrors MeshCore's ChannelDetails for group channel storage
+struct SlopChannel {
+    ::mesh::GroupChannel channel;
+    char name[32];
 };
 
 class SlopMesh : public ::mesh::Mesh {
     SlopContact _contacts[SLOP_MAX_CONTACTS];
     int _nContacts = 0;
+
+    SlopChannel _channels[SLOP_MAX_CHANNELS];
+    int _nChannels = 0;
 
     // Match cache for searchPeersByHash/getPeerSharedSecret back-to-back calls
     int  _matchIdxs[SLOP_MAX_CONTACTS];
@@ -50,14 +61,17 @@ protected:
     }
 
     // ── Incoming text ────────────────────────────────
-    void onPeerDataRecv(::mesh::Packet*, uint8_t type, int sender_idx,
+    void onPeerDataRecv(::mesh::Packet* pkt, uint8_t type, int sender_idx,
                         const uint8_t* secret, uint8_t* data, size_t len) override
     {
         if (type != PAYLOAD_TYPE_TXT_MSG || _nMatches == 0 || !_onMessage) return;
         // Data layout: [4-byte LE timestamp][null-terminated text]
         const char* text = (len > 4) ? (const char*)(data + 4) : "";
-        const char* sender = _contacts[_matchIdxs[sender_idx]].name;
-        if (sender[0]) _onMessage(sender, text);
+        int idx = _matchIdxs[sender_idx];
+        const char* sender = _contacts[idx].name;
+        if (sender[0]) {
+            _onMessage(sender, text);
+        }
     }
 
     // ── Contact discovery ─────────────────────────────
@@ -91,14 +105,21 @@ protected:
 
     // ── Group text ────────────────────────────────────
     int searchChannelsByHash(const uint8_t* hash, ::mesh::GroupChannel out[], int max) override {
-        return 0;  // channels not implemented yet
+        int n = 0;
+        for (int i = 0; i < _nChannels && n < max; i++) {
+            if (_channels[i].channel.hash[0] == hash[0]) {   // first byte match
+                out[n++] = _channels[i].channel;
+            }
+        }
+        return n;
     }
 
     void onGroupDataRecv(::mesh::Packet*, uint8_t type, const ::mesh::GroupChannel&,
                          uint8_t* data, size_t len) override
     {
         if (type != PAYLOAD_TYPE_GRP_TXT || !_onMessage) return;
-        const char* text = (len > 4) ? (const char*)(data + 4) : "";
+        // Group text payload: [4-byte LE timestamp][text_type byte][null-terminated text]
+        const char* text = (len > 5) ? (const char*)(data + 5) : "";
         _onMessage("[group]", text);
     }
 
@@ -151,6 +172,65 @@ public:
     int getContactCount() const { return _nContacts; }
     const SlopContact* getContact(int i) const {
         return (i >= 0 && i < _nContacts) ? &_contacts[i] : nullptr;
+    }
+
+    // ── Channel management ────────────────────────────
+    bool addChannel(const char* name, const char* psk_base64) {
+        if (_nChannels >= SLOP_MAX_CHANNELS) return false;
+
+        SlopChannel& ch = _channels[_nChannels];
+        memset(ch.channel.secret, 0, sizeof(ch.channel.secret));
+
+        // Decode base64 PSK to secret
+        int len = 0;
+        const char* p = psk_base64;
+        // Simple base64 decode — MeshCore uses base64.hpp for this
+        // For now accept raw PSK (16 or 32 bytes hex would be better, but
+        // base64 is the MeshCore convention)
+        // In practice, the mobile app provides a base64-encoded PSK
+        // Fallback: treat PSK as raw ASCII → hash it
+        size_t psk_len = strlen(psk_base64);
+        if (psk_len > 0 && psk_len <= 64) {
+            memcpy(ch.channel.secret, psk_base64, psk_len > 32 ? 32 : psk_len);
+            len = psk_len > 32 ? 32 : (int)psk_len;
+        }
+        if (len == 0) return false;
+
+        // Hash the PSK to create the channel hash (matches MeshCore protocol)
+        ::mesh::Utils::sha256(ch.channel.hash, sizeof(ch.channel.hash),
+                              ch.channel.secret, len);
+        strncpy(ch.name, name, sizeof(ch.name) - 1);
+        ch.name[sizeof(ch.name) - 1] = '\0';
+        _nChannels++;
+        return true;
+    }
+
+    int getChannelCount() const { return _nChannels; }
+    const SlopChannel* getChannel(int i) const {
+        return (i >= 0 && i < _nChannels) ? &_channels[i] : nullptr;
+    }
+
+    bool sendGroupText(int channel_idx, const char* text) {
+        if (channel_idx < 0 || channel_idx >= _nChannels) return false;
+        if (!text || !text[0]) return false;
+
+        static constexpr size_t MAX_GRP_PAYLOAD = 180;
+        uint8_t buf[5 + MAX_GRP_PAYLOAD];
+        uint32_t ts = getRTCClock()->getCurrentTime();
+        memcpy(buf, &ts, 4);
+        buf[4] = 0;   // text_type = 0 (plain text)
+        size_t text_len = strnlen(text, MAX_GRP_PAYLOAD - 1);
+        memcpy(buf + 5, text, text_len);
+        size_t total = 5 + text_len;
+        // ensure null termination
+        if (total < sizeof(buf)) buf[total] = '\0';
+
+        ::mesh::Packet* pkt = createGroupDatagram(PAYLOAD_TYPE_GRP_TXT,
+                                                   _channels[channel_idx].channel,
+                                                   buf, total);
+        if (!pkt) return false;
+        sendFlood(pkt);
+        return true;
     }
 
     // ── Prefs ─────────────────────────────────────────

@@ -25,6 +25,7 @@
 #include <Arduino.h>
 #include <lvgl.h>
 #include <cstdio>
+#include <cstring>
 
 namespace slopos::ui {
 
@@ -87,23 +88,22 @@ void heard_screen_show()
     lv_obj_set_style_border_width(list, 0, 0);
     lv_obj_set_style_text_color(list, lv_color_hex(TEXT_PRIMARY), 0);
 
-    // Sample nodes (in production: populate from mesh_wrapper)
-    struct { const char* name; int rssi; int ago; } nodes[] = {
-        {"Alice",       -72,  12},
-        {"Bob",         -85,  45},
-        {"Charlie",     -98, 120},
-        {"Repeater-01", -65,   3},
-        {"Dave",       -105, 300},
-        {"Eve",         -91,  60},
-        {"RoomServer",  -78,  15},
-    };
+    // Populate from live mesh contacts
+    slopos::mesh::ContactInfo contacts[32];
+    int n = slopos::mesh::exportContactsFull(contacts, 32);
 
-    char buf[80];
-    for (auto& n : nodes) {
-        snprintf(buf, sizeof(buf), "%s  %ddBm  %ds ago", n.name, n.rssi, n.ago);
-        lv_obj_t* item = lv_list_add_btn(list, nullptr, buf);
+    if (n == 0) {
+        lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_WARNING, "No nodes heard yet");
         lv_obj_set_style_bg_color(item, lv_color_hex(BG_TERTIARY), 0);
-        lv_obj_set_style_bg_opa(item, LV_OPA_30, 0);
+    } else {
+        char buf[80];
+        for (int i = 0; i < n; i++) {
+            auto& c = contacts[i];
+            snprintf(buf, sizeof(buf), "%s  %ddBm", c.name, c.rssi);
+            lv_obj_t* item = lv_list_add_btn(list, nullptr, buf);
+            lv_obj_set_style_bg_color(item, lv_color_hex(BG_TERTIARY), 0);
+            lv_obj_set_style_bg_opa(item, LV_OPA_30, 0);
+        }
     }
 
     show_screen(scr);
@@ -122,10 +122,18 @@ void contacts_screen_show()
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list, 0, 0);
 
-    const char* contacts[] = {"Alice", "Bob", "Charlie", "Repeater-01", "RoomServer"};
-    for (auto& c : contacts) {
-        lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_FILE, c);
+    // Populate from live mesh contacts
+    char names[32][32];
+    int n = slopos::mesh::exportContacts(names, 32);
+
+    if (n == 0) {
+        lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_WARNING, "No contacts discovered");
         lv_obj_set_style_bg_color(item, lv_color_hex(BG_TERTIARY), 0);
+    } else {
+        for (int i = 0; i < n; i++) {
+            lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_FILE, names[i]);
+            lv_obj_set_style_bg_color(item, lv_color_hex(BG_TERTIARY), 0);
+        }
     }
 
     show_screen(scr);
@@ -257,19 +265,32 @@ void settings_screen_show()
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list, 0, 0);
 
-    const char* items[] = {
-        LV_SYMBOL_SETTINGS "  Node Name: TDeck+",
-        LV_SYMBOL_WIFI    "  Frequency: 869.618 MHz",
-        LV_SYMBOL_SHUFFLE "  Spreading Factor: SF8",
-        LV_SYMBOL_BATTERY_FULL "  Power: 22 dBm",
-        LV_SYMBOL_SD_CARD "  SD Card: Not mounted",
-        LV_SYMBOL_GPS     "  GPS: 38400 baud",
-        LV_SYMBOL_HOME    "  About SlopOS v0.1.0",
-    };
-    for (auto& item : items) {
-        lv_obj_t* btn = lv_list_add_btn(list, nullptr, item);
-        lv_obj_set_style_bg_color(btn, lv_color_hex(BG_TERTIARY), 0);
-    }
+    // Build settings from live preferences
+    int n_items = 0;
+
+    // Node name
+    lv_obj_t* btn0 = lv_list_add_btn(list, LV_SYMBOL_SETTINGS, "");
+    n_items++;
+    lv_obj_set_style_bg_color(btn0, lv_color_hex(BG_TERTIARY), 0);
+    // We need access to prefs — use hardcoded for now, TODO: expose prefs getters
+
+    lv_obj_t* btn1 = lv_list_add_btn(list, LV_SYMBOL_WIFI, "  Frequency: 869.618 MHz");
+    lv_obj_set_style_bg_color(btn1, lv_color_hex(BG_TERTIARY), 0);
+
+    lv_obj_t* btn2 = lv_list_add_btn(list, LV_SYMBOL_SHUFFLE, "  Spreading Factor: SF8");
+    lv_obj_set_style_bg_color(btn2, lv_color_hex(BG_TERTIARY), 0);
+
+    lv_obj_t* btn3 = lv_list_add_btn(list, LV_SYMBOL_BATTERY_FULL, "  Power: 22 dBm");
+    lv_obj_set_style_bg_color(btn3, lv_color_hex(BG_TERTIARY), 0);
+
+    lv_obj_t* btn4 = lv_list_add_btn(list, LV_SYMBOL_SD_CARD, "  SD Card: Not mounted");
+    lv_obj_set_style_bg_color(btn4, lv_color_hex(BG_TERTIARY), 0);
+
+    lv_obj_t* btn5 = lv_list_add_btn(list, LV_SYMBOL_GPS, "  GPS: NMEA 38400 baud");
+    lv_obj_set_style_bg_color(btn5, lv_color_hex(BG_TERTIARY), 0);
+
+    lv_obj_t* btn6 = lv_list_add_btn(list, LV_SYMBOL_HOME, "  About SlopOS beta-0.1.6");
+    lv_obj_set_style_bg_color(btn6, lv_color_hex(BG_TERTIARY), 0);
 
     show_screen(scr);
 }
@@ -306,6 +327,41 @@ void terminal_screen_show()
     lv_obj_set_style_pad_all(input, 4, 0);
     lv_textarea_set_one_line(input, true);
     lv_textarea_set_placeholder_text(input, "> enter command...");
+
+    // Basic command execution on Enter
+    lv_obj_add_event_cb(input, [](lv_event_t* e) {
+        lv_obj_t* ta = (lv_obj_t*)lv_event_get_target(e);
+        const char* cmd = lv_textarea_get_text(ta);
+        if (!cmd || !cmd[0]) return;
+
+        // Execute command and show result in terminal area
+        lv_obj_t* term = (lv_obj_t*)lv_event_get_user_data(e);
+        char result[256] = "";
+
+        if (strcmp(cmd, "help") == 0) {
+            snprintf(result, sizeof(result), "Commands: help status advert ping\\n");
+        } else if (strcmp(cmd, "status") == 0) {
+            int rssi = slopos::mesh::getLastRSSI();
+            float snr = slopos::mesh::getLastSNR();
+            int noise = slopos::mesh::getNoiseFloor();
+            int contacts = slopos::mesh::getContactCount();
+            int channels = slopos::mesh::getChannelCount();
+            snprintf(result, sizeof(result),
+                "RSSI:%ddBm SNR:%.1f Noise:%ddBm\\n"
+                "Contacts:%d Channels:%d\\n",
+                rssi, snr, noise, contacts, channels);
+        } else if (strcmp(cmd, "advert") == 0) {
+            bool ok = slopos::mesh::sendAdvert();
+            snprintf(result, sizeof(result), ok ? "Advert sent\\n" : "Send failed\\n");
+        } else if (strcmp(cmd, "ping") == 0) {
+            snprintf(result, sizeof(result), "Pong! Uptime: %lu ms\\n", millis());
+        } else {
+            snprintf(result, sizeof(result), "Unknown: %s\\nType 'help'\\n", cmd);
+        }
+
+        lv_textarea_add_text(term, result);
+        lv_textarea_set_text(ta, "");  // clear input
+    }, LV_EVENT_READY, term);  // LV_EVENT_READY fires on Enter in textarea
 
     show_screen(scr);
 }
@@ -345,17 +401,21 @@ void repeaters_screen_show()
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list, 0, 0);
 
-    struct { const char* name; int hops; int rssi; } reps[] = {
-        {"Hilltop-Rptr",   1, -85},
-        {"Church-Rptr",    2, -98},
-        {"Valley-Rptr",    1, -72},
-    };
-    char buf[64];
-    for (auto& r : reps) {
-        snprintf(buf, sizeof(buf), "%s  [%d hop%s]  %ddBm",
-                 r.name, r.hops, r.hops == 1 ? "" : "s", r.rssi);
-        lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_LOOP, buf);
+    // Show mesh contacts as potential repeaters (nodes seen with good RSSI)
+    slopos::mesh::ContactInfo contacts[32];
+    int n = slopos::mesh::exportContactsFull(contacts, 32);
+
+    if (n == 0) {
+        lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_WARNING, "No repeaters discovered");
         lv_obj_set_style_bg_color(item, lv_color_hex(BG_TERTIARY), 0);
+    } else {
+        char buf[64];
+        for (int i = 0; i < n; i++) {
+            auto& c = contacts[i];
+            snprintf(buf, sizeof(buf), "%s  %ddBm", c.name, c.rssi);
+            lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_LOOP, buf);
+            lv_obj_set_style_bg_color(item, lv_color_hex(BG_TERTIARY), 0);
+        }
     }
 
     show_screen(scr);
@@ -368,22 +428,42 @@ void finder_screen_show()
 {
     lv_obj_t* scr = make_screen("Finder");
 
-    lv_obj_t* info = lv_label_create(scr);
-    lv_label_set_text(info,
-        "Device Finder\n\n"
-        "Scanning for nearby\n"
-        "MeshCore devices...\n\n"
-        "This may take a few\n"
-        "seconds.");
-    lv_obj_set_style_text_color(info, lv_color_hex(TEXT_PRIMARY), 0);
-    lv_obj_set_style_text_font(info, &lv_font_montserrat_14, 0);
-    lv_obj_align(info, LV_ALIGN_TOP_LEFT, 8, 30);
+    // Show discovered mesh contacts as "found" devices
+    slopos::mesh::ContactInfo contacts[32];
+    int n = slopos::mesh::exportContactsFull(contacts, 32);
 
-    // Scan indicator
-    lv_obj_t* spinner = lv_spinner_create(scr);
-    lv_obj_set_size(spinner, 40, 40);
-    lv_obj_align(spinner, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_arc_color(spinner, lv_color_hex(ACCENT), 0);
+    lv_obj_t* list = lv_list_create(scr);
+    lv_obj_set_size(list, LV_PCT(100), TFT_HEIGHT - 28);
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, 26);
+    lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(list, 0, 0);
+
+    if (n == 0) {
+        lv_obj_t* info = lv_label_create(scr);
+        lv_label_set_text(info,
+            "Device Finder\\n\\n"
+            "Scanning for nearby\\n"
+            "MeshCore devices...\\n\\n"
+            "No devices found yet.\\n"
+            "Check antenna and\\n"
+            "frequency settings.");
+        lv_obj_set_style_text_color(info, lv_color_hex(TEXT_PRIMARY), 0);
+        lv_obj_set_style_text_font(info, &lv_font_montserrat_14, 0);
+        lv_obj_align(info, LV_ALIGN_TOP_LEFT, 8, 30);
+
+        lv_obj_t* spinner = lv_spinner_create(scr);
+        lv_obj_set_size(spinner, 40, 40);
+        lv_obj_align(spinner, LV_ALIGN_CENTER, 0, 0);
+        lv_obj_set_style_arc_color(spinner, lv_color_hex(ACCENT), 0);
+    } else {
+        char buf[64];
+        for (int i = 0; i < n; i++) {
+            auto& c = contacts[i];
+            snprintf(buf, sizeof(buf), "%s  %ddBm", c.name, c.rssi);
+            lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_WIFI, buf);
+            lv_obj_set_style_bg_color(item, lv_color_hex(BG_TERTIARY), 0);
+        }
+    }
 
     show_screen(scr);
 }
@@ -416,6 +496,9 @@ void advertise_screen_show()
     lv_obj_t* bl = lv_label_create(btn);
     lv_label_set_text(bl, "Advertise Now");
     lv_obj_center(bl);
+    lv_obj_add_event_cb(btn, [](lv_event_t*) {
+        slopos::mesh::sendAdvert();
+    }, LV_EVENT_CLICKED, nullptr);
 
     show_screen(scr);
 }

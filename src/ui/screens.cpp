@@ -138,9 +138,9 @@ void signal_screen_show()
 {
     lv_obj_t* scr = make_screen("Signal");
 
-    int rssi = slopos::mesh::get_last_rssi();
-    float snr = slopos::mesh::get_last_snr();
-    int noise = slopos::mesh::get_noise_floor();
+    int rssi = slopos::mesh::getLastRSSI();
+    float snr = slopos::mesh::getLastSNR();
+    int noise = slopos::mesh::getNoiseFloor();
 
     struct { const char* label; const char* value; } rows[] = {
         {"Last RSSI",    ""},        // filled below
@@ -182,8 +182,8 @@ void noise_screen_show()
 {
     lv_obj_t* scr = make_screen("Noise Floor");
 
-    int noise = slopos::mesh::get_noise_floor();
-    int rssi = slopos::mesh::get_last_rssi();
+    int noise = slopos::mesh::getNoiseFloor();
+    int rssi = slopos::mesh::getLastRSSI();
 
     // Noise bar
     lv_obj_t* bar_bg = lv_obj_create(scr);

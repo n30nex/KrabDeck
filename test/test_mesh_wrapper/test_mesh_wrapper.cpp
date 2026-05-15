@@ -57,62 +57,62 @@ TEST_F(MeshWrapperTest, LoopFunctionExists) {
 
 TEST_F(MeshWrapperTest, SendDirectSignature) {
     using send_fn = bool (*)(const char*, const char*);
-    (void)static_cast<send_fn>(slopos::mesh::send_direct);
+    (void)static_cast<send_fn>(slopos::mesh::sendMessage);
     SUCCEED();
 }
 
 TEST_F(MeshWrapperTest, SendChannelSignature) {
-    using send_fn = bool (*)(uint8_t*, const char*);
-    (void)static_cast<send_fn>(slopos::mesh::send_channel);
+    using send_fn = bool (*)(const char*, const char*);
+    (void)static_cast<send_fn>(slopos::mesh::sendChannelMessage);
     SUCCEED();
 }
 
 TEST_F(MeshWrapperTest, GetNoiseFloorReturnsInt) {
     using fn = int (*)();
-    (void)static_cast<fn>(slopos::mesh::get_noise_floor);
+    (void)static_cast<fn>(slopos::mesh::getNoiseFloor);
     SUCCEED();
 }
 
 TEST_F(MeshWrapperTest, GetLastRSSIReturnsInt) {
     using fn = int (*)();
-    (void)static_cast<fn>(slopos::mesh::get_last_rssi);
+    (void)static_cast<fn>(slopos::mesh::getLastRSSI);
     SUCCEED();
 }
 
 TEST_F(MeshWrapperTest, GetLastSNRReturnsFloat) {
     using fn = float (*)();
-    (void)static_cast<fn>(slopos::mesh::get_last_snr);
+    (void)static_cast<fn>(slopos::mesh::getLastSNR);
     SUCCEED();
 }
 
 TEST_F(MeshWrapperTest, GetUnreadCountReturnsInt) {
     using fn = int (*)();
-    (void)static_cast<fn>(slopos::mesh::get_unread_count);
+    (void)static_cast<fn>(slopos::mesh::pendingMessageCount);
     SUCCEED();
 }
 
 // ── Initial unread count is zero ────────────────────────
 TEST_F(MeshWrapperTest, UnreadCountStartsAtZero) {
-    EXPECT_EQ(slopos::mesh::get_unread_count(), 0);
+    EXPECT_EQ(slopos::mesh::pendingMessageCount(), 0);
 }
 
 // ── Noise floor is within realistic range ───────────────
 TEST_F(MeshWrapperTest, NoiseFloorInRealisticRange) {
     // Even with mocks, the return should be in dBm range
-    int nf = slopos::mesh::get_noise_floor();
+    int nf = slopos::mesh::getNoiseFloor();
     EXPECT_GE(nf, -150);
     EXPECT_LE(nf, 0);
 }
 
 // ── Signal values are within physical limits ─────────────
 TEST_F(MeshWrapperTest, RSSIInRealisticRange) {
-    int rssi = slopos::mesh::get_last_rssi();
+    int rssi = slopos::mesh::getLastRSSI();
     EXPECT_GE(rssi, -160);
     EXPECT_LE(rssi, 0);
 }
 
 TEST_F(MeshWrapperTest, SNRInRealisticRange) {
-    float snr = slopos::mesh::get_last_snr();
+    float snr = slopos::mesh::getLastSNR();
     EXPECT_GE(snr, -20.0f);
     EXPECT_LE(snr, 20.0f);
 }
@@ -120,7 +120,7 @@ TEST_F(MeshWrapperTest, SNRInRealisticRange) {
 // ── Recent nodes returns valid count ────────────────────
 TEST_F(MeshWrapperTest, GetRecentNodesReturnsNonNegative) {
     char names[4][32];
-    int count = slopos::mesh::get_recent_nodes(names, 4);
+    int count = slopos::mesh::exportContacts(names, 4);
     EXPECT_GE(count, 0);
     EXPECT_LE(count, 4);
 }

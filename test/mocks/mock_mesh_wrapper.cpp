@@ -1,51 +1,34 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
-//
-// This file is part of SlopOS-TDeck.
-//
-// SlopOS-TDeck is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// SlopOS-TDeck is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
 
-
-// Mock implementations of mesh_wrapper functions for native testing
 #include "mesh/mesh_wrapper.h"
 #include <cstring>
 
-namespace slopos {
-namespace mesh {
+namespace slopos::mesh {
 
-static int mock_unread = 0;
-static int mock_rssi   = 0;
-static float mock_snr  = 0.0f;
-static int mock_noise  = 0;
-static char mock_own_name[32] = "TDeck+";
+static MeshMessage     mock_msgs[8];
+static int             mock_msg_count = 0;
+static char            mock_own_name[32] = "MockNode";
+static int             mock_noise = -120;
+static int             mock_rssi  = -80;
+static float           mock_snr   = 5.0f;
 
-// Mock message queue (simple linked list)
-static constexpr int MOCK_MAX_MSG = 32;
-static MeshMessage mock_msgs[MOCK_MAX_MSG];
-static int mock_msg_count = 0;
+// ── Lifecycle ────────────────────────────────────
 
 bool init() { return true; }
 void loop() {}
 
-bool send_direct(const char* dest_name, const char* message) {
-    (void)dest_name; (void)message; return false;
-}
-bool send_channel(uint8_t channel_hash[1], const char* message) {
-    (void)channel_hash; (void)message; return false;
+// ── Send ─────────────────────────────────────────
+
+bool sendMessage(const char* dest_name, const char* text) {
+    (void)dest_name; (void)text; return false;
 }
 
-int poll_messages(MeshMessage* out, int max) {
+bool sendChannelMessage(const char* channel_name, const char* text) {
+    (void)channel_name; (void)text; return false;
+}
+
+int pollMessages(MeshMessage* out, int max) {
     int drained = 0;
     while (drained < max && mock_msg_count > 0) {
         out[drained] = mock_msgs[--mock_msg_count];
@@ -54,23 +37,49 @@ int poll_messages(MeshMessage* out, int max) {
     return drained;
 }
 
-int pending_message_count() { return mock_msg_count; }
+int pendingMessageCount() { return mock_msg_count; }
 
-void set_own_name(const char* name) {
+// ── Identity ─────────────────────────────────────
+
+void setOwnName(const char* name) {
     if (name) {
         strncpy(mock_own_name, name, sizeof(mock_own_name) - 1);
         mock_own_name[sizeof(mock_own_name) - 1] = '\0';
     }
 }
-const char* get_own_name() { return mock_own_name; }
 
-int get_noise_floor()  { return mock_noise; }
-int get_last_rssi()    { return mock_rssi; }
-float get_last_snr()   { return mock_snr; }
-int get_unread_count() { return mock_unread; }
-int get_recent_nodes(char names[][32], int max_count) {
-    (void)names; (void)max_count; return 0;
+const char* getOwnName() { return mock_own_name; }
+
+// ── Contacts / channels ──────────────────────────
+
+int getContactCount() { return 0; }
+int exportContacts(char names[][32], int max) { return 0; }
+int getChannelCount() { return 0; }
+int exportChannels(char names[][32], int max) { return 0; }
+bool addChannel(const char* name, const char* psk) { return false; }
+
+// ── Radio stats ──────────────────────────────────
+
+int getNoiseFloor() { return mock_noise; }
+int getLastRSSI()   { return mock_rssi; }
+float getLastSNR()  { return mock_snr; }
+
+bool sendAdvert() { return false; }
+void saveState() {}
+
+// ── Test helpers ─────────────────────────────────
+
+void mock_push_message(const char* sender, const char* text) {
+    if (mock_msg_count >= 8) return;
+    MeshMessage& m = mock_msgs[mock_msg_count++];
+    strncpy(m.sender, sender, sizeof(m.sender) - 1);
+    strncpy(m.text, text, sizeof(m.text) - 1);
+    m.timestamp = 0;
+    m.is_self = false;
 }
 
-} // namespace mesh
-} // namespace slopos
+void mock_set_noise(int v)  { mock_noise = v; }
+void mock_set_rssi(int v)   { mock_rssi = v; }
+void mock_set_snr(float v)  { mock_snr = v; }
+
+} // namespace slopos::mesh

@@ -93,7 +93,7 @@ void loop()
         last_update = millis();
         // TODO: read actual battery, signal from mesh layer
         // home_screen_update_battery(slopos_battery_pct());
-        // home_screen_update_signal(slopos::mesh::get_last_rssi());
+        // home_screen_update_signal(slopos::mesh::getLastRSSI());
     }
 
     // Poll for new mesh messages and feed to chat
@@ -102,7 +102,7 @@ void loop()
         if (millis() - last_msg_poll > 1000) {
             last_msg_poll = millis();
             slopos::mesh::MeshMessage msgs[4];
-            int n = slopos::mesh::poll_messages(msgs, 4);
+            int n = slopos::mesh::pollMessages(msgs, 4);
             for (int i = 0; i < n; i++) {
                 chat_screen_add_msg(msgs[i].sender, msgs[i].text, msgs[i].is_self);
             }

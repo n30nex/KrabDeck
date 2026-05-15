@@ -94,12 +94,12 @@ public:
         outbox.reset();
     }
 
-    void set_own_name(const char* name) {
+    void setOwnName(const char* name) {
         strncpy(own_name, name, sizeof(own_name) - 1);
         own_name[sizeof(own_name) - 1] = '\0';
     }
 
-    const char* get_own_name() const { return own_name; }
+    const char* getOwnName() const { return own_name; }
 
     // Queue a message to be sent (simulates send_direct or send_channel)
     bool send_message(const char* dest, const char* text) {
@@ -184,7 +184,7 @@ protected:
 
     void SetUp() override {
         mesh.reset();
-        mesh.set_own_name("TDeck+");
+        mesh.setOwnName("TDeck+");
         chat_clear();
     }
 };
@@ -318,15 +318,15 @@ TEST_F(MeshMessagingTest, SendCreatesOutgoingMessage) {
 }
 
 TEST_F(MeshMessagingTest, SendUsesOwnNameAsSender) {
-    mesh.set_own_name("MyNode");
+    mesh.setOwnName("MyNode");
     mesh.send_message("Anyone", "Broadcast test");
-    EXPECT_STREQ(mesh.get_own_name(), "MyNode");
+    EXPECT_STREQ(mesh.getOwnName(), "MyNode");
 }
 
 // ── Own name defaults ─────────────────────────────────────
 TEST_F(MeshMessagingTest, DefaultOwnNameIsTDeckPlus) {
     MeshSession fresh;
-    EXPECT_STREQ(fresh.get_own_name(), "TDeck+");
+    EXPECT_STREQ(fresh.getOwnName(), "TDeck+");
 }
 
 } // anonymous namespace

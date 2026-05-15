@@ -7,6 +7,7 @@
 #include "mesh_wrapper.h"
 #include "hal/tdeck_board.h"
 #include "hal/tdeck_pins.h"
+#include "hal/gps.h"
 #include "slop_mesh.h"
 
 #include <SPIFFS.h>
@@ -248,8 +249,14 @@ int getLastRSSI()     { return (int)radio_driver.getLastRSSI(); }
 float getLastSNR()    { return radio_driver.getLastSNR(); }
 
 bool sendAdvert() {
-    if (g_mesh) { g_mesh->broadcastAdvert(own_name); return true; }
-    return false;
+    if (!g_mesh) return false;
+    if (slopos_gps_has_fix()) {
+        g_mesh->broadcastAdvert(own_name,
+            slopos_gps_latitude(), slopos_gps_longitude());
+    } else {
+        g_mesh->broadcastAdvert(own_name);
+    }
+    return true;
 }
 
 void saveState() {

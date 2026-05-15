@@ -8,6 +8,7 @@
 #pragma once
 #include <Mesh.h>
 #include <helpers/ArduinoHelpers.h>
+#include <helpers/AdvertDataHelpers.h>
 #include <hal/prefs.h>
 
 namespace slopos {
@@ -78,10 +79,25 @@ protected:
     void onAdvertRecv(::mesh::Packet*, const ::mesh::Identity& id, uint32_t timestamp,
                       const uint8_t* app_data, size_t app_data_len) override
     {
+        // Parse advert using MeshCore's standard parser
+        AdvertDataParser parser(app_data, (uint8_t)app_data_len);
+        if (!parser.isValid()) return;
+
+        const char* name = parser.getName();
+        if (!name || !name[0]) {
+            // No name — generate a fallback from pub_key
+            static char fallback[16];
+            snprintf(fallback, sizeof(fallback), "node_%02x", id.pub_key[0]);
+            name = fallback;
+        }
+
         // Deduplicate
         for (int i = 0; i < _nContacts; i++)
             if (_contacts[i].id.matches(id)) {
                 _contacts[i].last_seen = timestamp;
+                // Update name if changed (e.g. user renamed device)
+                strncpy(_contacts[i].name, name, sizeof(_contacts[i].name) - 1);
+                _contacts[i].name[sizeof(_contacts[i].name) - 1] = '\0';
                 return;
             }
 
@@ -90,17 +106,11 @@ protected:
         SlopContact& c = _contacts[_nContacts++];
         c.id = id;
         c.last_seen = timestamp;
+        c.last_rssi = 0;
         self_id.calcSharedSecret(c.secret, id);
 
-        // MeshCore advert format: [name_len(1)][name...]
-        if (app_data_len > 1) {
-            uint8_t nlen = app_data[0];
-            if (nlen >= sizeof(c.name)) nlen = sizeof(c.name) - 1;
-            memcpy(c.name, app_data + 1, nlen);
-            c.name[nlen] = '\0';
-        } else {
-            snprintf(c.name, sizeof(c.name), "node_%02x", id.pub_key[0]);
-        }
+        strncpy(c.name, name, sizeof(c.name) - 1);
+        c.name[sizeof(c.name) - 1] = '\0';
     }
 
     // ── Group text ────────────────────────────────────
@@ -159,12 +169,18 @@ public:
     }
 
     void broadcastAdvert(const char* name) {
-        uint8_t app[33];
-        uint8_t nlen = (uint8_t)strlen(name);
-        if (nlen > 31) nlen = 31;
-        app[0] = nlen;
-        memcpy(app + 1, name, nlen);
-        ::mesh::Packet* pkt = createAdvert(self_id, app, 1 + nlen);
+        AdvertDataBuilder builder(ADV_TYPE_CHAT, name);
+        uint8_t app[MAX_ADVERT_DATA_SIZE];
+        uint8_t app_len = builder.encodeTo(app);
+        ::mesh::Packet* pkt = createAdvert(self_id, app, app_len);
+        if (pkt) sendFlood(pkt);
+    }
+
+    void broadcastAdvert(const char* name, double lat, double lon) {
+        AdvertDataBuilder builder(ADV_TYPE_CHAT, name, lat, lon);
+        uint8_t app[MAX_ADVERT_DATA_SIZE];
+        uint8_t app_len = builder.encodeTo(app);
+        ::mesh::Packet* pkt = createAdvert(self_id, app, app_len);
         if (pkt) sendFlood(pkt);
     }
 
@@ -175,26 +191,35 @@ public:
     }
 
     // ── Channel management ────────────────────────────
+    // Minimal base64 decode (avoids external dependency — MeshCore uses base64.hpp)
+    static int decode_b64(const char* in, size_t in_len, uint8_t* out) {
+        static const char T[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        int o = 0;
+        uint32_t buf = 0;
+        int bits = 0;
+        for (size_t i = 0; i < in_len && in[i] != '='; i++) {
+            const char* p = strchr(T, in[i]);
+            if (!p) continue;
+            buf = (buf << 6) | (uint32_t)(p - T);
+            bits += 6;
+            if (bits >= 8) {
+                bits -= 8;
+                out[o++] = (uint8_t)(buf >> bits);
+                buf &= (1U << bits) - 1;
+            }
+        }
+        return o;
+    }
+
     bool addChannel(const char* name, const char* psk_base64) {
         if (_nChannels >= SLOP_MAX_CHANNELS) return false;
 
         SlopChannel& ch = _channels[_nChannels];
         memset(ch.channel.secret, 0, sizeof(ch.channel.secret));
 
-        // Decode base64 PSK to secret
-        int len = 0;
-        const char* p = psk_base64;
-        // Simple base64 decode — MeshCore uses base64.hpp for this
-        // For now accept raw PSK (16 or 32 bytes hex would be better, but
-        // base64 is the MeshCore convention)
-        // In practice, the mobile app provides a base64-encoded PSK
-        // Fallback: treat PSK as raw ASCII → hash it
-        size_t psk_len = strlen(psk_base64);
-        if (psk_len > 0 && psk_len <= 64) {
-            memcpy(ch.channel.secret, psk_base64, psk_len > 32 ? 32 : psk_len);
-            len = psk_len > 32 ? 32 : (int)psk_len;
-        }
-        if (len == 0) return false;
+        // Decode base64 PSK to secret (matches MeshCore addChannel protocol)
+        int len = decode_b64(psk_base64, strlen(psk_base64), ch.channel.secret);
+        if (len != 32 && len != 16) return false;  // must be 128-bit or 256-bit key
 
         // Hash the PSK to create the channel hash (matches MeshCore protocol)
         ::mesh::Utils::sha256(ch.channel.hash, sizeof(ch.channel.hash),

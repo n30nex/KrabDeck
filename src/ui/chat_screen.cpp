@@ -44,14 +44,37 @@ static constexpr int BUBBLE_PAD = 6;
 static constexpr int MAX_MSGS   = 50;
 
 // ════════════════════════════════════════════════════
-// Channel data
+// Dynamic channels — pulled from mesh, sorted by MRU
 // ════════════════════════════════════════════════════
-static const char* channels[] = {
-    "#hertford*", "#london*", "#Jokez", "#general",
-    "DM: Alice",  "DM: Bob"
-};
-static constexpr int NUM_CHANNELS = 6;
-static int active_channel = 0;
+static constexpr int MAX_CHANNELS = 16;
+static char  dyn_channels[MAX_CHANNELS][32];
+static int   dyn_count = 0;
+static int   active_channel = 0;
+
+static void refresh_channels() {
+    dyn_count = slopos::mesh::exportChannels(dyn_channels, MAX_CHANNELS);
+    // exportChannels returns channel names like "#hertford*", "#london*", etc.
+    // Sort by MRU: most recently used first (mru order is implicit in
+    // the order we call mark_channel_used — we just bubble active to front)
+    if (active_channel >= dyn_count) active_channel = 0;
+    if (dyn_count == 0) {
+        // Fallback: add a default channel so the UI isn't empty
+        strncpy(dyn_channels[0], "#general", 31);
+        dyn_count = 1;
+    }
+}
+
+static void mark_channel_used(int idx) {
+    if (idx < 0 || idx >= dyn_count || idx == 0) return;
+    // Bubble to front: shift [0..idx-1] right, put idx at 0
+    char tmp[32];
+    strncpy(tmp, dyn_channels[idx], 31);
+    for (int i = idx; i > 0; i--) {
+        strncpy(dyn_channels[i], dyn_channels[i-1], 31);
+    }
+    strncpy(dyn_channels[0], tmp, 31);
+    active_channel = 0;
+}
 
 // ════════════════════════════════════════════════════
 // Timestamp helper
@@ -110,7 +133,7 @@ static void create_top_bar()
     lv_obj_set_scrollbar_mode(channel_ribbon, LV_SCROLLBAR_MODE_OFF);
 
     // Channel pill buttons
-    for (int i = 0; i < NUM_CHANNELS; i++) {
+    for (int i = 0; i < dyn_count; i++) {
         lv_obj_t* pill = lv_btn_create(channel_ribbon);
         lv_obj_set_height(pill, TOP_H - 8);
         lv_obj_set_style_radius(pill, 10, 0);
@@ -127,7 +150,7 @@ static void create_top_bar()
         }
 
         lv_obj_t* pill_label = lv_label_create(pill);
-        lv_label_set_text(pill_label, channels[i]);
+        lv_label_set_text(pill_label, dyn_channels[i]);
         lv_obj_set_style_text_font(pill_label, &lv_font_montserrat_12, 0);
         lv_obj_set_style_text_color(pill_label,
             i == active_channel
@@ -262,7 +285,7 @@ static void do_send()
     const char* text = lv_textarea_get_text(input_field);
     if (!text || !text[0]) return;
 
-    const char* chan = channels[active_channel];
+    const char* chan = dyn_channels[active_channel];
     bool is_dm = (strncmp(chan, "DM: ", 4) == 0);
     const char* dest = is_dm ? (chan + 4) : chan;
 
@@ -272,6 +295,9 @@ static void do_send()
     } else {
         ok = slopos::mesh::sendChannelMessage(dest, text);
     }
+
+    // Mark this channel as most-recently-used → bubble to front
+    mark_channel_used(active_channel);
 
     // Echo locally with current time
     uint32_t now = slopos::mesh::getCurrentTime();
@@ -355,7 +381,7 @@ static void rebuild_channel_ribbon()
     if (!channel_ribbon) return;
     lv_obj_clean(channel_ribbon);
 
-    for (int i = 0; i < NUM_CHANNELS; i++) {
+    for (int i = 0; i < dyn_count; i++) {
         lv_obj_t* pill = lv_btn_create(channel_ribbon);
         lv_obj_set_height(pill, TOP_H - 8);
         lv_obj_set_style_radius(pill, 10, 0);
@@ -372,7 +398,7 @@ static void rebuild_channel_ribbon()
         }
 
         lv_obj_t* pill_label = lv_label_create(pill);
-        lv_label_set_text(pill_label, channels[i]);
+        lv_label_set_text(pill_label, dyn_channels[i]);
         lv_obj_set_style_text_font(pill_label, &lv_font_montserrat_12, 0);
         lv_obj_set_style_text_color(pill_label,
             i == active_channel
@@ -394,6 +420,8 @@ static void rebuild_channel_ribbon()
 // ════════════════════════════════════════════════════
 void chat_screen_show()
 {
+    refresh_channels();  // pull channels from mesh, sort MRU
+
     scr = lv_obj_create(nullptr);
     apply_dark_bg(scr);
 

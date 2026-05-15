@@ -50,19 +50,20 @@ struct IconDef {
     Screen target;
 };
 
+// LVGL FontAwesome symbols — clean vector line icons
 static const IconDef icons[] = {
-    {"CHAT",       "\xF0\x9F\x92\xAC", true,  Screen::Chat},       // 💬
-    {"CONTACTS",   "\xF0\x9F\x91\xA4", false, Screen::Contacts},   // 👤
-    {"REPEATERS",  "\xF0\x9F\x93\xA1", false, Screen::Channels},   // 📡
-    {"FINDER",     "\xF0\x9F\x94\x8D", false, Screen::Network},    // 🔍
-    {"HEARD",      "\xF0\x9F\x91\x82", false, Screen::Heard},      // 👂
-    {"MAP",        "\xF0\x9F\x93\x8D", false, Screen::Map},        // 📍
-    {"ADVERTISE",  "\xF0\x9F\x93\xA2", false, Screen::Advertise},  // 📢
-    {"SETTINGS",   "\xE2\x9A\x99",     false, Screen::Settings},   // ⚙
-    {"TRACE",      "\xF0\x9F\x91\xA3", false, Screen::Trace},      // 👣
-    {"TERMINAL",   "\xF0\x9F\x92\xBB", false, Screen::Terminal},   // 💻
-    {"NOISE",      "\xF0\x9F\x93\x8A", false, Screen::Noise},      // 📊
-    {"SIGNAL",     "\xF0\x9F\x93\xB6", false, Screen::Signal},     // 📶
+    {"CHAT",       LV_SYMBOL_ENVELOPE,   true,  Screen::Chat},       // ✉ speech bubble
+    {"CONTACTS",   LV_SYMBOL_CALL,       false, Screen::Contacts},   // phone → contacts
+    {"REPEATERS",  LV_SYMBOL_WIFI,       false, Screen::Channels},   // tower icon
+    {"FINDER",     LV_SYMBOL_EYE_OPEN,   false, Screen::Network},    // eye/search
+    {"HEARD",      LV_SYMBOL_BELL,       false, Screen::Heard},      // notification bell
+    {"MAP",        LV_SYMBOL_GPS,        false, Screen::Map},        // location pin
+    {"ADVERTISE",  LV_SYMBOL_AUDIO,      false, Screen::Advertise},  // speaker/broadcast
+    {"SETTINGS",   LV_SYMBOL_SETTINGS,   false, Screen::Settings},   // gear
+    {"TRACE",      LV_SYMBOL_SHUFFLE,    false, Screen::Trace},      // route arrows
+    {"TERMINAL",   LV_SYMBOL_KEYBOARD,   false, Screen::Terminal},   // keyboard → terminal
+    {"NOISE",      LV_SYMBOL_VOLUME_MID, false, Screen::Noise},      // sound level
+    {"SIGNAL",     LV_SYMBOL_BARS,       false, Screen::Signal},     // signal bars
 };
 
 // ── Icon click handler ──────────────────────────────────

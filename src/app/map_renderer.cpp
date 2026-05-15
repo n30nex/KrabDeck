@@ -305,11 +305,10 @@ static void load_metadata() {
     if (n >= 4) {
         center_lat = (bounds[1] + bounds[3]) / 2.0;  // south + north
         center_lon = (bounds[0] + bounds[2]) / 2.0;  // west + east
-        // Pick zoom that shows full region width
-        double lat_mid = (bounds[1] + bounds[3]) / 2.0;
-        double merc_span = (bounds[3] - bounds[1]) * cos(lat_mid * PI / 180.0);
+        // Pick zoom that shows full region width (east-west extent)
+        double lon_span = bounds[2] - bounds[0];  // east - west degrees
         for (int z = MAX_ZOOM; z >= MIN_ZOOM; z--) {
-            double tile_span = merc_span / 360.0 * (1 << z);
+            double tile_span = lon_span / 360.0 * (1 << z);
             if (tile_span * TILE_SIZE <= TFT_WIDTH * 0.8) {
                 zoom_level = z;
                 break;
@@ -348,6 +347,8 @@ void slopos_map_init() {
         Serial.println("[map] ERROR: Failed to alloc JPEG decode buffers");
         lv_free(tile_rgb565);
         lv_free(jpeg_inbuf);
+        lv_obj_del(map_canvas);
+        map_canvas = nullptr;
         tile_rgb565 = nullptr;
         jpeg_inbuf = nullptr;
         initialized = false;
@@ -365,6 +366,13 @@ void slopos_map_reparent(lv_obj_t* new_parent) {
         lv_obj_set_parent(map_canvas, new_parent);
         lv_obj_set_size(map_canvas, TFT_WIDTH, TFT_HEIGHT);
         lv_obj_align(map_canvas, LV_ALIGN_CENTER, 0, 0);
+        // When parent screen is auto-deleted (e.g. navigate away),
+        // LVGL recursively deletes map_canvas — reset state so next
+        // visit re-initializes instead of using a dangling pointer.
+        lv_obj_add_event_cb(new_parent, [](lv_event_t* e) {
+            map_canvas = nullptr;
+            initialized = false;
+        }, LV_EVENT_DELETE, nullptr);
     }
 }
 

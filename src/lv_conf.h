@@ -55,5 +55,5 @@
 #define LV_MEM_CUSTOM             1
 #define LV_MEM_CUSTOM_INCLUDE     <esp_heap_caps.h>
 #define LV_MEM_CUSTOM_ALLOC(size) heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
-#define LV_MEM_CUSTOM_FREE(p)     free(p)
+#define LV_MEM_CUSTOM_FREE(p)     heap_caps_free(p)
 #define LV_MEM_CUSTOM_REALLOC(p,s) heap_caps_realloc(p, s, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)

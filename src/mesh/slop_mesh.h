@@ -316,6 +316,7 @@ public:
         memcpy(buf + 5, text, text_len);
         buf[5 + text_len] = '\0';   // null-terminate the payload
         size_t total = 5 + text_len + 1;  // include null terminator in sent length
+        if (total > sizeof(buf)) total = sizeof(buf);  // safety clamp
 
         ::mesh::Packet* pkt = createGroupDatagram(PAYLOAD_TYPE_GRP_TXT,
                                                    _channels[channel_idx].channel,

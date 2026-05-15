@@ -23,6 +23,7 @@
 #include "navigation.h"
 #include "theme.h"
 #include "../mesh/mesh_wrapper.h"
+#include "../hal/battery.h"
 #include <Arduino.h>
 #include <lvgl.h>
 
@@ -91,9 +92,14 @@ void loop()
     static uint32_t last_update = 0;
     if (home_shown && (millis() - last_update > 30000)) {
         last_update = millis();
-        // TODO: read actual battery, signal from mesh layer
-        // home_screen_update_battery(slopos_battery_pct());
-        // home_screen_update_signal(slopos::mesh::getLastRSSI());
+        home_screen_update_battery(slopos_battery_pct());
+        home_screen_update_signal(slopos::mesh::getLastRSSI());
+        // Persist mesh state (contacts, identity) every 5 min
+        static uint8_t save_counter = 0;
+        if (++save_counter >= 10) {
+            save_counter = 0;
+            slopos::mesh::saveState();
+        }
     }
 
     // Poll for new mesh messages and feed to chat

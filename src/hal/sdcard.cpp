@@ -76,10 +76,10 @@ const char* slopos_sdcard_format_size(uint64_t bytes, char* buf, size_t buf_sz)
         snprintf(buf, buf_sz, "%.1f MB",
                  (double)bytes / (1024.0 * 1024.0));
     } else if (bytes >= 1024) {
-        snprintf(buf, buf_sz, "%llu KB",
-                 (unsigned long long)(bytes / 1024));
+        snprintf(buf, buf_sz, "%lu KB",
+                 (unsigned long)(bytes / 1024));
     } else {
-        snprintf(buf, buf_sz, "%llu B", (unsigned long long)bytes);
+        snprintf(buf, buf_sz, "%lu B", (unsigned long)bytes);
     }
     return buf;
 }

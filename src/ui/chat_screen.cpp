@@ -18,6 +18,7 @@
 
 
 #include "chat_screen.h"
+#include "navigation.h"
 #include "theme.h"
 #include "../hal/tdeck_pins.h"
 #include <lvgl.h>
@@ -58,12 +59,19 @@ static void create_top_bar()
     lv_obj_set_style_pad_all(top_bar, 0, 0);
     lv_obj_set_style_border_width(top_bar, 0, 0);
 
-    // Back button (←)
-    lv_obj_t* back = lv_label_create(top_bar);
-    lv_label_set_text(back, LV_SYMBOL_LEFT);
-    lv_obj_set_style_text_color(back, lv_color_hex(TEXT_SECONDARY), 0);
-    lv_obj_set_style_text_font(back, &lv_font_montserrat_16, 0);
-    lv_obj_align(back, LV_ALIGN_LEFT_MID, 4, 0);
+    // Back button (←) — clickable
+    lv_obj_t* back = lv_btn_create(top_bar);
+    lv_obj_set_size(back, 24, 20);
+    lv_obj_align(back, LV_ALIGN_LEFT_MID, 2, 0);
+    lv_obj_set_style_bg_color(back, lv_color_hex(BG_TERTIARY), 0);
+    lv_obj_set_style_radius(back, 4, 0);
+    lv_obj_set_style_border_width(back, 0, 0);
+    lv_obj_t* bl = lv_label_create(back);
+    lv_label_set_text(bl, LV_SYMBOL_LEFT);
+    lv_obj_set_style_text_color(bl, lv_color_hex(TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_font(bl, &lv_font_montserrat_16, 0);
+    lv_obj_center(bl);
+    lv_obj_add_event_cb(back, [](lv_event_t*) { go_back(); }, LV_EVENT_CLICKED, nullptr);
 
     // Channel name
     channel_label = lv_label_create(top_bar);
@@ -72,18 +80,39 @@ static void create_top_bar()
     lv_obj_set_style_text_font(channel_label, &lv_font_montserrat_14, 0);
     lv_obj_align(channel_label, LV_ALIGN_CENTER, 0, 0);
 
-    // < prev / next > channel buttons
-    lv_obj_t* prev = lv_label_create(top_bar);
-    lv_label_set_text(prev, "<");
-    lv_obj_set_style_text_color(prev, lv_color_hex(CHANNEL_HASH), 0);
-    lv_obj_set_style_text_font(prev, &lv_font_montserrat_12, 0);
+    // < prev channel button — clickable
+    lv_obj_t* prev = lv_btn_create(top_bar);
+    lv_obj_set_size(prev, 22, 18);
     lv_obj_align(prev, LV_ALIGN_LEFT_MID, 110, 0);
+    lv_obj_set_style_bg_color(prev, lv_color_hex(BG_TERTIARY), 0);
+    lv_obj_set_style_radius(prev, 3, 0);
+    lv_obj_set_style_border_width(prev, 0, 0);
+    lv_obj_t* pl = lv_label_create(prev);
+    lv_label_set_text(pl, "<");
+    lv_obj_set_style_text_color(pl, lv_color_hex(CHANNEL_HASH), 0);
+    lv_obj_set_style_text_font(pl, &lv_font_montserrat_12, 0);
+    lv_obj_center(pl);
+    lv_obj_add_event_cb(prev, [](lv_event_t*) {
+        active_channel = (active_channel - 1 + NUM_CHANNELS) % NUM_CHANNELS;
+        lv_label_set_text(channel_label, channels[active_channel]);
+    }, LV_EVENT_CLICKED, nullptr);
 
-    lv_obj_t* next = lv_label_create(top_bar);
-    lv_label_set_text(next, ">");
-    lv_obj_set_style_text_color(next, lv_color_hex(CHANNEL_HASH), 0);
-    lv_obj_set_style_text_font(next, &lv_font_montserrat_12, 0);
+    // next > channel button — clickable
+    lv_obj_t* next = lv_btn_create(top_bar);
+    lv_obj_set_size(next, 22, 18);
     lv_obj_align(next, LV_ALIGN_RIGHT_MID, -50, 0);
+    lv_obj_set_style_bg_color(next, lv_color_hex(BG_TERTIARY), 0);
+    lv_obj_set_style_radius(next, 3, 0);
+    lv_obj_set_style_border_width(next, 0, 0);
+    lv_obj_t* nl = lv_label_create(next);
+    lv_label_set_text(nl, ">");
+    lv_obj_set_style_text_color(nl, lv_color_hex(CHANNEL_HASH), 0);
+    lv_obj_set_style_text_font(nl, &lv_font_montserrat_12, 0);
+    lv_obj_center(nl);
+    lv_obj_add_event_cb(next, [](lv_event_t*) {
+        active_channel = (active_channel + 1) % NUM_CHANNELS;
+        lv_label_set_text(channel_label, channels[active_channel]);
+    }, LV_EVENT_CLICKED, nullptr);
 }
 
 // ── Message bubble ─────────────────────────────────────

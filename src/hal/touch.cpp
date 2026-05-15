@@ -186,7 +186,7 @@ void slopos_touch_loop()
     }
 
     // Read touch point data (all 5 points, 8 bytes each = 40 bytes)
-    uint8_t point_data[GT911_MAX_POINTS * GT911_POINT_SIZE];
+    static uint8_t point_data[GT911_MAX_POINTS * GT911_POINT_SIZE];  // static avoids repeated stack alloc
     if (!i2c_read_bytes(GT911_REG_STATUS + 1, point_data, sizeof(point_data))) {
         return;
     }

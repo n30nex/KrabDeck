@@ -34,8 +34,8 @@ bool slopos_keyboard_init();
 // Reads 1 byte from I2C — non-zero means a key was pressed
 void slopos_keyboard_scan();
 
-// Get the key code of the last keypress (ASCII char, or 0 if none)
-uint32_t slopos_keyboard_get_key();
+// Get the key code of the last keypress (ASCII char, 0 if none, -1 on error)
+int slopos_keyboard_get_key();
 
 // Returns true if a new key event is available (one-shot, consumed on read)
 bool slopos_keyboard_has_new_event();

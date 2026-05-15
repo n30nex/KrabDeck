@@ -100,6 +100,12 @@ public:
 
     void sleep(uint32_t secs) override {
         if (_inhibit_sleep) return;
+        // Power down peripherals to save battery during deep sleep
+        digitalWrite(PIN_PERIPH_PWR, LOW);
+        // Optionally turn off display backlight
+        pinMode(PIN_TFT_BL, OUTPUT);
+        digitalWrite(PIN_TFT_BL, LOW);
+
         esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
         rtc_gpio_set_direction((gpio_num_t)PIN_LORA_DIO1, RTC_GPIO_MODE_INPUT_ONLY);
         rtc_gpio_pulldown_en((gpio_num_t)PIN_LORA_DIO1);

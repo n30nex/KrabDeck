@@ -63,7 +63,7 @@ static constexpr uint8_t  KB_BACKLIGHT_DEFAULT      = 127;  // mid brightness
 
 static bool     initialized     = false;
 static bool     has_new_event   = false;
-static uint32_t current_key     = 0;     // ASCII key code from last scan
+static int      current_key     = 0;     // int: Wire.read() returns int, -1 = error
 static uint32_t last_poll_ms    = 0;
 static bool     shift_held      = false;
 static bool     ctrl_held       = false;
@@ -92,14 +92,20 @@ bool slopos_keyboard_init()
     Wire.beginTransmission(KB_I2C_ADDR);
     Wire.write(CMD_DEFAULT_BRIGHTNESS);
     Wire.write(KB_BACKLIGHT_DEFAULT);
-    Wire.endTransmission();
+    if (Wire.endTransmission() != 0) {
+        initialized = false;
+        return false;
+    }
 
     // Switch to key mode (ASCII chars). The keyboard MCU defaults to key
     // mode on power-up, but this guards against it being in raw mode from
     // a prior session that didn't power-cycle the keyboard MCU.
     Wire.beginTransmission(KB_I2C_ADDR);
     Wire.write(CMD_MODE_KEY);
-    Wire.endTransmission();
+    if (Wire.endTransmission() != 0) {
+        initialized = false;
+        return false;
+    }
 
     initialized = true;
     return true;
@@ -115,33 +121,41 @@ void slopos_keyboard_scan()
 
     // Read 1 byte from keyboard MCU
     Wire.requestFrom(KB_I2C_ADDR, (uint8_t)1);
-    char keyValue = 0;
+    int keyValue = 0;
     if (Wire.available() > 0) {
         keyValue = Wire.read();
     }
 
-    if (keyValue == (char)0x00 || keyValue == (char)0xFF) {
-        // No key pressed or invalid read — clear any stale event
+    if (keyValue <= 0 || keyValue == 0xFF) {
+        // No key pressed, read error, or invalid data — clear any stale event
         has_new_event = false;
         return;
     }
 
     // Store the key code (ASCII value)
     has_new_event = true;
-    current_key = (uint32_t)(uint8_t)keyValue;
+    current_key = keyValue;
 
-    // Track modifier state based on key codes
-    // (The keyboard MCU handles actual modifier logic; these are
-    //  best-effort for UI indicators)
+    // Track modifier state based on key codes where possible.
+    // Note: The T-Deck keyboard MCU sends pre-processed ASCII key codes,
+    // not raw modifier+scancode, so modifier tracking is limited.
+    // Shift state is best-effort — uppercase ASCII implies shift.
+    if (current_key >= 'A' && current_key <= 'Z') {
+        shift_held = true;
+    } else if (current_key >= 'a' && current_key <= 'z') {
+        shift_held = false;
+    }
+    // Alt and Ctrl are harder to detect from ASCII output alone.
+    // Track via special key codes the MCU may send.
     switch (current_key) {
-    case 0x0D: break;  // Enter
-    case 0x08: break;  // Backspace
-    case 0x0C: break;  // Alt+C (sent by keyboard as special key)
+    case 0x0C: alt_held = !alt_held; break;   // Alt+C toggle sent by MCU
+    case 0x0D: break;  // Enter — no modifier change
+    case 0x08: break;  // Backspace — no modifier change
     default:   break;
     }
 }
 
-uint32_t slopos_keyboard_get_key()
+int slopos_keyboard_get_key()
 {
     return current_key;
 }

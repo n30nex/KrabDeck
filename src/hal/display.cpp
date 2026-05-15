@@ -81,7 +81,8 @@ public:
 
 static LGFX_SlopOS tft;
 static lv_display_t* lv_disp = nullptr;
-static lv_color_t draw_buf[TFT_WIDTH * 20];
+static constexpr int LVGL_DRAW_BUF_LINES = 20;  // smaller = less RAM, 20 lines = 12.5KB
+static lv_color_t draw_buf[TFT_WIDTH * LVGL_DRAW_BUF_LINES];
 
 // ── Auto-off timer ──────────────────────────────────
 // Based on MeshCore's AUTO_OFF_MILLIS pattern (MIT license)
@@ -123,9 +124,9 @@ static void lvgl_touch_cb(lv_indev_t* indev, lv_indev_data_t* data)
 // ── Keyboard read callback ───────────────────────────────
 static void lvgl_kb_cb(lv_indev_t* indev, lv_indev_data_t* data)
 {
-    uint32_t key = slopos_keyboard_get_key();
-    if (key != 0 && slopos_keyboard_has_new_event()) {
-        data->key = key;
+    int key = slopos_keyboard_get_key();
+    if (key > 0 && slopos_keyboard_has_new_event()) {
+        data->key = (uint32_t)key;
         data->state = LV_INDEV_STATE_PRESSED;
         slopos_display_wake();
     } else {
@@ -154,6 +155,11 @@ bool slopos_display_init()
     lv_indev_t* kb = lv_indev_create();
     lv_indev_set_type(kb, LV_INDEV_TYPE_KEYPAD);
     lv_indev_set_read_cb(kb, lvgl_kb_cb);
+
+    // Set default group so keyboard input reaches focused widgets
+    lv_group_t* g = lv_group_create();
+    lv_indev_set_group(kb, g);
+    lv_group_set_default(g);
 
     // Initialize touch controller
     if (!slopos_touch_init()) {

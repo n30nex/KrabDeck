@@ -54,7 +54,9 @@ static void queue_push(const char* sender, const char* text) {
     if (msg_count >= MAX_QUEUED) return;
     MeshMessage& m = msg_buf[msg_head];
     strncpy(m.sender, sender, sizeof(m.sender) - 1);
+    m.sender[sizeof(m.sender) - 1] = '\0';
     strncpy(m.text, text, sizeof(m.text) - 1);
+    m.text[sizeof(m.text) - 1] = '\0';
     m.timestamp = rtc_clock.getCurrentTime();
     m.is_self = false;
     msg_head = (msg_head + 1) % MAX_QUEUED;
@@ -120,6 +122,10 @@ bool init()
     fast_rng.begin(radio_module.random(0x7FFFFFFF));
 
     g_mesh = new SlopMesh(radio_driver, millis_clock, fast_rng, rtc_clock, pkt_mgr, tables);
+    if (!g_mesh) {
+        Serial.println("[mesh] ERROR: SlopMesh allocation failed");
+        return false;
+    }
     g_mesh->setMessageCallback(onMeshMessage);
 
     // Generate or load identity

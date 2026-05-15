@@ -117,11 +117,15 @@ public:
     bool sendTextTo(const char* dest_name, const char* text) {
         for (int i = 0; i < _nContacts; i++) {
             if (strcmp(_contacts[i].name, dest_name) != 0) continue;
-            uint8_t buf[4 + 180];
+            // Payload: 4-byte LE timestamp + null-terminated text, max 180 bytes total
+            static constexpr size_t MAX_PAYLOAD = 180;
+            uint8_t buf[4 + MAX_PAYLOAD];
             uint32_t ts = getRTCClock()->getCurrentTime();
             memcpy(buf, &ts, 4);
-            strncpy((char*)(buf + 4), text, 175);
-            size_t len = 4 + strlen(text) + 1;
+            size_t text_len = strnlen(text, MAX_PAYLOAD - 1);
+            memcpy(buf + 4, text, text_len);
+            buf[4 + text_len] = '\0';
+            size_t len = 4 + text_len + 1;
             ::mesh::Packet* pkt = createDatagram(PAYLOAD_TYPE_TXT_MSG,
                                                   _contacts[i].id,
                                                   _contacts[i].secret,

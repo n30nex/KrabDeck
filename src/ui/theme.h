@@ -37,6 +37,9 @@ constexpr uint32_t ACCENT_RED   = 0xed4245;  // notification / error
 constexpr uint32_t ACCENT_ORANGE= 0xfaa61a;  // warning
 constexpr uint32_t ACCENT_YELLOW= 0xfee75c;  // signal
 
+// ── Message bubbles ──────────────────────────────────────
+constexpr uint32_t MSG_INCOMING = 0x3a4560;  // light blue-gray (incoming)
+
 // ── Text ────────────────────────────────────────────────
 constexpr uint32_t TEXT_PRIMARY   = 0xf2f3f5;  // crisp white
 constexpr uint32_t TEXT_SECONDARY = 0x949ba4;  // light gray

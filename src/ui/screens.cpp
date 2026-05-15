@@ -227,7 +227,7 @@ void heard_screen_show()
     lv_obj_set_style_border_width(hdr, 0, 0);
 
     static const struct { const char* txt; int x; } cols[] = {
-        {"NAME",  4},  {"SIG", 130}, {"DIST", 174}, {"TIME", 230}
+        {"NAME",  4},  {"SIG", 100}, {"DIST", 140}, {"AREA", 180}, {"TIME", 218}
     };
     for (auto& c : cols) {
         lv_obj_t* cl = lv_label_create(hdr);
@@ -295,14 +295,21 @@ void heard_screen_show()
             lv_label_set_text(sig_l, bars);
             lv_obj_set_style_text_color(sig_l, lv_color_hex(ACCENT), 0);
             lv_obj_set_style_text_font(sig_l, &lv_font_montserrat_12, 0);
-            lv_obj_align(sig_l, LV_ALIGN_LEFT_MID, 130, 0);
+            lv_obj_align(sig_l, LV_ALIGN_LEFT_MID, 100, 0);
 
             // Distance (show "—" — GPS distance not implemented)
             lv_obj_t* dist_l = lv_label_create(row);
             lv_label_set_text(dist_l, "\xe2\x80\x94");  // em dash "—"
             lv_obj_set_style_text_color(dist_l, lv_color_hex(TEXT_MUTED), 0);
             lv_obj_set_style_text_font(dist_l, &lv_font_montserrat_12, 0);
-            lv_obj_align(dist_l, LV_ALIGN_LEFT_MID, 174, 0);
+            lv_obj_align(dist_l, LV_ALIGN_LEFT_MID, 140, 0);
+
+            // Area (placeholder "—" — mesh area grouping not yet implemented)
+            lv_obj_t* area_l = lv_label_create(row);
+            lv_label_set_text(area_l, "\xe2\x80\x94");
+            lv_obj_set_style_text_color(area_l, lv_color_hex(TEXT_MUTED), 0);
+            lv_obj_set_style_text_font(area_l, &lv_font_montserrat_12, 0);
+            lv_obj_align(area_l, LV_ALIGN_LEFT_MID, 180, 0);
 
             // Time since last seen
             char time_buf[16];
@@ -642,46 +649,82 @@ void settings_screen_show()
 }
 
 // ════════════════════════════════════════════════════════
-// Terminal — serial console with dark green text
+// Terminal — colored log output helpers
+// ════════════════════════════════════════════════════════
+static uint32_t term_classify_line(const char* text)
+{
+    if (strstr(text, "ERROR") || strstr(text, "FAIL") || strstr(text, "failed"))
+        return ACCENT_RED;
+    if (strstr(text, "WARN") || strstr(text, "WARNING"))
+        return ACCENT_ORANGE;
+    if (strstr(text, "OK") || strstr(text, "ok") ||
+        strstr(text, "sent") || strstr(text, "Pong"))
+        return ACCENT_GREEN;
+    if (strstr(text, "RSSI") || strstr(text, "SNR") ||
+        strstr(text, "Noise") || strstr(text, "dBm") || strstr(text, "MHz"))
+        return ACCENT;
+    if (text[0] == '>')
+        return TEXT_PRIMARY;
+    return 0x00ff00u;
+}
+
+static void term_add_line(lv_obj_t* log, const char* text)
+{
+    lv_obj_t* lbl = lv_label_create(log);
+    lv_label_set_text(lbl, text);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(term_classify_line(text)), 0);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_width(lbl, LV_PCT(100));
+    lv_label_set_long_mode(lbl, LV_LABEL_LONG_WRAP);
+    lv_obj_scroll_to_view(lbl, LV_ANIM_OFF);
+}
+
+// ════════════════════════════════════════════════════════
+// Terminal — colored log output + command input
 // ════════════════════════════════════════════════════════
 void terminal_screen_show()
 {
     lv_obj_t* scr = make_screen_full("Terminal");
 
-    static constexpr int INPUT_H = 28;
+    static constexpr int TERM_INPUT_H = 28;
+    static constexpr int TERM_LOG_H   = CONTENT_H - TERM_INPUT_H - DIV_H;  // 167
 
-    lv_obj_t* term = lv_textarea_create(scr);
-    lv_obj_set_size(term, LV_PCT(100), CONTENT_H - INPUT_H - DIV_H);
-    lv_obj_align(term, LV_ALIGN_TOP_MID, 0, CONTENT_Y);
-    lv_obj_set_style_bg_color(term, lv_color_hex(0x000000), 0);
-    lv_obj_set_style_text_color(term, lv_color_hex(0x00ff00), 0);
-    lv_obj_set_style_text_font(term, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_border_width(term, 0, 0);
-    lv_obj_set_style_pad_all(term, 4, 0);
+    // Log output container (pure black, flex-column, scrollable)
+    lv_obj_t* log = lv_obj_create(scr);
+    lv_obj_set_size(log, LV_PCT(100), TERM_LOG_H);
+    lv_obj_align(log, LV_ALIGN_TOP_MID, 0, CONTENT_Y);
+    lv_obj_set_style_bg_color(log, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(log, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(log, 0, 0);
+    lv_obj_set_style_pad_all(log, 4, 0);
+    lv_obj_set_flex_flow(log, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scroll_dir(log, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(log, LV_SCROLLBAR_MODE_OFF);
 
+    // Boot header lines
     const slopos::NodePrefs& p = slopos::prefs_get();
-    char header[256];
-    snprintf(header, sizeof(header),
-        "SlopOS T-Deck Terminal\n"
-        "MeshCore protocol active\n"
-        "Radio: %s\n"
-        "> _\n",
-        p.configured ? "SX1262 configured" : "NOT CONFIGURED");
-    lv_textarea_set_text(term, header);
+    term_add_line(log, "SlopOS T-Deck Terminal");
+    term_add_line(log, "MeshCore protocol active");
+    if (p.configured) {
+        char radio_buf[64];
+        snprintf(radio_buf, sizeof(radio_buf), "Radio: SX1262 %.3f MHz configured", p.freq);
+        term_add_line(log, radio_buf);
+    } else {
+        term_add_line(log, "Radio: ERROR - not configured");
+    }
 
-    // Divider between term and input
+    // Divider between log and input
     lv_obj_t* div = lv_obj_create(scr);
     lv_obj_set_size(div, LV_PCT(100), DIV_H);
-    lv_obj_align(div, LV_ALIGN_TOP_MID, 0,
-                 CONTENT_Y + CONTENT_H - INPUT_H - DIV_H);
+    lv_obj_align(div, LV_ALIGN_TOP_MID, 0, CONTENT_Y + TERM_LOG_H);
     lv_obj_set_style_bg_color(div, lv_color_hex(DIVIDER), 0);
     lv_obj_set_style_bg_opa(div, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(div, 0, 0);
 
+    // Command input
     lv_obj_t* input = lv_textarea_create(scr);
-    lv_obj_set_size(input, LV_PCT(100), INPUT_H);
-    lv_obj_align(input, LV_ALIGN_TOP_MID, 0,
-                 CONTENT_Y + CONTENT_H - INPUT_H);
+    lv_obj_set_size(input, LV_PCT(100), TERM_INPUT_H);
+    lv_obj_align(input, LV_ALIGN_TOP_MID, 0, CONTENT_Y + TERM_LOG_H + DIV_H);
     lv_obj_set_style_bg_color(input, lv_color_hex(BG_INPUT), 0);
     lv_obj_set_style_text_color(input, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(input, &lv_font_montserrat_12, 0);
@@ -691,37 +734,41 @@ void terminal_screen_show()
     lv_textarea_set_placeholder_text(input, "> enter command...");
 
     lv_obj_add_event_cb(input, [](lv_event_t* e) {
-        lv_obj_t* ta   = (lv_obj_t*)lv_event_get_target(e);
-        const char* cmd = lv_textarea_get_text(ta);
+        lv_obj_t* ta        = (lv_obj_t*)lv_event_get_target(e);
+        const char* cmd     = lv_textarea_get_text(ta);
         if (!cmd || !cmd[0]) return;
 
-        lv_obj_t* term_ta = (lv_obj_t*)lv_event_get_user_data(e);
-        char result[256] = "";
+        lv_obj_t* log_cont = (lv_obj_t*)lv_event_get_user_data(e);
 
+        // Echo the command
+        char echo[280];
+        snprintf(echo, sizeof(echo), "> %s", cmd);
+        term_add_line(log_cont, echo);
+
+        char result[256] = "";
         if (strcmp(cmd, "help") == 0) {
-            snprintf(result, sizeof(result), "Commands: help status advert ping\n");
+            snprintf(result, sizeof(result), "Commands: help status advert ping");
         } else if (strcmp(cmd, "status") == 0) {
-            int rssi = slopos::mesh::getLastRSSI();
+            int rssi  = slopos::mesh::getLastRSSI();
             float snr = slopos::mesh::getLastSNR();
             int noise = slopos::mesh::getNoiseFloor();
             snprintf(result, sizeof(result),
-                "RSSI:%ddBm SNR:%.1f Noise:%ddBm\n"
-                "Contacts:%d Channels:%d\n",
+                "RSSI:%ddBm SNR:%.1fdB Noise:%ddBm  Contacts:%d Channels:%d",
                 rssi, snr, noise,
                 slopos::mesh::getContactCount(),
                 slopos::mesh::getChannelCount());
         } else if (strcmp(cmd, "advert") == 0) {
             bool ok = slopos::mesh::sendAdvert();
-            snprintf(result, sizeof(result), ok ? "Advert sent\n" : "Send failed\n");
+            snprintf(result, sizeof(result), ok ? "Advert sent" : "Send failed");
         } else if (strcmp(cmd, "ping") == 0) {
-            snprintf(result, sizeof(result), "Pong! Uptime: %lu ms\n", millis());
+            snprintf(result, sizeof(result), "Pong! Uptime: %lums", millis());
         } else {
-            snprintf(result, sizeof(result), "Unknown: %s\nType 'help'\n", cmd);
+            snprintf(result, sizeof(result), "Unknown: %s  (type 'help')", cmd);
         }
 
-        lv_textarea_add_text(term_ta, result);
+        term_add_line(log_cont, result);
         lv_textarea_set_text(ta, "");
-    }, LV_EVENT_READY, term);
+    }, LV_EVENT_READY, log);
 
     show_screen(scr);
 }

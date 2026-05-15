@@ -51,5 +51,9 @@
 #define LV_USE_GRID               1
 #define LV_USE_ANIMATION          1
 
-// Memory
-#define LV_MEM_SIZE              (48U * 1024U)
+// Memory — use PSRAM for all LVGL allocations (ESP32-S3 with 8MB PSRAM)
+#define LV_MEM_CUSTOM             1
+#define LV_MEM_CUSTOM_INCLUDE     <esp_heap_caps.h>
+#define LV_MEM_CUSTOM_ALLOC(size) heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+#define LV_MEM_CUSTOM_FREE(p)     free(p)
+#define LV_MEM_CUSTOM_REALLOC(p,s) heap_caps_realloc(p, s, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)

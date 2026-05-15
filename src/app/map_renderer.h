@@ -19,6 +19,7 @@
 // along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <cstdint>
+#include <lvgl.h>
 
 // Initialize the map renderer with LVGL parent object
 // Call after LVGL is initialized and SD card is mounted
@@ -40,8 +41,10 @@ void slopos_map_zoom_in();
 void slopos_map_zoom_out();
 
 // Render the current map view to the LVGL canvas
-// Call from display loop
 void slopos_map_render();
+
+// Reparent the map canvas to a new screen (call from map_screen_show)
+void slopos_map_reparent(lv_obj_t* new_parent);
 
 // Check if map tiles are available on SD card
 bool slopos_map_tiles_available();

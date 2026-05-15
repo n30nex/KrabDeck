@@ -198,29 +198,22 @@ static void create_icon_grid()
 // ── Public ──────────────────────────────────────────────
 void home_screen_create()
 {
-    // Create a NEW screen — do NOT reuse lv_scr_act() which may be the
-    // splash screen. The caller is responsible for deleting the old screen
-    // after the transition animation completes.
-    lv_obj_t* old = lv_scr_act();
     scr = lv_obj_create(nullptr);
     apply_dark_bg(scr);
     create_top_bar();
     create_bottom_bar();
     create_icon_grid();
-    lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_FADE_ON, 300, 0, false);
-    if (old) lv_obj_del(old);
+    lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_FADE_ON, 300, 0, true);
 }
 
 void home_screen_show()
 {
-    lv_obj_t* old = lv_scr_act();
     scr = lv_obj_create(nullptr);
     apply_dark_bg(scr);
     create_top_bar();
     create_bottom_bar();
     create_icon_grid();
-    lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 200, 0, false);
-    if (old && old != scr) lv_obj_del(old);
+    lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_RIGHT, 200, 0, true);
 }
 
 void home_screen_update_battery(int pct)

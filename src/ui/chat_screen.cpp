@@ -244,11 +244,9 @@ static void add_sample_messages()
 // ── Public API ──────────────────────────────────────────
 void chat_screen_show()
 {
-    // Clean up any existing screen
-    if (scr) lv_obj_del(scr);
-
+    // Previous screen was auto-deleted by LVGL when we navigated away
+    scr = nullptr;
     scr = lv_obj_create(nullptr);
-    lv_obj_t* old = lv_scr_act();
     apply_dark_bg(scr);
 
     create_top_bar();
@@ -256,10 +254,7 @@ void chat_screen_show()
     create_input_bar();
     add_sample_messages();
 
-    lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_LEFT, 200, 0, false);
-
-    // Delete old screen
-    if (old && old != lv_scr_act()) lv_obj_del(old);
+    lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_LEFT, 200, 0, true);
 }
 
 void chat_screen_add_msg(const char* sender, const char* text, bool is_self)

@@ -72,7 +72,7 @@ static lv_obj_t* make_screen(const char* title)
 
 static void show_screen(lv_obj_t* scr)
 {
-    lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_LEFT, 200, 0, false);
+    lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_LEFT, 200, 0, true);
 }
 
 // ════════════════════════════════════════════════════════
@@ -234,6 +234,7 @@ void map_screen_show()
 
     // Initialize map renderer if not already
     slopos_map_init();
+    slopos_map_reparent(scr);
     slopos_map_render();
 
     // Show the map canvas
@@ -380,7 +381,7 @@ void terminal_screen_show()
         char result[256] = "";
 
         if (strcmp(cmd, "help") == 0) {
-            snprintf(result, sizeof(result), "Commands: help status advert ping\\n");
+            snprintf(result, sizeof(result), "Commands: help status advert ping\n");
         } else if (strcmp(cmd, "status") == 0) {
             int rssi = slopos::mesh::getLastRSSI();
             float snr = slopos::mesh::getLastSNR();
@@ -388,16 +389,16 @@ void terminal_screen_show()
             int contacts = slopos::mesh::getContactCount();
             int channels = slopos::mesh::getChannelCount();
             snprintf(result, sizeof(result),
-                "RSSI:%ddBm SNR:%.1f Noise:%ddBm\\n"
-                "Contacts:%d Channels:%d\\n",
+                "RSSI:%ddBm SNR:%.1f Noise:%ddBm\n"
+                "Contacts:%d Channels:%d\n",
                 rssi, snr, noise, contacts, channels);
         } else if (strcmp(cmd, "advert") == 0) {
             bool ok = slopos::mesh::sendAdvert();
-            snprintf(result, sizeof(result), ok ? "Advert sent\\n" : "Send failed\\n");
+            snprintf(result, sizeof(result), ok ? "Advert sent\n" : "Send failed\n");
         } else if (strcmp(cmd, "ping") == 0) {
-            snprintf(result, sizeof(result), "Pong! Uptime: %lu ms\\n", millis());
+            snprintf(result, sizeof(result), "Pong! Uptime: %lu ms\n", millis());
         } else {
-            snprintf(result, sizeof(result), "Unknown: %s\\nType 'help'\\n", cmd);
+            snprintf(result, sizeof(result), "Unknown: %s\nType 'help'\n", cmd);
         }
 
         lv_textarea_add_text(term, result);

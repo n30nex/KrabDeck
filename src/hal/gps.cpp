@@ -117,9 +117,11 @@ static void parse_rmc(const char* sentence) {
 }
 
 static void process_nmea(const char* sentence) {
-    if (strncmp(sentence, "$GPGGA,", 7) == 0) {
+    // Support both $GP (GPS-only) and $GN (multi-constellation) prefixes
+    // L76K GNSS module on T-Deck outputs $GN by default
+    if (strncmp(sentence, "$GPGGA,", 7) == 0 || strncmp(sentence, "$GNGGA,", 7) == 0) {
         parse_gga(sentence);
-    } else if (strncmp(sentence, "$GPRMC,", 7) == 0) {
+    } else if (strncmp(sentence, "$GPRMC,", 7) == 0 || strncmp(sentence, "$GNRMC,", 7) == 0) {
         parse_rmc(sentence);
     }
 }
@@ -129,7 +131,7 @@ static void process_nmea(const char* sentence) {
 // ════════════════════════════════════════════════════════
 
 void slopos_gps_init() {
-    Serial1.begin(GPS_BAUD_RATE);
+    Serial1.begin(GPS_BAUD_RATE, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
     memset(&gps, 0, sizeof(gps));
     nmea_pos = 0;
     gps.initialized = true;

@@ -41,7 +41,6 @@ static constexpr double MIN_LON   = -180.0;
 
 // Note: PI is defined by Arduino.h as a macro
 static lv_obj_t* map_canvas = nullptr;
-static lv_draw_buf_t draw_buf;
 static uint8_t*   canvas_pixels = nullptr;
 
 static double center_lat = 51.5074;  // London
@@ -304,10 +303,10 @@ static void load_metadata() {
     }
 
     if (n >= 4) {
-        center_lat = (bounds[0] + bounds[2]) / 2.0;
-        center_lon = (bounds[1] + bounds[3]) / 2.0;
+        center_lat = (bounds[1] + bounds[3]) / 2.0;  // south + north
+        center_lon = (bounds[0] + bounds[2]) / 2.0;  // west + east
         // Pick zoom that shows full region width
-        double lat_mid = (bounds[0] + bounds[2]) / 2.0;
+        double lat_mid = (bounds[1] + bounds[3]) / 2.0;
         double merc_span = (bounds[3] - bounds[1]) * cos(lat_mid * PI / 180.0);
         for (int z = MAX_ZOOM; z >= MIN_ZOOM; z--) {
             double tile_span = merc_span / 360.0 * (1 << z);
@@ -326,7 +325,10 @@ static void load_metadata() {
 void slopos_map_init() {
     if (initialized) return;
 
-    map_canvas = lv_canvas_create(lv_scr_act());
+    // Create canvas without parent — reparented when map screen is shown.
+    // Using lv_scr_act() would attach to the splash screen, which is
+    // destroyed 2s later by home_screen_create(), leaving a dangling pointer.
+    map_canvas = lv_canvas_create(nullptr);
     lv_obj_set_size(map_canvas, TFT_WIDTH, TFT_HEIGHT);
     lv_obj_align(map_canvas, LV_ALIGN_CENTER, 0, 0);
 
@@ -342,10 +344,28 @@ void slopos_map_init() {
     tile_rgb565 = (uint16_t*)lv_malloc(TILE_SIZE * TILE_SIZE * 2);  // 131KB
     jpeg_inbuf  = (uint8_t*)lv_malloc(4096);  // 4KB input buffer
 
+    if (!tile_rgb565 || !jpeg_inbuf) {
+        Serial.println("[map] ERROR: Failed to alloc JPEG decode buffers");
+        lv_free(tile_rgb565);
+        lv_free(jpeg_inbuf);
+        tile_rgb565 = nullptr;
+        jpeg_inbuf = nullptr;
+        initialized = false;
+        return;
+    }
+
     // Auto-center on downloaded region from metadata.json
     load_metadata();
 
     initialized = true;
+}
+
+void slopos_map_reparent(lv_obj_t* new_parent) {
+    if (map_canvas && new_parent) {
+        lv_obj_set_parent(map_canvas, new_parent);
+        lv_obj_set_size(map_canvas, TFT_WIDTH, TFT_HEIGHT);
+        lv_obj_align(map_canvas, LV_ALIGN_CENTER, 0, 0);
+    }
 }
 
 void slopos_map_set_view(double lat, double lon, int zoom) {
@@ -490,7 +510,6 @@ bool slopos_map_tiles_available() {
 }
 
 void slopos_map_pixel_to_latlon(int px, int py, double* out_lat, double* out_lon) {
-    double n = (double)(1 << zoom_level);
     double center_tx = lon_to_tile_x(center_lon, zoom_level);
     double center_ty = lat_to_tile_y(center_lat, zoom_level);
 

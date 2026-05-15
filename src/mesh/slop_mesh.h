@@ -226,7 +226,11 @@ public:
                                                   _contacts[i].secret,
                                                   buf, len);
             if (!pkt) return false;
-            sendFlood(pkt);
+            if (_contacts[i].out_path_len != OUT_PATH_UNKNOWN) {
+                sendDirect(pkt, _contacts[i].out_path, _contacts[i].out_path_len);
+            } else {
+                sendFlood(pkt);
+            }
             return true;
         }
         return false;
@@ -310,9 +314,8 @@ public:
         buf[4] = 0;   // text_type = 0 (plain text)
         size_t text_len = strnlen(text, MAX_GRP_PAYLOAD - 1);
         memcpy(buf + 5, text, text_len);
-        size_t total = 5 + text_len;
-        // ensure null termination
-        if (total < sizeof(buf)) buf[total] = '\0';
+        buf[5 + text_len] = '\0';   // null-terminate the payload
+        size_t total = 5 + text_len + 1;  // include null terminator in sent length
 
         ::mesh::Packet* pkt = createGroupDatagram(PAYLOAD_TYPE_GRP_TXT,
                                                    _channels[channel_idx].channel,

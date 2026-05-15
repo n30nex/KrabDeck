@@ -88,8 +88,9 @@ static bool loadIdentity(::mesh::LocalIdentity& id) {
     uint8_t buf[128];
     int len = f.read(buf, sizeof(buf));
     f.close();
-    if (len < 64) return false;
+    if (len < 64) return false;  // Ed25519 private key is 64 bytes
     id.readFrom(buf, len);
+    // validatePrivateKey expects raw 64-byte prv_key — MeshCore serializes prv_key first
     return ::mesh::LocalIdentity::validatePrivateKey(buf);
 }
 

@@ -229,8 +229,10 @@ public:
     bool sendTextTo(const char* dest_name, const char* text) {
         for (int i = 0; i < _nContacts; i++) {
             if (strcmp(_contacts[i].name, dest_name) != 0) continue;
-            // Payload: 4-byte LE timestamp + null-terminated text, max 180 bytes total
-            static constexpr size_t MAX_PAYLOAD = 180;
+            // Payload: 4-byte LE timestamp + null-terminated text, max 150 chars text
+            // MeshCore caps encrypted payload at MAX_PACKET_PAYLOAD - 16 = 168 bytes.
+            // With 4-byte ts + 1-byte null, 150 chars text → 155 bytes plaintext fits.
+            static constexpr size_t MAX_PAYLOAD = 150;
             uint8_t buf[4 + MAX_PAYLOAD];
             uint32_t ts = getRTCClock()->getCurrentTime();
             memcpy(buf, &ts, 4);
@@ -325,7 +327,10 @@ public:
         if (channel_idx < 0 || channel_idx >= _nChannels) return false;
         if (!text || !text[0]) return false;
 
-        static constexpr size_t MAX_GRP_PAYLOAD = 180;
+        // Group text payload: [4-byte LE ts][txt_type=0][null-terminated text]
+        // MeshCore caps encrypted payload at MAX_PACKET_PAYLOAD - 16 = 168 bytes.
+        // With 4+1+1 overhead, 150 chars text → 156 bytes plaintext fits.
+        static constexpr size_t MAX_GRP_PAYLOAD = 150;
         uint8_t buf[5 + MAX_GRP_PAYLOAD];
         uint32_t ts = getRTCClock()->getCurrentTime();
         memcpy(buf, &ts, 4);

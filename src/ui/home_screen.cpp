@@ -254,6 +254,15 @@ static void build_home_screen(lv_scr_load_anim_t anim, uint32_t duration)
 
     scr = lv_obj_create(nullptr);
     apply_dark_bg(scr);
+
+    // When any other screen replaces Home (auto_del=true), LVGL frees all
+    // children — null the static pointers so periodic update functions
+    // in ui::loop() don't dereference freed objects.
+    lv_obj_add_event_cb(scr, [](lv_event_t*) {
+        scr = top_bar = bottom_bar = grid = nullptr;
+        time_label = batt_label = signal_label = hashtag_label = nullptr;
+    }, LV_EVENT_DELETE, nullptr);
+
     create_top_bar();
     create_bottom_bar();
     create_icon_grid();

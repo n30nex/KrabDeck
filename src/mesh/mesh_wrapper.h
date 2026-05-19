@@ -23,7 +23,7 @@ struct ContactInfo {
     uint32_t last_seen;
 };
 
-bool init();
+bool init(bool spiffs_ok = true);
 void loop();
 
 bool sendMessage(const char* dest_name, const char* text);

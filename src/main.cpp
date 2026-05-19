@@ -26,8 +26,9 @@ void setup()
     Serial.println("[boot] step 2: board init OK");
     slopos_battery_init();
 
-    if (!SPIFFS.begin(true))
-        Serial.println("[boot] WARNING: SPIFFS mount failed");
+    bool spiffs_ok = SPIFFS.begin(true);
+    if (!spiffs_ok)
+        Serial.println("[boot] WARNING: SPIFFS mount failed — identity/contacts won't persist across reboots");
     else
         Serial.println("[boot] step 3: SPIFFS mounted");
 
@@ -46,7 +47,7 @@ void setup()
     Serial.println("[boot] step 6: display init OK");
 
     slopos::mesh::setOwnName("SlopOS T-Deck");
-    if (!slopos::mesh::init())
+    if (!slopos::mesh::init(spiffs_ok))
         Serial.println("[boot] WARNING: Radio init failed");
     else
         Serial.println("[boot] step 7: mesh radio initialized");

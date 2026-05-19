@@ -42,9 +42,9 @@ protected:
 
 // ── API function signatures compile and link ────────────
 TEST_F(MeshWrapperTest, InitFunctionExists) {
-    // We can't call init() without hardware, but the function symbol exists
-    // Just verify return type is bool
-    using init_fn = bool (*)();
+    // We can't call init() without hardware, but the function symbol exists.
+    // Verify return type is bool (spiffs_ok parameter has default).
+    using init_fn = bool (*)(bool);
     (void)static_cast<init_fn>(slopos::mesh::init);
     SUCCEED();
 }

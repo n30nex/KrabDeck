@@ -89,7 +89,11 @@ static bool loadIdentity(::mesh::LocalIdentity& id) {
     uint8_t buf[128];
     int len = f.read(buf, sizeof(buf));
     f.close();
-    if (len < 64) return false;  // Ed25519 private key is 64 bytes
+    if (len != PRV_KEY_SIZE && len != (PRV_KEY_SIZE + PUB_KEY_SIZE)) {
+        // Corrupt or partial file — delete it and regenerate
+        SPIFFS.remove("/mesh_id");
+        return false;
+    }
     id.readFrom(buf, len);
     // validatePrivateKey expects raw 64-byte prv_key — MeshCore serializes prv_key first
     return ::mesh::LocalIdentity::validatePrivateKey(buf);
@@ -115,7 +119,7 @@ static void saveIdentity(::mesh::LocalIdentity& id) {
 namespace slopos {
 namespace mesh {
 
-bool init()
+bool init(bool spiffs_ok)
 {
     fallback_clock.begin();
     rtc_clock.begin(Wire);
@@ -175,7 +179,11 @@ bool init()
     // Generate or load identity
     if (!loadIdentity(g_mesh->self_id)) {
         g_mesh->self_id = ::mesh::LocalIdentity(&fast_rng);
-        saveIdentity(g_mesh->self_id);
+        if (spiffs_ok) {
+            saveIdentity(g_mesh->self_id);
+        } else {
+            Serial.println("[mesh] WARNING: SPIFFS unavailable — identity is ephemeral");
+        }
     }
 
     g_mesh->begin();

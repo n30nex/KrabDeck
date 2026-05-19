@@ -84,6 +84,8 @@ static lv_obj_t* make_screen_full(const char* title)
     }
     lv_obj_t* ch_lbl = lv_label_create(top);
     lv_label_set_text(ch_lbl, ch_buf);
+    lv_label_set_long_mode(ch_lbl, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(ch_lbl, 264);
     lv_obj_set_style_text_color(ch_lbl, lv_color_hex(CHANNEL_HASH), 0);
     lv_obj_set_style_text_font(ch_lbl, &lv_font_montserrat_12, 0);
     lv_obj_align(ch_lbl, LV_ALIGN_LEFT_MID, 22, 0);
@@ -835,7 +837,7 @@ void trace_screen_show()
                     lv_obj_set_style_text_color(result_lbl, lv_color_hex(ACCENT), 0);
                     lv_obj_set_style_text_font(result_lbl, &lv_font_montserrat_12, 0);
                     lv_obj_align(result_lbl, LV_ALIGN_BOTTOM_MID, 0,
-                                 -(BAR_BOT_H + DIV_H + 8));
+                                 -(BAR_BOT_H + DIV_H + 24));
                     lv_label_set_text(result_lbl, "Trace sent, waiting...");
                     trace_result_label = result_lbl;
 
@@ -1073,21 +1075,16 @@ void radio_setup_screen_show()
     s_cr   = p.configured ? p.cr            : 5;
     s_pwr  = p.configured ? p.tx_power_dbm  : 22;
 
+    // Warning (2 lines — compact to save vertical space)
     auto* warn = lv_label_create(scr);
     lv_label_set_text(warn,
-        "Check local regulations before\n"
-        "transmitting. Incorrect values\n"
-        "may be illegal in your region.");
+        "Check local regulations.\n"
+        "Incorrect settings may be illegal.");
     lv_obj_set_style_text_color(warn, lv_color_hex(0xccaa00), 0);
     lv_obj_set_style_text_font(warn, &lv_font_montserrat_12, 0);
     lv_obj_align(warn, LV_ALIGN_TOP_LEFT, 8, CONTENT_Y + 2);
 
-    auto* fl = lv_label_create(scr);
-    lv_label_set_text(fl, "Frequency:");
-    lv_obj_set_style_text_color(fl, lv_color_hex(TEXT_PRIMARY), 0);
-    lv_obj_set_style_text_font(fl, &lv_font_montserrat_12, 0);
-    lv_obj_align(fl, LV_ALIGN_TOP_LEFT, 8, CONTENT_Y + 50);
-
+    // Frequency presets (compact: 18px buttons, 20px spacing)
     static const struct { const char* label; float freq; } freqs[] = {
         {"868.000 MHz (EU)", 868.000f},
         {"869.525 MHz (UK)", 869.525f},
@@ -1096,14 +1093,14 @@ void radio_setup_screen_show()
         {"433.500 MHz (EU)", 433.500f},
     };
 
-    int y = CONTENT_Y + 64;
+    int y = CONTENT_Y + 32;
     for (auto& f : freqs) {
         auto* btn = lv_btn_create(scr);
-        lv_obj_set_size(btn, 200, 22);
+        lv_obj_set_size(btn, 200, 18);
         lv_obj_align(btn, LV_ALIGN_TOP_LEFT, 8, y);
         lv_obj_set_style_bg_color(btn, lv_color_hex(
             fabsf(s_freq - f.freq) < 0.001f ? 0x2a5a2a : BG_TERTIARY), 0);
-        lv_obj_set_style_radius(btn, 4, 0);
+        lv_obj_set_style_radius(btn, 0, 0);
         lv_obj_set_style_border_width(btn, 0, 0);
         auto* tl = lv_label_create(btn);
         lv_label_set_text(tl, f.label);
@@ -1115,21 +1112,24 @@ void radio_setup_screen_show()
             lv_obj_set_style_bg_color((lv_obj_t*)lv_event_get_target(e),
                 lv_color_hex(0x2a5a2a), 0);
         }, LV_EVENT_CLICKED, (void*)&f.freq);
-        y += 25;
+        y += 20;
     }
 
-    // SF selector
+    // SF + TX power side-by-side on one row
+    int row_y = y + 2;
     char buf[64];
+
+    // SF (left side: label at 8, +/- at 52/86)
     snprintf(buf, sizeof(buf), "SF: %d", s_sf);
     auto* sf_lbl = lv_label_create(scr);
     lv_label_set_text(sf_lbl, buf);
     lv_obj_set_style_text_color(sf_lbl, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(sf_lbl, &lv_font_montserrat_12, 0);
-    lv_obj_align(sf_lbl, LV_ALIGN_TOP_LEFT, 8, y + 8);
+    lv_obj_align(sf_lbl, LV_ALIGN_TOP_LEFT, 8, row_y);
 
     auto* sf_plus = lv_btn_create(scr);
     lv_obj_set_size(sf_plus, 30, 22);
-    lv_obj_align(sf_plus, LV_ALIGN_TOP_LEFT, 80, y + 6);
+    lv_obj_align(sf_plus, LV_ALIGN_TOP_LEFT, 52, row_y - 2);
     lv_obj_set_style_bg_color(sf_plus, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_radius(sf_plus, 0, 0);
     auto* spl = lv_label_create(sf_plus); lv_label_set_text(spl, "+"); lv_obj_center(spl);
@@ -1141,7 +1141,7 @@ void radio_setup_screen_show()
 
     auto* sf_minus = lv_btn_create(scr);
     lv_obj_set_size(sf_minus, 30, 22);
-    lv_obj_align(sf_minus, LV_ALIGN_TOP_LEFT, 115, y + 6);
+    lv_obj_align(sf_minus, LV_ALIGN_TOP_LEFT, 86, row_y - 2);
     lv_obj_set_style_bg_color(sf_minus, lv_color_hex(ACCENT_RED), 0);
     lv_obj_set_style_radius(sf_minus, 0, 0);
     auto* sml = lv_label_create(sf_minus); lv_label_set_text(sml, "-"); lv_obj_center(sml);
@@ -1151,18 +1151,17 @@ void radio_setup_screen_show()
             lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b); }
     }, LV_EVENT_CLICKED, (void*)sf_lbl);
 
-    // Power selector
-    int pwr_y = y + 34;
+    // TX power (right side: label at 160, +/- at 228/262)
     snprintf(buf, sizeof(buf), "TX: %d dBm", s_pwr);
     auto* pwr_lbl = lv_label_create(scr);
     lv_label_set_text(pwr_lbl, buf);
     lv_obj_set_style_text_color(pwr_lbl, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(pwr_lbl, &lv_font_montserrat_12, 0);
-    lv_obj_align(pwr_lbl, LV_ALIGN_TOP_LEFT, 8, pwr_y);
+    lv_obj_align(pwr_lbl, LV_ALIGN_TOP_LEFT, 160, row_y);
 
     auto* pwr_plus = lv_btn_create(scr);
     lv_obj_set_size(pwr_plus, 30, 22);
-    lv_obj_align(pwr_plus, LV_ALIGN_TOP_LEFT, 80, pwr_y - 2);
+    lv_obj_align(pwr_plus, LV_ALIGN_TOP_LEFT, 228, row_y - 2);
     lv_obj_set_style_bg_color(pwr_plus, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_radius(pwr_plus, 0, 0);
     auto* ppl = lv_label_create(pwr_plus); lv_label_set_text(ppl, "+"); lv_obj_center(ppl);
@@ -1174,7 +1173,7 @@ void radio_setup_screen_show()
 
     auto* pwr_minus = lv_btn_create(scr);
     lv_obj_set_size(pwr_minus, 30, 22);
-    lv_obj_align(pwr_minus, LV_ALIGN_TOP_LEFT, 115, pwr_y - 2);
+    lv_obj_align(pwr_minus, LV_ALIGN_TOP_LEFT, 262, row_y - 2);
     lv_obj_set_style_bg_color(pwr_minus, lv_color_hex(ACCENT_RED), 0);
     lv_obj_set_style_radius(pwr_minus, 0, 0);
     auto* pml = lv_label_create(pwr_minus); lv_label_set_text(pml, "-"); lv_obj_center(pml);
@@ -1184,10 +1183,10 @@ void radio_setup_screen_show()
             lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b); }
     }, LV_EVENT_CLICKED, (void*)pwr_lbl);
 
-    // Save & Reboot button
+    // Save & Reboot button (in flow, below SF/TX row)
     auto* save_btn = lv_btn_create(scr);
-    lv_obj_set_size(save_btn, 160, 36);
-    lv_obj_align(save_btn, LV_ALIGN_BOTTOM_MID, 0, -(BAR_BOT_H + DIV_H + 4));
+    lv_obj_set_size(save_btn, 160, 32);
+    lv_obj_align(save_btn, LV_ALIGN_TOP_MID, 0, row_y + 26);
     lv_obj_set_style_bg_color(save_btn, lv_color_hex(ACCENT_GREEN), 0);
     lv_obj_set_style_radius(save_btn, 0, 0);
     auto* svl = lv_label_create(save_btn);

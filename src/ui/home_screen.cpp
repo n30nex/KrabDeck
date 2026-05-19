@@ -112,6 +112,8 @@ static void create_top_bar()
     build_channel_string(ch_buf, sizeof(ch_buf));
     hashtag_label = lv_label_create(top_bar);
     lv_label_set_text(hashtag_label, ch_buf);
+    lv_label_set_long_mode(hashtag_label, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(hashtag_label, 260);
     lv_obj_set_style_text_color(hashtag_label, lv_color_hex(CHANNEL_HASH), 0);
     lv_obj_set_style_text_font(hashtag_label, &lv_font_montserrat_12, 0);
     lv_obj_align(hashtag_label, LV_ALIGN_LEFT_MID, 26, 0);

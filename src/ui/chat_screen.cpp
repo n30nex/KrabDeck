@@ -43,7 +43,7 @@ static lv_obj_t* input_field    = nullptr;
 static constexpr int TOP_H      = 24;
 static constexpr int BOT_BAR_H  = 20;
 static constexpr int DIVIDER_H  = 1;
-static constexpr int INPUT_H    = 36;
+static constexpr int INPUT_H    = 35;
 static constexpr int BUBBLE_PAD = 6;
 static constexpr int MAX_MSGS   = 50;
 static constexpr int MSG_LIST_Y = TOP_H + DIVIDER_H;
@@ -151,6 +151,8 @@ static lv_obj_t* make_chat_list_screen()
     }
     lv_obj_t* ch_lbl = lv_label_create(top);
     lv_label_set_text(ch_lbl, ch_buf);
+    lv_label_set_long_mode(ch_lbl, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(ch_lbl, 264);
     lv_obj_set_style_text_color(ch_lbl, lv_color_hex(CHANNEL_HASH), 0);
     lv_obj_set_style_text_font(ch_lbl, &lv_font_montserrat_12, 0);
     lv_obj_align(ch_lbl, LV_ALIGN_LEFT_MID, 22, 0);

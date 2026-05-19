@@ -109,6 +109,11 @@ static UINT jpeg_input_func(JDEC* jd, BYTE* buf, UINT nbytes) {
 static UINT jpeg_output_func(JDEC* jd, void* bitmap, JRECT* rect) {
     uint16_t* src = (uint16_t*)bitmap;
     uint16_t* dst = tile_rgb565;
+    // Bounds-check: reject rects outside the 256×256 tile buffer
+    if (rect->left < 0 || rect->top < 0 ||
+        rect->right >= TILE_SIZE || rect->bottom >= TILE_SIZE) {
+        return 0;  // abort decode — malformed JPEG
+    }
     for (int y = rect->top; y <= rect->bottom; y++) {
         for (int x = rect->left; x <= rect->right; x++) {
             dst[y * TILE_SIZE + x] = *src++;
@@ -201,6 +206,15 @@ static bool load_tile_jpeg(int zoom, int tx, int ty) {
         return false;
     }
 
+    // Reject JPEGs larger than tile dimensions (malformed map tiles)
+    if (jdec.width > TILE_SIZE || jdec.height > TILE_SIZE) {
+        ctx.file.close();
+        lv_free(slot->pixels);
+        slot->pixels = nullptr;
+        tile_rgb565 = saved_rgb565;
+        return false;
+    }
+
     rc = jd_decomp(&jdec, jpeg_output_func, 0);
     ctx.file.close();
     tile_rgb565 = saved_rgb565;
@@ -261,14 +275,18 @@ static void draw_tile_from_cache(lv_layer_t* layer, CachedTile* tile,
     area.x2 = x2; area.y2 = y2;
 
     lv_image_dsc_t img;
+    img.header.magic = LV_IMAGE_HEADER_MAGIC;
+    img.header.cf = LV_COLOR_FORMAT_RGB565;
     img.header.w = (uint32_t)src_w;
     img.header.h = (uint32_t)src_h;
     img.header.stride = (uint32_t)(src_w * 2);
-    img.header.cf = LV_COLOR_FORMAT_RGB565;
     img.data = (const uint8_t*)img_buf;
     img.data_size = (uint32_t)buf_size;
 
+    img_dsc.src = &img;
     lv_draw_image(layer, &img_dsc, &area);
+    // Safe to free now — lv_draw_image on canvas layer is synchronous;
+    // pixel data is consumed by the draw call before it returns.
     lv_free(img_buf);
 }
 
@@ -334,10 +352,15 @@ void slopos_map_init() {
     // Allocate draw buffer (320×240×2 = 153KB for RGB565)
     size_t buf_size = (size_t)TFT_WIDTH * TFT_HEIGHT * 2;
     canvas_pixels = (uint8_t*)lv_malloc(buf_size);
-    if (canvas_pixels) {
-        lv_canvas_set_buffer(map_canvas, canvas_pixels,
-                             TFT_WIDTH, TFT_HEIGHT, LV_COLOR_FORMAT_RGB565);
+    if (!canvas_pixels) {
+        Serial.println("[map] ERROR: Failed to alloc canvas buffer");
+        lv_obj_del(map_canvas);
+        map_canvas = nullptr;
+        initialized = false;
+        return;
     }
+    lv_canvas_set_buffer(map_canvas, canvas_pixels,
+                         TFT_WIDTH, TFT_HEIGHT, LV_COLOR_FORMAT_RGB565);
 
     // Allocate JPEG tile decode buffers (use PSRAM if available)
     tile_rgb565 = (uint16_t*)lv_malloc(TILE_SIZE * TILE_SIZE * 2);  // 131KB
@@ -345,13 +368,7 @@ void slopos_map_init() {
 
     if (!tile_rgb565 || !jpeg_inbuf) {
         Serial.println("[map] ERROR: Failed to alloc JPEG decode buffers");
-        lv_free(tile_rgb565);
-        lv_free(jpeg_inbuf);
-        lv_obj_del(map_canvas);
-        map_canvas = nullptr;
-        tile_rgb565 = nullptr;
-        jpeg_inbuf = nullptr;
-        initialized = false;
+        slopos_map_deinit();  // frees everything including canvas_pixels
         return;
     }
 
@@ -367,13 +384,35 @@ void slopos_map_reparent(lv_obj_t* new_parent) {
         lv_obj_set_size(map_canvas, TFT_WIDTH, TFT_HEIGHT);
         lv_obj_align(map_canvas, LV_ALIGN_CENTER, 0, 0);
         // When parent screen is auto-deleted (e.g. navigate away),
-        // LVGL recursively deletes map_canvas — reset state so next
-        // visit re-initializes instead of using a dangling pointer.
+        // LVGL recursively deletes map_canvas — free all PSRAM
+        // allocations so repeated map visits don't leak memory.
         lv_obj_add_event_cb(new_parent, [](lv_event_t* e) {
-            map_canvas = nullptr;
-            initialized = false;
+            slopos_map_deinit();
         }, LV_EVENT_DELETE, nullptr);
     }
+}
+
+void slopos_map_deinit() {
+    // Free JPEG decode buffers
+    if (tile_rgb565) { lv_free(tile_rgb565); tile_rgb565 = nullptr; }
+    if (jpeg_inbuf)  { lv_free(jpeg_inbuf);  jpeg_inbuf  = nullptr; }
+
+    // Free LRU tile cache pixels
+    for (int i = 0; i < TILE_CACHE_SIZE; i++) {
+        if (tile_cache[i].pixels) {
+            lv_free(tile_cache[i].pixels);
+            tile_cache[i].pixels = nullptr;
+        }
+    }
+
+    // Free canvas pixel buffer (LVGL may have already freed it,
+    // but our pointer tracks it separately — safe double-check)
+    if (canvas_pixels) { lv_free(canvas_pixels); canvas_pixels = nullptr; }
+
+    // Canvas widget is destroyed by LVGL via auto-delete —
+    // null our pointer so the next map visit reinitializes
+    map_canvas = nullptr;
+    initialized = false;
 }
 
 void slopos_map_set_view(double lat, double lon, int zoom) {

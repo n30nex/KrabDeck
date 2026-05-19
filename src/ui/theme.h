@@ -20,50 +20,107 @@
 
 #include <lvgl.h>
 
-// SlopOS Dark Theme — Discord-inspired color palette
+// SlopOS Pixel Theme — Discord-inspired palette with blocky pixel styling
 namespace slopos::theme {
 
 // ── Backgrounds ─────────────────────────────────────────
-constexpr uint32_t BG_PRIMARY   = 0x0f0f0f;  // deep black (spec: #0F0F0F)
+constexpr uint32_t BG_PRIMARY   = 0x0f0f0f;  // deep black
 constexpr uint32_t BG_SECONDARY = 0x181818;  // status bars
 constexpr uint32_t BG_TERTIARY  = 0x1e1e1e;  // card/icon tile background
 constexpr uint32_t BG_INPUT     = 0x252525;  // input field
 
 // ── Accent ──────────────────────────────────────────────
-constexpr uint32_t ACCENT       = 0x00bfff;  // bright cyan/blue (spec: #00BFFF)
+constexpr uint32_t ACCENT       = 0x00bfff;  // bright cyan
 constexpr uint32_t ACCENT_HOVER = 0x00a5e0;
-constexpr uint32_t ACCENT_GREEN = 0x3ba55d;  // online / success
-constexpr uint32_t ACCENT_RED   = 0xed4245;  // notification / error
-constexpr uint32_t ACCENT_ORANGE= 0xfaa61a;  // warning
-constexpr uint32_t ACCENT_YELLOW= 0xfee75c;  // signal
+constexpr uint32_t ACCENT_GREEN = 0x3ba55d;
+constexpr uint32_t ACCENT_RED   = 0xed4245;
+constexpr uint32_t ACCENT_ORANGE= 0xfaa61a;
+constexpr uint32_t ACCENT_YELLOW= 0xfee75c;
 
 // ── Message bubbles ──────────────────────────────────────
-constexpr uint32_t MSG_INCOMING = 0x3a4560;  // light blue-gray (incoming)
+constexpr uint32_t MSG_INCOMING = 0x3a4560;
 
 // ── Text ────────────────────────────────────────────────
-constexpr uint32_t TEXT_PRIMARY   = 0xf2f3f5;  // crisp white
-constexpr uint32_t TEXT_SECONDARY = 0x949ba4;  // light gray
+constexpr uint32_t TEXT_PRIMARY   = 0xf2f3f5;
+constexpr uint32_t TEXT_SECONDARY = 0x949ba4;
 constexpr uint32_t TEXT_MUTED     = 0x6b7078;
 constexpr uint32_t TEXT_LINK      = 0x00aff4;
 
 // ── Channel colors ──────────────────────────────────────
-constexpr uint32_t CHANNEL_HASH   = 0x00bfff;  // cyan hashtags
+constexpr uint32_t CHANNEL_HASH   = 0x00bfff;
 constexpr uint32_t CHANNEL_ACTIVE = 0xffffff;
 
 // ── Structural ───────────────────────────────────────────
 constexpr uint32_t DIVIDER        = 0x2a2a2a;
 
-// ── Apply dark theme to a screen ────────────────────────
+// ── Pixel border width ───────────────────────────────────
+constexpr int32_t PIXEL_BORDER    = 2;
+
+// ── Apply dark background to an object ──────────────────
 inline void apply_dark_bg(lv_obj_t* obj) {
     lv_obj_set_style_bg_color(obj, lv_color_hex(BG_PRIMARY), 0);
     lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
 }
 
-inline void apply_card_style(lv_obj_t* obj) {
+// ── Pixel card style (0-radius, dark bg, 2px border) ────
+inline void apply_pixel_card(lv_obj_t* obj) {
     lv_obj_set_style_bg_color(obj, lv_color_hex(BG_TERTIARY), 0);
     lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(obj, 8, 0);
-    lv_obj_set_style_pad_all(obj, 8, 0);
+    lv_obj_set_style_radius(obj, 0, 0);
+    lv_obj_set_style_border_width(obj, PIXEL_BORDER, 0);
+    lv_obj_set_style_border_color(obj, lv_color_hex(DIVIDER), 0);
+    lv_obj_set_style_pad_all(obj, 6, 0);
+}
+
+// ── Pixel card with accent border ───────────────────────
+inline void apply_pixel_card_accent(lv_obj_t* obj) {
+    apply_pixel_card(obj);
+    lv_obj_set_style_border_color(obj, lv_color_hex(ACCENT), 0);
+}
+
+// ── Pixel button (filled) ───────────────────────────────
+inline void apply_pixel_btn(lv_obj_t* obj) {
+    lv_obj_set_style_bg_color(obj, lv_color_hex(ACCENT), 0);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(obj, 0, 0);
+    lv_obj_set_style_border_width(obj, PIXEL_BORDER, 0);
+    lv_obj_set_style_border_color(obj, lv_color_hex(ACCENT_HOVER), 0);
+    lv_obj_set_style_pad_all(obj, 6, 0);
+}
+
+// ── Pixel button (outline) ──────────────────────────────
+inline void apply_pixel_btn_outline(lv_obj_t* obj) {
+    lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_radius(obj, 0, 0);
+    lv_obj_set_style_border_width(obj, PIXEL_BORDER, 0);
+    lv_obj_set_style_border_color(obj, lv_color_hex(ACCENT), 0);
+    lv_obj_set_style_pad_all(obj, 6, 0);
+}
+
+// ── Pixel input field ───────────────────────────────────
+inline void apply_pixel_input(lv_obj_t* obj) {
+    lv_obj_set_style_bg_color(obj, lv_color_hex(BG_INPUT), 0);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(obj, 0, 0);
+    lv_obj_set_style_border_width(obj, PIXEL_BORDER, 0);
+    lv_obj_set_style_border_color(obj, lv_color_hex(DIVIDER), 0);
+    lv_obj_set_style_pad_all(obj, 6, 0);
+}
+
+// ── Pixel badge (small accent label) ────────────────────
+inline void apply_pixel_badge(lv_obj_t* obj) {
+    lv_obj_set_style_bg_color(obj, lv_color_hex(ACCENT), 0);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_30, 0);
+    lv_obj_set_style_radius(obj, 0, 0);
+    lv_obj_set_style_border_width(obj, 1, 0);
+    lv_obj_set_style_border_color(obj, lv_color_hex(ACCENT), 0);
+    lv_obj_set_style_pad_all(obj, 2, 0);
+}
+
+// ── Legacy card style (kept for compatibility) ──────────
+// Use apply_pixel_card() for new code.
+inline void apply_card_style(lv_obj_t* obj) {
+    apply_pixel_card(obj);
 }
 
 } // namespace slopos::theme

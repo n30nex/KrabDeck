@@ -268,7 +268,7 @@ static void show_channel_list(lv_scr_load_anim_t anim)
         lv_obj_align(avatar, LV_ALIGN_LEFT_MID, 6, 0);
         lv_obj_set_style_bg_color(avatar, lv_color_hex(0x5865F2), 0);
         lv_obj_set_style_bg_opa(avatar, LV_OPA_COVER, 0);
-        lv_obj_set_style_radius(avatar, 16, 0);
+        lv_obj_set_style_radius(avatar, 0, 0);
         lv_obj_set_style_border_width(avatar, 0, 0);
         lv_obj_clear_flag(avatar, LV_OBJ_FLAG_CLICKABLE);
 
@@ -314,7 +314,7 @@ static void show_channel_list(lv_scr_load_anim_t anim)
             lv_obj_align(badge, LV_ALIGN_RIGHT_MID, -4, 0);
             lv_obj_set_style_bg_color(badge, lv_color_hex(ACCENT), 0);
             lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
-            lv_obj_set_style_radius(badge, 9, 0);
+            lv_obj_set_style_radius(badge, 0, 0);
             lv_obj_set_style_border_width(badge, 0, 0);
             lv_obj_clear_flag(badge, LV_OBJ_FLAG_CLICKABLE);
 
@@ -352,7 +352,7 @@ static void rebuild_channel_ribbon()
     for (int i = 0; i < dyn_count; i++) {
         lv_obj_t* pill = lv_btn_create(channel_ribbon);
         lv_obj_set_height(pill, TOP_H - 8);
-        lv_obj_set_style_radius(pill, 10, 0);
+        lv_obj_set_style_radius(pill, 0, 0);
         lv_obj_set_style_border_width(pill, 0, 0);
         lv_obj_set_style_pad_hor(pill, 8, 0);
         lv_obj_set_style_pad_ver(pill, 2, 0);
@@ -399,7 +399,7 @@ static void create_top_bar()
     lv_obj_set_size(back, 24, TOP_H - 4);
     lv_obj_align(back, LV_ALIGN_LEFT_MID, 2, 0);
     lv_obj_set_style_bg_color(back, lv_color_hex(BG_TERTIARY), 0);
-    lv_obj_set_style_radius(back, 4, 0);
+    lv_obj_set_style_radius(back, 0, 0);
     lv_obj_set_style_border_width(back, 0, 0);
     lv_obj_t* bl = lv_label_create(back);
     lv_label_set_text(bl, LV_SYMBOL_LEFT);
@@ -442,7 +442,7 @@ static void create_top_bar()
     for (int i = 0; i < dyn_count; i++) {
         lv_obj_t* pill = lv_btn_create(channel_ribbon);
         lv_obj_set_height(pill, TOP_H - 8);
-        lv_obj_set_style_radius(pill, 10, 0);
+        lv_obj_set_style_radius(pill, 0, 0);
         lv_obj_set_style_border_width(pill, 0, 0);
         lv_obj_set_style_pad_hor(pill, 8, 0);
         lv_obj_set_style_pad_ver(pill, 2, 0);
@@ -502,7 +502,7 @@ static lv_obj_t* create_bubble(lv_obj_t* parent, const char* sender,
     lv_obj_t* bubble = lv_obj_create(container);
     lv_obj_set_width(bubble, LV_PCT(78));
     lv_obj_set_height(bubble, LV_SIZE_CONTENT);
-    lv_obj_set_style_radius(bubble, 8, 0);
+    lv_obj_set_style_radius(bubble, 0, 0);
     lv_obj_set_style_pad_all(bubble, 6, 0);
     lv_obj_set_style_border_width(bubble, 0, 0);
     lv_obj_set_flex_flow(bubble, LV_FLEX_FLOW_COLUMN);
@@ -623,7 +623,7 @@ static void create_input_bar()
     lv_obj_set_style_text_font(input_field, &lv_font_montserrat_14, 0);
     lv_obj_set_style_border_width(input_field, 1, 0);
     lv_obj_set_style_border_color(input_field, lv_color_hex(BG_TERTIARY), 0);
-    lv_obj_set_style_radius(input_field, 6, 0);
+    lv_obj_set_style_radius(input_field, 0, 0);
     lv_obj_set_style_pad_all(input_field, 4, 0);
     lv_textarea_set_one_line(input_field, true);
     lv_textarea_set_placeholder_text(input_field, "Message #channel");
@@ -633,7 +633,7 @@ static void create_input_bar()
     lv_obj_align(send_btn, LV_ALIGN_RIGHT_MID, 0, 0);
     lv_obj_set_style_bg_color(send_btn, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_bg_opa(send_btn, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(send_btn, 6, 0);
+    lv_obj_set_style_radius(send_btn, 0, 0);
     lv_obj_set_style_border_width(send_btn, 0, 0);
 
     lv_obj_t* send_label = lv_label_create(send_btn);
@@ -705,6 +705,13 @@ static void open_channel_messaging(int idx)
 
     scr = lv_obj_create(nullptr);
     apply_dark_bg(scr);
+
+    // When the messaging screen is auto-deleted (e.g. user navigates
+    // away without pressing back), null all global widget pointers
+    // so chat_screen_add_msg() doesn't dereference freed memory.
+    lv_obj_add_event_cb(scr, [](lv_event_t*) {
+        scr = top_bar = channel_ribbon = msg_list = input_bar = input_field = nullptr;
+    }, LV_EVENT_DELETE, nullptr);
 
     create_top_bar();
     create_message_list();

@@ -501,7 +501,7 @@ void noise_screen_show()
     lv_obj_set_size(bar_bg, 280, 80);
     lv_obj_align(bar_bg, LV_ALIGN_CENTER, 0, -20);
     lv_obj_set_style_bg_color(bar_bg, lv_color_hex(BG_TERTIARY), 0);
-    lv_obj_set_style_radius(bar_bg, 8, 0);
+    lv_obj_set_style_radius(bar_bg, 0, 0);
     lv_obj_set_style_border_width(bar_bg, 0, 0);
 
     int bar_w = map(constrain(noise, -120, -60), -120, -60, 28, 252);
@@ -510,7 +510,7 @@ void noise_screen_show()
     lv_obj_align(bar_fill, LV_ALIGN_LEFT_MID, 14, 0);
     lv_obj_set_style_bg_color(bar_fill, lv_color_hex(
         noise > -90 ? ACCENT_RED : noise > -105 ? ACCENT_ORANGE : ACCENT_GREEN), 0);
-    lv_obj_set_style_radius(bar_fill, 4, 0);
+    lv_obj_set_style_radius(bar_fill, 0, 0);
     lv_obj_set_style_border_width(bar_fill, 0, 0);
 
     char buf[64];
@@ -564,7 +564,7 @@ void map_screen_show()
     lv_obj_set_size(zoom_in, 32, 32);
     lv_obj_align(zoom_in, LV_ALIGN_BOTTOM_RIGHT, -8, -(BAR_BOT_H + DIV_H + 8));
     lv_obj_set_style_bg_color(zoom_in, lv_color_hex(ACCENT), 0);
-    lv_obj_set_style_radius(zoom_in, 16, 0);
+    lv_obj_set_style_radius(zoom_in, 0, 0);
     lv_obj_t* zi = lv_label_create(zoom_in);
     lv_label_set_text(zi, "+"); lv_obj_center(zi);
     lv_obj_add_event_cb(zoom_in, [](lv_event_t*) { slopos_map_zoom_in(); },
@@ -574,7 +574,7 @@ void map_screen_show()
     lv_obj_set_size(zoom_out, 32, 32);
     lv_obj_align(zoom_out, LV_ALIGN_BOTTOM_RIGHT, -8, -(BAR_BOT_H + DIV_H + 48));
     lv_obj_set_style_bg_color(zoom_out, lv_color_hex(BG_TERTIARY), 0);
-    lv_obj_set_style_radius(zoom_out, 16, 0);
+    lv_obj_set_style_radius(zoom_out, 0, 0);
     lv_obj_t* zo = lv_label_create(zoom_out);
     lv_label_set_text(zo, "-"); lv_obj_center(zo);
     lv_obj_add_event_cb(zoom_out, [](lv_event_t*) { slopos_map_zoom_out(); },
@@ -843,7 +843,8 @@ void trace_screen_show()
                         if (!trace_result_label) { lv_timer_del(t); return; }
                         if (slopos::mesh::hasTraceResult()) {
                             uint8_t len = slopos::mesh::getTracePathLen();
-                            uint8_t snrs[16], hashes[16];
+                            if (len > 64) len = 64;  // MAX_PATH_SIZE
+                            uint8_t snrs[64], hashes[64];
                             slopos::mesh::getTracePath(snrs, hashes);
                             char res[128];
                             if (len == 0) {
@@ -879,7 +880,7 @@ static lv_obj_t* channel_create_dialog(lv_obj_t* parent)
     lv_obj_set_size(dialog, 260, 180);
     lv_obj_center(dialog);
     lv_obj_set_style_bg_color(dialog, lv_color_hex(BG_SECONDARY), 0);
-    lv_obj_set_style_radius(dialog, 8, 0);
+    lv_obj_set_style_radius(dialog, 0, 0);
     lv_obj_set_style_border_width(dialog, 0, 0);
     lv_obj_set_style_pad_all(dialog, 8, 0);
 
@@ -928,7 +929,7 @@ static lv_obj_t* channel_create_dialog(lv_obj_t* parent)
     lv_obj_set_size(create_btn, 100, 28);
     lv_obj_align(create_btn, LV_ALIGN_BOTTOM_MID, 0, -4);
     lv_obj_set_style_bg_color(create_btn, lv_color_hex(ACCENT_GREEN), 0);
-    lv_obj_set_style_radius(create_btn, 4, 0);
+    lv_obj_set_style_radius(create_btn, 0, 0);
     lv_obj_t* cbl = lv_label_create(create_btn);
     lv_label_set_text(cbl, "Create");
     lv_obj_center(cbl);
@@ -1006,7 +1007,7 @@ void channels_screen_show()
     lv_obj_set_size(add_btn, 140, 28);
     lv_obj_align(add_btn, LV_ALIGN_BOTTOM_MID, 0, -(BAR_BOT_H + DIV_H + 4));
     lv_obj_set_style_bg_color(add_btn, lv_color_hex(ACCENT), 0);
-    lv_obj_set_style_radius(add_btn, 6, 0);
+    lv_obj_set_style_radius(add_btn, 0, 0);
     lv_obj_t* al = lv_label_create(add_btn);
     lv_label_set_text(al, LV_SYMBOL_PLUS "  Create Channel");
     lv_obj_set_style_text_font(al, &lv_font_montserrat_12, 0);
@@ -1043,7 +1044,7 @@ void advertise_screen_show()
     lv_obj_set_size(btn, 140, 36);
     lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -(BAR_BOT_H + DIV_H + 8));
     lv_obj_set_style_bg_color(btn, lv_color_hex(ACCENT), 0);
-    lv_obj_set_style_radius(btn, 8, 0);
+    lv_obj_set_style_radius(btn, 0, 0);
     lv_obj_t* bl = lv_label_create(btn);
     lv_label_set_text(bl, LV_SYMBOL_AUDIO "  Advertise Now");
     lv_obj_center(bl);
@@ -1130,7 +1131,7 @@ void radio_setup_screen_show()
     lv_obj_set_size(sf_plus, 30, 22);
     lv_obj_align(sf_plus, LV_ALIGN_TOP_LEFT, 80, y + 6);
     lv_obj_set_style_bg_color(sf_plus, lv_color_hex(ACCENT), 0);
-    lv_obj_set_style_radius(sf_plus, 4, 0);
+    lv_obj_set_style_radius(sf_plus, 0, 0);
     auto* spl = lv_label_create(sf_plus); lv_label_set_text(spl, "+"); lv_obj_center(spl);
     lv_obj_add_event_cb(sf_plus, [](lv_event_t* e) {
         if (s_sf < 12) { s_sf++;
@@ -1142,7 +1143,7 @@ void radio_setup_screen_show()
     lv_obj_set_size(sf_minus, 30, 22);
     lv_obj_align(sf_minus, LV_ALIGN_TOP_LEFT, 115, y + 6);
     lv_obj_set_style_bg_color(sf_minus, lv_color_hex(ACCENT_RED), 0);
-    lv_obj_set_style_radius(sf_minus, 4, 0);
+    lv_obj_set_style_radius(sf_minus, 0, 0);
     auto* sml = lv_label_create(sf_minus); lv_label_set_text(sml, "-"); lv_obj_center(sml);
     lv_obj_add_event_cb(sf_minus, [](lv_event_t* e) {
         if (s_sf > 6) { s_sf--;
@@ -1163,7 +1164,7 @@ void radio_setup_screen_show()
     lv_obj_set_size(pwr_plus, 30, 22);
     lv_obj_align(pwr_plus, LV_ALIGN_TOP_LEFT, 80, pwr_y - 2);
     lv_obj_set_style_bg_color(pwr_plus, lv_color_hex(ACCENT), 0);
-    lv_obj_set_style_radius(pwr_plus, 4, 0);
+    lv_obj_set_style_radius(pwr_plus, 0, 0);
     auto* ppl = lv_label_create(pwr_plus); lv_label_set_text(ppl, "+"); lv_obj_center(ppl);
     lv_obj_add_event_cb(pwr_plus, [](lv_event_t* e) {
         if (s_pwr < 22) { s_pwr++;
@@ -1175,7 +1176,7 @@ void radio_setup_screen_show()
     lv_obj_set_size(pwr_minus, 30, 22);
     lv_obj_align(pwr_minus, LV_ALIGN_TOP_LEFT, 115, pwr_y - 2);
     lv_obj_set_style_bg_color(pwr_minus, lv_color_hex(ACCENT_RED), 0);
-    lv_obj_set_style_radius(pwr_minus, 4, 0);
+    lv_obj_set_style_radius(pwr_minus, 0, 0);
     auto* pml = lv_label_create(pwr_minus); lv_label_set_text(pml, "-"); lv_obj_center(pml);
     lv_obj_add_event_cb(pwr_minus, [](lv_event_t* e) {
         if (s_pwr > 2) { s_pwr--;
@@ -1188,7 +1189,7 @@ void radio_setup_screen_show()
     lv_obj_set_size(save_btn, 160, 36);
     lv_obj_align(save_btn, LV_ALIGN_BOTTOM_MID, 0, -(BAR_BOT_H + DIV_H + 4));
     lv_obj_set_style_bg_color(save_btn, lv_color_hex(ACCENT_GREEN), 0);
-    lv_obj_set_style_radius(save_btn, 8, 0);
+    lv_obj_set_style_radius(save_btn, 0, 0);
     auto* svl = lv_label_create(save_btn);
     lv_label_set_text(svl, LV_SYMBOL_SAVE "  Save & Reboot");
     lv_obj_center(svl);

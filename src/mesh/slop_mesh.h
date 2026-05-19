@@ -77,6 +77,8 @@ protected:
     {
         if (type != PAYLOAD_TYPE_TXT_MSG || _nMatches == 0 || !_onMessage) return;
         // Data layout: [4-byte LE timestamp][null-terminated text]
+        // Safety: force null-termination — packet data may lack a terminator
+        if (len > 4) data[len - 1] = '\0';
         const char* text = (len > 4) ? (const char*)(data + 4) : "";
         int idx = _matchIdxs[sender_idx];
         const char* sender = _contacts[idx].name;
@@ -139,6 +141,8 @@ protected:
     {
         if (type != PAYLOAD_TYPE_GRP_TXT || !_onMessage) return;
         // Group text payload: [4-byte LE timestamp][text_type byte][null-terminated text]
+        // Safety: force null-termination — packet data may lack a terminator
+        if (len > 5) data[len - 1] = '\0';
         const char* text = (len > 5) ? (const char*)(data + 5) : "";
         _onMessage("[group]", text);
     }
@@ -165,10 +169,14 @@ public:
         // Find contact by matching identity
         for (int i = 0; i < _nContacts; i++) {
             if (_contacts[i].id.matches(sender)) {
-                if (path_len < MAX_PATH_SIZE) {
-                    memcpy(_contacts[i].out_path, path, path_len);
+                // Use MeshCore's validated path copy — handles encoded path_len
+                // correctly and rejects invalid/oversized paths
+                if (!::mesh::Packet::isValidPathLen(path_len)) {
+                    _contacts[i].out_path_len = OUT_PATH_UNKNOWN;
+                    return;
                 }
-                _contacts[i].out_path_len = path_len;
+                _contacts[i].out_path_len =
+                    ::mesh::Packet::copyPath(_contacts[i].out_path, path, path_len);
                 return;
             }
         }
@@ -180,9 +188,16 @@ public:
         SlopContact& c = _contacts[contact_idx];
         if (c.out_path_len == OUT_PATH_UNKNOWN) return false;
 
-        ::mesh::Packet* pkt = createTrace(tag, 0, 0);  // auth_code=0 for now
-        if (!pkt) return false;
-        sendDirect(pkt, c.out_path, c.out_path_len);
+    ::mesh::Packet* pkt = createTrace(tag, 0, 0);  // auth_code=0 for now
+    if (!pkt) return false;
+    // sendDirect() for TRACE packets treats path_len as raw bytes
+    // (memcpy's path_len bytes into payload). out_path_len is encoded
+    // (hash_count | hash_size_shift), so decode to raw byte count.
+    uint8_t hash_count = c.out_path_len & 63;
+    uint8_t hash_size = (c.out_path_len >> 6) + 1;
+    uint8_t raw_len = hash_count * hash_size;
+    if (raw_len > MAX_PATH_SIZE) raw_len = MAX_PATH_SIZE;
+    sendDirect(pkt, c.out_path, raw_len);
         return true;
     }
 
@@ -192,8 +207,10 @@ public:
     {
         // Store the trace result for the UI to display
         _last_trace_tag = tag;
-        _last_trace_len = path_len;
+        // Clamp BEFORE storing — getTracePathLen() returns _last_trace_len,
+        // and the UI buffer size must not be exceeded
         if (path_len > MAX_PATH_SIZE) path_len = MAX_PATH_SIZE;
+        _last_trace_len = path_len;
         memcpy(_last_trace_snrs, path_snrs, path_len);
         memcpy(_last_trace_hashes, path_hashes, path_len);
         _has_trace_result = true;
@@ -260,7 +277,7 @@ public:
 
     // ── Channel management ────────────────────────────
     // Minimal base64 decode (avoids external dependency — MeshCore uses base64.hpp)
-    static int decode_b64(const char* in, size_t in_len, uint8_t* out) {
+    static int decode_b64(const char* in, size_t in_len, uint8_t* out, size_t out_cap) {
         static const char T[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
         int o = 0;
         uint32_t buf = 0;
@@ -272,7 +289,7 @@ public:
             bits += 6;
             if (bits >= 8) {
                 bits -= 8;
-                out[o++] = (uint8_t)(buf >> bits);
+                if (o < (int)out_cap) out[o++] = (uint8_t)(buf >> bits);
                 buf &= (1U << bits) - 1;
             }
         }
@@ -286,7 +303,8 @@ public:
         memset(ch.channel.secret, 0, sizeof(ch.channel.secret));
 
         // Decode base64 PSK to secret (matches MeshCore addChannel protocol)
-        int len = decode_b64(psk_base64, strlen(psk_base64), ch.channel.secret);
+        int len = decode_b64(psk_base64, strlen(psk_base64), ch.channel.secret,
+                             sizeof(ch.channel.secret));
         if (len != 32 && len != 16) return false;  // must be 128-bit or 256-bit key
 
         // Hash the PSK to create the channel hash (matches MeshCore protocol)

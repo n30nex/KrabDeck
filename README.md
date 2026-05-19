@@ -222,12 +222,27 @@ See [`firmware/README.md`](firmware/README.md) for details.
 
 ## Known Issues
 
-| Issue | Workaround |
-|-------|------------|
-| **Touch calibration may be off** after orientation fix (beta-0.1.18) | Fixed in beta-0.1.19 — touch now matches display rotation |
-| **Radio requires first-boot NVS init** (beta-0.1.17 fixed this) | Fixed: uses compile-time defaults on clean devices |
+| Issue | Status |
+|-------|--------|
 | **No SD card = expected warning** | Normal — `[boot] INFO: No SD card detected` is not an error |
-| **GPS requires external antenna** | No fix yet — T-Deck GPS is weak without active antenna |
+| **GPS requires external antenna** | T-Deck GPS is weak without active antenna |
+| **Radio silent on first boot until configured** | By design — compile-time defaults may be illegal in some regions; user must open Settings → Radio Setup to enable TX |
+| **Map screen leaks PSRAM on repeated visits** | Fixed in next beta — added `slopos_map_deinit()` to free canvas, JPEG, and tile cache buffers |
+| **GPS parser parsed wrong fields since beta-0.1.12** | Fixed in next beta — off-by-one strtok skip shifted all fields; GPS lat/lon/time/altitude now correct |
+| **Mesh text over-read on corrupt packets** | Fixed in next beta — forced null-termination on incoming peer and group text payloads |
+
+## Recent Audit (Codex, May 2026)
+
+Round 1 — initial audit (274K tokens):
+- Found 15 issues; 8 confirmed real after cross-check
+- 2 CRITICAL + 6 HIGH fixed across `slop_mesh.h`, `mesh_wrapper.cpp`, `gps.cpp`, `map_renderer.cpp`
+
+Round 2 — review-back (108K tokens):
+- Found 9 additional issues; 5 confirmed actionable
+- CRITICAL: map image descriptor initialization, path validity via `Packet::copyPath`
+- HIGH: group text null-termination, JPEG output bounds, canvas allocation error path
+
+All fixes compiled and tested: **160/161 tests pass, ESP32 build SUCCESS (RAM 40.5%, Flash 15.9%)**
 
 ## License
 

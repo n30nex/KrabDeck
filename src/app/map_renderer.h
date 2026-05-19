@@ -46,6 +46,9 @@ void slopos_map_render();
 // Reparent the map canvas to a new screen (call from map_screen_show)
 void slopos_map_reparent(lv_obj_t* new_parent);
 
+// Free all map allocations (call on screen delete to prevent PSRAM leaks)
+void slopos_map_deinit();
+
 // Check if map tiles are available on SD card
 bool slopos_map_tiles_available();
 

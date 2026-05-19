@@ -52,15 +52,13 @@ static float nmea_to_decimal(const char* coord, char dir) {
 }
 
 static void parse_gga(const char* sentence) {
-    // $GPGGA,hhmmss.ss,lat,N,lon,E,q,sat,hdop,alt,M,...
+    // $GPGGA,time,lat,N,lon,E,q,sat,hdop,alt,M,...
     char buf[128];
     strncpy(buf, sentence, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';  // guarantee null termination
     char* token = strtok(buf, ",");
 
-    // Skip header
-    token = strtok(nullptr, ",");
-
-    // Time
+    // Time (field 1) — skip header (field 0) and get time
     token = strtok(nullptr, ",");
     if (token && strlen(token) >= 6) {
         char h[3] = {token[0], token[1], 0};
@@ -71,28 +69,28 @@ static void parse_gga(const char* sentence) {
         gps.second = atoi(s);
     }
 
-    // Latitude + N/S
+    // Latitude + N/S (fields 2-3)
     char* lat_str = strtok(nullptr, ",");
     char* ns = strtok(nullptr, ",");
     if (lat_str && ns) gps.latitude = nmea_to_decimal(lat_str, ns[0]);
 
-    // Longitude + E/W
+    // Longitude + E/W (fields 4-5)
     char* lon_str = strtok(nullptr, ",");
     char* ew = strtok(nullptr, ",");
     if (lon_str && ew) gps.longitude = nmea_to_decimal(lon_str, ew[0]);
 
-    // Fix quality
+    // Fix quality (field 6)
     token = strtok(nullptr, ",");
     if (token) gps.fix_quality = atoi(token);
 
-    // Satellites
+    // Satellites (field 7)
     token = strtok(nullptr, ",");
     if (token) gps.satellites = atoi(token);
 
-    // Skip HDOP
+    // Skip HDOP (field 8)
     token = strtok(nullptr, ",");
 
-    // Altitude
+    // Altitude (field 9)
     token = strtok(nullptr, ",");
     if (token) gps.altitude_m = strtof(token, nullptr);
 
@@ -100,9 +98,10 @@ static void parse_gga(const char* sentence) {
 }
 
 static void parse_rmc(const char* sentence) {
-    // $GPRMC,...speed,heading...
+    // $GPRMC,time,status,lat,NS,lon,EW,speed,heading,...
     char buf[128];
     strncpy(buf, sentence, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';  // guarantee null termination
     char* token = strtok(buf, ",");
 
     // Fields 1-6: skip (time, status, lat, NS, lon, EW)

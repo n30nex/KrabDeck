@@ -179,7 +179,13 @@ bool init()
     }
 
     g_mesh->begin();
-    g_mesh->broadcastAdvert(own_name);
+
+    // Only broadcast advert if user has explicitly configured radio params.
+    // Compile-time defaults may be illegal in some regions — transmit gating
+    // prevents first-boot broadcasts until user opens Settings → Radio Setup.
+    if (p.configured) {
+        g_mesh->broadcastAdvert(own_name);
+    }
 
     initialized = true;
     Serial.println("[mesh] SlopMesh initialized");

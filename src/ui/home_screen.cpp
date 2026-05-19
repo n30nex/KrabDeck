@@ -176,8 +176,9 @@ static lv_obj_t* create_icon_tile(lv_obj_t* parent, const IconDef& icon, int idx
     lv_obj_t* tile = lv_obj_create(parent);
     lv_obj_set_style_bg_color(tile, lv_color_hex(BG_TERTIARY), 0);
     lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(tile, 10, 0);
-    lv_obj_set_style_border_width(tile, 0, 0);
+    lv_obj_set_style_radius(tile, 0, 0);
+    lv_obj_set_style_border_width(tile, 2, 0);
+    lv_obj_set_style_border_color(tile, lv_color_hex(DIVIDER), 0);
     lv_obj_set_style_pad_all(tile, 4, 0);
 
     // Pressed state: lighter bg + cyan border
@@ -207,7 +208,7 @@ static lv_obj_t* create_icon_tile(lv_obj_t* parent, const IconDef& icon, int idx
         lv_obj_set_size(badge, 10, 10);
         lv_obj_set_style_bg_color(badge, lv_color_hex(ACCENT_RED), 0);
         lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
-        lv_obj_set_style_radius(badge, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_radius(badge, 0, 0);
         lv_obj_set_style_border_width(badge, 0, 0);
         lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, -4, 4);
     }

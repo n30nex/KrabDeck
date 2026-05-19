@@ -22,6 +22,8 @@
 #include "chat_screen.h"
 #include "navigation.h"
 #include "theme.h"
+#include "responsive.h"
+using namespace slopos::responsive;
 #include "../mesh/mesh_wrapper.h"
 #include "../hal/battery.h"
 #include <Arduino.h>
@@ -54,7 +56,7 @@ void init()
 
     // Loading bar
     lv_obj_t* bar = lv_obj_create(splash_scr);
-    lv_obj_set_size(bar, 200, 4);
+    lv_obj_set_size(bar, DISPLAY_W * 2 / 3, 4);
     lv_obj_set_style_bg_color(bar, lv_color_hex(theme::BG_TERTIARY), 0);
     lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(bar, 2, 0);
@@ -62,7 +64,7 @@ void init()
     lv_obj_align(bar, LV_ALIGN_BOTTOM_MID, 0, -40);
 
     lv_obj_t* fill = lv_obj_create(bar);
-    lv_obj_set_size(fill, 60, 4);
+    lv_obj_set_size(fill, DISPLAY_W / 5, 4);
     lv_obj_set_style_bg_color(fill, lv_color_hex(theme::ACCENT), 0);
     lv_obj_set_style_bg_opa(fill, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(fill, 2, 0);

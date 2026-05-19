@@ -20,6 +20,7 @@
 #include "chat_screen.h"
 #include "navigation.h"
 #include "theme.h"
+#include "responsive.h"
 #include "../hal/tdeck_pins.h"
 #include "../hal/battery.h"
 #include "../mesh/mesh_wrapper.h"
@@ -40,20 +41,25 @@ static lv_obj_t* input_bar      = nullptr;
 static lv_obj_t* input_field    = nullptr;
 
 // ── Messaging-view layout ──────────────────────────────────
-static constexpr int TOP_H      = 24;
-static constexpr int BOT_BAR_H  = 20;
-static constexpr int DIVIDER_H  = 1;
+using responsive::TOP_BAR_H;
+using responsive::BOT_BAR_H;
+using responsive::DIVIDER_H;
+using responsive::DISPLAY_H;
+using responsive::DISPLAY_W;
+using responsive::HASHTAG_LABEL_W;
+static constexpr int TOP_H      = TOP_BAR_H;
 static constexpr int INPUT_H    = 35;
+// BOT_BAR_H, DIVIDER_H used directly from responsive namespace
 static constexpr int BUBBLE_PAD = 6;
 static constexpr int MAX_MSGS   = 50;
 static constexpr int MSG_LIST_Y = TOP_H + DIVIDER_H;
-static constexpr int MSG_LIST_H = TFT_HEIGHT - TOP_H - DIVIDER_H - INPUT_H - DIVIDER_H - BOT_BAR_H;
+static constexpr int MSG_LIST_H = DISPLAY_H - TOP_H - DIVIDER_H - INPUT_H - DIVIDER_H - BOT_BAR_H;
 
 // ── Channel-list layout (matches screens.cpp constants) ────
 static constexpr int LIST_BAR_H  = 22;
 static constexpr int LIST_DIV_H  = 1;
 static constexpr int LIST_CONT_Y = LIST_BAR_H + LIST_DIV_H;   // 23
-static constexpr int LIST_CONT_H = TFT_HEIGHT - LIST_CONT_Y - LIST_DIV_H - BOT_BAR_H; // 196
+static constexpr int LIST_CONT_H = DISPLAY_H - LIST_CONT_Y - LIST_DIV_H - BOT_BAR_H; // 196
 static constexpr int LIST_ROW_H  = 44;
 
 // ── Channel state ──────────────────────────────────────────
@@ -152,7 +158,7 @@ static lv_obj_t* make_chat_list_screen()
     lv_obj_t* ch_lbl = lv_label_create(top);
     lv_label_set_text(ch_lbl, ch_buf);
     lv_label_set_long_mode(ch_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(ch_lbl, 264);
+    lv_obj_set_width(ch_lbl, HASHTAG_LABEL_W());
     lv_obj_set_style_text_color(ch_lbl, lv_color_hex(CHANNEL_HASH), 0);
     lv_obj_set_style_text_font(ch_lbl, &lv_font_montserrat_12, 0);
     lv_obj_align(ch_lbl, LV_ALIGN_LEFT_MID, 22, 0);
@@ -223,7 +229,7 @@ static lv_obj_t* make_chat_list_screen()
     // Bottom divider
     lv_obj_t* bdiv = lv_obj_create(s);
     lv_obj_set_size(bdiv, LV_PCT(100), LIST_DIV_H);
-    lv_obj_align(bdiv, LV_ALIGN_TOP_MID, 0, TFT_HEIGHT - BOT_BAR_H - LIST_DIV_H);
+    lv_obj_align(bdiv, LV_ALIGN_TOP_MID, 0, DISPLAY_H - BOT_BAR_H - LIST_DIV_H);
     lv_obj_set_style_bg_color(bdiv, lv_color_hex(DIVIDER), 0);
     lv_obj_set_style_bg_opa(bdiv, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(bdiv, 0, 0);
@@ -599,7 +605,7 @@ static void do_send()
 // ════════════════════════════════════════════════════
 static void create_input_bar()
 {
-    int input_y = TFT_HEIGHT - BOT_BAR_H - INPUT_H - DIVIDER_H;
+    int input_y = DISPLAY_H - BOT_BAR_H - INPUT_H - DIVIDER_H;
 
     input_bar = lv_obj_create(scr);
     lv_obj_set_size(input_bar, LV_PCT(100), INPUT_H);
@@ -692,7 +698,7 @@ static void create_bottom_bar()
 
     lv_obj_t* div = lv_obj_create(scr);
     lv_obj_set_size(div, LV_PCT(100), DIVIDER_H);
-    lv_obj_align(div, LV_ALIGN_TOP_MID, 0, TFT_HEIGHT - BOT_BAR_H - DIVIDER_H);
+    lv_obj_align(div, LV_ALIGN_TOP_MID, 0, DISPLAY_H - BOT_BAR_H - DIVIDER_H);
     lv_obj_set_style_bg_color(div, lv_color_hex(DIVIDER), 0);
     lv_obj_set_style_bg_opa(div, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(div, 0, 0);

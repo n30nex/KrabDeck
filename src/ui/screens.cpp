@@ -20,6 +20,7 @@
 #include "screens.h"
 #include "navigation.h"
 #include "theme.h"
+#include "responsive.h"
 #include "../hal/tdeck_pins.h"
 #include "../hal/battery.h"
 #include "../hal/sdcard.h"
@@ -36,12 +37,9 @@ namespace slopos::ui {
 
 using namespace theme;
 
-// ── Layout constants (all screens share these) ────────────
-static constexpr int BAR_TOP_H  = 22;
-static constexpr int BAR_BOT_H  = 20;
-static constexpr int DIV_H      = 1;
-static constexpr int CONTENT_Y  = BAR_TOP_H + DIV_H;                              // 23
-static constexpr int CONTENT_H  = TFT_HEIGHT - CONTENT_Y - DIV_H - BAR_BOT_H;    // 196
+// ── Layout constants (from responsive.h) ──────────────────
+using namespace responsive;
+// TOP_BAR_H, BOT_BAR_H, DIVIDER_H, CONTENT_Y, CONTENT_H — all from responsive.h
 
 // ════════════════════════════════════════════════════════
 // make_screen_full — builds consistent top+bottom bars
@@ -53,7 +51,7 @@ static lv_obj_t* make_screen_full(const char* title)
 
     // ── Top bar ──────────────────────────────────────────
     lv_obj_t* top = lv_obj_create(scr);
-    lv_obj_set_size(top, LV_PCT(100), BAR_TOP_H);
+    lv_obj_set_size(top, LV_PCT(100), TOP_BAR_H);
     lv_obj_align(top, LV_ALIGN_TOP_MID, 0, 0);
     lv_obj_set_style_bg_color(top, lv_color_hex(BG_SECONDARY), 0);
     lv_obj_set_style_bg_opa(top, LV_OPA_COVER, 0);
@@ -85,7 +83,7 @@ static lv_obj_t* make_screen_full(const char* title)
     lv_obj_t* ch_lbl = lv_label_create(top);
     lv_label_set_text(ch_lbl, ch_buf);
     lv_label_set_long_mode(ch_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(ch_lbl, 264);
+    lv_obj_set_width(ch_lbl, HASHTAG_LABEL_W());
     lv_obj_set_style_text_color(ch_lbl, lv_color_hex(CHANNEL_HASH), 0);
     lv_obj_set_style_text_font(ch_lbl, &lv_font_montserrat_12, 0);
     lv_obj_align(ch_lbl, LV_ALIGN_LEFT_MID, 22, 0);
@@ -118,15 +116,15 @@ static lv_obj_t* make_screen_full(const char* title)
 
     // Top divider
     lv_obj_t* tdiv = lv_obj_create(scr);
-    lv_obj_set_size(tdiv, LV_PCT(100), DIV_H);
-    lv_obj_align(tdiv, LV_ALIGN_TOP_MID, 0, BAR_TOP_H);
+    lv_obj_set_size(tdiv, LV_PCT(100), DIVIDER_H);
+    lv_obj_align(tdiv, LV_ALIGN_TOP_MID, 0, TOP_BAR_H);
     lv_obj_set_style_bg_color(tdiv, lv_color_hex(DIVIDER), 0);
     lv_obj_set_style_bg_opa(tdiv, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(tdiv, 0, 0);
 
     // ── Bottom bar ───────────────────────────────────────
     lv_obj_t* bot = lv_obj_create(scr);
-    lv_obj_set_size(bot, LV_PCT(100), BAR_BOT_H);
+    lv_obj_set_size(bot, LV_PCT(100), BOT_BAR_H);
     lv_obj_align(bot, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_set_style_bg_color(bot, lv_color_hex(BG_SECONDARY), 0);
     lv_obj_set_style_bg_opa(bot, LV_OPA_COVER, 0);
@@ -171,8 +169,8 @@ static lv_obj_t* make_screen_full(const char* title)
 
     // Bottom divider
     lv_obj_t* bdiv = lv_obj_create(scr);
-    lv_obj_set_size(bdiv, LV_PCT(100), DIV_H);
-    lv_obj_align(bdiv, LV_ALIGN_TOP_MID, 0, TFT_HEIGHT - BAR_BOT_H - DIV_H);
+    lv_obj_set_size(bdiv, LV_PCT(100), DIVIDER_H);
+    lv_obj_align(bdiv, LV_ALIGN_TOP_MID, 0, DISPLAY_H - BOT_BAR_H - DIVIDER_H);
     lv_obj_set_style_bg_color(bdiv, lv_color_hex(DIVIDER), 0);
     lv_obj_set_style_bg_opa(bdiv, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(bdiv, 0, 0);
@@ -195,8 +193,8 @@ void heard_screen_show()
     static constexpr int SEARCH_H  = 22;
     static constexpr int HEADER_H  = 16;
     static constexpr int ROW_H     = 26;
-    int list_y = CONTENT_Y + SEARCH_H + DIV_H + HEADER_H;
-    int list_h = TFT_HEIGHT - list_y - DIV_H - BAR_BOT_H;
+    int list_y = CONTENT_Y + SEARCH_H + DIVIDER_H + HEADER_H;
+    int list_h = DISPLAY_H - list_y - DIVIDER_H - BOT_BAR_H;
 
     // Search bar
     lv_obj_t* search = lv_textarea_create(scr);
@@ -213,7 +211,7 @@ void heard_screen_show()
 
     // Search divider
     lv_obj_t* sdiv = lv_obj_create(scr);
-    lv_obj_set_size(sdiv, LV_PCT(100), DIV_H);
+    lv_obj_set_size(sdiv, LV_PCT(100), DIVIDER_H);
     lv_obj_align(sdiv, LV_ALIGN_TOP_MID, 0, CONTENT_Y + SEARCH_H);
     lv_obj_set_style_bg_color(sdiv, lv_color_hex(DIVIDER), 0);
     lv_obj_set_style_bg_opa(sdiv, LV_OPA_COVER, 0);
@@ -222,21 +220,29 @@ void heard_screen_show()
     // Column headers
     lv_obj_t* hdr = lv_obj_create(scr);
     lv_obj_set_size(hdr, LV_PCT(100), HEADER_H);
-    lv_obj_align(hdr, LV_ALIGN_TOP_MID, 0, CONTENT_Y + SEARCH_H + DIV_H);
+    lv_obj_align(hdr, LV_ALIGN_TOP_MID, 0, CONTENT_Y + SEARCH_H + DIVIDER_H);
     lv_obj_set_style_bg_color(hdr, lv_color_hex(BG_SECONDARY), 0);
     lv_obj_set_style_bg_opa(hdr, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(hdr, 0, 0);
     lv_obj_set_style_border_width(hdr, 0, 0);
 
-    static const struct { const char* txt; int x; } cols[] = {
-        {"NAME",  4},  {"SIG", 100}, {"DIST", 140}, {"AREA", 180}, {"TIME", 218}
-    };
-    for (auto& c : cols) {
+    // Proportional column offsets: NAME=40%, SIG=15%, DIST=15%, AREA=15%, TIME=15%
+    constexpr int col_margin = 8;
+    constexpr int col_total  = DISPLAY_W - col_margin * 2;
+    int col_name = col_margin;
+    int col_sig  = col_name + (col_total * 40) / 100;
+    int col_dist = col_sig  + (col_total * 15) / 100;
+    int col_area = col_dist + (col_total * 15) / 100;
+    int col_time = col_area + (col_total * 15) / 100;
+
+    const char* col_labels[] = {"NAME", "SIG", "DIST", "AREA", "TIME"};
+    int         col_x[]      = {col_name, col_sig, col_dist, col_area, col_time};
+    for (int i = 0; i < 5; i++) {
         lv_obj_t* cl = lv_label_create(hdr);
-        lv_label_set_text(cl, c.txt);
+        lv_label_set_text(cl, col_labels[i]);
         lv_obj_set_style_text_color(cl, lv_color_hex(TEXT_MUTED), 0);
         lv_obj_set_style_text_font(cl, &lv_font_montserrat_12, 0);
-        lv_obj_align(cl, LV_ALIGN_LEFT_MID, c.x, 0);
+        lv_obj_align(cl, LV_ALIGN_LEFT_MID, col_x[i], 0);
     }
 
     // Scrollable list area
@@ -284,7 +290,7 @@ void heard_screen_show()
             lv_label_set_text(name_l, c.name);
             lv_obj_set_style_text_color(name_l, lv_color_hex(TEXT_PRIMARY), 0);
             lv_obj_set_style_text_font(name_l, &lv_font_montserrat_12, 0);
-            lv_obj_align(name_l, LV_ALIGN_LEFT_MID, 4, 0);
+            lv_obj_align(name_l, LV_ALIGN_LEFT_MID, col_name, 0);
 
             // Signal bars
             const char* bars;
@@ -297,21 +303,21 @@ void heard_screen_show()
             lv_label_set_text(sig_l, bars);
             lv_obj_set_style_text_color(sig_l, lv_color_hex(ACCENT), 0);
             lv_obj_set_style_text_font(sig_l, &lv_font_montserrat_12, 0);
-            lv_obj_align(sig_l, LV_ALIGN_LEFT_MID, 100, 0);
+            lv_obj_align(sig_l, LV_ALIGN_LEFT_MID, col_sig, 0);
 
             // Distance (show "—" — GPS distance not implemented)
             lv_obj_t* dist_l = lv_label_create(row);
             lv_label_set_text(dist_l, "\xe2\x80\x94");  // em dash "—"
             lv_obj_set_style_text_color(dist_l, lv_color_hex(TEXT_MUTED), 0);
             lv_obj_set_style_text_font(dist_l, &lv_font_montserrat_12, 0);
-            lv_obj_align(dist_l, LV_ALIGN_LEFT_MID, 140, 0);
+            lv_obj_align(dist_l, LV_ALIGN_LEFT_MID, col_dist, 0);
 
             // Area (placeholder "—" — mesh area grouping not yet implemented)
             lv_obj_t* area_l = lv_label_create(row);
             lv_label_set_text(area_l, "\xe2\x80\x94");
             lv_obj_set_style_text_color(area_l, lv_color_hex(TEXT_MUTED), 0);
             lv_obj_set_style_text_font(area_l, &lv_font_montserrat_12, 0);
-            lv_obj_align(area_l, LV_ALIGN_LEFT_MID, 180, 0);
+            lv_obj_align(area_l, LV_ALIGN_LEFT_MID, col_area, 0);
 
             // Time since last seen
             char time_buf[16];
@@ -328,7 +334,7 @@ void heard_screen_show()
             lv_label_set_text(time_l, time_buf);
             lv_obj_set_style_text_color(time_l, lv_color_hex(TEXT_SECONDARY), 0);
             lv_obj_set_style_text_font(time_l, &lv_font_montserrat_12, 0);
-            lv_obj_align(time_l, LV_ALIGN_LEFT_MID, 230, 0);
+            lv_obj_align(time_l, LV_ALIGN_LEFT_MID, col_time, 0);
         }
     }
 
@@ -499,17 +505,21 @@ void noise_screen_show()
     int noise = slopos::mesh::getNoiseFloor();
     int rssi  = slopos::mesh::getLastRSSI();
 
+    int bar_bg_w = DISPLAY_W - 32;           // 16px margin each side
+    int bar_bg_h = bar_widget_h(33);         // ~33% of content height
     lv_obj_t* bar_bg = lv_obj_create(scr);
-    lv_obj_set_size(bar_bg, 280, 80);
+    lv_obj_set_size(bar_bg, bar_bg_w, bar_bg_h);
     lv_obj_align(bar_bg, LV_ALIGN_CENTER, 0, -20);
     lv_obj_set_style_bg_color(bar_bg, lv_color_hex(BG_TERTIARY), 0);
     lv_obj_set_style_radius(bar_bg, 0, 0);
     lv_obj_set_style_border_width(bar_bg, 0, 0);
 
-    int bar_w = map(constrain(noise, -120, -60), -120, -60, 28, 252);
+    int bar_full_w = bar_bg_w - 24;          // 12px left/right margins inside bg
+    int bar_w = map(constrain(noise, -120, -60), -120, -60, bar_full_w / 10, bar_full_w);
+    int bar_fill_h = bar_bg_h - (bar_bg_h / 4);  // 75% of bg height
     lv_obj_t* bar_fill = lv_obj_create(bar_bg);
-    lv_obj_set_size(bar_fill, bar_w, 60);
-    lv_obj_align(bar_fill, LV_ALIGN_LEFT_MID, 14, 0);
+    lv_obj_set_size(bar_fill, bar_w, bar_fill_h);
+    lv_obj_align(bar_fill, LV_ALIGN_LEFT_MID, 12, 0);
     lv_obj_set_style_bg_color(bar_fill, lv_color_hex(
         noise > -90 ? ACCENT_RED : noise > -105 ? ACCENT_ORANGE : ACCENT_GREEN), 0);
     lv_obj_set_style_radius(bar_fill, 0, 0);
@@ -521,7 +531,7 @@ void noise_screen_show()
     lv_label_set_text(info, buf);
     lv_obj_set_style_text_color(info, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(info, &lv_font_montserrat_14, 0);
-    lv_obj_align(info, LV_ALIGN_BOTTOM_MID, 0, -(BAR_BOT_H + DIV_H + 8));
+    lv_obj_align(info, LV_ALIGN_BOTTOM_MID, 0, -(BOT_BAR_H + DIVIDER_H + 8));
 
     show_screen(scr);
 }
@@ -538,7 +548,7 @@ void map_screen_show()
     slopos_map_render();
 
     lv_obj_t* map = lv_obj_create(scr);
-    lv_obj_set_size(map, TFT_WIDTH, CONTENT_H);
+    lv_obj_set_size(map, DISPLAY_W, CONTENT_H);
     lv_obj_align(map, LV_ALIGN_TOP_MID, 0, CONTENT_Y);
     lv_obj_set_style_bg_opa(map, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(map, 0, 0);
@@ -560,11 +570,11 @@ void map_screen_show()
     }, LV_EVENT_ALL, nullptr);
 
     // Zoom buttons (above bottom bar)
-    int zoom_y_base = TFT_HEIGHT - BAR_BOT_H - DIV_H - 8;
+    int zoom_y_base = DISPLAY_H - BOT_BAR_H - DIVIDER_H - 8;
 
     lv_obj_t* zoom_in = lv_btn_create(scr);
     lv_obj_set_size(zoom_in, 32, 32);
-    lv_obj_align(zoom_in, LV_ALIGN_BOTTOM_RIGHT, -8, -(BAR_BOT_H + DIV_H + 8));
+    lv_obj_align(zoom_in, LV_ALIGN_BOTTOM_RIGHT, -8, -(BOT_BAR_H + DIVIDER_H + 8));
     lv_obj_set_style_bg_color(zoom_in, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_radius(zoom_in, 0, 0);
     lv_obj_t* zi = lv_label_create(zoom_in);
@@ -574,7 +584,7 @@ void map_screen_show()
 
     lv_obj_t* zoom_out = lv_btn_create(scr);
     lv_obj_set_size(zoom_out, 32, 32);
-    lv_obj_align(zoom_out, LV_ALIGN_BOTTOM_RIGHT, -8, -(BAR_BOT_H + DIV_H + 48));
+    lv_obj_align(zoom_out, LV_ALIGN_BOTTOM_RIGHT, -8, -(BOT_BAR_H + DIVIDER_H + 48));
     lv_obj_set_style_bg_color(zoom_out, lv_color_hex(BG_TERTIARY), 0);
     lv_obj_set_style_radius(zoom_out, 0, 0);
     lv_obj_t* zo = lv_label_create(zoom_out);
@@ -689,7 +699,7 @@ void terminal_screen_show()
     lv_obj_t* scr = make_screen_full("Terminal");
 
     static constexpr int TERM_INPUT_H = 28;
-    static constexpr int TERM_LOG_H   = CONTENT_H - TERM_INPUT_H - DIV_H;  // 167
+    static constexpr int TERM_LOG_H   = CONTENT_H - TERM_INPUT_H - DIVIDER_H;  // 167
 
     // Log output container (pure black, flex-column, scrollable)
     lv_obj_t* log = lv_obj_create(scr);
@@ -717,7 +727,7 @@ void terminal_screen_show()
 
     // Divider between log and input
     lv_obj_t* div = lv_obj_create(scr);
-    lv_obj_set_size(div, LV_PCT(100), DIV_H);
+    lv_obj_set_size(div, LV_PCT(100), DIVIDER_H);
     lv_obj_align(div, LV_ALIGN_TOP_MID, 0, CONTENT_Y + TERM_LOG_H);
     lv_obj_set_style_bg_color(div, lv_color_hex(DIVIDER), 0);
     lv_obj_set_style_bg_opa(div, LV_OPA_COVER, 0);
@@ -726,7 +736,7 @@ void terminal_screen_show()
     // Command input
     lv_obj_t* input = lv_textarea_create(scr);
     lv_obj_set_size(input, LV_PCT(100), TERM_INPUT_H);
-    lv_obj_align(input, LV_ALIGN_TOP_MID, 0, CONTENT_Y + TERM_LOG_H + DIV_H);
+    lv_obj_align(input, LV_ALIGN_TOP_MID, 0, CONTENT_Y + TERM_LOG_H + DIVIDER_H);
     lv_obj_set_style_bg_color(input, lv_color_hex(BG_INPUT), 0);
     lv_obj_set_style_text_color(input, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(input, &lv_font_montserrat_12, 0);
@@ -837,7 +847,7 @@ void trace_screen_show()
                     lv_obj_set_style_text_color(result_lbl, lv_color_hex(ACCENT), 0);
                     lv_obj_set_style_text_font(result_lbl, &lv_font_montserrat_12, 0);
                     lv_obj_align(result_lbl, LV_ALIGN_BOTTOM_MID, 0,
-                                 -(BAR_BOT_H + DIV_H + 24));
+                                 -(BOT_BAR_H + DIVIDER_H + 24));
                     lv_label_set_text(result_lbl, "Trace sent, waiting...");
                     trace_result_label = result_lbl;
 
@@ -878,8 +888,9 @@ static void refresh_channel_list(lv_obj_t* list);
 
 static lv_obj_t* channel_create_dialog(lv_obj_t* parent)
 {
+    auto dlg_sz = dialog_size(260, 180);
     lv_obj_t* dialog = lv_obj_create(parent);
-    lv_obj_set_size(dialog, 260, 180);
+    lv_obj_set_size(dialog, dlg_sz.w, dlg_sz.h);
     lv_obj_center(dialog);
     lv_obj_set_style_bg_color(dialog, lv_color_hex(BG_SECONDARY), 0);
     lv_obj_set_style_radius(dialog, 0, 0);
@@ -898,7 +909,7 @@ static lv_obj_t* channel_create_dialog(lv_obj_t* parent)
     lv_obj_align(name_label, LV_ALIGN_TOP_LEFT, 4, 28);
 
     lv_obj_t* name_input = lv_textarea_create(dialog);
-    lv_obj_set_size(name_input, 244, 28);
+    lv_obj_set_size(name_input, dlg_sz.w - 16, 28);
     lv_obj_align(name_input, LV_ALIGN_TOP_MID, 0, 46);
     lv_obj_set_style_bg_color(name_input, lv_color_hex(BG_INPUT), 0);
     lv_obj_set_style_text_color(name_input, lv_color_hex(TEXT_PRIMARY), 0);
@@ -913,7 +924,7 @@ static lv_obj_t* channel_create_dialog(lv_obj_t* parent)
     lv_obj_align(psk_label, LV_ALIGN_TOP_LEFT, 4, 82);
 
     lv_obj_t* psk_input = lv_textarea_create(dialog);
-    lv_obj_set_size(psk_input, 244, 28);
+    lv_obj_set_size(psk_input, dlg_sz.w - 16, 28);
     lv_obj_align(psk_input, LV_ALIGN_TOP_MID, 0, 100);
     lv_obj_set_style_bg_color(psk_input, lv_color_hex(BG_INPUT), 0);
     lv_obj_set_style_text_color(psk_input, lv_color_hex(TEXT_PRIMARY), 0);
@@ -1007,7 +1018,7 @@ void channels_screen_show()
 
     lv_obj_t* add_btn = lv_btn_create(scr);
     lv_obj_set_size(add_btn, 140, 28);
-    lv_obj_align(add_btn, LV_ALIGN_BOTTOM_MID, 0, -(BAR_BOT_H + DIV_H + 4));
+    lv_obj_align(add_btn, LV_ALIGN_BOTTOM_MID, 0, -(BOT_BAR_H + DIVIDER_H + 4));
     lv_obj_set_style_bg_color(add_btn, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_radius(add_btn, 0, 0);
     lv_obj_t* al = lv_label_create(add_btn);
@@ -1044,7 +1055,7 @@ void advertise_screen_show()
 
     lv_obj_t* btn = lv_btn_create(scr);
     lv_obj_set_size(btn, 140, 36);
-    lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -(BAR_BOT_H + DIV_H + 8));
+    lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -(BOT_BAR_H + DIVIDER_H + 8));
     lv_obj_set_style_bg_color(btn, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_radius(btn, 0, 0);
     lv_obj_t* bl = lv_label_create(btn);
@@ -1115,11 +1126,12 @@ void radio_setup_screen_show()
         y += 20;
     }
 
-    // SF + TX power side-by-side on one row
+    // SF + TX power side-by-side on one row — centered layout
     int row_y = y + 2;
+    int mid_point = DISPLAY_W / 2;
     char buf[64];
 
-    // SF (left side: label at 8, +/- at 52/86)
+    // SF (left side: label at 8, +/- at mid-58/mid-24)
     snprintf(buf, sizeof(buf), "SF: %d", s_sf);
     auto* sf_lbl = lv_label_create(scr);
     lv_label_set_text(sf_lbl, buf);
@@ -1129,7 +1141,7 @@ void radio_setup_screen_show()
 
     auto* sf_plus = lv_btn_create(scr);
     lv_obj_set_size(sf_plus, 30, 22);
-    lv_obj_align(sf_plus, LV_ALIGN_TOP_LEFT, 52, row_y - 2);
+    lv_obj_align(sf_plus, LV_ALIGN_TOP_LEFT, mid_point - 58, row_y - 2);
     lv_obj_set_style_bg_color(sf_plus, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_radius(sf_plus, 0, 0);
     auto* spl = lv_label_create(sf_plus); lv_label_set_text(spl, "+"); lv_obj_center(spl);
@@ -1141,7 +1153,7 @@ void radio_setup_screen_show()
 
     auto* sf_minus = lv_btn_create(scr);
     lv_obj_set_size(sf_minus, 30, 22);
-    lv_obj_align(sf_minus, LV_ALIGN_TOP_LEFT, 86, row_y - 2);
+    lv_obj_align(sf_minus, LV_ALIGN_TOP_LEFT, mid_point - 24, row_y - 2);
     lv_obj_set_style_bg_color(sf_minus, lv_color_hex(ACCENT_RED), 0);
     lv_obj_set_style_radius(sf_minus, 0, 0);
     auto* sml = lv_label_create(sf_minus); lv_label_set_text(sml, "-"); lv_obj_center(sml);
@@ -1151,17 +1163,17 @@ void radio_setup_screen_show()
             lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b); }
     }, LV_EVENT_CLICKED, (void*)sf_lbl);
 
-    // TX power (right side: label at 160, +/- at 228/262)
+    // TX power (right side: label at mid+4, +/- at DISPLAY_W-78/DISPLAY_W-44)
     snprintf(buf, sizeof(buf), "TX: %d dBm", s_pwr);
     auto* pwr_lbl = lv_label_create(scr);
     lv_label_set_text(pwr_lbl, buf);
     lv_obj_set_style_text_color(pwr_lbl, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(pwr_lbl, &lv_font_montserrat_12, 0);
-    lv_obj_align(pwr_lbl, LV_ALIGN_TOP_LEFT, 160, row_y);
+    lv_obj_align(pwr_lbl, LV_ALIGN_TOP_LEFT, mid_point + 4, row_y);
 
     auto* pwr_plus = lv_btn_create(scr);
     lv_obj_set_size(pwr_plus, 30, 22);
-    lv_obj_align(pwr_plus, LV_ALIGN_TOP_LEFT, 228, row_y - 2);
+    lv_obj_align(pwr_plus, LV_ALIGN_TOP_LEFT, DISPLAY_W - 78, row_y - 2);
     lv_obj_set_style_bg_color(pwr_plus, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_radius(pwr_plus, 0, 0);
     auto* ppl = lv_label_create(pwr_plus); lv_label_set_text(ppl, "+"); lv_obj_center(ppl);
@@ -1173,7 +1185,7 @@ void radio_setup_screen_show()
 
     auto* pwr_minus = lv_btn_create(scr);
     lv_obj_set_size(pwr_minus, 30, 22);
-    lv_obj_align(pwr_minus, LV_ALIGN_TOP_LEFT, 262, row_y - 2);
+    lv_obj_align(pwr_minus, LV_ALIGN_TOP_LEFT, DISPLAY_W - 44, row_y - 2);
     lv_obj_set_style_bg_color(pwr_minus, lv_color_hex(ACCENT_RED), 0);
     lv_obj_set_style_radius(pwr_minus, 0, 0);
     auto* pml = lv_label_create(pwr_minus); lv_label_set_text(pml, "-"); lv_obj_center(pml);

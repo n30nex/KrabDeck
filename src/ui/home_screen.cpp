@@ -20,6 +20,7 @@
 #include "home_screen.h"
 #include "navigation.h"
 #include "theme.h"
+#include "responsive.h"
 #include "../hal/tdeck_pins.h"
 #include "../mesh/mesh_wrapper.h"
 #include <lvgl.h>
@@ -39,12 +40,9 @@ static lv_obj_t* batt_label    = nullptr;
 static lv_obj_t* signal_label  = nullptr;
 static lv_obj_t* hashtag_label = nullptr;
 
-static constexpr int GRID_COLS  = 3;
-static constexpr int GRID_ROWS  = 4;
-static constexpr int TOP_BAR_H  = 22;
-static constexpr int BOT_BAR_H  = 20;
+using namespace responsive;
 static constexpr int GRID_PAD   = 3;
-static constexpr int DIVIDER_H  = 1;
+// GRID_COLS, GRID_ROWS, TOP_BAR_H, BOT_BAR_H, DIVIDER_H — now from responsive.h
 
 struct IconDef {
     const char* label;
@@ -113,7 +111,7 @@ static void create_top_bar()
     hashtag_label = lv_label_create(top_bar);
     lv_label_set_text(hashtag_label, ch_buf);
     lv_label_set_long_mode(hashtag_label, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(hashtag_label, 260);
+    lv_obj_set_width(hashtag_label, HASHTAG_LABEL_W());
     lv_obj_set_style_text_color(hashtag_label, lv_color_hex(CHANNEL_HASH), 0);
     lv_obj_set_style_text_font(hashtag_label, &lv_font_montserrat_12, 0);
     lv_obj_align(hashtag_label, LV_ALIGN_LEFT_MID, 26, 0);
@@ -166,7 +164,7 @@ static void create_bottom_bar()
     // Divider
     lv_obj_t* div = lv_obj_create(scr);
     lv_obj_set_size(div, LV_PCT(100), DIVIDER_H);
-    lv_obj_align(div, LV_ALIGN_TOP_MID, 0, TFT_HEIGHT - BOT_BAR_H - DIVIDER_H);
+    lv_obj_align(div, LV_ALIGN_TOP_MID, 0, DISPLAY_H - BOT_BAR_H - DIVIDER_H);
     lv_obj_set_style_bg_color(div, lv_color_hex(DIVIDER), 0);
     lv_obj_set_style_bg_opa(div, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(div, 0, 0);
@@ -218,30 +216,33 @@ static lv_obj_t* create_icon_tile(lv_obj_t* parent, const IconDef& icon, int idx
     return tile;
 }
 
-// ── 3×4 icon grid ────────────────────────────────────────
+// ── Adaptive icon grid (cols/rows from responsive.h) ──────
 static void create_icon_grid()
 {
-    int grid_h = TFT_HEIGHT - TOP_BAR_H - DIVIDER_H - BOT_BAR_H - DIVIDER_H;
+    GridLayout gl = compute_grid(GRID_PAD);
+    int total_icons = sizeof(icons) / sizeof(icons[0]);
+
+    // If grid can't fit all icons without scrolling, enable vertical scroll
+    bool needs_scroll = (gl.cols * gl.rows) < total_icons;
 
     grid = lv_obj_create(scr);
     lv_obj_set_style_bg_opa(grid, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(grid, 0, 0);
     lv_obj_set_style_pad_all(grid, GRID_PAD, 0);
-    lv_obj_set_size(grid, LV_PCT(100), grid_h);
-    lv_obj_align(grid, LV_ALIGN_TOP_MID, 0, TOP_BAR_H + DIVIDER_H);
+    lv_obj_set_size(grid, LV_PCT(100), CONTENT_H);
+    lv_obj_align(grid, LV_ALIGN_TOP_MID, 0, CONTENT_Y);
     lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_flex_align(grid, LV_FLEX_ALIGN_SPACE_EVENLY,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_scroll_dir(grid, LV_DIR_NONE);
 
-    int gw = TFT_WIDTH  - (GRID_PAD * 2) - (GRID_PAD * (GRID_COLS - 1));
-    int gh = grid_h     - (GRID_PAD * 2) - (GRID_PAD * (GRID_ROWS - 1));
-    int tw = gw / GRID_COLS;
-    int th = gh / GRID_ROWS;
+    if (needs_scroll)
+        lv_obj_set_scroll_dir(grid, LV_DIR_VER);
+    else
+        lv_obj_set_scroll_dir(grid, LV_DIR_NONE);
 
-    for (int i = 0; i < GRID_COLS * GRID_ROWS; i++) {
+    for (int i = 0; i < total_icons; i++) {
         lv_obj_t* tile = create_icon_tile(grid, icons[i], i);
-        lv_obj_set_size(tile, tw, th);
+        lv_obj_set_size(tile, gl.tile_w, gl.tile_h);
     }
 }
 

@@ -55,9 +55,10 @@ inline GridLayout compute_grid(int grid_pad = 3) {
     int avail_w = CONTENT_W - (grid_pad * 2);
 
     // Choose column count based on available width per tile.
-    // Tiles need ~90px minimum for icon (20px font) + label (12px font).
-    if (avail_w >= 270)      g.cols = 3;   // ≥270px: 3 cols (~90px each)
-    else if (avail_w >= 170) g.cols = 2;   // ≥170px: 2 cols (~85px each)
+    // Tiles need ~75px minimum for icon (18px symbol) + label (12px text).
+    if (avail_w >= 300)      g.cols = 4;   // ≥300px: 4 cols (~75px each)
+    else if (avail_w >= 230) g.cols = 3;   // ≥230px: 3 cols
+    else if (avail_w >= 170) g.cols = 2;   // ≥170px: 2 cols
     else                     g.cols = 1;   // narrow: single column
 
     // Remove one column's worth of flex gaps

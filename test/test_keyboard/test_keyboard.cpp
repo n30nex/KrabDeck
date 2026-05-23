@@ -172,7 +172,21 @@ TEST_F(KeyboardTest, SubsequentScansWithoutKeyKeepLastValue) {
     Wire.mock_queue_rx_byte(0x00);
     slopos_keyboard_scan();
     EXPECT_EQ(slopos_keyboard_get_key(), 'k');
+    // New latching behavior: event persists until consume_key() is called.
+    // MCU returning 0 does NOT clear has_new_event (was clearing it before PR #7).
+    EXPECT_TRUE(slopos_keyboard_has_new_event());
+}
+
+TEST_F(KeyboardTest, ConsumeKeyClearsAfterProcessing) {
+    init_with_ack();
+    Wire.mock_queue_rx_byte('k');
+    slopos_keyboard_scan();
+    EXPECT_TRUE(slopos_keyboard_has_new_event());
+    EXPECT_EQ(slopos_keyboard_get_key(), 'k');
+
+    slopos_keyboard_consume_key();
     EXPECT_FALSE(slopos_keyboard_has_new_event());
+    EXPECT_EQ(slopos_keyboard_get_key(), 0);
 }
 
 // ════════════════════════════════════════════════════════

@@ -196,6 +196,7 @@ inline void lv_obj_center(lv_obj_t*) {}
 inline void lv_obj_add_flag(lv_obj_t*, uint32_t) {}
 inline void lv_obj_remove_flag(lv_obj_t*, uint32_t) {}
 inline void lv_obj_scroll_to_view(lv_obj_t*, int) {}
+inline void lv_obj_invalidate(lv_obj_t*) {}
 inline lv_coord_t lv_obj_get_width(lv_obj_t*) { return 100; }
 inline lv_coord_t lv_obj_get_height(lv_obj_t*) { return 100; }
 inline lv_obj_t* lv_obj_get_child(lv_obj_t*, int) { return nullptr; }

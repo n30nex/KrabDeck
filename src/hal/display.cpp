@@ -90,9 +90,21 @@ static lv_color_t draw_buf[TFT_WIDTH * LVGL_DRAW_BUF_LINES];
 static constexpr uint32_t AUTO_OFF_MS  = 30000;  // 30 seconds
 static uint32_t            auto_off_at = 0;
 static bool                display_on  = true;
+static bool                wake_refresh_pending = false;
 
 static void reset_auto_off() {
     auto_off_at = millis() + AUTO_OFF_MS;
+}
+
+static void restore_display_after_sleep()
+{
+    tft.setRotation(1);  // Reassert ST7789 landscape state after display auto-off.
+    tft.fillScreen(TFT_BLACK);
+
+    lv_obj_t* active = lv_scr_act();
+    if (active) {
+        lv_obj_invalidate(active);
+    }
 }
 
 // ── LVGL flush callback ─────────────────────────────────
@@ -189,6 +201,11 @@ void slopos_display_loop()
     slopos_touch_loop();
     slopos_keyboard_scan();
 
+    if (wake_refresh_pending) {
+        wake_refresh_pending = false;
+        restore_display_after_sleep();
+    }
+
     // Auto-off: turn off backlight after inactivity
     if (display_on && millis() > auto_off_at) {
         tft.setBrightness(0);
@@ -209,6 +226,7 @@ void slopos_display_wake()
     if (!display_on) {
         tft.setBrightness(255);
         display_on = true;
+        wake_refresh_pending = true;
     }
     reset_auto_off();
 }

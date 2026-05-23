@@ -1,6 +1,6 @@
 name: Build & Release
 
-on:
+"on":
   push:
     branches: [dev]
     tags: ['*']
@@ -44,6 +44,7 @@ jobs:
           path: |
             .pio/build/SlopOS_TDeck/firmware.bin
             .pio/build/SlopOS_TDeck/firmware-merged.bin
+            webflasher/
           if-no-files-found: error
 
   release:
@@ -67,13 +68,33 @@ jobs:
           body: |
             **SlopOS T-Deck Firmware** — ${{ github.ref_name }}
 
+            ### Flash with esptool
+            ```bash
+            # Full flash (first install):
+            esptool.py --chip esp32s3 --port /dev/ttyACM0 write_flash 0x0 firmware-merged.bin
+
+            # App update (keep settings):
+            esptool.py --chip esp32s3 --port /dev/ttyACM0 \\
+              write_flash 0x10000 firmware.bin
+            ```
+
+            ### Web Flasher
+            Use the manifest at `webflasher/manifest.json` with [esptool.js](https://espressif.github.io/esptool-js/).
+
             | File | Use |
             |------|-----|
-            | `firmware.bin` | OTA update (app only, flash at 0x10000) |
-            | `firmware-merged.bin` | Full flash (bootloader + partitions + app, flash at 0x0) |
+            | `firmware.bin` | App only (flash at 0x10000) |
+            | `firmware-merged.bin` | Full flash (flash at 0x0) |
+            | `webflasher/slopos-tdeck-firmware.bin` | App update |
+            | `webflasher/slopos-tdeck-full.bin` | Full flash |
+            | `webflasher/slopos-tdeck-bootloader.bin` | Bootloader |
+            | `webflasher/slopos-tdeck-partitions.bin` | Partition table |
+            | `webflasher/manifest.json` | Web flasher manifest |
           draft: false
           prerelease: true
           generate_release_notes: true
           files: |
             firmware.bin
             firmware-merged.bin
+            webflasher/*.bin
+            webflasher/manifest.json

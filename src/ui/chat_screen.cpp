@@ -64,7 +64,6 @@ using responsive::BOT_BAR_H;
 using responsive::DIVIDER_H;
 using responsive::DISPLAY_H;
 using responsive::DISPLAY_W;
-using responsive::HASHTAG_LABEL_W;
 using responsive::CONTENT_W;
 using responsive::dialog_size;
 static constexpr int TOP_H      = TOP_BAR_H;
@@ -238,13 +237,20 @@ static lv_obj_t* make_chat_list_screen()
     lv_obj_set_style_pad_all(top, 0, 0);
     lv_obj_set_style_border_width(top, 0, 0);
 
-    // ≡ hamburger → go back to Home
-    lv_obj_t* menu = lv_label_create(top);
-    lv_label_set_text(menu, LV_SYMBOL_LIST);
-    lv_obj_set_style_text_color(menu, lv_color_hex(TEXT_SECONDARY), 0);
-    lv_obj_align(menu, LV_ALIGN_LEFT_MID, 4, 0);
-    lv_obj_add_flag(menu, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(menu, [](lv_event_t*) { go_back(); }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* back = lv_btn_create(top);
+    lv_obj_set_size(back, 24, LIST_BAR_H - 4);
+    lv_obj_align(back, LV_ALIGN_LEFT_MID, 2, 0);
+    apply_topbar_icon_btn(back);
+    if (can_go_back()) {
+        lv_obj_add_event_cb(back, [](lv_event_t*) { go_back(); }, LV_EVENT_CLICKED, nullptr);
+    }
+
+    lv_obj_t* back_icon = lv_label_create(back);
+    lv_label_set_text(back_icon, LV_SYMBOL_LEFT);
+    lv_obj_set_style_text_color(back_icon,
+        lv_color_hex(can_go_back() ? ACCENT : TEXT_MUTED), 0);
+    lv_obj_set_style_text_font(back_icon, &lv_font_montserrat_12, 0);
+    lv_obj_center(back_icon);
 
     // Channel hashtags snapshot
     char ch_buf[100] = "";
@@ -263,10 +269,10 @@ static lv_obj_t* make_chat_list_screen()
     lv_obj_t* ch_lbl = lv_label_create(top);
     lv_label_set_text(ch_lbl, ch_buf);
     lv_label_set_long_mode(ch_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(ch_lbl, HASHTAG_LABEL_W());
+    lv_obj_set_width(ch_lbl, DISPLAY_W - 78);
     lv_obj_set_style_text_color(ch_lbl, lv_color_hex(CHANNEL_HASH), 0);
     lv_obj_set_style_text_font(ch_lbl, &lv_font_montserrat_10, 0);
-    lv_obj_align(ch_lbl, LV_ALIGN_LEFT_MID, 22, 0);
+    lv_obj_align(ch_lbl, LV_ALIGN_LEFT_MID, 32, 0);
 
     // Time snapshot
     {
@@ -442,12 +448,10 @@ static void create_top_bar()
     lv_obj_t* back = lv_btn_create(top_bar);
     lv_obj_set_size(back, 24, TOP_H - 4);
     lv_obj_align(back, LV_ALIGN_LEFT_MID, 2, 0);
-    lv_obj_set_style_bg_color(back, lv_color_hex(BG_TERTIARY), 0);
-    lv_obj_set_style_radius(back, 0, 0);
-    lv_obj_set_style_border_width(back, 0, 0);
+    apply_topbar_icon_btn(back);
     lv_obj_t* bl = lv_label_create(back);
     lv_label_set_text(bl, LV_SYMBOL_LEFT);
-    lv_obj_set_style_text_color(bl, lv_color_hex(TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_color(bl, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_text_font(bl, &lv_font_montserrat_12, 0);
     lv_obj_center(bl);
     lv_obj_add_event_cb(back, [](lv_event_t*) {

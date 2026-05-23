@@ -48,10 +48,6 @@ static bool history_empty() {
     return history_top < 0;
 }
 
-static void clear_history() {
-    history_top = -1;
-}
-
 void navigate_to(Screen screen)
 {
     if (screen == current) return;
@@ -104,6 +100,11 @@ void go_back()
     case Screen::RadioSetup: radio_setup_screen_show(); break;
     default: break;
     }
+}
+
+bool can_go_back()
+{
+    return !history_empty();
 }
 
 Screen current_screen()

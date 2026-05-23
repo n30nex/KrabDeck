@@ -105,6 +105,19 @@ inline void apply_pixel_btn_outline(lv_obj_t* obj) {
     apply_focus_style(obj);
 }
 
+// ── Top-bar icon button ─────────────────────────────────
+inline void apply_topbar_icon_btn(lv_obj_t* obj) {
+    lv_obj_set_style_bg_color(obj, lv_color_hex(BG_TERTIARY), 0);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(obj, lv_color_hex(DIVIDER), LV_STATE_PRESSED);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, LV_STATE_PRESSED);
+    lv_obj_set_style_radius(obj, 0, 0);
+    lv_obj_set_style_border_width(obj, 1, 0);
+    lv_obj_set_style_border_color(obj, lv_color_hex(DIVIDER), 0);
+    lv_obj_set_style_pad_all(obj, 0, 0);
+    apply_focus_style(obj);
+}
+
 // ── Pixel input field ───────────────────────────────────
 inline void apply_pixel_input(lv_obj_t* obj) {
     lv_obj_set_style_bg_color(obj, lv_color_hex(BG_INPUT), 0);

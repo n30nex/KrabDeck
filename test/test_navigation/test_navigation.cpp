@@ -61,6 +61,10 @@ static bool history_empty() {
     return history_top < 0;
 }
 
+static bool can_go_back() {
+    return !history_empty();
+}
+
 void navigate_to(Screen screen) {
     if (screen == current) return;
     push_history(current);
@@ -90,6 +94,7 @@ protected:
 TEST_F(NavigationTest, InitialStateIsHome) {
     EXPECT_EQ(current, Screen::Home);
     EXPECT_TRUE(history_empty());
+    EXPECT_FALSE(can_go_back());
     EXPECT_TRUE(nav_log.empty());
 }
 
@@ -98,6 +103,7 @@ TEST_F(NavigationTest, NavigateToChatUpdatesState) {
     navigate_to(Screen::Chat);
     EXPECT_EQ(current, Screen::Chat);
     EXPECT_FALSE(history_empty());
+    EXPECT_TRUE(can_go_back());
     EXPECT_EQ(nav_log.size(), 1u);
 }
 
@@ -105,6 +111,7 @@ TEST_F(NavigationTest, NavigateToSameScreenIsNoop) {
     navigate_to(Screen::Home);  // already home
     EXPECT_EQ(current, Screen::Home);
     EXPECT_TRUE(history_empty()); // no push
+    EXPECT_FALSE(can_go_back());
     EXPECT_TRUE(nav_log.empty());
 }
 
@@ -126,13 +133,16 @@ TEST_F(NavigationTest, NavigateToAllScreens) {
 // ── Back navigation (stack-based) ────────────────────────
 TEST_F(NavigationTest, GoBackReturnsToPrevious) {
     navigate_to(Screen::Chat);
+    EXPECT_TRUE(can_go_back());
     go_back();
     EXPECT_EQ(current, Screen::Home);
+    EXPECT_FALSE(can_go_back());
 }
 
 TEST_F(NavigationTest, GoBackFromHomeIsNoop) {
     go_back(); // stack empty, nowhere to go
     EXPECT_EQ(current, Screen::Home);
+    EXPECT_FALSE(can_go_back());
 }
 
 TEST_F(NavigationTest, DeepNavigationAndBack) {
@@ -153,6 +163,7 @@ TEST_F(NavigationTest, DeepNavigationAndBack) {
 
     // Stack should be empty now
     EXPECT_TRUE(history_empty());
+    EXPECT_FALSE(can_go_back());
 }
 
 // ── Rapid navigation ────────────────────────────────────

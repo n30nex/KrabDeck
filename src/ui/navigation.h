@@ -46,6 +46,9 @@ void navigate_to(Screen screen);
 // Go back to previous screen
 void go_back();
 
+// Return true when the navigation stack has a previous screen.
+bool can_go_back();
+
 // Return the screen currently owned by the navigation stack.
 Screen current_screen();
 

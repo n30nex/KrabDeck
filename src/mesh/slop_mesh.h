@@ -136,15 +136,21 @@ protected:
         return n;
     }
 
-    void onGroupDataRecv(::mesh::Packet*, uint8_t type, const ::mesh::GroupChannel&,
-                         uint8_t* data, size_t len) override
+    void onGroupDataRecv(::mesh::Packet*, uint8_t type, const ::mesh::GroupChannel& ch,
+                          uint8_t* data, size_t len) override
     {
         if (type != PAYLOAD_TYPE_GRP_TXT || !_onMessage) return;
-        // Group text payload: [4-byte LE timestamp][text_type byte][null-terminated text]
-        // Safety: force null-termination — packet data may lack a terminator
         if (len > 5) data[len - 1] = '\0';
         const char* text = (len > 5) ? (const char*)(data + 5) : "";
-        _onMessage("[group]", text);
+
+        const char* chname = nullptr;
+        for (int i = 0; i < _nChannels; i++) {
+            if (memcmp(_channels[i].channel.hash, ch.hash, sizeof(ch.hash)) == 0) {
+                chname = _channels[i].name;
+                break;
+            }
+        }
+        _onMessage(chname ? chname : "[group]", text);
     }
 
 public:
@@ -300,16 +306,14 @@ public:
 
     bool addChannel(const char* name, const char* psk_base64) {
         if (_nChannels >= SLOP_MAX_CHANNELS) return false;
-
+        for (int j = 0; j < _nChannels; j++) {
+            if (strcmp(_channels[j].name, name) == 0) return true;
+        }
         SlopChannel& ch = _channels[_nChannels];
         memset(ch.channel.secret, 0, sizeof(ch.channel.secret));
-
-        // Decode base64 PSK to secret (matches MeshCore addChannel protocol)
         int len = decode_b64(psk_base64, strlen(psk_base64), ch.channel.secret,
                              sizeof(ch.channel.secret));
-        if (len != 32 && len != 16) return false;  // must be 128-bit or 256-bit key
-
-        // Hash the PSK to create the channel hash (matches MeshCore protocol)
+        if (len != 32 && len != 16) return false;
         ::mesh::Utils::sha256(ch.channel.hash, sizeof(ch.channel.hash),
                               ch.channel.secret, len);
         strncpy(ch.name, name, sizeof(ch.name) - 1);

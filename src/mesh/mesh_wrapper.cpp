@@ -12,6 +12,7 @@
 #include "slop_mesh.h"
 
 #include <SPIFFS.h>
+#include <time.h>
 #include <Mesh.h>
 #include <helpers/SimpleMeshTables.h>
 #include <helpers/radiolib/RadioLibWrappers.h>
@@ -75,7 +76,9 @@ static bool queue_pop(MeshMessage* out) {
 
 static void onMeshMessage(const char* sender, const char* text) {
     queue_push(sender, text);
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
     Serial.printf("[mesh] MSG from %s: %s\n", sender, text);
+#endif
 }
 
 // ════════════════════════════════════════════════════
@@ -133,23 +136,31 @@ bool init(bool spiffs_ok)
     int     tx_power = p.configured ? p.tx_power_dbm : LORA_TX_PWR;
 
     if (!p.configured) {
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
         Serial.println("[mesh] Using compile-time defaults — open Settings to customize");
+#endif
     }
 
     // ── SX1262 hard reset: radio may retain state across ESP32 reboots.
     //     If BUSY pin is stuck HIGH from a previous crash, std_init() hangs
     //     in waitForBusyPin() → watchdog reset → infinite bootloop.
     //     Solution: assert RST LOW for 100µs, release, wait 10ms for TCXO.
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
     Serial.println("[mesh] hard-resetting SX1262 via RST pin...");
+#endif
     pinMode(P_LORA_RESET, OUTPUT);
     digitalWrite(P_LORA_RESET, LOW);
     delayMicroseconds(100);
     digitalWrite(P_LORA_RESET, HIGH);
     delay(10);  // TCXO stabilization + radio calibration
 
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
     Serial.println("[mesh] initializing LoRa SPI bus...");
+#endif
     lora_spi.begin(P_LORA_SCLK, P_LORA_MISO, P_LORA_MOSI);
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
     Serial.println("[mesh] calling radio_module.std_init()...");
+#endif
     if (!radio_module.std_init(&lora_spi)) {
         Serial.println("[mesh] ERROR: Radio init failed");
         return false;
@@ -164,8 +175,10 @@ bool init(bool spiffs_ok)
     radio_module.setSpreadingFactor(sf);
     radio_module.setCodingRate(cr_enum);
     radio_module.setOutputPower(tx_power);
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
     Serial.printf("[mesh] Radio: %.3f MHz / %.1f kHz / SF%d / CR4/%d / %d dBm\n",
                   freq, bw, sf, cr, tx_power);
+#endif
 
     fast_rng.begin(radio_module.random(0x7FFFFFFF));
 
@@ -196,7 +209,9 @@ bool init(bool spiffs_ok)
     }
 
     initialized = true;
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
     Serial.println("[mesh] SlopMesh initialized");
+#endif
     return true;
 }
 
@@ -285,6 +300,10 @@ bool addChannel(const char* name, const char* psk) {
     return g_mesh ? g_mesh->addChannel(name, psk) : false;
 }
 
+bool joinPublicChannel() {
+    return addChannel("Public", "izOH6cXN6mrJ5e26oRXNcg==");
+}
+
 // ── Identity ────────────────────────────────────
 
 void setOwnName(const char* name) {
@@ -314,6 +333,54 @@ bool sendAdvert() {
 
 uint32_t getCurrentTime() {
     return initialized ? rtc_clock.getCurrentTime() : 0;
+}
+
+bool setSystemTime(uint32_t epoch_seconds) {
+    if (!initialized) return false;
+    rtc_clock.setCurrentTime(epoch_seconds);
+    fallback_clock.setCurrentTime(epoch_seconds);  // always keep soft RTC in sync too
+    return true;
+}
+
+void getCurrentLocalDateTime(int* year, int* month, int* day, int* hour, int* minute) {
+    if (!initialized || !year || !month || !day || !hour || !minute) {
+        if (year) *year = 2024;
+        if (month) *month = 1;
+        if (day) *day = 1;
+        if (hour) *hour = 0;
+        if (minute) *minute = 0;
+        return;
+    }
+    uint32_t epoch = rtc_clock.getCurrentTime();
+    time_t t = epoch;
+    struct tm* tm_info = gmtime(&t);
+    *year   = tm_info->tm_year + 1900;
+    *month  = tm_info->tm_mon + 1;
+    *day    = tm_info->tm_mday;
+    *hour   = tm_info->tm_hour;
+    *minute = tm_info->tm_min;
+}
+
+uint32_t makeEpoch(int year, int month, int day, int hour, int minute) {
+    struct tm tm = {};
+    tm.tm_year = year - 1900;
+    tm.tm_mon  = month - 1;
+    tm.tm_mday = day;
+    tm.tm_hour = hour;
+    tm.tm_min  = minute;
+    tm.tm_sec  = 0;
+    tm.tm_isdst = 0;
+
+    // Force UTC so that the wall-clock values the user typed become the correct epoch
+    // (getCurrentLocalDateTime uses gmtime, so we must match on the write side)
+    const char* old_tz = getenv("TZ");
+    setenv("TZ", "UTC0", 1);
+    tzset();
+    time_t t = mktime(&tm);
+    if (old_tz) setenv("TZ", old_tz, 1); else unsetenv("TZ");
+    tzset();
+
+    return (uint32_t)t;
 }
 
 static uint32_t trace_tag_counter = 0;

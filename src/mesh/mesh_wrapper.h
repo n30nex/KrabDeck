@@ -39,6 +39,7 @@ int  exportContactsFull(ContactInfo* out, int max);
 int  getChannelCount();
 int  exportChannels(char names[][32], int max);
 bool addChannel(const char* name, const char* psk_base64);
+bool joinPublicChannel();
 
 void setOwnName(const char* name);
 const char* getOwnName();
@@ -52,6 +53,10 @@ void saveState();
 
 // RTC time for UI comparisons
 uint32_t getCurrentTime();
+bool setSystemTime(uint32_t epoch_seconds);
+
+void getCurrentLocalDateTime(int* year, int* month, int* day, int* hour, int* minute);
+uint32_t makeEpoch(int year, int month, int day, int hour, int minute);
 
 // Trace route
 bool sendTrace(int contact_idx, uint32_t* out_tag);

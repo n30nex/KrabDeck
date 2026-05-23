@@ -72,7 +72,12 @@
 // ════════════════════════════════════════════════════════
 // Trackball / User Button
 // ════════════════════════════════════════════════════════
-#define PIN_TRACKBALL    0
+#define PIN_TRACKBALL          0   // Center click / BOOT button
+#define PIN_TRACKBALL_BTN      PIN_TRACKBALL
+#define PIN_TRACKBALL_LEFT     1
+#define PIN_TRACKBALL_RIGHT    2
+#define PIN_TRACKBALL_UP       3
+#define PIN_TRACKBALL_DOWN    15
 
 // ════════════════════════════════════════════════════════
 // Battery & Power

@@ -124,5 +124,14 @@ void loop()
     }
 }
 
+bool handle_trackball_event(SlopOSTrackballEvent event)
+{
+    if (home_shown && current_screen() == Screen::Home) {
+        home_screen_handle_trackball(event);
+        return true;
+    }
+    return false;
+}
+
 } // namespace ui
 } // namespace slopos

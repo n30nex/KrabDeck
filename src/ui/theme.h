@@ -62,6 +62,11 @@ inline void apply_dark_bg(lv_obj_t* obj) {
     lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
 }
 
+// ── Shared keyboard/trackball focus treatment ───────────
+inline void apply_focus_style(lv_obj_t* obj) {
+    lv_obj_set_style_border_color(obj, lv_color_hex(ACCENT_YELLOW), LV_STATE_FOCUSED);
+}
+
 // ── Pixel card style (0-radius, dark bg, 2px border) ────
 inline void apply_pixel_card(lv_obj_t* obj) {
     lv_obj_set_style_bg_color(obj, lv_color_hex(BG_TERTIARY), 0);
@@ -70,6 +75,7 @@ inline void apply_pixel_card(lv_obj_t* obj) {
     lv_obj_set_style_border_width(obj, PIXEL_BORDER, 0);
     lv_obj_set_style_border_color(obj, lv_color_hex(DIVIDER), 0);
     lv_obj_set_style_pad_all(obj, 6, 0);
+    apply_focus_style(obj);
 }
 
 // ── Pixel card with accent border ───────────────────────
@@ -86,6 +92,7 @@ inline void apply_pixel_btn(lv_obj_t* obj) {
     lv_obj_set_style_border_width(obj, PIXEL_BORDER, 0);
     lv_obj_set_style_border_color(obj, lv_color_hex(ACCENT_HOVER), 0);
     lv_obj_set_style_pad_all(obj, 6, 0);
+    apply_focus_style(obj);
 }
 
 // ── Pixel button (outline) ──────────────────────────────
@@ -95,6 +102,7 @@ inline void apply_pixel_btn_outline(lv_obj_t* obj) {
     lv_obj_set_style_border_width(obj, PIXEL_BORDER, 0);
     lv_obj_set_style_border_color(obj, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_pad_all(obj, 6, 0);
+    apply_focus_style(obj);
 }
 
 // ── Pixel input field ───────────────────────────────────
@@ -105,6 +113,7 @@ inline void apply_pixel_input(lv_obj_t* obj) {
     lv_obj_set_style_border_width(obj, PIXEL_BORDER, 0);
     lv_obj_set_style_border_color(obj, lv_color_hex(DIVIDER), 0);
     lv_obj_set_style_pad_all(obj, 6, 0);
+    apply_focus_style(obj);
 }
 
 // ── Pixel badge (small accent label) ────────────────────

@@ -12,6 +12,9 @@
 #include "app/map_renderer.h"
 #include "mesh/mesh_wrapper.h"
 #include "ui/ui.h"
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
+#include "diagnostics/debug.h"
+#endif
 
 static slopos::TDeckBoard board;
 
@@ -55,6 +58,11 @@ void setup()
     slopos::ui::init();
     Serial.println("[boot] step 8: UI splash screen shown");
 
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
+    slopos::debug::init();
+    Serial.println("[boot] step 9: debug diagnostics enabled");
+#endif
+
     if (slopos_sdcard_mounted())
         slopos_map_init();
 
@@ -78,4 +86,8 @@ void loop()
     slopos_gps_loop();
     slopos_display_loop();
     slopos::ui::loop();
+
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
+    slopos::debug::loop();
+#endif
 }

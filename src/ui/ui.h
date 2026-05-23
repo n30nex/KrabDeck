@@ -19,11 +19,14 @@
 // along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
 
 
+#include "../hal/trackball.h"
+
 namespace slopos {
 namespace ui {
 
 void init();
 void loop();
+bool handle_trackball_event(SlopOSTrackballEvent event);
 
 } // namespace ui
 } // namespace slopos

@@ -46,4 +46,7 @@ void navigate_to(Screen screen);
 // Go back to previous screen
 void go_back();
 
+// Return the screen currently owned by the navigation stack.
+Screen current_screen();
+
 } // namespace slopos::ui

@@ -31,6 +31,7 @@
 #include "hal/display.h"
 #include "hal/touch.h"
 #include "hal/keyboard.h"
+#include "hal/trackball.h"
 #include "hal/gps.h"
 #include "hal/sdcard.h"
 #include "mesh/mesh_wrapper.h"

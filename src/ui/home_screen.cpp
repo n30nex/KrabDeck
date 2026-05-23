@@ -23,6 +23,10 @@
 #include "responsive.h"
 #include "../hal/tdeck_pins.h"
 #include "../mesh/mesh_wrapper.h"
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
+#include "../diagnostics/debug.h"
+#include <Arduino.h>
+#endif
 #include <lvgl.h>
 #include <cstdio>
 #include <cstring>
@@ -66,10 +70,97 @@ static const IconDef icons[] = {
     {"SIGNAL",    LV_SYMBOL_BARS,       false, Screen::Signal},
 };
 
+static constexpr int ICON_COUNT = sizeof(icons) / sizeof(icons[0]);
+static lv_obj_t* icon_tiles[ICON_COUNT] = {};
+static int tile_x[ICON_COUNT] = {};
+static int tile_y[ICON_COUNT] = {};
+static int tile_w[ICON_COUNT] = {};
+static int tile_h[ICON_COUNT] = {};
+static int selected_icon = 0;
+static int active_cols = 1;
+static int active_rows = 1;
+
+static constexpr lv_obj_flag_t no_scroll_flags()
+{
+    return (lv_obj_flag_t)(
+        LV_OBJ_FLAG_SCROLLABLE |
+        LV_OBJ_FLAG_SCROLL_ELASTIC |
+        LV_OBJ_FLAG_SCROLL_MOMENTUM |
+        LV_OBJ_FLAG_SCROLL_CHAIN |
+        LV_OBJ_FLAG_SCROLL_ON_FOCUS |
+        LV_OBJ_FLAG_SCROLL_WITH_ARROW);
+}
+
+static void disable_scroll(lv_obj_t* obj)
+{
+    lv_obj_remove_flag(obj, no_scroll_flags());
+    lv_obj_set_scroll_dir(obj, LV_DIR_NONE);
+    lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
+}
+
+static void force_full_tile_redraw(int idx)
+{
+    if (idx < 0 || idx >= ICON_COUNT || !icon_tiles[idx]) return;
+
+    // Always safe per-object invalidate
+    lv_obj_invalidate(icon_tiles[idx]);
+
+    // Expanded dirty rect (in tile-local coords) so the partial renderer
+    // is forced to redraw the entire icon + label + border in one go.
+    lv_area_t a;
+    a.x1 = -4;
+    a.y1 = -4;
+    a.x2 = tile_w[idx] + 4;
+    a.y2 = tile_h[idx] + 4;
+    lv_obj_invalidate_area(icon_tiles[idx], &a);
+}
+
+static void apply_selection(int old_idx = -1)
+{
+    if (old_idx >= 0 && old_idx < ICON_COUNT && icon_tiles[old_idx]) {
+        lv_obj_set_style_border_color(icon_tiles[old_idx], lv_color_hex(BG_PRIMARY), 0);
+        force_full_tile_redraw(old_idx);
+    }
+    if (selected_icon >= 0 && selected_icon < ICON_COUNT && icon_tiles[selected_icon]) {
+        lv_obj_set_style_border_color(icon_tiles[selected_icon], lv_color_hex(ACCENT), 0);
+        force_full_tile_redraw(selected_icon);
+    }
+
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
+    Serial.printf("[home] apply_selection old=%d new=%d", old_idx, selected_icon);
+    if (selected_icon >= 0 && selected_icon < ICON_COUNT) {
+        lv_area_t coords;
+        lv_obj_get_coords(icon_tiles[selected_icon], &coords);
+        Serial.printf(" tile_coords=(%ld,%ld,%ld,%ld) w=%ld h=%ld",
+                      (long)coords.x1, (long)coords.y1, (long)coords.x2, (long)coords.y2,
+                      (long)lv_obj_get_width(icon_tiles[selected_icon]),
+                      (long)lv_obj_get_height(icon_tiles[selected_icon]));
+        lv_coord_t bw = lv_obj_get_style_border_width(icon_tiles[selected_icon], 0);
+        lv_opa_t bg_o = lv_obj_get_style_bg_opa(icon_tiles[selected_icon], 0);
+        lv_coord_t pl = lv_obj_get_style_pad_left(icon_tiles[selected_icon], 0);
+        lv_coord_t pr = lv_obj_get_style_pad_right(icon_tiles[selected_icon], 0);
+        lv_coord_t pt = lv_obj_get_style_pad_top(icon_tiles[selected_icon], 0);
+        lv_coord_t pb = lv_obj_get_style_pad_bottom(icon_tiles[selected_icon], 0);
+        Serial.printf(" bw=%d bg_opa=%d pad=(%d,%d,%d,%d)",
+                      (int)bw, (int)bg_o, (int)pl, (int)pr, (int)pt, (int)pb);
+
+        lv_obj_t* parent = lv_obj_get_parent(icon_tiles[selected_icon]);
+        if (parent) {
+            lv_area_t gc;
+            lv_obj_get_coords(parent, &gc);
+            Serial.printf(" grid_coords=(%ld,%ld,%ld,%ld) grid_w=%ld grid_h=%ld",
+                          (long)gc.x1, (long)gc.y1, (long)gc.x2, (long)gc.y2,
+                          (long)lv_obj_get_width(parent), (long)lv_obj_get_height(parent));
+        }
+    }
+    Serial.println();
+#endif
+}
+
 static void on_icon_click(lv_event_t* e)
 {
     int idx = (int)(intptr_t)lv_event_get_user_data(e);
-    if (idx >= 0 && idx < (int)(sizeof(icons)/sizeof(icons[0])))
+    if (idx >= 0 && idx < ICON_COUNT)
         navigate_to(icons[idx].target);
 }
 
@@ -174,14 +265,15 @@ static void create_bottom_bar()
 static lv_obj_t* create_icon_tile(lv_obj_t* parent, const IconDef& icon, int idx)
 {
     lv_obj_t* tile = lv_obj_create(parent);
-    lv_obj_set_style_bg_opa(tile, LV_OPA_TRANSP, 0);
+    lv_obj_set_size(tile, tile_w[idx], tile_h[idx]);
+    lv_obj_set_pos(tile, tile_x[idx], tile_y[idx]);
+    lv_obj_set_style_bg_color(tile, lv_color_hex(BG_TERTIARY), 0);
+    lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(tile, 0, 0);
-    lv_obj_set_style_border_width(tile, 0, 0);
+    lv_obj_set_style_border_width(tile, PIXEL_BORDER, 0);
+    lv_obj_set_style_border_color(tile, lv_color_hex(BG_PRIMARY), 0);
     lv_obj_set_style_pad_all(tile, 4, 0);
-
-    // Flex column: stack icon + label and center both axes within the tile
-    lv_obj_set_flex_flow(tile, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(tile, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    disable_scroll(tile);
 
     lv_obj_set_style_bg_color(tile, lv_color_hex(0x2a2a2a), LV_STATE_PRESSED);
     lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, LV_STATE_PRESSED);
@@ -193,15 +285,16 @@ static lv_obj_t* create_icon_tile(lv_obj_t* parent, const IconDef& icon, int idx
     lv_label_set_text(icon_label, icon.symbol);
     lv_obj_set_style_text_font(icon_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(icon_label, lv_color_hex(ACCENT), 0);
+    lv_obj_align(icon_label, LV_ALIGN_CENTER, 0, -8);
 
     lv_obj_t* label = lv_label_create(tile);
     lv_label_set_text(label, icon.label);
     lv_obj_set_style_text_color(label, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_10, 0);
+    lv_obj_align(label, LV_ALIGN_CENTER, 0, 12);
 
     if (icon.badge) {
         lv_obj_t* badge = lv_obj_create(tile);
-        lv_obj_add_flag(badge, LV_OBJ_FLAG_IGNORE_LAYOUT);  // float over flex flow
         lv_obj_set_size(badge, 10, 10);
         lv_obj_set_style_bg_color(badge, lv_color_hex(ACCENT_RED), 0);
         lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
@@ -217,34 +310,43 @@ static lv_obj_t* create_icon_tile(lv_obj_t* parent, const IconDef& icon, int idx
 static void create_icon_grid()
 {
     GridLayout gl = compute_grid(GRID_PAD);
-    int total_icons = sizeof(icons) / sizeof(icons[0]);
-    int rows_needed = (total_icons + gl.cols - 1) / gl.cols;
+    active_cols = gl.cols;
+    active_rows = (ICON_COUNT + active_cols - 1) / active_cols;
 
-    // Static arrays required — LVGL holds a pointer to them across frames
-    static lv_coord_t col_desc[5];   // up to 4 cols + sentinel
-    static lv_coord_t row_desc[13];  // up to 12 rows + sentinel
-    for (int i = 0; i < gl.cols; i++) col_desc[i] = LV_GRID_FR(1);
-    col_desc[gl.cols] = LV_GRID_TEMPLATE_LAST;
-    for (int i = 0; i < rows_needed; i++) row_desc[i] = LV_GRID_FR(1);
-    row_desc[rows_needed] = LV_GRID_TEMPLATE_LAST;
+    const int usable_w = CONTENT_W - (GRID_PAD * 2) - (GRID_PAD * (active_cols - 1));
+    const int usable_h = CONTENT_H - (GRID_PAD * 2) - (GRID_PAD * (active_rows - 1));
+    const int base_w = usable_w / active_cols;
+    const int extra_w = usable_w - (base_w * active_cols);
+    const int base_h = usable_h / active_rows;
+    const int extra_h = usable_h - (base_h * active_rows);
+
+    for (int i = 0; i < ICON_COUNT; i++) {
+        const int col = i % active_cols;
+        const int row = i / active_cols;
+        // Use the same width for every column so that when the selection border
+        // is active the inner content area is identical on all tiles.
+        // This eliminates the visual "warping" that only appeared on the left
+        // column (the one that used to receive the extra pixel).
+        tile_w[i] = base_w;
+        tile_h[i] = base_h + (row < extra_h ? 1 : 0);
+        tile_x[i] = GRID_PAD + col * (base_w + GRID_PAD);
+        tile_y[i] = GRID_PAD + row * (base_h + GRID_PAD) + (row < extra_h ? row : extra_h);
+    }
 
     grid = lv_obj_create(scr);
     lv_obj_set_style_bg_opa(grid, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(grid, 0, 0);
-    lv_obj_set_style_pad_all(grid, GRID_PAD, 0);
-    lv_obj_set_style_pad_column(grid, GRID_PAD, 0);
-    lv_obj_set_style_pad_row(grid, GRID_PAD, 0);
+    lv_obj_set_style_pad_all(grid, 0, 0);
     lv_obj_set_size(grid, LV_PCT(100), CONTENT_H);
     lv_obj_align(grid, LV_ALIGN_TOP_MID, 0, CONTENT_Y);
-    lv_obj_set_layout(grid, LV_LAYOUT_GRID);
-    lv_obj_set_grid_dsc_array(grid, col_desc, row_desc);
-    lv_obj_set_scroll_dir(grid, LV_DIR_NONE);
+    disable_scroll(grid);
 
-    for (int i = 0; i < total_icons; i++) {
-        lv_obj_t* tile = create_icon_tile(grid, icons[i], i);
-        lv_obj_set_grid_cell(tile, LV_GRID_ALIGN_STRETCH, i % gl.cols, 1,
-                                   LV_GRID_ALIGN_STRETCH, i / gl.cols, 1);
+    for (int i = 0; i < ICON_COUNT; i++) {
+        icon_tiles[i] = create_icon_tile(grid, icons[i], i);
     }
+
+    selected_icon = 0;
+    apply_selection();
 }
 
 // ── Shared build helper ──────────────────────────────────
@@ -255,9 +357,11 @@ static void build_home_screen(lv_scr_load_anim_t anim, uint32_t duration)
     time_label    = nullptr;
     batt_label    = nullptr;
     signal_label  = nullptr;
+    for (int i = 0; i < ICON_COUNT; i++) icon_tiles[i] = nullptr;
 
     scr = lv_obj_create(nullptr);
     apply_dark_bg(scr);
+    disable_scroll(scr);
 
     // When any other screen replaces Home (auto_del=true), LVGL frees all
     // children — null the static pointers so periodic update functions
@@ -265,6 +369,7 @@ static void build_home_screen(lv_scr_load_anim_t anim, uint32_t duration)
     lv_obj_add_event_cb(scr, [](lv_event_t*) {
         scr = top_bar = bottom_bar = grid = nullptr;
         time_label = batt_label = signal_label = hashtag_label = nullptr;
+        for (int i = 0; i < ICON_COUNT; i++) icon_tiles[i] = nullptr;
     }, LV_EVENT_DELETE, nullptr);
 
     create_top_bar();
@@ -282,6 +387,62 @@ void home_screen_create()
 void home_screen_show()
 {
     build_home_screen(LV_SCR_LOAD_ANIM_MOVE_RIGHT, 200);
+}
+
+void home_screen_handle_trackball(SlopOSTrackballEvent event)
+{
+    if (!grid) return;
+
+    switch (event) {
+    case SlopOSTrackballEvent::Left: {
+        const int old = selected_icon;
+        const int row = selected_icon / active_cols;
+        const int first = row * active_cols;
+        const int last = (first + active_cols - 1 < ICON_COUNT) ? first + active_cols - 1 : ICON_COUNT - 1;
+        selected_icon = (selected_icon == first) ? last : selected_icon - 1;
+        apply_selection(old);
+        break;
+    }
+    case SlopOSTrackballEvent::Right: {
+        const int old = selected_icon;
+        const int row = selected_icon / active_cols;
+        const int first = row * active_cols;
+        const int last = (first + active_cols - 1 < ICON_COUNT) ? first + active_cols - 1 : ICON_COUNT - 1;
+        selected_icon = (selected_icon == last) ? first : selected_icon + 1;
+        apply_selection(old);
+        break;
+    }
+    case SlopOSTrackballEvent::Up: {
+        const int old = selected_icon;
+        const int col = selected_icon % active_cols;
+        int row = selected_icon / active_cols;
+        do {
+            row = (row == 0) ? active_rows - 1 : row - 1;
+            selected_icon = row * active_cols + col;
+        } while (selected_icon >= ICON_COUNT);
+        apply_selection(old);
+        break;
+    }
+    case SlopOSTrackballEvent::Down: {
+        const int old = selected_icon;
+        const int col = selected_icon % active_cols;
+        int row = selected_icon / active_cols;
+        do {
+            row = (row + 1) % active_rows;
+            selected_icon = row * active_cols + col;
+        } while (selected_icon >= ICON_COUNT);
+        apply_selection(old);
+        break;
+    }
+    case SlopOSTrackballEvent::Click:
+        if (selected_icon >= 0 && selected_icon < ICON_COUNT) {
+            navigate_to(icons[selected_icon].target);
+        }
+        break;
+    case SlopOSTrackballEvent::None:
+    default:
+        break;
+    }
 }
 
 void home_screen_update_battery(int pct)

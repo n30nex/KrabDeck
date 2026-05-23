@@ -106,4 +106,9 @@ void go_back()
     }
 }
 
+Screen current_screen()
+{
+    return current;
+}
+
 } // namespace slopos::ui

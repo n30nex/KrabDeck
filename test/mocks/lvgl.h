@@ -92,6 +92,17 @@ typedef void (*lv_event_cb_t)(lv_event_t* e);
 #define LV_OBJ_FLAG_CHECKABLE        (1 << 7)
 #define LV_OBJ_FLAG_SCROLLABLE       (1 << 8)
 #define LV_OBJ_FLAG_SCROLL_ELASTIC   (1 << 9)
+#define LV_OBJ_FLAG_SCROLL_MOMENTUM  (1 << 10)
+#define LV_OBJ_FLAG_SCROLL_CHAIN_HOR (1 << 11)
+#define LV_OBJ_FLAG_SCROLL_CHAIN_VER (1 << 12)
+#define LV_OBJ_FLAG_SCROLL_CHAIN     (LV_OBJ_FLAG_SCROLL_CHAIN_HOR | LV_OBJ_FLAG_SCROLL_CHAIN_VER)
+#define LV_OBJ_FLAG_SCROLL_ON_FOCUS  (1 << 13)
+#define LV_OBJ_FLAG_SCROLL_WITH_ARROW (1 << 14)
+
+// ── Object states ───────────────────────────────────────
+#define LV_STATE_DEFAULT 0
+#define LV_STATE_PRESSED (1 << 0)
+#define LV_STATE_FOCUSED (1 << 1)
 
 // ── Events ───────────────────────────────────────────────
 #define LV_EVENT_CLICKED    0x07
@@ -109,6 +120,8 @@ typedef void (*lv_event_cb_t)(lv_event_t* e);
 
 typedef struct {
     lv_coord_t x, y;
+    int16_t enc_diff;
+    uint32_t key;
     uint8_t state;
 } lv_indev_data_t;
 
@@ -145,6 +158,8 @@ typedef struct {
 #define LV_LABEL_LONG_WRAP    1
 #define LV_LABEL_LONG_DOT     2
 #define LV_LABEL_LONG_SCROLL  3
+
+#define LV_SCROLLBAR_MODE_OFF 0
 
 #define LV_FLEX_FLOW_ROW_WRAP 0
 #define LV_FLEX_FLOW_COLUMN   1
@@ -191,12 +206,14 @@ inline void lv_obj_del(lv_obj_t*) {}
 inline void lv_obj_set_size(lv_obj_t*, lv_coord_t, lv_coord_t) {}
 inline void lv_obj_set_width(lv_obj_t*, lv_coord_t) {}
 inline void lv_obj_set_height(lv_obj_t*, lv_coord_t) {}
+inline void lv_obj_set_pos(lv_obj_t*, lv_coord_t, lv_coord_t) {}
 inline void lv_obj_align(lv_obj_t*, int, lv_coord_t, lv_coord_t) {}
 inline void lv_obj_center(lv_obj_t*) {}
 inline void lv_obj_add_flag(lv_obj_t*, uint32_t) {}
 inline void lv_obj_remove_flag(lv_obj_t*, uint32_t) {}
 inline void lv_obj_scroll_to_view(lv_obj_t*, int) {}
 inline void lv_obj_invalidate(lv_obj_t*) {}
+inline void lv_obj_set_scrollbar_mode(lv_obj_t*, int) {}
 inline lv_coord_t lv_obj_get_width(lv_obj_t*) { return 100; }
 inline lv_coord_t lv_obj_get_height(lv_obj_t*) { return 100; }
 inline lv_obj_t* lv_obj_get_child(lv_obj_t*, int) { return nullptr; }
@@ -221,6 +238,7 @@ inline void lv_obj_set_scroll_dir(lv_obj_t*, int) {}
 
 // ── Event ────────────────────────────────────────────────
 inline void lv_obj_add_event_cb(lv_obj_t*, lv_event_cb_t, int, void*) {}
+inline void* lv_event_get_user_data(lv_event_t* e) { return e ? e->user_data : nullptr; }
 
 // ── Label ────────────────────────────────────────────────
 inline lv_obj_t* lv_label_create(lv_obj_t* parent) { return lv_obj_create(parent); }

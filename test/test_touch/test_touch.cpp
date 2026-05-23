@@ -175,7 +175,9 @@ bool parse_touch_point(const uint8_t* buf, int idx, TouchPoint* out,
 class TouchTest : public ::testing::Test {
 protected:
     GT911RegisterBank regs;
-    TouchMapping default_mapping = {true, false, false, 320, 240, TFT_WIDTH, TFT_HEIGHT};
+    // T-Deck: swap portrait→landscape, mirror Y (portrait X bottom→top in landscape)
+    // max_x = TFT_HEIGHT(240) = portrait X range; max_y = TFT_WIDTH(320) = portrait Y range
+    TouchMapping default_mapping = {true, false, true, TFT_HEIGHT, TFT_WIDTH, TFT_WIDTH, TFT_HEIGHT};
 
     void SetUp() override {
         arduino_mock::reset();
@@ -193,12 +195,10 @@ protected:
 // ── Coordinate transformation ────────────────────────────
 TEST_F(TouchTest, CenterPointMapsToScreenCenter) {
     int x, y;
+    // raw(160,120): swap→x=120,y=160; scale x=120*320/240=160, y=160*240/320=120; mirror_y y=240-120=120
     transform_coords(default_mapping, 160, 120, &x, &y);
-    // With swap_xy=true (T-Deck default), 160→y, 120→x
-    // y = 160 * 240 / 240 = 160
-    // x = 120 * 320 / 320 = 120
-    EXPECT_EQ(x, 120);  // raw_y becomes screen_x
-    EXPECT_EQ(y, 160);  // raw_x becomes screen_y
+    EXPECT_EQ(x, 160);
+    EXPECT_EQ(y, 120);
 }
 
 TEST_F(TouchTest, OriginMapsToOrigin) {

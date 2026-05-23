@@ -52,11 +52,13 @@
 #define PIN_TOUCH_INT    16
 #define PIN_TOUCH_RST    -1
 #define TOUCH_I2C_ADDR  0x5D
-#define TOUCH_MAX_X     TFT_WIDTH
-#define TOUCH_MAX_Y     TFT_HEIGHT
-#define TOUCH_SWAP_XY    false   // rotation(1) handles axis mapping
-#define TOUCH_MIRROR_X   true    // physical X→Y flip for 90°CW rotation
-#define TOUCH_MIRROR_Y   false
+#define TOUCH_MAX_X      TFT_WIDTH
+#define TOUCH_MAX_Y      TFT_HEIGHT
+#define TOUCH_SENSOR_X   TFT_HEIGHT  // GT911 portrait X max (pre-swap); equals display height
+#define TOUCH_SENSOR_Y   TFT_WIDTH   // GT911 portrait Y max (pre-swap); equals display width
+#define TOUCH_SWAP_XY    true    // GT911 is portrait glass (240×320); swap axes for landscape LVGL
+#define TOUCH_MIRROR_X   false
+#define TOUCH_MIRROR_Y   true    // portrait X increases bottom→top in landscape; invert for LVGL
 
 // ── I2C bus aliases (shared with touch) ──────────────────
 #define PIN_I2C_SDA      PIN_TOUCH_SDA

@@ -164,9 +164,22 @@ static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px
 #endif
     uint32_t w = area->x2 - area->x1 + 1;
     uint32_t h = area->y2 - area->y1 + 1;
+    static constexpr uint32_t BYTES_PER_PX = 2;  // LV_COLOR_DEPTH=16, RGB565
+    uint32_t row_bytes = w * BYTES_PER_PX;
+    uint32_t stride = ((row_bytes + LV_DRAW_BUF_STRIDE_ALIGN - 1) /
+                       LV_DRAW_BUF_STRIDE_ALIGN) * LV_DRAW_BUF_STRIDE_ALIGN;
+
     tft.startWrite();
     tft.setAddrWindow(area->x1, area->y1, w, h);
-    tft.writePixels((lgfx::rgb565_t*)px_map, w * h);
+    if (stride == row_bytes) {
+        tft.writePixels((lgfx::rgb565_t*)px_map, w * h);
+    } else {
+        uint8_t* line = px_map;
+        for (uint32_t i = 0; i < h; i++) {
+            tft.writePixels((lgfx::rgb565_t*)line, w);
+            line += stride;
+        }
+    }
     tft.endWrite();
     lv_display_flush_ready(disp);
 }

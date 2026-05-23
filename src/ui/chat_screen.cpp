@@ -32,6 +32,24 @@ namespace slopos::ui {
 
 using namespace theme;
 
+static constexpr lv_obj_flag_t no_scroll_flags()
+{
+    return (lv_obj_flag_t)(
+        LV_OBJ_FLAG_SCROLLABLE |
+        LV_OBJ_FLAG_SCROLL_ELASTIC |
+        LV_OBJ_FLAG_SCROLL_MOMENTUM |
+        LV_OBJ_FLAG_SCROLL_CHAIN |
+        LV_OBJ_FLAG_SCROLL_ON_FOCUS |
+        LV_OBJ_FLAG_SCROLL_WITH_ARROW);
+}
+
+static void disable_scroll(lv_obj_t* obj)
+{
+    lv_obj_remove_flag(obj, no_scroll_flags());
+    lv_obj_set_scroll_dir(obj, LV_DIR_NONE);
+    lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
+}
+
 // ── Messaging-view widgets ─────────────────────────────────
 static lv_obj_t* scr            = nullptr;
 static lv_obj_t* top_bar        = nullptr;
@@ -339,6 +357,7 @@ static void show_channel_list(lv_scr_load_anim_t anim)
     lv_obj_t* list = lv_obj_create(s);
     lv_obj_set_size(list, LV_PCT(100), LIST_CONT_H - 32);
     lv_obj_align(list, LV_ALIGN_TOP_MID, 0, LIST_CONT_Y);
+    lv_obj_set_user_data(list, (void*)0xCA7C);
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list, 0, 0);
     lv_obj_set_style_pad_all(list, 0, 0);
@@ -417,6 +436,7 @@ static void create_top_bar()
     lv_obj_set_style_bg_opa(top_bar, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(top_bar, 0, 0);
     lv_obj_set_style_border_width(top_bar, 0, 0);
+    disable_scroll(top_bar);
 
     // ← back button → return to channel list
     lv_obj_t* back = lv_btn_create(top_bar);
@@ -517,6 +537,7 @@ static lv_obj_t* create_bubble(lv_obj_t* parent, const char* sender,
     lv_obj_set_style_bg_opa(container, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(container, 0, 0);
     lv_obj_set_style_pad_all(container, BUBBLE_PAD / 2, 0);
+    disable_scroll(container);
 
     lv_obj_set_flex_flow(container, LV_FLEX_FLOW_ROW);
     if (is_self) {
@@ -531,6 +552,7 @@ static lv_obj_t* create_bubble(lv_obj_t* parent, const char* sender,
     lv_obj_set_style_pad_all(bubble, 6, 0);
     lv_obj_set_style_border_width(bubble, 0, 0);
     lv_obj_set_flex_flow(bubble, LV_FLEX_FLOW_COLUMN);
+    disable_scroll(bubble);
 
     if (is_self) {
         lv_obj_set_style_bg_color(bubble, lv_color_hex(ACCENT), 0);
@@ -548,6 +570,7 @@ static lv_obj_t* create_bubble(lv_obj_t* parent, const char* sender,
     lv_obj_set_style_border_width(header, 0, 0);
     lv_obj_set_style_pad_all(header, 0, 0);
     lv_obj_set_flex_flow(header, LV_FLEX_FLOW_ROW);
+    disable_scroll(header);
     lv_obj_set_flex_align(header, LV_FLEX_ALIGN_SPACE_BETWEEN,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
@@ -584,7 +607,8 @@ static void create_message_list()
     msg_list = lv_obj_create(scr);
     lv_obj_set_size(msg_list, LV_PCT(100), MSG_LIST_H);
     lv_obj_align(msg_list, LV_ALIGN_TOP_MID, 0, MSG_LIST_Y);
-    lv_obj_set_style_bg_opa(msg_list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_color(msg_list, lv_color_hex(BG_PRIMARY), 0);
+    lv_obj_set_style_bg_opa(msg_list, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(msg_list, 0, 0);
     lv_obj_set_style_pad_all(msg_list, 2, 0);
     lv_obj_set_flex_flow(msg_list, LV_FLEX_FLOW_COLUMN);
@@ -631,6 +655,7 @@ static void create_input_bar()
     lv_obj_set_style_bg_opa(input_bar, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(input_bar, 4, 0);
     lv_obj_set_style_border_width(input_bar, 0, 0);
+    disable_scroll(input_bar);
 
     lv_obj_t* div = lv_obj_create(scr);
     lv_obj_set_size(div, LV_PCT(100), DIVIDER_H);
@@ -653,6 +678,9 @@ static void create_input_bar()
     lv_obj_set_style_pad_all(input_field, 4, 0);
     lv_textarea_set_one_line(input_field, true);
     lv_textarea_set_placeholder_text(input_field, "Message #channel");
+    lv_obj_remove_flag(input_field, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+    lv_obj_set_style_outline_width(input_field, 0, LV_STATE_FOCUSED);
+    lv_obj_set_style_outline_width(input_field, 0, (lv_state_t)(LV_STATE_FOCUSED | LV_STATE_EDITED));
 
     lv_obj_t* send_btn = lv_btn_create(input_bar);
     lv_obj_set_size(send_btn, 52, INPUT_H - 8);
@@ -731,6 +759,7 @@ static void open_channel_messaging(int idx)
 
     scr = lv_obj_create(nullptr);
     apply_dark_bg(scr);
+    disable_scroll(scr);
 
     // When the messaging screen is auto-deleted (e.g. user navigates
     // away without pressing back), null all global widget pointers

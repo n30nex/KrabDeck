@@ -76,10 +76,10 @@ protected:
                         const uint8_t* secret, uint8_t* data, size_t len) override
     {
         if (type != PAYLOAD_TYPE_TXT_MSG || _nMatches == 0 || !_onMessage) return;
-        // Data layout: [4-byte LE timestamp][null-terminated text]
+        // Data layout: [4-byte LE timestamp][1-byte text flags][null-terminated text]
         // Safety: force null-termination — packet data may lack a terminator
-        if (len > 4) data[len - 1] = '\0';
-        const char* text = (len > 4) ? (const char*)(data + 4) : "";
+        if (len > 5) data[len - 1] = '\0';
+        const char* text = (len > 5) ? (const char*)(data + 5) : "";
         int idx = _matchIdxs[sender_idx];
         const char* sender = _contacts[idx].name;
         if (sender[0]) {
@@ -235,17 +235,18 @@ public:
     bool sendTextTo(const char* dest_name, const char* text) {
         for (int i = 0; i < _nContacts; i++) {
             if (strcmp(_contacts[i].name, dest_name) != 0) continue;
-            // Payload: 4-byte LE timestamp + null-terminated text, max 150 chars text
+            // Payload: [4-byte LE timestamp][1-byte flags][null-terminated text]
             // MeshCore caps encrypted payload at MAX_PACKET_PAYLOAD - 16 = 168 bytes.
-            // With 4-byte ts + 1-byte null, 150 chars text → 155 bytes plaintext fits.
+            // With 5-byte header + 1-byte null, 150 chars text -> 156 bytes plaintext fits.
             static constexpr size_t MAX_PAYLOAD = 150;
-            uint8_t buf[4 + MAX_PAYLOAD];
+            uint8_t buf[5 + MAX_PAYLOAD];
             uint32_t ts = getRTCClock()->getCurrentTime();
             memcpy(buf, &ts, 4);
+            buf[4] = 0;   // TXT_TYPE_PLAIN, attempt 0
             size_t text_len = strnlen(text, MAX_PAYLOAD - 1);
-            memcpy(buf + 4, text, text_len);
-            buf[4 + text_len] = '\0';
-            size_t len = 4 + text_len + 1;
+            memcpy(buf + 5, text, text_len);
+            buf[5 + text_len] = '\0';
+            size_t len = 5 + text_len + 1;
             ::mesh::Packet* pkt = createDatagram(PAYLOAD_TYPE_TXT_MSG,
                                                   _contacts[i].id,
                                                   _contacts[i].secret,

@@ -22,43 +22,59 @@ void setup()
 {
     Serial.begin(115200);
     delay(500);
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
     Serial.println("SlopOS T-Deck — booting...");
     Serial.println("[boot] step 1: serial OK");
+#endif
 
     board.begin();
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
     Serial.println("[boot] step 2: board init OK");
+#endif
     slopos_battery_init();
 
     bool spiffs_ok = SPIFFS.begin(true);
     if (!spiffs_ok)
         Serial.println("[boot] WARNING: SPIFFS mount failed — identity/contacts won't persist across reboots");
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
     else
         Serial.println("[boot] step 3: SPIFFS mounted");
+#endif
 
     slopos_gps_init();
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
     Serial.println("[boot] step 4: GPS init done");
+#endif
 
-    if (!slopos_sdcard_init())
-        Serial.println("[boot] INFO: No SD card detected");
-    else
+    if (!slopos_sdcard_init()) {
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
+        Serial.println("[boot] step 5: no SD card detected");
+#endif
+    } else {
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
         Serial.println("[boot] step 5: SD card mounted");
+#endif
+    }
 
     if (!slopos_display_init()) {
         Serial.println("[boot] FATAL: Display init failed");
         while (1) delay(1000);
     }
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
     Serial.println("[boot] step 6: display init OK");
+#endif
 
     slopos::mesh::setOwnName("SlopOS T-Deck");
     if (!slopos::mesh::init(spiffs_ok))
         Serial.println("[boot] WARNING: Radio init failed");
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
     else
         Serial.println("[boot] step 7: mesh radio initialized");
+#endif
 
     slopos::ui::init();
-    Serial.println("[boot] step 8: UI splash screen shown");
-
 #if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
+    Serial.println("[boot] step 8: UI splash screen shown");
     slopos::debug::init();
     Serial.println("[boot] step 9: debug diagnostics enabled");
 #endif
@@ -66,7 +82,9 @@ void setup()
     if (slopos_sdcard_mounted())
         slopos_map_init();
 
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
     Serial.println("[boot] === SlopOS T-Deck ready ===");
+#endif
 }
 
 void loop()

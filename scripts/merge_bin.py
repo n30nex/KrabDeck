@@ -56,7 +56,7 @@ def merge_bin_action(target, source, env):
     _os.makedirs(web_dir, exist_ok=True)
 
     mcu = board_config.get("build.mcu", "esp32s3")
-    flash_mode = board_config.get("build.flash_mode", "qio")
+    flash_mode = "keep"  # Don't let esptool.js rewrite bootloader header — ESP32-S3 ROM boots DIO
     flash_size = board_config.get("upload.flash_size", "16MB")
 
     offsets = {

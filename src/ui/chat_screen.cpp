@@ -47,6 +47,8 @@ using responsive::DIVIDER_H;
 using responsive::DISPLAY_H;
 using responsive::DISPLAY_W;
 using responsive::HASHTAG_LABEL_W;
+using responsive::CONTENT_W;
+using responsive::dialog_size;
 static constexpr int TOP_H      = TOP_BAR_H;
 static constexpr int INPUT_H    = 35;
 // BOT_BAR_H, DIVIDER_H used directly from responsive namespace
@@ -80,6 +82,7 @@ static ChannelMeta ch_meta[MAX_CHANNELS];
 static void show_channel_list(lv_scr_load_anim_t anim);
 static void open_channel_messaging(int idx);
 static void rebuild_channel_ribbon();
+static void show_add_channel_options(lv_obj_t* parent);
 
 // ════════════════════════════════════════════════════
 // Dynamic channels — pulled from mesh, sorted by MRU
@@ -87,11 +90,16 @@ static void rebuild_channel_ribbon();
 static void refresh_channels()
 {
     dyn_count = slopos::mesh::exportChannels(dyn_channels, MAX_CHANNELS);
-    if (active_channel >= dyn_count) active_channel = 0;
     if (dyn_count == 0) {
-        strncpy(dyn_channels[0], "#general", 31);
-        dyn_count = 1;
+        if (slopos::mesh::joinPublicChannel()) {
+            dyn_count = slopos::mesh::exportChannels(dyn_channels, MAX_CHANNELS);
+        }
+        if (dyn_count == 0) {
+            strncpy(dyn_channels[0], "#general", 31);
+            dyn_count = 1;
+        }
     }
+    if (active_channel >= dyn_count) active_channel = 0;
     memset(ch_meta, 0, sizeof(ch_meta));
 }
 
@@ -116,9 +124,88 @@ static void format_time(char* buf, size_t sz, uint32_t epoch)
     snprintf(buf, sz, "%02d:%02d", (t / 3600) % 24, (t / 60) % 60);
 }
 
-// ════════════════════════════════════════════════════
-// Channel-list screen builder (mirrors make_screen_full)
-// ════════════════════════════════════════════════════
+static void populate_channel_rows(lv_obj_t* list) {
+    for (int i = 0; i < dyn_count; i++) {
+        lv_obj_t* row = lv_obj_create(list);
+        lv_obj_set_size(row, LV_PCT(100), LIST_ROW_H);
+        lv_obj_set_style_bg_color(row,
+            lv_color_hex(i % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
+        lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(row, 0, 0);
+        lv_obj_set_style_pad_all(row, 0, 0);
+        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+
+        lv_obj_t* avatar = lv_obj_create(row);
+        lv_obj_set_size(avatar, 32, 32);
+        lv_obj_align(avatar, LV_ALIGN_LEFT_MID, 6, 0);
+        lv_obj_set_style_bg_color(avatar, lv_color_hex(0x5865F2), 0);
+        lv_obj_set_style_bg_opa(avatar, LV_OPA_COVER, 0);
+        lv_obj_set_style_radius(avatar, 0, 0);
+        lv_obj_set_style_border_width(avatar, 0, 0);
+        lv_obj_clear_flag(avatar, LV_OBJ_FLAG_CLICKABLE);
+
+        lv_obj_t* hash = lv_label_create(avatar);
+        lv_label_set_text(hash, "#");
+        lv_obj_set_style_text_color(hash, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_font(hash, &lv_font_montserrat_12, 0);
+        lv_obj_center(hash);
+
+        lv_obj_t* name_lbl = lv_label_create(row);
+        lv_label_set_text(name_lbl, dyn_channels[i]);
+        lv_obj_set_style_text_color(name_lbl, lv_color_hex(TEXT_PRIMARY), 0);
+        lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_12, 0);
+        lv_obj_align(name_lbl, LV_ALIGN_TOP_LEFT, 46, 6);
+
+        if (ch_meta[i].timestamp > 0) {
+            char tbuf[8];
+            format_time(tbuf, sizeof(tbuf), ch_meta[i].timestamp);
+            lv_obj_t* ts = lv_label_create(row);
+            lv_label_set_text(ts, tbuf);
+            lv_obj_set_style_text_color(ts, lv_color_hex(TEXT_MUTED), 0);
+            lv_obj_set_style_text_font(ts, &lv_font_montserrat_10, 0);
+            lv_obj_align(ts, LV_ALIGN_TOP_RIGHT,
+                ch_meta[i].unread > 0 ? -26 : -4, 8);
+        }
+
+        lv_obj_t* prev = lv_label_create(row);
+        lv_label_set_text(prev,
+            ch_meta[i].preview[0] ? ch_meta[i].preview : "No messages yet");
+        lv_obj_set_style_text_color(prev, lv_color_hex(TEXT_SECONDARY), 0);
+        lv_obj_set_style_text_font(prev, &lv_font_montserrat_10, 0);
+        lv_label_set_long_mode(prev, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(prev, CONTENT_W - 70);
+        lv_obj_align(prev, LV_ALIGN_TOP_LEFT, 46, 26);
+
+        if (ch_meta[i].unread > 0) {
+            lv_obj_t* badge = lv_obj_create(row);
+            lv_obj_set_size(badge, 18, 18);
+            lv_obj_align(badge, LV_ALIGN_RIGHT_MID, -4, 0);
+            lv_obj_set_style_bg_color(badge, lv_color_hex(ACCENT), 0);
+            lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
+            lv_obj_set_style_radius(badge, 0, 0);
+            lv_obj_set_style_border_width(badge, 0, 0);
+            lv_obj_clear_flag(badge, LV_OBJ_FLAG_CLICKABLE);
+
+            char cnt_buf[4];
+            int cnt = ch_meta[i].unread;
+            if (cnt > 9) snprintf(cnt_buf, sizeof(cnt_buf), "9+");
+            else         snprintf(cnt_buf, sizeof(cnt_buf), "%d", cnt);
+            lv_obj_t* cnt_lbl = lv_label_create(badge);
+            lv_label_set_text(cnt_lbl, cnt_buf);
+            lv_obj_set_style_text_color(cnt_lbl, lv_color_hex(0xffffff), 0);
+            lv_obj_set_style_text_font(cnt_lbl, &lv_font_montserrat_10, 0);
+            lv_obj_center(cnt_lbl);
+        }
+
+        int ch_idx = i;
+        lv_obj_add_event_cb(row, [](lv_event_t* e) {
+            int idx = (int)(intptr_t)lv_event_get_user_data(e);
+            ch_meta[idx].unread = 0;
+            open_channel_messaging(idx);
+        }, LV_EVENT_CLICKED, (void*)(intptr_t)ch_idx);
+    }
+}
+
 static lv_obj_t* make_chat_list_screen()
 {
     lv_obj_t* s = lv_obj_create(nullptr);
@@ -249,9 +336,8 @@ static void show_channel_list(lv_scr_load_anim_t anim)
 
     lv_obj_t* s = make_chat_list_screen();
 
-    // Scrollable list container
     lv_obj_t* list = lv_obj_create(s);
-    lv_obj_set_size(list, LV_PCT(100), LIST_CONT_H);
+    lv_obj_set_size(list, LV_PCT(100), LIST_CONT_H - 32);
     lv_obj_align(list, LV_ALIGN_TOP_MID, 0, LIST_CONT_Y);
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list, 0, 0);
@@ -260,91 +346,21 @@ static void show_channel_list(lv_scr_load_anim_t anim)
     lv_obj_set_scroll_dir(list, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
 
-    for (int i = 0; i < dyn_count; i++) {
-        lv_obj_t* row = lv_obj_create(list);
-        lv_obj_set_size(row, LV_PCT(100), LIST_ROW_H);
-        lv_obj_set_style_bg_color(row,
-            lv_color_hex(i % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
-        lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_width(row, 0, 0);
-        lv_obj_set_style_pad_all(row, 0, 0);
-        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    populate_channel_rows(list);
 
-        // Blue circle avatar (Discord #5865F2)
-        lv_obj_t* avatar = lv_obj_create(row);
-        lv_obj_set_size(avatar, 32, 32);
-        lv_obj_align(avatar, LV_ALIGN_LEFT_MID, 6, 0);
-        lv_obj_set_style_bg_color(avatar, lv_color_hex(0x5865F2), 0);
-        lv_obj_set_style_bg_opa(avatar, LV_OPA_COVER, 0);
-        lv_obj_set_style_radius(avatar, 0, 0);
-        lv_obj_set_style_border_width(avatar, 0, 0);
-        lv_obj_clear_flag(avatar, LV_OBJ_FLAG_CLICKABLE);
-
-        lv_obj_t* hash = lv_label_create(avatar);
-        lv_label_set_text(hash, "#");
-        lv_obj_set_style_text_color(hash, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(hash, &lv_font_montserrat_12, 0);
-        lv_obj_center(hash);
-
-        // Channel name (top-left of text area)
-        lv_obj_t* name_lbl = lv_label_create(row);
-        lv_label_set_text(name_lbl, dyn_channels[i]);
-        lv_obj_set_style_text_color(name_lbl, lv_color_hex(TEXT_PRIMARY), 0);
-        lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_12, 0);
-        lv_obj_align(name_lbl, LV_ALIGN_TOP_LEFT, 46, 6);
-
-        // Timestamp (top-right, shifted left when badge is present)
-        if (ch_meta[i].timestamp > 0) {
-            char tbuf[8];
-            format_time(tbuf, sizeof(tbuf), ch_meta[i].timestamp);
-            lv_obj_t* ts = lv_label_create(row);
-            lv_label_set_text(ts, tbuf);
-            lv_obj_set_style_text_color(ts, lv_color_hex(TEXT_MUTED), 0);
-            lv_obj_set_style_text_font(ts, &lv_font_montserrat_10, 0);
-            lv_obj_align(ts, LV_ALIGN_TOP_RIGHT,
-                ch_meta[i].unread > 0 ? -26 : -4, 8);
-        }
-
-        // Preview text (bottom-left of text area)
-        lv_obj_t* prev = lv_label_create(row);
-        lv_label_set_text(prev,
-            ch_meta[i].preview[0] ? ch_meta[i].preview : "No messages yet");
-        lv_obj_set_style_text_color(prev, lv_color_hex(TEXT_SECONDARY), 0);
-        lv_obj_set_style_text_font(prev, &lv_font_montserrat_10, 0);
-        lv_label_set_long_mode(prev, LV_LABEL_LONG_DOT);
-        lv_obj_set_width(prev, 200);
-        lv_obj_align(prev, LV_ALIGN_TOP_LEFT, 46, 26);
-
-        // Unread badge (cyan circle, right edge)
-        if (ch_meta[i].unread > 0) {
-            lv_obj_t* badge = lv_obj_create(row);
-            lv_obj_set_size(badge, 18, 18);
-            lv_obj_align(badge, LV_ALIGN_RIGHT_MID, -4, 0);
-            lv_obj_set_style_bg_color(badge, lv_color_hex(ACCENT), 0);
-            lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
-            lv_obj_set_style_radius(badge, 0, 0);
-            lv_obj_set_style_border_width(badge, 0, 0);
-            lv_obj_clear_flag(badge, LV_OBJ_FLAG_CLICKABLE);
-
-            char cnt_buf[4];
-            int cnt = ch_meta[i].unread;
-            if (cnt > 9) snprintf(cnt_buf, sizeof(cnt_buf), "9+");
-            else         snprintf(cnt_buf, sizeof(cnt_buf), "%d", cnt);
-            lv_obj_t* cnt_lbl = lv_label_create(badge);
-            lv_label_set_text(cnt_lbl, cnt_buf);
-            lv_obj_set_style_text_color(cnt_lbl, lv_color_hex(0xffffff), 0);
-            lv_obj_set_style_text_font(cnt_lbl, &lv_font_montserrat_10, 0);
-            lv_obj_center(cnt_lbl);
-        }
-
-        // Tap: open messaging view for this channel
-        int ch_idx = i;
-        lv_obj_add_event_cb(row, [](lv_event_t* e) {
-            int idx = (int)(intptr_t)lv_event_get_user_data(e);
-            ch_meta[idx].unread = 0;
-            open_channel_messaging(idx);
-        }, LV_EVENT_CLICKED, (void*)(intptr_t)ch_idx);
-    }
+    lv_obj_t* add_btn = lv_btn_create(s);
+    lv_obj_set_size(add_btn, CONTENT_W > 200 ? 180 : CONTENT_W - 20, 28);
+    lv_obj_align(add_btn, LV_ALIGN_TOP_MID, 0, LIST_CONT_Y + LIST_CONT_H - 32);
+    lv_obj_set_style_bg_color(add_btn, lv_color_hex(ACCENT), 0);
+    lv_obj_set_style_radius(add_btn, 0, 0);
+    lv_obj_t* al = lv_label_create(add_btn);
+    lv_label_set_text(al, LV_SYMBOL_PLUS " Add Channel");
+    lv_obj_set_style_text_font(al, &lv_font_montserrat_10, 0);
+    lv_obj_center(al);
+    lv_obj_add_event_cb(add_btn, [](lv_event_t* e) {
+        lv_obj_t* scr = lv_obj_get_screen((lv_obj_t*)lv_event_get_target(e));
+        show_add_channel_options(scr);
+    }, LV_EVENT_CLICKED, nullptr);
 
     lv_scr_load_anim(s, anim, 200, 0, true);
 }
@@ -418,9 +434,10 @@ static void create_top_bar()
         show_channel_list(LV_SCR_LOAD_ANIM_MOVE_RIGHT);
     }, LV_EVENT_CLICKED, nullptr);
 
-    // Horizontal scrollable channel ribbon
+    // Horizontal scrollable channel ribbon — exact width for no warp (matches home grid uniform sizing)
+    int ribbon_w = CONTENT_W - 28 - 44; // back button + margins + time space
     channel_ribbon = lv_obj_create(top_bar);
-    lv_obj_set_size(channel_ribbon, LV_PCT(78), TOP_H - 4);
+    lv_obj_set_size(channel_ribbon, ribbon_w, TOP_H - 4);
     lv_obj_align(channel_ribbon, LV_ALIGN_LEFT_MID, 28, 0);
     lv_obj_set_style_bg_opa(channel_ribbon, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(channel_ribbon, 0, 0);
@@ -623,7 +640,8 @@ static void create_input_bar()
     lv_obj_set_style_border_width(div, 0, 0);
 
     input_field = lv_textarea_create(input_bar);
-    lv_obj_set_size(input_field, LV_PCT(78), INPUT_H - 8);
+    int field_w = CONTENT_W - 60; // match ribbon usable + send button room
+    lv_obj_set_size(input_field, field_w, INPUT_H - 8);
     lv_obj_align(input_field, LV_ALIGN_LEFT_MID, 0, 0);
     lv_obj_set_style_bg_color(input_field, lv_color_hex(BG_INPUT), 0);
     lv_obj_set_style_bg_opa(input_field, LV_OPA_COVER, 0);
@@ -726,12 +744,179 @@ static void open_channel_messaging(int idx)
     create_input_bar();
     create_bottom_bar();
 
+    lv_group_t* g = lv_group_get_default();
+    if (g && input_field) {
+        lv_group_add_obj(g, input_field);
+        lv_group_focus_obj(input_field);
+    }
+
     lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_LEFT, 200, 0, true);
 }
 
-// ════════════════════════════════════════════════════
-// Public API
-// ════════════════════════════════════════════════════
+static void refresh_chat_list_view(lv_obj_t* scr) {
+    refresh_channels();
+    uint32_t n = lv_obj_get_child_cnt(scr);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t* c = lv_obj_get_child(scr, i);
+        if (lv_obj_get_user_data(c) == (void*)0xCA7C) {
+            lv_obj_clean(c);
+            populate_channel_rows(c);
+            return;
+        }
+    }
+}
+
+static void show_add_channel_options(lv_obj_t* parent) {
+    auto dlg_sz = dialog_size(220, 110);
+    lv_obj_t* dlg = lv_obj_create(parent);
+    lv_obj_set_size(dlg, dlg_sz.w, dlg_sz.h);
+    lv_obj_center(dlg);
+    lv_obj_set_style_bg_color(dlg, lv_color_hex(BG_SECONDARY), 0);
+    lv_obj_set_style_radius(dlg, 0, 0);
+    lv_obj_set_style_border_width(dlg, 0, 0);
+    lv_obj_set_style_pad_all(dlg, 8, 0);
+
+    lv_obj_t* title = lv_label_create(dlg);
+    lv_label_set_text(title, "Add Channel");
+    lv_obj_set_style_text_color(title, lv_color_hex(TEXT_PRIMARY), 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_12, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 4);
+
+    lv_obj_t* pub_btn = lv_btn_create(dlg);
+    lv_obj_set_size(pub_btn, dlg_sz.w - 16, 28);
+    lv_obj_align(pub_btn, LV_ALIGN_TOP_MID, 0, 30);
+    lv_obj_set_style_bg_color(pub_btn, lv_color_hex(BG_TERTIARY), 0);
+    lv_obj_set_style_radius(pub_btn, 0, 0);
+    lv_obj_t* pl = lv_label_create(pub_btn);
+    lv_label_set_text(pl, "Public (standard)");
+    lv_obj_center(pl);
+
+    lv_obj_t* cus_btn = lv_btn_create(dlg);
+    lv_obj_set_size(cus_btn, dlg_sz.w - 16, 28);
+    lv_obj_align(cus_btn, LV_ALIGN_TOP_MID, 0, 62);
+    lv_obj_set_style_bg_color(cus_btn, lv_color_hex(BG_TERTIARY), 0);
+    lv_obj_set_style_radius(cus_btn, 0, 0);
+    lv_obj_t* cl = lv_label_create(cus_btn);
+    lv_label_set_text(cl, "Custom (name + PSK)");
+    lv_obj_center(cl);
+
+    lv_obj_t* fb = lv_label_create(dlg);
+    lv_obj_set_style_text_color(fb, lv_color_hex(ACCENT_RED), 0);
+    lv_obj_set_style_text_font(fb, &lv_font_montserrat_10, 0);
+    lv_obj_align(fb, LV_ALIGN_BOTTOM_MID, 0, -4);
+
+    lv_obj_add_event_cb(pub_btn, [](lv_event_t* e) {
+        lv_obj_t* d = lv_obj_get_parent((lv_obj_t*)lv_event_get_target(e));
+        lv_obj_t* sc = lv_obj_get_screen(d);
+        bool ok = slopos::mesh::joinPublicChannel();
+        if (ok) {
+            lv_obj_del_async(d);
+            refresh_chat_list_view(sc);
+        } else {
+            lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), "Failed to add public");
+        }
+    }, LV_EVENT_CLICKED, (void*)fb);
+
+    lv_obj_add_event_cb(cus_btn, [](lv_event_t* e) {
+        lv_obj_t* d = lv_obj_get_parent((lv_obj_t*)lv_event_get_target(e));
+        lv_obj_t* sc = lv_obj_get_screen(d);
+        lv_obj_del_async(d);
+        // inline custom dialog for this focus
+        auto sz = dialog_size(260, 180);
+        lv_obj_t* cd = lv_obj_create(sc);
+        lv_obj_set_size(cd, sz.w, sz.h);
+        lv_obj_center(cd);
+        lv_obj_set_style_bg_color(cd, lv_color_hex(BG_SECONDARY), 0);
+        lv_obj_set_style_radius(cd, 0, 0);
+        lv_obj_set_style_border_width(cd, 0, 0);
+        lv_obj_set_style_pad_all(cd, 8, 0);
+
+        lv_obj_t* t = lv_label_create(cd);
+        lv_label_set_text(t, "Create Channel");
+        lv_obj_set_style_text_color(t, lv_color_hex(TEXT_PRIMARY), 0);
+        lv_obj_set_style_text_font(t, &lv_font_montserrat_12, 0);
+        lv_obj_align(t, LV_ALIGN_TOP_MID, 0, 4);
+
+        lv_obj_t* nl = lv_label_create(cd);
+        lv_label_set_text(nl, "Name:");
+        lv_obj_set_style_text_color(nl, lv_color_hex(TEXT_SECONDARY), 0);
+        lv_obj_align(nl, LV_ALIGN_TOP_LEFT, 4, 28);
+
+        lv_obj_t* ni = lv_textarea_create(cd);
+        lv_obj_set_size(ni, sz.w - 16, 28);
+        lv_obj_align(ni, LV_ALIGN_TOP_MID, 0, 46);
+        lv_obj_set_style_bg_color(ni, lv_color_hex(BG_INPUT), 0);
+        lv_obj_set_style_text_color(ni, lv_color_hex(TEXT_PRIMARY), 0);
+        lv_obj_set_style_text_font(ni, &lv_font_montserrat_10, 0);
+        lv_obj_set_style_border_width(ni, 0, 0);
+        lv_textarea_set_one_line(ni, true);
+        lv_textarea_set_placeholder_text(ni, "e.g. #general");
+
+        lv_obj_t* plb = lv_label_create(cd);
+        lv_label_set_text(plb, "PSK (base64):");
+        lv_obj_set_style_text_color(plb, lv_color_hex(TEXT_SECONDARY), 0);
+        lv_obj_align(plb, LV_ALIGN_TOP_LEFT, 4, 82);
+
+        lv_obj_t* pi = lv_textarea_create(cd);
+        lv_obj_set_size(pi, sz.w - 16, 28);
+        lv_obj_align(pi, LV_ALIGN_TOP_MID, 0, 100);
+        lv_obj_set_style_bg_color(pi, lv_color_hex(BG_INPUT), 0);
+        lv_obj_set_style_text_color(pi, lv_color_hex(TEXT_PRIMARY), 0);
+        lv_obj_set_style_text_font(pi, &lv_font_montserrat_10, 0);
+        lv_obj_set_style_border_width(pi, 0, 0);
+        lv_textarea_set_one_line(pi, true);
+        lv_textarea_set_placeholder_text(pi, "base64 key");
+
+        lv_group_t* g = lv_group_get_default();
+        if (g) {
+            lv_group_add_obj(g, ni);
+            lv_group_add_obj(g, pi);
+            lv_group_focus_obj(ni);
+        }
+
+        lv_obj_t* ffb = lv_label_create(cd);
+        lv_obj_set_style_text_color(ffb, lv_color_hex(ACCENT_RED), 0);
+        lv_obj_set_style_text_font(ffb, &lv_font_montserrat_10, 0);
+        lv_obj_align(ffb, LV_ALIGN_BOTTOM_MID, 0, -32);
+
+        lv_obj_t* cb = lv_btn_create(cd);
+        lv_obj_set_size(cb, 100, 28);
+        lv_obj_align(cb, LV_ALIGN_BOTTOM_MID, 0, -4);
+        lv_obj_set_style_bg_color(cb, lv_color_hex(ACCENT_GREEN), 0);
+        lv_obj_set_style_radius(cb, 0, 0);
+        lv_obj_t* cbl = lv_label_create(cb);
+        lv_label_set_text(cbl, "Create");
+        lv_obj_center(cbl);
+
+        lv_obj_add_event_cb(cb, [](lv_event_t* ev) {
+            lv_obj_t* cdg = lv_obj_get_parent((lv_obj_t*)lv_event_get_target(ev));
+            lv_obj_t* scg = lv_obj_get_screen(cdg);
+            lv_obj_t* ffbg = (lv_obj_t*)lv_event_get_user_data(ev);
+
+            uint32_t nc = lv_obj_get_child_cnt(cdg);
+            lv_obj_t* namei = nullptr;
+            lv_obj_t* pski = nullptr;
+            for (uint32_t j = 0; j < nc; j++) {
+                lv_obj_t* ch = lv_obj_get_child(cdg, j);
+                if (lv_obj_check_type(ch, &lv_textarea_class)) {
+                    if (!namei) namei = ch; else pski = ch;
+                }
+            }
+            const char* nm = namei ? lv_textarea_get_text(namei) : "";
+            const char* ps = pski ? lv_textarea_get_text(pski) : "";
+            if (!nm[0]) { if (ffbg) lv_label_set_text(ffbg, "Enter name"); return; }
+            if (!ps[0])  { if (ffbg) lv_label_set_text(ffbg, "Enter PSK"); return; }
+            bool ook = slopos::mesh::addChannel(nm, ps);
+            if (ook) {
+                lv_obj_del_async(cdg);
+                refresh_chat_list_view(scg);
+            } else {
+                if (ffbg) lv_label_set_text(ffbg, "Invalid PSK");
+            }
+        }, LV_EVENT_CLICKED, (void*)ffb);
+    }, LV_EVENT_CLICKED, nullptr);
+}
+
 void chat_screen_show()
 {
     show_channel_list(LV_SCR_LOAD_ANIM_MOVE_LEFT);

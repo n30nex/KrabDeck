@@ -56,3 +56,7 @@ bool slopos_keyboard_is_alt();
 // Does NOT reset the `initialized` flag or I2C communication.
 // Useful for testing and on device wake from deep sleep.
 void slopos_keyboard_reset_scan_state();
+
+// Consume/clear the current key event (used by LVGL indev after reporting a press).
+// Prevents the same character from being fed again on the next read.
+void slopos_keyboard_consume_key();

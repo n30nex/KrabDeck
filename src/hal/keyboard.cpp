@@ -58,12 +58,13 @@ static constexpr uint8_t  CMD_BRIGHTNESS            = 0x01;
 static constexpr uint8_t  CMD_DEFAULT_BRIGHTNESS    = 0x02;
 static constexpr uint8_t  CMD_MODE_RAW              = 0x03;  // raw bitmask mode
 static constexpr uint8_t  CMD_MODE_KEY              = 0x04;  // ASCII key mode
-static constexpr uint32_t KB_POLL_INTERVAL_MS       = 10;   // poll every 10ms
+static constexpr uint32_t KB_POLL_INTERVAL_MS       = 5;    // faster polling for responsive typing (was 10)
 static constexpr uint8_t  KB_BACKLIGHT_DEFAULT      = 127;  // mid brightness
 
 static bool     initialized     = false;
 static bool     has_new_event   = false;
 static int      current_key     = 0;     // int: Wire.read() returns int, -1 = error
+static int      latched_key     = 0;     // key currently considered "active" until MCU reports 0
 static uint32_t last_poll_ms    = 0;
 static bool     shift_held      = false;
 static bool     ctrl_held       = false;
@@ -127,12 +128,15 @@ void slopos_keyboard_scan()
     }
 
     if (keyValue <= 0 || keyValue == 0xFF) {
-        // No key pressed, read error, or invalid data — clear any stale event
-        has_new_event = false;
+        // MCU returned 0 — this single-shot MCU only reports each key once, then returns 0.
+        // Do NOT clear latched_key or has_new_event here; they persist until
+        // slopos_keyboard_consume_key() is called by the LVGL indev callback.
+        // Clearing here was the race: display loop could wipe the key before LVGL ever saw it.
         return;
     }
 
-    // Store the key code (ASCII value)
+    // Store the key code (ASCII value) and latch it until we see a 0 from the MCU
+    latched_key = keyValue;
     has_new_event = true;
     current_key = keyValue;
 
@@ -157,7 +161,7 @@ void slopos_keyboard_scan()
 
 int slopos_keyboard_get_key()
 {
-    return current_key;
+    return latched_key ? latched_key : current_key;
 }
 
 bool slopos_keyboard_is_shift()
@@ -209,8 +213,16 @@ void slopos_keyboard_reset_scan_state()
 {
     last_poll_ms    = 0;
     current_key     = 0;
+    latched_key     = 0;
     has_new_event   = false;
     shift_held      = false;
     ctrl_held       = false;
     alt_held        = false;
+}
+
+void slopos_keyboard_consume_key()
+{
+    current_key   = 0;
+    latched_key   = 0;
+    has_new_event = false;
 }

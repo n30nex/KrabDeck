@@ -189,11 +189,19 @@ static void lvgl_touch_cb(lv_indev_t* indev, lv_indev_data_t* data)
 // ── Keyboard read callback ───────────────────────────────
 static void lvgl_kb_cb(lv_indev_t* indev, lv_indev_data_t* data)
 {
+    slopos_keyboard_scan();   // force a fresh poll (catches first key after focus)
     int key = slopos_keyboard_get_key();
     if (key > 0 && slopos_keyboard_has_new_event()) {
-        data->key = (uint32_t)key;
+        if (key == 0x08) data->key = LV_KEY_BACKSPACE;
+        else if (key == 0x0D) data->key = LV_KEY_ENTER;
+        else if (key == 0x09) data->key = LV_KEY_NEXT;
+        else data->key = (uint32_t)key;
         data->state = LV_INDEV_STATE_PRESSED;
         slopos_display_wake();
+
+        // Single-shot: clear the key immediately so the next LVGL read gets RELEASED.
+        // This prevents the last character from repeating forever.
+        slopos_keyboard_consume_key();
     } else {
         data->state = LV_INDEV_STATE_RELEASED;
     }
@@ -265,6 +273,7 @@ bool slopos_display_init()
     lv_indev_t* kb = lv_indev_create();
     lv_indev_set_type(kb, LV_INDEV_TYPE_KEYPAD);
     lv_indev_set_read_cb(kb, lvgl_kb_cb);
+    lv_timer_set_period(lv_indev_get_read_timer(kb), 10);  // 10ms vs ~33ms default
 
     lv_indev_t* trackball = lv_indev_create();
     lv_indev_set_type(trackball, LV_INDEV_TYPE_ENCODER);
@@ -306,11 +315,6 @@ void slopos_display_loop()
     slopos_keyboard_scan();
     slopos_trackball_scan();
     dispatch_trackball_events();
-
-    if (wake_refresh_pending) {
-        wake_refresh_pending = false;
-        restore_display_after_sleep();
-    }
 
     if (wake_refresh_pending) {
         wake_refresh_pending = false;

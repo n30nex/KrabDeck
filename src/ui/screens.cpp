@@ -21,6 +21,7 @@
 #include "navigation.h"
 #include "theme.h"
 #include "responsive.h"
+#include "home_screen.h"
 #include "../hal/tdeck_pins.h"
 #include "../hal/battery.h"
 #include "../hal/sdcard.h"
@@ -40,6 +41,9 @@ using namespace theme;
 // ── Layout constants (from responsive.h) ──────────────────
 using namespace responsive;
 // TOP_BAR_H, BOT_BAR_H, DIVIDER_H, CONTENT_Y, CONTENT_H — all from responsive.h
+
+static lv_obj_t* g_date_row = nullptr;   // for live update after setting time
+static lv_obj_t* g_time_row = nullptr;
 
 // ════════════════════════════════════════════════════════
 // make_screen_full — builds consistent top+bottom bars
@@ -208,6 +212,12 @@ void heard_screen_show()
     lv_obj_set_style_pad_all(search, 4, 0);
     lv_textarea_set_one_line(search, true);
     lv_textarea_set_placeholder_text(search, LV_SYMBOL_EYE_OPEN "  Search nodes...");
+
+    lv_group_t* g = lv_group_get_default();
+    if (g) {
+        lv_group_add_obj(g, search);
+        lv_group_focus_obj(search);
+    }
 
     // Search divider
     lv_obj_t* sdiv = lv_obj_create(scr);
@@ -606,6 +616,147 @@ void map_screen_show()
     show_screen(scr);
 }
 
+// Update the text inside a settings row button (used after live time set)
+static void update_row_label(lv_obj_t* row, const char* new_text)
+{
+    if (!row) return;
+    uint32_t n = lv_obj_get_child_cnt(row);
+    for (uint32_t i = 0; i < n; i++) {
+        lv_obj_t* ch = lv_obj_get_child(row, i);
+        if (lv_obj_check_type(ch, &lv_label_class)) {
+            lv_label_set_text(ch, new_text);
+            return;
+        }
+    }
+}
+
+struct DateTimeDialogCtx {
+    lv_obj_t* input;
+    lv_obj_t* feedback;
+    bool       is_date;
+};
+
+static void datetime_set_dialog(lv_obj_t* parent, bool is_date)
+{
+    int y, mo, d, h, mi;
+    slopos::mesh::getCurrentLocalDateTime(&y, &mo, &d, &h, &mi);
+
+    char cur[16];
+    if (is_date) snprintf(cur, sizeof(cur), "%04d-%02d-%02d", y, mo, d);
+    else         snprintf(cur, sizeof(cur), "%02d:%02d", h, mi);
+
+    auto dlg_sz = dialog_size(260, 120);
+    lv_obj_t* dlg = lv_obj_create(parent);
+    lv_obj_set_size(dlg, dlg_sz.w, dlg_sz.h);
+    lv_obj_center(dlg);
+    lv_obj_set_style_bg_color(dlg, lv_color_hex(BG_SECONDARY), 0);
+    lv_obj_set_style_radius(dlg, 0, 0);
+    lv_obj_set_style_border_width(dlg, 0, 0);
+    lv_obj_set_style_pad_all(dlg, 8, 0);
+
+    lv_obj_t* title = lv_label_create(dlg);
+    lv_label_set_text(title, is_date ? "Set Date (YYYY-MM-DD)" : "Set Time (HH:MM 24h)");
+    lv_obj_set_style_text_color(title, lv_color_hex(TEXT_PRIMARY), 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_12, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 4);
+
+    lv_obj_t* input = lv_textarea_create(dlg);
+    lv_obj_set_size(input, dlg_sz.w - 16, 28);
+    lv_obj_align(input, LV_ALIGN_TOP_MID, 0, 28);
+    lv_obj_set_style_bg_color(input, lv_color_hex(BG_INPUT), 0);
+    lv_obj_set_style_text_color(input, lv_color_hex(TEXT_PRIMARY), 0);
+    lv_obj_set_style_text_font(input, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_border_width(input, 0, 0);
+    lv_textarea_set_one_line(input, true);
+    lv_textarea_set_text(input, cur);
+
+    // Focus immediately so the physical keyboard works without tapping the field
+    lv_group_t* grp = lv_group_get_default();
+    if (grp) {
+        lv_group_add_obj(grp, input);
+        lv_group_focus_obj(input);
+    }
+
+    lv_obj_t* fb = lv_label_create(dlg);
+    lv_obj_set_style_text_color(fb, lv_color_hex(ACCENT_RED), 0);
+    lv_obj_set_style_text_font(fb, &lv_font_montserrat_10, 0);
+    lv_obj_align(fb, LV_ALIGN_BOTTOM_MID, 0, -28);
+
+    lv_obj_t* cancel_btn = lv_btn_create(dlg);
+    lv_obj_set_size(cancel_btn, 72, 24);
+    lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_LEFT, 4, -4);
+    lv_obj_set_style_bg_color(cancel_btn, lv_color_hex(BG_TERTIARY), 0);
+    lv_obj_set_style_radius(cancel_btn, 0, 0);
+    lv_obj_t* cl = lv_label_create(cancel_btn);
+    lv_label_set_text(cl, "Cancel");
+    lv_obj_set_style_text_font(cl, &lv_font_montserrat_10, 0);
+    lv_obj_center(cl);
+    lv_obj_add_event_cb(cancel_btn, [](lv_event_t* e) {
+        lv_obj_del_async(lv_obj_get_parent((lv_obj_t*)lv_event_get_target(e)));
+    }, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t* set_btn = lv_btn_create(dlg);
+    lv_obj_set_size(set_btn, 72, 24);
+    lv_obj_align(set_btn, LV_ALIGN_BOTTOM_RIGHT, -4, -4);
+    lv_obj_set_style_bg_color(set_btn, lv_color_hex(ACCENT_GREEN), 0);
+    lv_obj_set_style_radius(set_btn, 0, 0);
+    lv_obj_t* sl = lv_label_create(set_btn);
+    lv_label_set_text(sl, "Set");
+    lv_obj_set_style_text_font(sl, &lv_font_montserrat_10, 0);
+    lv_obj_center(sl);
+
+    // ctx lives until the dialog is deleted (see LV_EVENT_DELETE below)
+    auto* ctx = new DateTimeDialogCtx{ input, fb, is_date };
+    lv_obj_add_event_cb(dlg, [](lv_event_t* e) {
+        delete (DateTimeDialogCtx*)lv_event_get_user_data(e);
+    }, LV_EVENT_DELETE, (void*)ctx);
+
+    lv_obj_add_event_cb(set_btn, [](lv_event_t* e) {
+        auto* ctx = (DateTimeDialogCtx*)lv_event_get_user_data(e);
+        lv_obj_t* dlg = lv_obj_get_parent((lv_obj_t*)lv_event_get_target(e));
+        const char* s = lv_textarea_get_text(ctx->input);
+
+        bool valid = false;
+        uint32_t epoch = 0;
+
+        if (ctx->is_date) {
+            int ny, nm, nd;
+            if (sscanf(s, "%d-%d-%d", &ny, &nm, &nd) == 3 &&
+                ny > 2020 && nm >= 1 && nm <= 12 && nd >= 1 && nd <= 31) {
+                int cy, cmo, cd, ch, cmi;
+                slopos::mesh::getCurrentLocalDateTime(&cy, &cmo, &cd, &ch, &cmi);
+                epoch = slopos::mesh::makeEpoch(ny, nm, nd, ch, cmi);
+                valid = true;
+            } else {
+                lv_label_set_text(ctx->feedback, "Invalid date (YYYY-MM-DD)");
+            }
+        } else {
+            int nh, nm_v;
+            if (sscanf(s, "%d:%d", &nh, &nm_v) == 2 &&
+                nh >= 0 && nh <= 23 && nm_v >= 0 && nm_v <= 59) {
+                int cy, cmo, cd, ch, cmi;
+                slopos::mesh::getCurrentLocalDateTime(&cy, &cmo, &cd, &ch, &cmi);
+                epoch = slopos::mesh::makeEpoch(cy, cmo, cd, nh, nm_v);
+                valid = true;
+            } else {
+                lv_label_set_text(ctx->feedback, "Invalid time (HH:MM)");
+            }
+        }
+
+        if (valid && slopos::mesh::setSystemTime(epoch)) {
+            int yy, mmo, dd, hh, mmi;
+            slopos::mesh::getCurrentLocalDateTime(&yy, &mmo, &dd, &hh, &mmi);
+            char dbuf[32], tbuf[16];
+            snprintf(dbuf, sizeof(dbuf), "  Date: %04d-%02d-%02d", yy, mmo, dd);
+            snprintf(tbuf, sizeof(tbuf), "  Time: %02d:%02d", hh, mmi);
+            update_row_label(g_date_row, dbuf);
+            update_row_label(g_time_row, tbuf);
+            home_screen_update_time(tbuf);
+            lv_obj_del_async(dlg);
+        }
+    }, LV_EVENT_CLICKED, (void*)ctx);
+}
+
 // ════════════════════════════════════════════════════════
 // Settings — status rows with alternating backgrounds
 // ════════════════════════════════════════════════════════
@@ -663,9 +814,33 @@ void settings_screen_show()
              slopos_gps_has_fix() ? "Fix acquired" : "No fix");
     add_row(LV_SYMBOL_GPS, buf);
 
+    // Date
+    int y, mo, d, h, mi;
+    slopos::mesh::getCurrentLocalDateTime(&y, &mo, &d, &h, &mi);
+    snprintf(buf, sizeof(buf), "  Date: %04d-%02d-%02d", y, mo, d);
+    lv_obj_t* btn_date = add_row(LV_SYMBOL_SETTINGS, buf);
+    g_date_row = btn_date;
+    lv_obj_add_event_cb(btn_date, [](lv_event_t* e) {
+        datetime_set_dialog(lv_obj_get_screen((lv_obj_t*)lv_event_get_target(e)), true);
+    }, LV_EVENT_CLICKED, nullptr);
+
+    // Time
+    snprintf(buf, sizeof(buf), "  Time: %02d:%02d", h, mi);
+    lv_obj_t* btn_time = add_row(LV_SYMBOL_SETTINGS, buf);
+    g_time_row = btn_time;
+    lv_obj_add_event_cb(btn_time, [](lv_event_t* e) {
+        datetime_set_dialog(lv_obj_get_screen((lv_obj_t*)lv_event_get_target(e)), false);
+    }, LV_EVENT_CLICKED, nullptr);
+
     // Version
     snprintf(buf, sizeof(buf), "  SlopOS " SLOPOS_VERSION);
     add_row(LV_SYMBOL_HOME, buf);
+
+    // Null the row pointers when this screen is deleted so stale pointers can't be used
+    lv_obj_add_event_cb(scr, [](lv_event_t*) {
+        g_date_row = nullptr;
+        g_time_row = nullptr;
+    }, LV_EVENT_DELETE, nullptr);
 
     show_screen(scr);
 }
@@ -754,6 +929,12 @@ void terminal_screen_show()
     lv_obj_set_style_pad_all(input, 4, 0);
     lv_textarea_set_one_line(input, true);
     lv_textarea_set_placeholder_text(input, "> enter command...");
+
+    lv_group_t* g = lv_group_get_default();
+    if (g) {
+        lv_group_add_obj(g, input);
+        lv_group_focus_obj(input);
+    }
 
     lv_obj_add_event_cb(input, [](lv_event_t* e) {
         lv_obj_t* ta        = (lv_obj_t*)lv_event_get_target(e);
@@ -945,6 +1126,13 @@ static lv_obj_t* channel_create_dialog(lv_obj_t* parent)
     lv_obj_set_style_border_width(psk_input, 0, 0);
     lv_textarea_set_one_line(psk_input, true);
     lv_textarea_set_placeholder_text(psk_input, "base64 key");
+
+    lv_group_t* g = lv_group_get_default();
+    if (g) {
+        lv_group_add_obj(g, name_input);
+        lv_group_add_obj(g, psk_input);
+        lv_group_focus_obj(name_input);
+    }
 
     lv_obj_t* feedback = lv_label_create(dialog);
     lv_obj_set_style_text_color(feedback, lv_color_hex(ACCENT_RED), 0);

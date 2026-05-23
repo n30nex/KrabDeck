@@ -174,17 +174,14 @@ static void create_bottom_bar()
 static lv_obj_t* create_icon_tile(lv_obj_t* parent, const IconDef& icon, int idx)
 {
     lv_obj_t* tile = lv_obj_create(parent);
-    lv_obj_set_style_bg_color(tile, lv_color_hex(BG_TERTIARY), 0);
-    lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_opa(tile, LV_OPA_TRANSP, 0);
     lv_obj_set_style_radius(tile, 0, 0);
-    lv_obj_set_style_border_width(tile, 2, 0);
-    lv_obj_set_style_border_color(tile, lv_color_hex(DIVIDER), 0);
+    lv_obj_set_style_border_width(tile, 0, 0);
     lv_obj_set_style_pad_all(tile, 4, 0);
 
-    // Pressed state: lighter bg + cyan border
+    // Pressed state: subtle bg flash
     lv_obj_set_style_bg_color(tile, lv_color_hex(0x2a2a2a), LV_STATE_PRESSED);
-    lv_obj_set_style_border_width(tile, 1, LV_STATE_PRESSED);
-    lv_obj_set_style_border_color(tile, lv_color_hex(ACCENT), LV_STATE_PRESSED);
+    lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, LV_STATE_PRESSED);
 
     lv_obj_add_flag(tile, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(tile, on_icon_click, LV_EVENT_CLICKED, (void*)(intptr_t)idx);
@@ -192,7 +189,7 @@ static lv_obj_t* create_icon_tile(lv_obj_t* parent, const IconDef& icon, int idx
     // Icon symbol in cyan
     lv_obj_t* icon_label = lv_label_create(tile);
     lv_label_set_text(icon_label, icon.symbol);
-    lv_obj_set_style_text_font(icon_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(icon_label, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(icon_label, lv_color_hex(ACCENT), 0);
     lv_obj_align(icon_label, LV_ALIGN_CENTER, 0, -6);
 
@@ -200,7 +197,7 @@ static lv_obj_t* create_icon_tile(lv_obj_t* parent, const IconDef& icon, int idx
     lv_obj_t* label = lv_label_create(tile);
     lv_label_set_text(label, icon.label);
     lv_obj_set_style_text_color(label, lv_color_hex(TEXT_PRIMARY), 0);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_10, 0);
     lv_obj_align(label, LV_ALIGN_BOTTOM_MID, 0, -2);
 
     if (icon.badge) {

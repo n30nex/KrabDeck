@@ -160,7 +160,7 @@ static lv_obj_t* make_chat_list_screen()
     lv_label_set_long_mode(ch_lbl, LV_LABEL_LONG_DOT);
     lv_obj_set_width(ch_lbl, HASHTAG_LABEL_W());
     lv_obj_set_style_text_color(ch_lbl, lv_color_hex(CHANNEL_HASH), 0);
-    lv_obj_set_style_text_font(ch_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(ch_lbl, &lv_font_montserrat_10, 0);
     lv_obj_align(ch_lbl, LV_ALIGN_LEFT_MID, 22, 0);
 
     // Time snapshot
@@ -175,7 +175,7 @@ static lv_obj_t* make_chat_list_screen()
         lv_obj_t* tl = lv_label_create(top);
         lv_label_set_text(tl, t);
         lv_obj_set_style_text_color(tl, lv_color_hex(TEXT_PRIMARY), 0);
-        lv_obj_set_style_text_font(tl, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(tl, &lv_font_montserrat_12, 0);
         lv_obj_align(tl, LV_ALIGN_RIGHT_MID, -4, 0);
     }
 
@@ -199,7 +199,7 @@ static lv_obj_t* make_chat_list_screen()
     lv_obj_t* dev = lv_label_create(bot);
     lv_label_set_text(dev, slopos::mesh::getOwnName());
     lv_obj_set_style_text_color(dev, lv_color_hex(TEXT_SECONDARY), 0);
-    lv_obj_set_style_text_font(dev, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(dev, &lv_font_montserrat_10, 0);
     lv_obj_align(dev, LV_ALIGN_LEFT_MID, 4, 0);
 
     {
@@ -211,7 +211,7 @@ static lv_obj_t* make_chat_list_screen()
         lv_obj_t* sig = lv_label_create(bot);
         lv_label_set_text(sig, bars);
         lv_obj_set_style_text_color(sig, lv_color_hex(ACCENT), 0);
-        lv_obj_set_style_text_font(sig, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(sig, &lv_font_montserrat_10, 0);
         lv_obj_align(sig, LV_ALIGN_CENTER, -20, 0);
     }
 
@@ -222,7 +222,7 @@ static lv_obj_t* make_chat_list_screen()
         lv_obj_t* bl = lv_label_create(bot);
         lv_label_set_text(bl, batt);
         lv_obj_set_style_text_color(bl, lv_color_hex(pct > 20 ? ACCENT : ACCENT_RED), 0);
-        lv_obj_set_style_text_font(bl, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(bl, &lv_font_montserrat_10, 0);
         lv_obj_align(bl, LV_ALIGN_RIGHT_MID, -4, 0);
     }
 
@@ -283,14 +283,14 @@ static void show_channel_list(lv_scr_load_anim_t anim)
         lv_obj_t* hash = lv_label_create(avatar);
         lv_label_set_text(hash, "#");
         lv_obj_set_style_text_color(hash, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(hash, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(hash, &lv_font_montserrat_12, 0);
         lv_obj_center(hash);
 
         // Channel name (top-left of text area)
         lv_obj_t* name_lbl = lv_label_create(row);
         lv_label_set_text(name_lbl, dyn_channels[i]);
         lv_obj_set_style_text_color(name_lbl, lv_color_hex(TEXT_PRIMARY), 0);
-        lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_12, 0);
         lv_obj_align(name_lbl, LV_ALIGN_TOP_LEFT, 46, 6);
 
         // Timestamp (top-right, shifted left when badge is present)
@@ -300,7 +300,7 @@ static void show_channel_list(lv_scr_load_anim_t anim)
             lv_obj_t* ts = lv_label_create(row);
             lv_label_set_text(ts, tbuf);
             lv_obj_set_style_text_color(ts, lv_color_hex(TEXT_MUTED), 0);
-            lv_obj_set_style_text_font(ts, &lv_font_montserrat_12, 0);
+            lv_obj_set_style_text_font(ts, &lv_font_montserrat_10, 0);
             lv_obj_align(ts, LV_ALIGN_TOP_RIGHT,
                 ch_meta[i].unread > 0 ? -26 : -4, 8);
         }
@@ -310,7 +310,7 @@ static void show_channel_list(lv_scr_load_anim_t anim)
         lv_label_set_text(prev,
             ch_meta[i].preview[0] ? ch_meta[i].preview : "No messages yet");
         lv_obj_set_style_text_color(prev, lv_color_hex(TEXT_SECONDARY), 0);
-        lv_obj_set_style_text_font(prev, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(prev, &lv_font_montserrat_10, 0);
         lv_label_set_long_mode(prev, LV_LABEL_LONG_DOT);
         lv_obj_set_width(prev, 200);
         lv_obj_align(prev, LV_ALIGN_TOP_LEFT, 46, 26);
@@ -333,7 +333,7 @@ static void show_channel_list(lv_scr_load_anim_t anim)
             lv_obj_t* cnt_lbl = lv_label_create(badge);
             lv_label_set_text(cnt_lbl, cnt_buf);
             lv_obj_set_style_text_color(cnt_lbl, lv_color_hex(0xffffff), 0);
-            lv_obj_set_style_text_font(cnt_lbl, &lv_font_montserrat_12, 0);
+            lv_obj_set_style_text_font(cnt_lbl, &lv_font_montserrat_10, 0);
             lv_obj_center(cnt_lbl);
         }
 
@@ -375,7 +375,7 @@ static void rebuild_channel_ribbon()
 
         lv_obj_t* pill_label = lv_label_create(pill);
         lv_label_set_text(pill_label, dyn_channels[i]);
-        lv_obj_set_style_text_font(pill_label, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(pill_label, &lv_font_montserrat_10, 0);
         lv_obj_set_style_text_color(pill_label,
             i == active_channel ? lv_color_hex(0xffffff) : lv_color_hex(CHANNEL_HASH), 0);
         lv_obj_center(pill_label);
@@ -412,7 +412,7 @@ static void create_top_bar()
     lv_obj_t* bl = lv_label_create(back);
     lv_label_set_text(bl, LV_SYMBOL_LEFT);
     lv_obj_set_style_text_color(bl, lv_color_hex(TEXT_SECONDARY), 0);
-    lv_obj_set_style_text_font(bl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(bl, &lv_font_montserrat_12, 0);
     lv_obj_center(bl);
     lv_obj_add_event_cb(back, [](lv_event_t*) {
         show_channel_list(LV_SCR_LOAD_ANIM_MOVE_RIGHT);
@@ -443,7 +443,7 @@ static void create_top_bar()
         lv_obj_t* tl = lv_label_create(top_bar);
         lv_label_set_text(tl, t);
         lv_obj_set_style_text_color(tl, lv_color_hex(TEXT_PRIMARY), 0);
-        lv_obj_set_style_text_font(tl, &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_font(tl, &lv_font_montserrat_12, 0);
         lv_obj_align(tl, LV_ALIGN_RIGHT_MID, -4, 0);
     }
 
@@ -465,7 +465,7 @@ static void create_top_bar()
 
         lv_obj_t* pill_label = lv_label_create(pill);
         lv_label_set_text(pill_label, dyn_channels[i]);
-        lv_obj_set_style_text_font(pill_label, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(pill_label, &lv_font_montserrat_10, 0);
         lv_obj_set_style_text_color(pill_label,
             i == active_channel ? lv_color_hex(0xffffff) : lv_color_hex(CHANNEL_HASH), 0);
         lv_obj_center(pill_label);
@@ -538,7 +538,7 @@ static lv_obj_t* create_bubble(lv_obj_t* parent, const char* sender,
     lv_label_set_text(name, sender);
     lv_obj_set_style_text_color(name,
         is_self ? lv_color_hex(0xffffff) : lv_color_hex(ACCENT), 0);
-    lv_obj_set_style_text_font(name, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(name, &lv_font_montserrat_10, 0);
 
     char time_buf[8];
     format_time(time_buf, sizeof(time_buf), timestamp);
@@ -546,13 +546,13 @@ static lv_obj_t* create_bubble(lv_obj_t* parent, const char* sender,
     lv_label_set_text(ts, time_buf);
     lv_obj_set_style_text_color(ts,
         is_self ? lv_color_hex(0xb0d4ff) : lv_color_hex(TEXT_MUTED), 0);
-    lv_obj_set_style_text_font(ts, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(ts, &lv_font_montserrat_10, 0);
 
     lv_obj_t* msg_text = lv_label_create(bubble);
     lv_label_set_text(msg_text, text);
     lv_obj_set_style_text_color(msg_text,
         is_self ? lv_color_hex(0xffffff) : lv_color_hex(TEXT_PRIMARY), 0);
-    lv_obj_set_style_text_font(msg_text, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(msg_text, &lv_font_montserrat_12, 0);
     lv_label_set_long_mode(msg_text, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(msg_text, LV_PCT(100));
 
@@ -628,7 +628,7 @@ static void create_input_bar()
     lv_obj_set_style_bg_color(input_field, lv_color_hex(BG_INPUT), 0);
     lv_obj_set_style_bg_opa(input_field, LV_OPA_COVER, 0);
     lv_obj_set_style_text_color(input_field, lv_color_hex(TEXT_PRIMARY), 0);
-    lv_obj_set_style_text_font(input_field, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(input_field, &lv_font_montserrat_12, 0);
     lv_obj_set_style_border_width(input_field, 1, 0);
     lv_obj_set_style_border_color(input_field, lv_color_hex(BG_TERTIARY), 0);
     lv_obj_set_style_radius(input_field, 0, 0);
@@ -646,7 +646,7 @@ static void create_input_bar()
 
     lv_obj_t* send_label = lv_label_create(send_btn);
     lv_label_set_text(send_label, "Send");
-    lv_obj_set_style_text_font(send_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(send_label, &lv_font_montserrat_10, 0);
     lv_obj_set_style_text_color(send_label, lv_color_hex(0xffffff), 0);
     lv_obj_center(send_label);
 
@@ -673,7 +673,7 @@ static void create_bottom_bar()
     lv_obj_t* dev = lv_label_create(bot);
     lv_label_set_text(dev, slopos::mesh::getOwnName());
     lv_obj_set_style_text_color(dev, lv_color_hex(TEXT_SECONDARY), 0);
-    lv_obj_set_style_text_font(dev, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(dev, &lv_font_montserrat_10, 0);
     lv_obj_align(dev, LV_ALIGN_LEFT_MID, 4, 0);
 
     int rssi = slopos::mesh::getLastRSSI();
@@ -684,7 +684,7 @@ static void create_bottom_bar()
     lv_obj_t* sig = lv_label_create(bot);
     lv_label_set_text(sig, bars);
     lv_obj_set_style_text_color(sig, lv_color_hex(ACCENT), 0);
-    lv_obj_set_style_text_font(sig, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(sig, &lv_font_montserrat_10, 0);
     lv_obj_align(sig, LV_ALIGN_CENTER, -20, 0);
 
     char batt_buf[8];
@@ -693,7 +693,7 @@ static void create_bottom_bar()
     lv_obj_t* bl = lv_label_create(bot);
     lv_label_set_text(bl, batt_buf);
     lv_obj_set_style_text_color(bl, lv_color_hex(pct > 20 ? ACCENT : ACCENT_RED), 0);
-    lv_obj_set_style_text_font(bl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(bl, &lv_font_montserrat_10, 0);
     lv_obj_align(bl, LV_ALIGN_RIGHT_MID, -4, 0);
 
     lv_obj_t* div = lv_obj_create(scr);

@@ -46,44 +46,17 @@ inline int HASHTAG_LABEL_W() {
     return DISPLAY_W - 60;  // hamburger(20) + time(32) + margins(8)
 }
 
-// ── Grid layout — adaptive columns/rows ──────────────────
-struct GridLayout { int cols; int rows; int tile_w; int tile_h; };
+// ── Grid layout — adaptive columns ───────────────────────
+// tile_w/tile_h omitted — caller uses LV_GRID_FR(1) to fill space exactly.
+struct GridLayout { int cols; };
 
-inline GridLayout compute_grid(int grid_pad = 3) {
+inline GridLayout compute_grid(int /*grid_pad*/ = 3) {
     GridLayout g{};
-    int avail_h = CONTENT_H - (grid_pad * 2);
-    int avail_w = CONTENT_W - (grid_pad * 2);
-
     // Choose column count based on available width per tile.
-    // Tiles need ~75px minimum for icon (18px symbol) + label (12px text).
-    if (avail_w >= 300)      g.cols = 4;   // ≥300px: 4 cols (~75px each)
-    else if (avail_w >= 230) g.cols = 3;   // ≥230px: 3 cols
-    else if (avail_w >= 170) g.cols = 2;   // ≥170px: 2 cols
-    else                     g.cols = 1;   // narrow: single column
-
-    // Remove one column's worth of flex gaps
-    int cols_w = avail_w - (grid_pad * (g.cols - 1));
-    g.tile_w = cols_w / g.cols;
-
-    // Choose row count based on available height per tile.
-    // Tiles need ~40px minimum for icon (20px) + label (12px) + padding.
-    int min_tile_h = 40;
-    g.rows = avail_h / (min_tile_h + grid_pad);
-
-    // Clamp: use at least 1 row, and try to fill available space
-    if (g.rows < 1) g.rows = 1;
-    if (g.rows > 12) g.rows = 12;  // max 12 icons (current set)
-
-    // Enforce minimum: at least g.cols rows of tiles visible
-    if (g.rows < 3 && avail_h >= 120) g.rows = 3;
-
-    // Calculate actual tile height
-    int rows_h = avail_h - (grid_pad * (g.rows - 1));
-    g.tile_h = rows_h / g.rows;
-
-    // Ensure all 12 icons can be displayed via scrolling if needed
-    // (grid may need LV_DIR_VER if g.cols * g.rows < 12)
-
+    if (CONTENT_W >= 300)      g.cols = 4;
+    else if (CONTENT_W >= 230) g.cols = 3;
+    else if (CONTENT_W >= 170) g.cols = 2;
+    else                       g.cols = 1;
     return g;
 }
 

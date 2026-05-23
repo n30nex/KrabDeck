@@ -113,14 +113,14 @@ static void create_top_bar()
     lv_label_set_long_mode(hashtag_label, LV_LABEL_LONG_DOT);
     lv_obj_set_width(hashtag_label, HASHTAG_LABEL_W());
     lv_obj_set_style_text_color(hashtag_label, lv_color_hex(CHANNEL_HASH), 0);
-    lv_obj_set_style_text_font(hashtag_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(hashtag_label, &lv_font_montserrat_10, 0);
     lv_obj_align(hashtag_label, LV_ALIGN_LEFT_MID, 26, 0);
 
     // Time (far right)
     time_label = lv_label_create(top_bar);
     lv_label_set_text(time_label, "--:--");
     lv_obj_set_style_text_color(time_label, lv_color_hex(TEXT_PRIMARY), 0);
-    lv_obj_set_style_text_font(time_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(time_label, &lv_font_montserrat_12, 0);
     lv_obj_align(time_label, LV_ALIGN_RIGHT_MID, -4, 0);
 
     // Divider
@@ -146,19 +146,19 @@ static void create_bottom_bar()
     lv_obj_t* dev = lv_label_create(bottom_bar);
     lv_label_set_text(dev, slopos::mesh::getOwnName());
     lv_obj_set_style_text_color(dev, lv_color_hex(TEXT_SECONDARY), 0);
-    lv_obj_set_style_text_font(dev, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(dev, &lv_font_montserrat_10, 0);
     lv_obj_align(dev, LV_ALIGN_LEFT_MID, 4, 0);
 
     signal_label = lv_label_create(bottom_bar);
     lv_label_set_text(signal_label, "▂▄▆█");
     lv_obj_set_style_text_color(signal_label, lv_color_hex(ACCENT), 0);
-    lv_obj_set_style_text_font(signal_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(signal_label, &lv_font_montserrat_10, 0);
     lv_obj_align(signal_label, LV_ALIGN_CENTER, -20, 0);
 
     batt_label = lv_label_create(bottom_bar);
     lv_label_set_text(batt_label, "--%");
     lv_obj_set_style_text_color(batt_label, lv_color_hex(ACCENT), 0);
-    lv_obj_set_style_text_font(batt_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(batt_label, &lv_font_montserrat_10, 0);
     lv_obj_align(batt_label, LV_ALIGN_RIGHT_MID, -4, 0);
 
     // Divider
@@ -179,29 +179,29 @@ static lv_obj_t* create_icon_tile(lv_obj_t* parent, const IconDef& icon, int idx
     lv_obj_set_style_border_width(tile, 0, 0);
     lv_obj_set_style_pad_all(tile, 4, 0);
 
-    // Pressed state: subtle bg flash
+    // Flex column: stack icon + label and center both axes within the tile
+    lv_obj_set_flex_flow(tile, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(tile, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
     lv_obj_set_style_bg_color(tile, lv_color_hex(0x2a2a2a), LV_STATE_PRESSED);
     lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, LV_STATE_PRESSED);
 
     lv_obj_add_flag(tile, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(tile, on_icon_click, LV_EVENT_CLICKED, (void*)(intptr_t)idx);
 
-    // Icon symbol in cyan
     lv_obj_t* icon_label = lv_label_create(tile);
     lv_label_set_text(icon_label, icon.symbol);
-    lv_obj_set_style_text_font(icon_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(icon_label, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(icon_label, lv_color_hex(ACCENT), 0);
-    lv_obj_align(icon_label, LV_ALIGN_CENTER, 0, -6);
 
-    // Uppercase label in white below icon
     lv_obj_t* label = lv_label_create(tile);
     lv_label_set_text(label, icon.label);
     lv_obj_set_style_text_color(label, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_10, 0);
-    lv_obj_align(label, LV_ALIGN_BOTTOM_MID, 0, -2);
 
     if (icon.badge) {
         lv_obj_t* badge = lv_obj_create(tile);
+        lv_obj_add_flag(badge, LV_OBJ_FLAG_IGNORE_LAYOUT);  // float over flex flow
         lv_obj_set_size(badge, 10, 10);
         lv_obj_set_style_bg_color(badge, lv_color_hex(ACCENT_RED), 0);
         lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
@@ -213,33 +213,37 @@ static lv_obj_t* create_icon_tile(lv_obj_t* parent, const IconDef& icon, int idx
     return tile;
 }
 
-// ── Adaptive icon grid (cols/rows from responsive.h) ──────
+// ── Adaptive icon grid — LVGL grid layout fills the full content area ──────
 static void create_icon_grid()
 {
     GridLayout gl = compute_grid(GRID_PAD);
     int total_icons = sizeof(icons) / sizeof(icons[0]);
+    int rows_needed = (total_icons + gl.cols - 1) / gl.cols;
 
-    // If grid can't fit all icons without scrolling, enable vertical scroll
-    bool needs_scroll = (gl.cols * gl.rows) < total_icons;
+    // Static arrays required — LVGL holds a pointer to them across frames
+    static lv_coord_t col_desc[5];   // up to 4 cols + sentinel
+    static lv_coord_t row_desc[13];  // up to 12 rows + sentinel
+    for (int i = 0; i < gl.cols; i++) col_desc[i] = LV_GRID_FR(1);
+    col_desc[gl.cols] = LV_GRID_TEMPLATE_LAST;
+    for (int i = 0; i < rows_needed; i++) row_desc[i] = LV_GRID_FR(1);
+    row_desc[rows_needed] = LV_GRID_TEMPLATE_LAST;
 
     grid = lv_obj_create(scr);
     lv_obj_set_style_bg_opa(grid, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(grid, 0, 0);
     lv_obj_set_style_pad_all(grid, GRID_PAD, 0);
+    lv_obj_set_style_pad_column(grid, GRID_PAD, 0);
+    lv_obj_set_style_pad_row(grid, GRID_PAD, 0);
     lv_obj_set_size(grid, LV_PCT(100), CONTENT_H);
     lv_obj_align(grid, LV_ALIGN_TOP_MID, 0, CONTENT_Y);
-    lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
-    lv_obj_set_flex_align(grid, LV_FLEX_ALIGN_SPACE_EVENLY,
-                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    if (needs_scroll)
-        lv_obj_set_scroll_dir(grid, LV_DIR_VER);
-    else
-        lv_obj_set_scroll_dir(grid, LV_DIR_NONE);
+    lv_obj_set_layout(grid, LV_LAYOUT_GRID);
+    lv_obj_set_grid_dsc_array(grid, col_desc, row_desc);
+    lv_obj_set_scroll_dir(grid, LV_DIR_NONE);
 
     for (int i = 0; i < total_icons; i++) {
         lv_obj_t* tile = create_icon_tile(grid, icons[i], i);
-        lv_obj_set_size(tile, gl.tile_w, gl.tile_h);
+        lv_obj_set_grid_cell(tile, LV_GRID_ALIGN_STRETCH, i % gl.cols, 1,
+                                   LV_GRID_ALIGN_STRETCH, i / gl.cols, 1);
     }
 }
 

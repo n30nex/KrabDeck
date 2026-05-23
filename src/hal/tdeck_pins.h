@@ -54,9 +54,9 @@
 #define TOUCH_I2C_ADDR  0x5D
 #define TOUCH_MAX_X     TFT_WIDTH
 #define TOUCH_MAX_Y     TFT_HEIGHT
-#define TOUCH_SWAP_XY    false   // rotation(1) handles axis mapping
-#define TOUCH_MIRROR_X   true    // physical X→Y flip for 90°CW rotation
-#define TOUCH_MIRROR_Y   false
+#define TOUCH_SWAP_XY    false
+#define TOUCH_MIRROR_X   false
+#define TOUCH_MIRROR_Y   true    // GT911 Y=0 is at physical bottom; invert for LVGL (top=0)
 
 // ── I2C bus aliases (shared with touch) ──────────────────
 #define PIN_I2C_SDA      PIN_TOUCH_SDA

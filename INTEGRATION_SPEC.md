@@ -32,7 +32,7 @@
 - [ ] ST7789: backlight PWM works (0-255), brightness controllable
 - [ ] Auto-off timer: 30s idle → backlight 0, any touch/key → backlight restored
 - [ ] GT911 touch: coordinates correctly transformed for rotation(1)
-  - SWAP_XY=false, MIRROR_X=true for rotation(1) landscape
+  - SWAP_XY=false, MIRROR_X=false, MIRROR_Y=true for rotation(1) landscape
   - Boundary clamping to 0-319 x 0-239
   - Multitouch parsing with sentinel filtering (0xFFFF, 0x0000)
 - [ ] Keyboard: I2C probe at 0x55, backlight + key mode init

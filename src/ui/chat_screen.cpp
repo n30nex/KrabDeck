@@ -86,8 +86,10 @@ static constexpr int TOP_H      = TOP_BAR_H;
 static constexpr int INPUT_H    = 35;
 // BOT_BAR_H, DIVIDER_H used directly from responsive namespace
 static constexpr int BUBBLE_PAD = 6;
-static constexpr int MAX_MSGS   = 8;
-static constexpr int MSG_LIST_Y = TOP_H + DIVIDER_H;
+static constexpr int MAX_MSGS      = 8;
+static constexpr int MAX_MSG_BYTES = 149; // max text bytes for mesh payload (MAX_PAYLOAD - 1)
+static constexpr int MAX_NAME_LEN  = 31;  // max chars for channel/contact names (buffer - null)
+static constexpr int MSG_LIST_Y    = TOP_H + DIVIDER_H;
 static constexpr int MSG_LIST_H = DISPLAY_H - TOP_H - DIVIDER_H - INPUT_H - DIVIDER_H - BOT_BAR_H;
 
 // ── Channel-list layout (matches screens.cpp constants) ────
@@ -858,8 +860,16 @@ static void show_emoji_picker(lv_obj_t* parent)
 // ════════════════════════════════════════════════════
 static void do_send()
 {
-    const char* text = lv_textarea_get_text(input_field);
-    if (!text || !text[0]) return;
+    const char* raw = lv_textarea_get_text(input_field);
+    if (!raw || !raw[0]) return;
+
+    // Byte-level truncation to mesh payload limit (MAX_MSG_BYTES = 149)
+    // LVGL's max_length is character-based, but mesh limits are byte-based,
+    // so multi-byte UTF-8 text needs explicit truncation before sending.
+    char text[150];
+    size_t len = strnlen(raw, MAX_MSG_BYTES);
+    memcpy(text, raw, len);
+    text[len] = '\0';
 
     const char* chan = dyn_channels[active_channel];
     bool is_dm = (strncmp(chan, "DM: ", 4) == 0);
@@ -916,7 +926,7 @@ static void create_input_bar()
     lv_obj_set_style_pad_all(input_field, 4, 0);
     lv_textarea_set_one_line(input_field, true);
     lv_textarea_set_placeholder_text(input_field, "Message #channel");
-    lv_textarea_set_max_length(input_field, 160);
+    lv_textarea_set_max_length(input_field, MAX_MSG_BYTES);
     lv_obj_remove_flag(input_field, LV_OBJ_FLAG_SCROLL_ON_FOCUS);
     lv_obj_set_style_outline_width(input_field, 0, LV_STATE_FOCUSED);
     lv_obj_set_style_outline_width(input_field, 0, (lv_state_t)(LV_STATE_FOCUSED | LV_STATE_EDITED));
@@ -1087,6 +1097,7 @@ static void show_add_channel_options(lv_obj_t* parent) {
     lv_obj_set_style_text_font(ni, emoji_wrapped_montserrat_10, 0);
     lv_obj_set_style_border_width(ni, 0, 0);
     lv_textarea_set_one_line(ni, true);
+    lv_textarea_set_max_length(ni, MAX_NAME_LEN);
     lv_textarea_set_placeholder_text(ni, "e.g. #general");
 
     lv_group_t* g = lv_group_get_default();

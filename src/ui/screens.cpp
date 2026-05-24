@@ -1372,6 +1372,7 @@ static lv_obj_t* channel_create_dialog(lv_obj_t* parent)
     lv_obj_set_style_text_font(name_input, &lv_font_montserrat_10, 0);
     lv_obj_set_style_border_width(name_input, 0, 0);
     lv_textarea_set_one_line(name_input, true);
+    lv_textarea_set_max_length(name_input, 31);
     lv_textarea_set_placeholder_text(name_input, "e.g. #general");
 
     lv_group_t* g = lv_group_get_default();

@@ -14,12 +14,15 @@ These are the reference documents you should load before starting work. Which on
 |------|----------------|---------|
 | **`README.md`** | First time in the repo | Project overview, quick start, license |
 | **`AGENTS.md`** ← you are here | Every session | Agent instructions, architecture, conventions, pitfalls |
-| **`CONTRIBUTING.md`** | Before opening a PR | Human contributor workflow, PR requirements |
+| **`CONTRIBUTING.md`** | Before ANY task or PR | **Mandatory.** Full contribution workflow, issue-first requirement, PR checklist. AI agents must follow every step. |
 | **`KNOWN_ISSUES.md`** | Before feature work | What's broken or unfinished — don't duplicate effort |
 | **`firmware/README.md`** | Releasing or CI work | Release artifact structure, web flasher manifest format |
 | **`test/README.md`** | Writing new tests | Test framework, mock structure, naming conventions |
 
-**Key rule:** Read `KNOWN_ISSUES.md` before starting any feature work. If someone already tried and documented a problem, you'll find it there.
+**Critical rules — follow both:**
+1. **Check for an existing issue.** Before writing any code, check if there's already an open GitHub issue covering what you plan to do. If not, open one. No issue = no PR accepted.
+2. **Read `KNOWN_ISSUES.md`** before starting any feature work. If someone already tried and documented a problem, you'll find it there.
+3. **Follow `CONTRIBUTING.md`** — it's not optional. Every step applies to AI agents the same as human contributors.
 
 ---
 
@@ -268,13 +271,15 @@ Main + dev branch model:
 
 When working on this codebase, follow this sequence:
 
-1. **Load context** — read `AGENTS.md` (this file), `KNOWN_ISSUES.md`, and any relevant source files
-2. **Check the branch** — work is always on `dev`. PRs target `dev`, not `main`
-3. **Run tests first** — `pio test -e native_test` before any changes to confirm baseline
-4. **Make changes** — use the file tools (`read_file`, `patch`, `write_file`)
-5. **Run tests again** — all 172 must pass
-6. **Build firmware** — `pio run -e SlopOS_TDeck` must succeed
-7. **Commit and push** — conventional commit messages (`feat:`, `fix:`, `docs:`, etc.)
+1. **Open an issue** — check if an open issue already covers what you plan to do. If not, create one. No issue = no PR accepted.
+2. **Read `CONTRIBUTING.md`** — follow every step. It applies to AI agents the same as human contributors.
+3. **Load context** — read `AGENTS.md` (this file), `KNOWN_ISSUES.md`, and any relevant source files
+4. **Check the branch** — work is always on `dev`. PRs target `dev`, not `main`
+5. **Run tests first** — `pio test -e native_test` before any changes to confirm baseline
+6. **Make changes** — use the file tools (`read_file`, `patch`, `write_file`)
+7. **Run tests again** — all 172 must pass
+8. **Build firmware** — `pio run -e SlopOS_TDeck` must succeed
+9. **Commit and push** — conventional commit messages (`feat:`, `fix:`, `docs:`, etc.)
 
 ### PR & Review Workflow
 

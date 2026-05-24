@@ -33,7 +33,7 @@ def merge_bin_action(target, source, env):
         "merge_bin",
         "-o", merged_bin,
         "--flash_mode",
-        board_config.get("build.flash_mode", "dio"),
+        "keep",  # Preserve bootloader's DIO mode — ROM requires DIO at boot
         "--flash_freq",
         "${__get_board_f_flash(__env__)}",
         "--flash_size",

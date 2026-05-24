@@ -54,6 +54,9 @@ pio test -e native_test -f test_keyboard -v
 
 # Build firmware
 pio run -e SlopOS_TDeck
+
+# Check test count (varies as tests are added)
+pio test -e native_test --list
 ```
 
 MeshCore is at `lib/meshcore/` — a git submodule. `git submodule update --init` if you cloned without `--recurse-submodules`.
@@ -224,7 +227,7 @@ slopos::mesh::getNoiseFloor()              // Current noise floor dBm
 ## Testing
 
 ```bash
-pio test -e native_test -v       # All 172 tests (no hardware)
+pio test -e native_test -v       # All tests (no hardware, ~200+)
 pio test -e native_test -f test_touch -v     # One module
 ```
 
@@ -266,7 +269,7 @@ Main + dev branch model:
 - `main` — stable releases only.
 - Tags: `beta-0.1.XX` (zero-padded for correct sort: `beta-0.1.09` not `beta-0.1.9`)
 
-**Release flow:**
+**Release flow (maintainer only):**
 1. Update `SLOPOS_VERSION` in `tdeck_pins.h`
 2. `pio run -e SlopOS_TDeck`
 3. `cp .pio/build/SlopOS_TDeck/firmware-merged.bin firmware/firmware-merged.bin`
@@ -284,36 +287,93 @@ When working on this codebase, follow this sequence:
 4. **Check the branch** — work is always on `dev`. PRs target `dev`, not `main`
 5. **Run tests first** — `pio test -e native_test` before any changes to confirm baseline
 6. **Make changes** — use the file tools (`read_file`, `patch`, `write_file`)
-7. **Run tests again** — all 172 must pass
+7. **Run tests again** — all tests must pass
 8. **Build firmware** — `pio run -e SlopOS_TDeck` must succeed
 9. **Commit and push** — conventional commit messages (`feat:`, `fix:`, `docs:`, etc.)
 
+### Code Audit Checklist
+
+Before submitting a PR (or before merging someone else's), use this checklist to catch common failure modes in embedded C++/ESP32/LVGL code. If you are an AI agent contributing code, run through this before pushing.
+
+#### Buffer Safety
+- [ ] `strncpy` — does every call manually null-terminate? (`dest[n-1] = '\0'`)
+- [ ] `snprintf` — is the buffer size correct? (including null terminator)
+- [ ] `lv_textarea_set_max_length` — is the limit ≤ buffer size - 1?
+- [ ] UTF-8 truncation — does any byte-level truncation risk splitting multi-byte characters mid-codepoint?
+- [ ] Message payloads — is null-termination unconditional (not `if (len > 1) ...`)?
+- [ ] Stack buffers — any large local arrays on stack that should be `static` or heap?
+
+#### Logic & Edge Cases
+- [ ] Hash/crypto comparisons — full `memcmp`, not single-byte prefix match
+- [ ] Rate limiting — enforced at the API layer, not just the UI
+- [ ] Overflow guards — `uint8_t` counters that wrap without resetting (e.g. `save_counter`)
+- [ ] Contact/array eviction — does a full list drop new entries silently? (LRU or TTL needed)
+- [ ] Navigation history — does a circular buffer overwrite without wrapping `pop`?
+- [ ] GPIO edge detection — falling-edge only for all directions (not LEFT on both edges)
+- [ ] Hardware init ordering — dependencies initialised before consumers (backlight before panel, LVGL tick before timer handler)
+
+#### UI / Theme Compliance
+- [ ] `apply_dark_bg()` called on every screen background
+- [ ] Colors from `theme.h` constants, not hardcoded
+- [ ] Zero radius throughout (no `border-radius`, no pill shapes)
+- [ ] Bottom bar and top bar use `make_screen_full()` or equivalent
+- [ ] No `\n` literal where real newline was intended
+
+#### Concurrency / Timing
+- [ ] `lv_obj_del` in event handler — should be `lv_obj_del_async()`
+- [ ] Auto-delete screens — `lv_scr_load_anim(..., true)` deletes all children; `LV_EVENT_DELETE` needed to null globals
+- [ ] LVGL tick starvation — any blocking operations that delay `lv_timer_handler()`?
+- [ ] `ESP.restart()` without flash write delay — SPIFFS/NVS write may not have completed
+
+#### Testing
+- [ ] Tests added or updated for every change
+- [ ] `pio test -e native_test -v` passes (all tests)
+- [ ] `pio run -e SlopOS_TDeck` builds without error
+- [ ] PlatformIO discovers test dirs correctly (`test/test_<name>/main.cpp`)
+
+#### Known Issue Detection
+- [ ] Does this PR fix a documented issue in `KNOWN_ISSUES.md`? If so, remove that section.
+- [ ] Did testing reveal new issues? If so, add them to `KNOWN_ISSUES.md`.
+- [ ] Does the PR introduce a new dependency? Check GPL-3.0 compatibility.
+- [ ] Is there any comment saying "this might break" or "temporary fix"? Investigate before merging.
+
 ### PR & Review Workflow
 
+**For reviewers (maintainer only beyond step 5):**
 1. List PRs: `gh pr list --repo hermes-gadget/SlopOS-tdeck --state open`
 2. Check diff: `gh pr diff N` or `git fetch origin pull/N/head:pr-N && git diff dev...pr-N`
 3. Build: `pio run -e SlopOS_TDeck`
-4. Test: `pio test -e native_test -v` (must pass 172/172)
-5. Review: check logic, edge cases, buffer overflow, strncpy null termination, `\n` literal bugs, missing scroll disables, dangling pointers after auto-delete
-6. Merge: `gh pr merge N --squash --delete-branch --repo hermes-gadget/SlopOS-tdeck`
-7. If merge fails (conflicts): cherry-pick new commits only, or squash-merge locally
-8. If PR branch has stale commits: cherry-pick new commits onto dev, close PR
+4. Test: `pio test -e native_test -v` (all tests must pass)
+5. Run the [Code Audit Checklist](#code-audit-checklist) — check every applicable item
+6. If the PR came from an AI agent: read the full diff for logic errors beyond what the agent self-checked. Agents miss subtle race conditions and edge-case buffer overflows.
+7. Merge: `gh pr merge N --squash --delete-branch --repo hermes-gadget/SlopOS-tdeck`
+8. If merge fails (conflicts): cherry-pick new commits only, or squash-merge locally
+9. If PR branch has stale commits: cherry-pick new commits onto dev, close PR
+10. Close the related issue with notes describing what was done
 
 ### Rejection triggers
 
 - Unconditional `Serial.printf` without `#if defined(SLOPOS_DEBUG)` guard
-- Test suite not passing
+- Test suite not passing (any single failure rejects the PR)
 - Hardcoded colors instead of theme constants
 - Missing `apply_dark_bg()` on screen backgrounds
 - `\\n` literal instead of real newline
 - Stack-local arrays used as LVGL event user_data
+- Byte-level truncation of UTF-8 text that can split multi-byte codepoints
+- Unconditional null-termination missing on short message payloads
+- `memcmp`-required comparisons using single-byte prefix checks (crypto hashes, channel IDs)
+- `uint8_t` counters that increment forever without resetting
+- Screens with unbounded widget accumulation (no cap on labels, lines, or objects)
+- `ESP.restart()` without a delay or flag for pending flash writes
+- New dependency without GPL-3.0 compatibility check
+- Commented-out code, dead code paths, or "temporary fix" markers without follow-up issue
 
 ### For Contributors
 
 - **Always branch from `dev`** — `main` is for stable releases only. PRs target `dev`.
 - **Pull regularly** — things move fast here. Before starting work: `git checkout dev && git pull origin dev`
 - **Rebase your feature branch** before opening a PR to avoid stale-commit noise: `git rebase dev`
-- **Run the full test suite** before pushing — `pio test -e native_test` must pass 172/172
+- **Run the full test suite** before pushing — `pio test -e native_test` must pass all tests
 - **Read `KNOWN_ISSUES.md`** before starting feature work to avoid duplicating effort
 - **Follow the screen conventions** in this guide — new screens need `apply_dark_bg()`, `make_screen_full()`, and consistent pixel helpers
 
@@ -340,3 +400,9 @@ When working on this codebase, follow this sequence:
 | Radio first boot | Init radio with compile-time defaults for receive. Gate TRANSMIT behind `configured == true` |
 | Wire.endTransmission | Always check return value — NACK on keyboard init means keyboard MCU is dead |
 | saveState | Call every ~5 min from UI loop. Crashes lose new contacts if not saved |
+| GPS NMEA | No checksum validation in `gps.cpp` — corrupted sentences parse as valid coordinates |
+| Terminal labels | Each command creates a new LVGL label with no pruning — cap at 64 lines |
+| Emoji truncation | Byte-level msg truncation can split 4-byte emoji, sending invalid UTF-8 over mesh |
+| SPI bus sharing | Display (SPI3_HOST, 40MHz) and SD card (HSPI=SPI3_HOST, 4MHz) share same SPI peripheral. LovyanGFX comment says "SPI2" but code uses SPI3 — fragile |
+| Debug shadow mode | `SLOPOS_TRACKBALL_DEBUG_SHADOW` drops trackball events instead of logging+forwarding |
+| Debug.h header guards | Declaration in `debug.h` is unconditional, but `debug.cpp` wraps all implementation in `#if defined(SLOPOS_DEBUG)` — latent linker risk |

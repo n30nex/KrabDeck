@@ -34,9 +34,9 @@ enum class Screen {
     Settings,
     Trace,
     Terminal,
-    Noise,
     Signal,
     RadioSetup,
+    Onboarding,
     COUNT
 };
 

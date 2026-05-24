@@ -21,6 +21,7 @@
 #include "home_screen.h"
 #include "chat_screen.h"
 #include "screens.h"
+#include "onboarding_screen.h"
 #include <lvgl.h>
 
 namespace slopos::ui {
@@ -68,9 +69,9 @@ void navigate_to(Screen screen)
     case Screen::Settings:   settings_screen_show();   break;
     case Screen::Trace:      trace_screen_show();      break;
     case Screen::Terminal:   terminal_screen_show();   break;
-    case Screen::Noise:      noise_screen_show();      break;
     case Screen::Signal:     signal_screen_show();     break;
     case Screen::RadioSetup: radio_setup_screen_show(); break;
+    case Screen::Onboarding: onboarding_screen_show(); break;
     default: break;
     }
 }
@@ -95,9 +96,9 @@ void go_back()
     case Screen::Settings:   settings_screen_show();   break;
     case Screen::Trace:      trace_screen_show();      break;
     case Screen::Terminal:   terminal_screen_show();   break;
-    case Screen::Noise:      noise_screen_show();      break;
     case Screen::Signal:     signal_screen_show();     break;
     case Screen::RadioSetup: radio_setup_screen_show(); break;
+    case Screen::Onboarding: onboarding_screen_show(); break;
     default: break;
     }
 }

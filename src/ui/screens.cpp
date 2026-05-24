@@ -524,47 +524,6 @@ void signal_screen_show()
 }
 
 // ════════════════════════════════════════════════════════
-// Noise — noise floor visualization
-// ════════════════════════════════════════════════════════
-void noise_screen_show()
-{
-    lv_obj_t* scr = make_screen_full("Noise Floor");
-
-    int noise = slopos::mesh::getNoiseFloor();
-    int rssi  = slopos::mesh::getLastRSSI();
-
-    int bar_bg_w = DISPLAY_W - 32;           // 16px margin each side
-    int bar_bg_h = bar_widget_h(33);         // ~33% of content height
-    lv_obj_t* bar_bg = lv_obj_create(scr);
-    lv_obj_set_size(bar_bg, bar_bg_w, bar_bg_h);
-    lv_obj_align(bar_bg, LV_ALIGN_CENTER, 0, -20);
-    lv_obj_set_style_bg_color(bar_bg, lv_color_hex(BG_TERTIARY), 0);
-    lv_obj_set_style_radius(bar_bg, 0, 0);
-    lv_obj_set_style_border_width(bar_bg, 0, 0);
-
-    int bar_full_w = bar_bg_w - 24;          // 12px left/right margins inside bg
-    int bar_w = map(constrain(noise, -120, -60), -120, -60, bar_full_w / 10, bar_full_w);
-    int bar_fill_h = bar_bg_h - (bar_bg_h / 4);  // 75% of bg height
-    lv_obj_t* bar_fill = lv_obj_create(bar_bg);
-    lv_obj_set_size(bar_fill, bar_w, bar_fill_h);
-    lv_obj_align(bar_fill, LV_ALIGN_LEFT_MID, 12, 0);
-    lv_obj_set_style_bg_color(bar_fill, lv_color_hex(
-        noise > -90 ? ACCENT_RED : noise > -105 ? ACCENT_ORANGE : ACCENT_GREEN), 0);
-    lv_obj_set_style_radius(bar_fill, 0, 0);
-    lv_obj_set_style_border_width(bar_fill, 0, 0);
-
-    char buf[64];
-    lv_obj_t* info = lv_label_create(scr);
-    snprintf(buf, sizeof(buf), "Noise: %d dBm   |   RSSI: %d dBm", noise, rssi);
-    lv_label_set_text(info, buf);
-    lv_obj_set_style_text_color(info, lv_color_hex(TEXT_PRIMARY), 0);
-    lv_obj_set_style_text_font(info, &lv_font_montserrat_12, 0);
-    lv_obj_align(info, LV_ALIGN_BOTTOM_MID, 0, -(BOT_BAR_H + DIVIDER_H + 8));
-
-    show_screen(scr);
-}
-
-// ════════════════════════════════════════════════════════
 // Map — offline tile maps
 // ════════════════════════════════════════════════════════
 void map_screen_show()
@@ -953,6 +912,12 @@ void settings_screen_show()
     g_time_row = btn_time;
     lv_obj_add_event_cb(btn_time, [](lv_event_t* e) {
         datetime_set_dialog(lv_obj_get_screen((lv_obj_t*)lv_event_get_target(e)), false);
+    }, LV_EVENT_CLICKED, nullptr);
+
+    // Run Setup Wizard
+    lv_obj_t* btn_wizard = add_row(LV_SYMBOL_SETTINGS, "  Run Setup Wizard");
+    lv_obj_add_event_cb(btn_wizard, [](lv_event_t*) {
+        navigate_to(Screen::Onboarding);
     }, LV_EVENT_CLICKED, nullptr);
 
     // Version

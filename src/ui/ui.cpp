@@ -26,6 +26,7 @@
 using namespace slopos::responsive;
 #include "../mesh/mesh_wrapper.h"
 #include "../hal/battery.h"
+#include "../hal/prefs.h"
 #include <Arduino.h>
 #include <lvgl.h>
 
@@ -78,11 +79,17 @@ void init()
 
 void loop()
 {
-    // Transition from splash to home after 2 seconds
+    // Transition from splash to home or onboarding after 2 seconds
     if (!home_shown && (millis() - splash_start > 2000)) {
-        home_screen_create();   // creates new screen, animates, deletes old
+        const slopos::NodePrefs& p = slopos::prefs_get();
+        // Show onboarding if: never saved prefs (fresh device) OR not yet configured
+        if (!slopos::prefs_exists() || !p.configured) {
+            navigate_to(Screen::Onboarding);
+        } else {
+            home_screen_create();
+        }
         home_shown = true;
-        splash_scr = nullptr;   // old screen already deleted by home_screen_create()
+        splash_scr = nullptr;
     }
 
     // Periodic status bar updates (every 30s)

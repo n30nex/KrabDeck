@@ -66,7 +66,7 @@ static const IconDef icons[] = {
     {"SETTINGS",  LV_SYMBOL_SETTINGS,   false, Screen::Settings},
     {"TRACE",     LV_SYMBOL_SHUFFLE,    false, Screen::Trace},
     {"TERMINAL",  LV_SYMBOL_KEYBOARD,   false, Screen::Terminal},
-    {"NOISE",     LV_SYMBOL_VOLUME_MAX, false, Screen::Noise},
+    {"SETUP",     LV_SYMBOL_SETTINGS,   false, Screen::Onboarding},
     {"SIGNAL",    LV_SYMBOL_BARS,       false, Screen::Signal},
 };
 

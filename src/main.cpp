@@ -9,6 +9,7 @@
 #include "hal/battery.h"
 #include "hal/gps.h"
 #include "hal/sdcard.h"
+#include "hal/prefs.h"
 #include "app/map_renderer.h"
 #include "mesh/mesh_wrapper.h"
 #include "ui/ui.h"
@@ -64,7 +65,10 @@ void setup()
     Serial.println("[boot] step 6: display init OK");
 #endif
 
-    slopos::mesh::setOwnName("SlopOS T-Deck");
+    {
+        const slopos::NodePrefs& p = slopos::prefs_get();
+        slopos::mesh::setOwnName(p.node_name);
+    }
     if (!slopos::mesh::init(spiffs_ok))
         Serial.println("[boot] WARNING: Radio init failed");
 #if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG

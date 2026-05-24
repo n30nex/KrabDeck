@@ -2,7 +2,9 @@
 
 **You are an AI agent working on the SlopOS T-Deck firmware.** This file is your instruction manual. Read it before modifying code.
 
-**Do not modify this file or `CLAUDE.md` in any PR.** They are AI agent context. Only the repo owner changes them. Any PR that touches `AGENTS.md` or `CLAUDE.md` will be rejected without review.
+**Do not modify this file or `AGENTS.md` in any PR.** They are AI agent context. Only the repo owner changes them. Any PR that touches `CLAUDE.md` or `AGENTS.md` will be rejected without review.
+
+**This file is a mirror of `AGENTS.md`.** Both files contain identical content. Claude Code reads `CLAUDE.md` by default; other agents should read `AGENTS.md`.
 
 ---
 
@@ -13,8 +15,8 @@ These are the reference documents you should load before starting work. Which on
 | File | When to read it | Purpose |
 |------|----------------|---------|
 | **`README.md`** | First time in the repo | Project overview, quick start, license |
-| **`AGENTS.md`** ← you are here | Every session | Agent instructions, architecture, conventions, pitfalls |
-| **`CLAUDE.md`** | Claude Code sessions | Same content — mirror of AGENTS.md |
+| **`AGENTS.md`** | Every session | Agent instructions, architecture, conventions, pitfalls |
+| **`CLAUDE.md`** ← you are here | Claude Code sessions | Same content — mirror of AGENTS.md |
 | **`CONTRIBUTING.md`** | Before ANY task or PR | **Mandatory.** Full contribution workflow, issue-first requirement, PR checklist. AI agents must follow every step. |
 | **`KNOWN_ISSUES.md`** | Before feature work | What's broken or unfinished — don't duplicate effort |
 | **`firmware/README.md`** | Releasing or CI work | Release artifact structure, web flasher manifest format |
@@ -402,7 +404,7 @@ Before submitting a PR (or before merging someone else's), use this checklist to
 | Test suite not passing | Any single failure rejects the PR |
 | Hardcoded colors instead of theme constants | Breaks the pixel theme — use `theme.h` |
 | Missing `apply_dark_bg()` on screen backgrounds | Background won't match the dark theme |
-| `\\n` literal instead of real newline | Prints literal backslash-n, not a line break |
+| `\n` literal instead of real newline | Prints literal backslash-n, not a line break |
 | Stack-local arrays used as LVGL event `user_data` | Dangling pointer on click — use `static` arrays |
 | Byte-level truncation of UTF-8 text | Can split multi-byte emoji mid-codepoint, sending invalid UTF-8 over mesh |
 | Unconditional null-termination missing on short message payloads | `strlen` reads past buffer into stack garbage |

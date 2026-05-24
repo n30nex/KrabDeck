@@ -162,6 +162,8 @@ The `make_screen_full(title)` helper in `screens.cpp` creates all of this. Use i
 
 Use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 
+| Icon | Symbol | Use on screen |
+|------|--------|-------------|
 | CHATS | `LV_SYMBOL_ENVELOPE` | Chat |
 | CONTACTS | `LV_SYMBOL_CALL` | Contacts |
 | REPEATERS | `LV_SYMBOL_WIFI` | Heard (network) |
@@ -177,23 +179,23 @@ Use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 
 ### All Screens
 
-|| # | Screen | Source | Status |
+| # | Screen | Source | Status |
 |---|--------|--------|--------|
-|| 0 | Splash | `ui.cpp` | ✅ |
-|| 1 | Home (4x3 grid) | `home_screen.cpp` | ✅ |
-|| 2 | Chat (channels + DM) | `chat_screen.cpp` | ✅ |
-|| 3 | Contacts (alphabetical, tap→DM) | `screens.cpp` | ✅ |
-|| 4 | Channels (list + create #hashtag/PSK) | `screens.cpp` | ✅ |
-|| 5 | Finder (nearby nodes) | `screens.cpp` | ✅ |
-|| 6 | Packets (raw packet log, 50 entries) | `screens.cpp` | ✅ |
-|| 7 | Map (touch pan, auto-center) | `screens.cpp` | ✅ |
-|| 8 | Advertise (broadcast presence) | `screens.cpp` | ✅ |
-|| 9 | Settings (radio, keyboard BL, date/time) | `screens.cpp` | ✅ |
-|| 10 | Trace (path discovery per contact) | `screens.cpp` | ⚠️ see KNOWN_ISSUES.md |
-|| 11 | Terminal (colored log + commands) | `screens.cpp` | ⚠️ see KNOWN_ISSUES.md |
-|| 12 | Signal (live RSSI, SNR, radio params) | `screens.cpp` | ✅ |
-|| 13 | Radio Setup (freq, SF, BW, CR, power) | `screens.cpp` | ✅ |
-|| 14 | Onboarding (wizard) | `onboarding_screen.cpp` | ✅ |
+| 0 | Splash | `ui.cpp` | ✅ |
+| 1 | Home (4x3 grid) | `home_screen.cpp` | ✅ |
+| 2 | Chat (channels + DM) | `chat_screen.cpp` | ✅ |
+| 3 | Contacts (alphabetical, tap→DM) | `screens.cpp` | ✅ |
+| 4 | Channels (list + create #hashtag/PSK) | `screens.cpp` | ✅ |
+| 5 | Finder (nearby nodes) | `screens.cpp` | ✅ |
+| 6 | Packets (raw packet log, 50 entries) | `screens.cpp` | ✅ |
+| 7 | Map (touch pan, auto-center) | `screens.cpp` | ✅ |
+| 8 | Advertise (broadcast presence) | `screens.cpp` | ✅ |
+| 9 | Settings (radio, keyboard BL, date/time) | `screens.cpp` | ✅ |
+| 10 | Trace (path discovery per contact) | `screens.cpp` | ⚠️ see KNOWN_ISSUES.md |
+| 11 | Terminal (colored log + commands) | `screens.cpp` | ⚠️ see KNOWN_ISSUES.md |
+| 12 | Signal (live RSSI, SNR, radio params) | `screens.cpp` | ✅ |
+| 13 | Radio Setup (freq, SF, BW, CR, power) | `screens.cpp` | ✅ |
+| 14 | Onboarding (wizard) | `onboarding_screen.cpp` | ✅ |
 
 ---
 
@@ -353,29 +355,33 @@ Before submitting a PR (or before merging someone else's), use this checklist to
 
 ### Rejection triggers
 
-- Unconditional `Serial.printf` without `#if defined(SLOPOS_DEBUG)` guard
-- Test suite not passing (any single failure rejects the PR)
-- Hardcoded colors instead of theme constants
-- Missing `apply_dark_bg()` on screen backgrounds
-- `\\n` literal instead of real newline
-- Stack-local arrays used as LVGL event user_data
-- Byte-level truncation of UTF-8 text that can split multi-byte codepoints
-- Unconditional null-termination missing on short message payloads
-- `memcmp`-required comparisons using single-byte prefix checks (crypto hashes, channel IDs)
-- `uint8_t` counters that increment forever without resetting
-- Screens with unbounded widget accumulation (no cap on labels, lines, or objects)
-- `ESP.restart()` without a delay or flag for pending flash writes
-- New dependency without GPL-3.0 compatibility check
-- Commented-out code, dead code paths, or "temporary fix" markers without follow-up issue
+| Trigger | Why |
+|---------|-----|
+| Unconditional `Serial.printf` without `#if defined(SLOPOS_DEBUG)` guard | Leaks debug output to production builds |
+| Test suite not passing | Any single failure rejects the PR |
+| Hardcoded colors instead of theme constants | Breaks the pixel theme — use `theme.h` |
+| Missing `apply_dark_bg()` on screen backgrounds | Background won't match the dark theme |
+| `\\n` literal instead of real newline | Prints literal backslash-n, not a line break |
+| Stack-local arrays used as LVGL event `user_data` | Dangling pointer on click — use `static` arrays |
+| Byte-level truncation of UTF-8 text | Can split multi-byte emoji mid-codepoint, sending invalid UTF-8 over mesh |
+| Unconditional null-termination missing on short message payloads | `strlen` reads past buffer into stack garbage |
+| `memcmp`-required comparisons using single-byte prefix | ~11% collision rate on 8-channel hash — wrong decryption keys selected |
+| `uint8_t` counters that increment forever without resetting | Save counter wraps after 255 iterations, stopping persistence for ~2 hours |
+| Screens with unbounded widget accumulation | Thousands of orphan LVGL labels leak heap — cap at 64 |
+| `ESP.restart()` without delay for pending flash writes | SPIFFS/NVS save may be lost on reboot |
+| New dependency without GPL-3.0 compatibility check | License incompatibility blocks the entire project |
+| Commented-out code, dead code paths, or "temporary fix" markers | Unmaintainable — no such thing as permanent temporary code |
 
 ### For Contributors
 
-- **Always branch from `dev`** — `main` is for stable releases only. PRs target `dev`.
-- **Pull regularly** — things move fast here. Before starting work: `git checkout dev && git pull origin dev`
-- **Rebase your feature branch** before opening a PR to avoid stale-commit noise: `git rebase dev`
-- **Run the full test suite** before pushing — `pio test -e native_test` must pass all tests
-- **Read `KNOWN_ISSUES.md`** before starting feature work to avoid duplicating effort
-- **Follow the screen conventions** in this guide — new screens need `apply_dark_bg()`, `make_screen_full()`, and consistent pixel helpers
+| Rule | Detail |
+|------|--------|
+| **Branch from `dev`** | `main` is for stable releases only. PRs target `dev`. |
+| **Pull regularly** | Before starting work: `git checkout dev && git pull origin dev` |
+| **Rebase your feature branch** | Before opening a PR: `git rebase dev` to avoid stale-commit noise |
+| **Run the full test suite** | `pio test -e native_test` must pass all tests before pushing |
+| **Read `KNOWN_ISSUES.md`** | Before starting feature work to avoid duplicating effort |
+| **Follow screen conventions** | New screens need `apply_dark_bg()`, `make_screen_full()`, and consistent pixel helpers |
 
 ---
 

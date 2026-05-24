@@ -216,3 +216,59 @@ The home screen 4x3 grid has three tiles (REPEATERS, FINDER, HEARD) that all nav
 The onboarding screen's Done button calls `ESP.restart()` immediately after `chat_save_messages()`. If the SPIFFS write hasn't completed (due to write caching), the save data is lost after reboot.
 
 **What's needed:** Add a small delay (`delay(100)`) between the save and the restart, or set a flag for the main loop to handle the restart.
+
+---
+
+## GPS
+
+### No NMEA checksum validation
+Raw GPS NMEA sentences from the L76K module include a `*XX` checksum suffix that is never validated (`gps.cpp`). Corrupted sentences from noisy GPS reception are parsed as valid data, potentially giving incorrect coordinates, altitude, or fix status.
+
+**What's needed:** Implement NMEA checksum validation — extract the checksum from after the `*` in the sentence, compute XOR of all bytes between `$` and `*`, and compare. Discard sentences that don't match.
+
+---
+
+## Terminal
+
+### Unbounded label accumulation
+Each command in the Terminal screen creates a new LVGL label widget (`screens.cpp:1221-1227`). There is no upper bound or pruning — after hundreds of commands, thousands of label widgets accumulate in the LVGL object tree, consuming heap. Labels are only freed when the user navigates away.
+
+**What's needed:** Cap the number of visible terminal lines (e.g. 64), deleting the oldest label when the cap is reached. A `lv_obj_clean()` on the log container before adding the new line would also work but is more disruptive to the scroll state.
+
+---
+
+## Chat Screen
+
+### Emoji truncation on multi-byte codepoints
+The send path truncates message text by byte count (`chat_screen.cpp:933`), not codepoint boundary. If a 4-byte emoji (e.g. 🚀 = `\xF0\x9F\x9A\x80`) starts at byte 147 of 149, only 2 of the 4 bytes are copied, producing invalid UTF-8 which is then transmitted over the mesh.
+
+**What's needed:** Replace byte-level truncation with codepoint-aware truncation — walk backward from the limit to ensure the last character boundary is valid, or reduce the max byte count to account for multi-byte trailing characters.
+
+---
+
+## Mesh Networking
+
+### Missing null-termination on short non-text payloads
+In `slop_mesh.h:93-95`, the payload text null-termination is conditional: `if (len > 1) data[len - 1] = '\0'`. For non-text payloads with `len == 1`, no null byte is written, so downstream uses of `strlen()`, `strncpy()`, or string formatting read past the buffer into uninitialized stack data.
+
+**What's needed:** Always null-terminate: `data[len - 1] = '\0';` unconditionally (see also existing entry about the same issue in `slop_mesh.h`).
+
+---
+
+## SPI / Display
+
+### Display and SD card share the same SPI host
+The display uses `SPI3_HOST` (`display.cpp:45`) and the SD card also uses `HSPI` (`sdcard.cpp:31`). On ESP32-S3, `HSPI` maps to `SPI3_HOST` — the same SPI peripheral. Both configure the same host through different driver instances (LovyanGFX internal vs Arduino SPIClass). The comment in `sdcard.cpp:29` says "LovyanGFX and RadioLib use SPI2 (FSPI)" which is incorrect — the display code clearly uses SPI3_HOST. While this works in practice because each transaction reconfigures the GPIO matrix, clock speed differences (40MHz display vs 4MHz SD) create a fragile architecture where one driver's transaction can interfere with the other's register state.
+
+**What's needed:** Either (a) move SD card to `FSPI` (`SPI2_HOST`), which is the default Arduino SPI bus and not used by the display, or (b) move the display to `SPI2_HOST` and keep SD on `SPI3`. Update the comment in `sdcard.cpp` to reflect the actual bus assignment.
+
+---
+
+## Diagnostics
+
+### Debug mode issues
+When `SLOPOS_TRACKBALL_DEBUG_SHADOW` is defined (`trackball.cpp:91-93`), the debug print fires but the event is short-circuited — all trackball input is silently dropped during shadow debugging.
+
+The `debug.h` header declares functions unconditionally, but `debug.cpp` wraps all implementation in `#if defined(SLOPOS_DEBUG)`. Any non-debug code that calls a debug function will get a linker error. Current call sites are properly guarded, but this is a latent risk for future code.
+
+**What's needed:** Fix the shadow debug mode so it logs events but still queues them. Wrap debug.h declarations in the same `#if defined(SLOPOS_DEBUG)` guard, or provide empty inline stubs.

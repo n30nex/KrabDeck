@@ -85,6 +85,10 @@ tolerated.
 
 Once the PR is merged, the maintainer closes the original issue with notes describing what was done and the outcome. This keeps the issue tracker clean and provides a record of the fix or feature for future reference.
 
+### Who Can Merge
+
+Only the repository maintainers (Ben and the Hermes agent) have merge access. Pull request authors and other contributors cannot merge their own PRs. This ensures every merge goes through review by someone familiar with the full codebase.
+
 ### Merging
 
 Pull requests are merged via `gh pr merge --squash --delete-branch`. Squash merging keeps the commit history on `dev` clean — each PR becomes one atomic commit. Feature branches are deleted after merge.

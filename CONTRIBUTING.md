@@ -108,6 +108,17 @@ For any non-trivial change (anything beyond a typo, comment, or obvious one-line
 - If you change public API or UI, update relevant documentation.
 - New screens or features should include LVGL integration tests.
 
+### Protected Files
+
+The following files require separate PRs and cannot be bundled with feature or bug fix PRs. Any PR touching these files will require CODEOWNER review and approval:
+
+- `AGENTS.md`, `CLAUDE.md` — AI agent context
+- `CONTRIBUTING.md` — contribution guidelines
+- `KNOWN_ISSUES.md` — known issues tracker
+- `.github/workflows/*` — CI/CD pipeline
+
+If you need to change one of these, open a dedicated PR with only that change. Do not bury protected file changes inside a larger feature PR — they will be rejected.
+
 ## Development Workflow
 
 ```

@@ -90,12 +90,15 @@ src/
 │   ├── navigation.cpp/h   # Screen routing with slide transitions
 │   └── ui.cpp/h           # Splash→Home transition
 ├── app/
-│   └── map_renderer.cpp/h # Offline map (SD card tiles, PNG/JPEG decode, PSRAM canvas)
+│   ├── map_renderer.cpp/h # Offline map (PNG tiles via lodepng, PSRAM cache)
+│   └── lodepng_alloc.cpp  # lodepng allocator → PSRAM with DRAM fallback
 ├── diagnostics/
 │   └── debug.cpp/h        # Debug dumps (SLOPOS_DEBUG=1 build)
 ├── fonts/
 │   └── emoji_font_setup.cpp/h  # Emoji font fallback for LVGL
-└── lib/meshcore/          # Git submodule → MeshCore (at repo root)
+└── lib/
+    ├── meshcore/            # Git submodule → MeshCore (at repo root)
+    └── lodepng/             # PNG decode library (zlib license, PSRAM allocators)
 ```
 
 ---
@@ -114,9 +117,9 @@ src/
 | **Peripheral Power** | GPIO 10 | HIGH = peripherals on |
 | **GPS** | UART (Serial1) | RX=43, TX=44, baud 38400 |
 | **Buzzer** | GPIO 46 | Active low |
-| **SD Card** | SPI (shared bus) | CS=21, shares SCK(40)/MOSI(41)/MISO(38) with LoRa/display. Mounted at `/sdcard` via FATFS VFS. |
+| **SD Card** | SPI (shared bus) | CS=39, shares SCK(40)/MOSI(41)/MISO(38) with LoRa/display. VFS at `/sdcard` via SPI+FATFS. T-Deck v1.0 uses CS=21; if your board has no SD detect, try pin 21. |
 
-**Shared SPI bus:** Display, LoRa, and microSD all share SCK(40)/MOSI(41)/MISO(38) with different CS lines (display=12, LoRa=9, SD=21). SPI must be initialized once, not re-begun.
+**Shared SPI bus:** Display, LoRa, and microSD all share SCK(40)/MOSI(41)/MISO(38) with different CS lines (display=12, LoRa=9, SD=39). SPI is initialized separately per device from their respective drivers — no single `SPI.begin()` call covers all three.
 
 ---
 
@@ -180,7 +183,7 @@ Use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 || 4 | Channels (list + create #hashtag/PSK) | `screens.cpp` | ✅ |
 || 5 | Network (nodes seen in last 2 min) | `screens.cpp` | ✅ |
 || 6 | Packets (raw packet log, 50 entries) | `screens.cpp` | ✅ |
-|| 7 | Map (touch pan, SD tiles) | `screens.cpp` | ⚠️ see KNOWN_ISSUES.md |
+|| 7 | Map (touch pan, auto-center) | `screens.cpp` | ✅ |
 || 8 | Advertise (broadcast presence) | `screens.cpp` | ✅ |
 || 9 | Settings (radio, keyboard BL, date/time) | `screens.cpp` | ✅ |
 || 10 | Trace (path discovery per contact) | `screens.cpp` | ⚠️ see KNOWN_ISSUES.md |

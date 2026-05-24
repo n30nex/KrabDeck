@@ -66,26 +66,20 @@ The Heard screen has been replaced with a raw packet log ("Packets" on the home 
 
 ---
 
-## Map Screen
+## Map Screen — ✅ Fixed
 
-### Insufficient testing
-The offline tile map feature hasn't been thoroughly tested in the field. Known unknowns:
-
-- SD card detection and mount reliability across different card brands/formats
-- Tile downloader script compatibility with different tile sources
-- Pan/zoom performance with large tile sets on the ESP32-S3 PSRAM canvas
-- LRU cache eviction behavior when the tile cache exceeds available PSRAM
-- GPS pin integration with map centering
-
-**What's needed:** Field testing with various SD cards, tile sets, and GPS conditions. A test script for the tile downloader would also help contributors validate their tile packs before putting them on the SD card.
-
-### Standardized map tile paths
-SlopOS should use the same tile directory structure as Ripple firmware so tiles downloaded for one firmware work on the other without re-downloading.
-
-Ripple's convention:
-- **SD card path:** `\tiles` folder at the root of the SD card
-
-**What's needed:** Ensure SlopOS reads map tiles from `/tiles` on the SD card (same path as Ripple). Document the expected folder structure and zoom level naming in the map renderer so users can drop in tiles from either source.
+### Rendered offline map tiles from SD
+PR #42 (gadgethd) implemented the full offline map tile system:
+- PNG tile decode via lodepng with PSRAM-backed cache (4 tiles, ~524KB)
+- Ripple-compatible `/tiles/{z}/{x}/{y}.png` path structure (same as Ripple firmware)
+- Auto-discovery of tile coverage via SD directory scan
+- Auto-center on available tile set
+- `clamp_view_to_coverage()` keeps pan/zoom within available tiles
+- Direct canvas pixel copy for performance, 200ms rate-limited render
+- PSRAM-first allocator for all tile/canvas buffers
+- Deferred initial render (250ms) to avoid blocking screen transition
+- Extended map touch events for drag pan
+- Hardware tested on LilyGo T-Deck with z10-z14 tile set
 
 ---
 

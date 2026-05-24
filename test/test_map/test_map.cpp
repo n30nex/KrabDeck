@@ -73,7 +73,7 @@ bool tile_valid(int z, int x, int y) {
 
 // ── Tile path on SD card ──────────────────────────────────
 void tile_to_path(int z, int x, int y, char* buf, size_t buf_sz) {
-    snprintf(buf, buf_sz, "/maps/%d/%d/%d.png", z, x, y);
+    snprintf(buf, buf_sz, "/sdcard/tiles/%d/%d/%d.png", z, x, y);
 }
 
 // ── LVGL canvas math (simplified) ─────────────────────────
@@ -199,7 +199,7 @@ TEST_F(MapTest, TileInvalidOutOfRange) {
 TEST_F(MapTest, TilePathFormat) {
     char buf[64];
     tile_to_path(10, 512, 340, buf, sizeof(buf));
-    EXPECT_STREQ(buf, "/maps/10/512/340.png");
+    EXPECT_STREQ(buf, "/sdcard/tiles/10/512/340.png");
 }
 
 // ── Viewport pan limits ───────────────────────────────────

@@ -163,10 +163,10 @@ TEST_F(SDCardTest, FormatZero) {
 
 // ── Map tile path convention ──────────────────────────────
 TEST_F(SDCardTest, MapTilePathConvention) {
-    // Offline maps expect /maps/<name>.mbtiles or /maps/z/x/y.png
-    EXPECT_TRUE(sd_is_valid_path("/maps/hertford.mbtiles"));
-    EXPECT_TRUE(sd_is_valid_path("/maps/10/512/340.png"));
-    EXPECT_TRUE(sd_is_valid_path("/maps/raster_tiles/5/16/10.jpg"));
+    // Offline raster maps use a Ripple-compatible /tiles/z/x/y.png tree.
+    EXPECT_TRUE(sd_is_valid_path("/sdcard/tiles/10/512/340.png"));
+    EXPECT_TRUE(sd_is_valid_path("/sdcard/tiles/14/8137/5290.png"));
+    EXPECT_TRUE(sd_is_valid_path("/sdcard/tiles/metadata.json"));
 }
 
 } // anonymous namespace

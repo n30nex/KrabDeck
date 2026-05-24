@@ -20,9 +20,15 @@
 #include "sdcard.h"
 #include "tdeck_pins.h"
 #include <Arduino.h>
+#include <SPI.h>
 #include <SD.h>
 #include <cstdio>
 #include <cstring>
+
+// T-Deck SD card uses SPI on the shared LoRa/display bus (GPIO40/38/41).
+// HSPI (SPI3) is used here; LovyanGFX and RadioLib use SPI2 (FSPI) directly,
+// so this bus handle is separate from the display/radio driver instances.
+static SPIClass sd_spi(HSPI);
 
 static bool mounted = false;
 static uint64_t capacity_bytes = 0;
@@ -30,24 +36,20 @@ static uint64_t free_bytes = 0;
 
 bool slopos_sdcard_init()
 {
-    // SPI bus is shared with LoRa and display — already initialized
-    // by mesh_wrapper during radio init. Just init the SD card.
-    if (!SD.begin(PIN_SD_CS)) {
-        mounted = false;
-        return false;
+    sd_spi.begin(PIN_LORA_SCLK, PIN_LORA_MISO, PIN_LORA_MOSI, PIN_SD_CS);
+
+    for (int attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) delay(500);
+        if (SD.begin(PIN_SD_CS, sd_spi, 4000000, SLOPOS_SD_MOUNTPOINT)) {
+            capacity_bytes = (uint64_t)SD.totalBytes();
+            free_bytes     = (uint64_t)(SD.totalBytes() - SD.usedBytes());
+            mounted = true;
+            return true;
+        }
     }
 
-    uint8_t cardType = SD.cardType();
-    if (cardType == CARD_NONE) {
-        mounted = false;
-        return false;
-    }
-
-    capacity_bytes = (uint64_t)SD.cardSize();
-    free_bytes = (uint64_t)(SD.totalBytes() - SD.usedBytes());
-
-    mounted = true;
-    return true;
+    mounted = false;
+    return false;
 }
 
 bool slopos_sdcard_mounted()

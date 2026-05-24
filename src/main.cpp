@@ -48,16 +48,6 @@ void setup()
     Serial.println("[boot] step 4: GPS init done");
 #endif
 
-    if (!slopos_sdcard_init()) {
-#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
-        Serial.println("[boot] step 5: no SD card detected");
-#endif
-    } else {
-#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
-        Serial.println("[boot] step 5: SD card mounted");
-#endif
-    }
-
     if (!slopos_display_init()) {
         Serial.println("[boot] FATAL: Display init failed");
         while (1) delay(1000);
@@ -84,8 +74,18 @@ void setup()
     Serial.println("[boot] step 9: debug diagnostics enabled");
 #endif
 
-    if (slopos_sdcard_mounted())
-        slopos_map_init();
+    // SD card init after radio init so SPI bus is already configured
+    if (!slopos_sdcard_init()) {
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
+        Serial.println("[boot] step 10: no SD card detected");
+#endif
+    } else {
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
+        Serial.println("[boot] step 10: SD card mounted");
+#endif
+    }
+
+    slopos_map_init();
 
 #if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
     Serial.println("[boot] === SlopOS T-Deck ready ===");

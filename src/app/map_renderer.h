@@ -19,6 +19,7 @@
 // along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <cstdint>
+#include <cstddef>
 #include <lvgl.h>
 
 // Initialize the map renderer with LVGL parent object

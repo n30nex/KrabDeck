@@ -21,6 +21,9 @@
 #include <cstdint>
 #include <cstddef>
 
+// VFS mountpoint — use this prefix for POSIX file I/O on the SD card
+#define SLOPOS_SD_MOUNTPOINT "/sdcard"
+
 // Initialize SD card over SPI
 // Returns true if card detected and mounted
 bool slopos_sdcard_init();

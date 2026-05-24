@@ -20,15 +20,18 @@
 #include "map_renderer.h"
 #include "../hal/tdeck_pins.h"
 #include "../hal/sdcard.h"
+#include <Arduino.h>
 #include <lvgl.h>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <SD.h>
+#include <dirent.h>
+#include <cstdarg>
+#include <strings.h>
+#include <lodepng.h>
+#include <esp_heap_caps.h>
 
-#ifdef ESP32_PLATFORM
-#include <esp32/rom/tjpgd.h>
-#endif
+extern void lodepng_free(void* ptr);
 
 // ── Constants ─────────────────────────────────────────────
 static constexpr int TILE_SIZE    = 256;   // standard tile size (pixels)
@@ -48,10 +51,31 @@ static double center_lon = -0.1278;
 static int    zoom_level = 10;
 static bool   initialized = false;
 
-// ── JPEG tile decode buffer (PSRAM on ESP32) ──────────────
-static uint16_t* tile_rgb565 = nullptr;  // 256×256×2 = 131KB
-static uint8_t*  jpeg_inbuf  = nullptr;  // input buffer (~32KB typical JPEG)
-static JDEC       jdec;
+struct TileCoverage {
+    bool valid;
+    int min_x;
+    int max_x;
+    int min_y;
+    int max_y;
+    int sample_x;
+    int sample_y;
+};
+
+static TileCoverage tile_coverage[MAX_ZOOM + 1];
+static int min_available_zoom = MIN_ZOOM;
+static int max_available_zoom = MAX_ZOOM;
+static bool have_tile_coverage = false;
+#if defined(SLOPOS_DEBUG) || defined(SLOPOS_MAP_DEBUG)
+#define SLOPOS_MAP_DIAGNOSTICS 1
+#define MAP_DEBUG_PRINTF(...) Serial.printf(__VA_ARGS__)
+#define MAP_DEBUG_PRINTLN(msg) Serial.println(msg)
+#else
+#define SLOPOS_MAP_DIAGNOSTICS 0
+#define MAP_DEBUG_PRINTF(...) do {} while (0)
+#define MAP_DEBUG_PRINTLN(msg) do {} while (0)
+#endif
+
+
 
 // ── Web Mercator helpers ──────────────────────────────────
 static double lon_to_tile_x(double lon, int z) {
@@ -87,39 +111,89 @@ static double clamp_d(double val, double lo, double hi) {
     return val;
 }
 
-// ── JPEG decode helpers (TJpgDec callbacks) ───────────────
+static void* map_alloc(size_t size) {
+    void* p = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!p) p = heap_caps_malloc(size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    return p;
+}
 
-struct JpegInputCtx {
-    File file;
-    size_t total;
-};
+static void map_free(void* p) {
+    heap_caps_free(p);
+}
 
-static UINT jpeg_input_func(JDEC* jd, BYTE* buf, UINT nbytes) {
-    JpegInputCtx* ctx = (JpegInputCtx*)jd->device;
-    if (!ctx || !ctx->file) return 0;
-    if (buf) {
-        return (UINT)ctx->file.read(buf, nbytes);
+#if SLOPOS_MAP_DIAGNOSTICS
+static void appendf(char* out, size_t out_sz, size_t* pos, const char* fmt, ...) {
+    if (!out || out_sz == 0 || !pos || *pos >= out_sz) return;
+
+    va_list args;
+    va_start(args, fmt);
+    int written = vsnprintf(out + *pos, out_sz - *pos, fmt, args);
+    va_end(args);
+
+    if (written < 0) return;
+    size_t n = (size_t)written;
+    if (n >= out_sz - *pos) {
+        *pos = out_sz - 1;
+        out[*pos] = '\0';
     } else {
-        // Seek: skip nbytes
-        ctx->file.seek(ctx->file.position() + nbytes);
-        return nbytes;
+        *pos += n;
     }
 }
 
-static UINT jpeg_output_func(JDEC* jd, void* bitmap, JRECT* rect) {
-    uint16_t* src = (uint16_t*)bitmap;
-    uint16_t* dst = tile_rgb565;
-    // Bounds-check: reject rects outside the 256×256 tile buffer
-    if (rect->left < 0 || rect->top < 0 ||
-        rect->right >= TILE_SIZE || rect->bottom >= TILE_SIZE) {
-        return 0;  // abort decode — malformed JPEG
+static char last_tile_status[128] = "load:not tried";
+
+static void set_tile_status(const char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(last_tile_status, sizeof(last_tile_status), fmt, args);
+    va_end(args);
+}
+#else
+static void set_tile_status(const char*, ...) {}
+#endif
+
+static void reset_tile_coverage() {
+    for (int i = MIN_ZOOM; i <= MAX_ZOOM; i++) {
+        tile_coverage[i] = {false, 0, 0, 0, 0, 0, 0};
     }
-    for (int y = rect->top; y <= rect->bottom; y++) {
-        for (int x = rect->left; x <= rect->right; x++) {
-            dst[y * TILE_SIZE + x] = *src++;
-        }
+    min_available_zoom = MIN_ZOOM;
+    max_available_zoom = MAX_ZOOM;
+    have_tile_coverage = false;
+}
+
+static void clamp_view_to_coverage() {
+    if (!have_tile_coverage) return;
+
+    zoom_level = clamp(zoom_level, min_available_zoom, max_available_zoom);
+    const TileCoverage& c = tile_coverage[zoom_level];
+    if (!c.valid) return;
+
+    double tx = lon_to_tile_x(center_lon, zoom_level);
+    double ty = lat_to_tile_y(center_lat, zoom_level);
+
+    double half_w_tiles = (TFT_WIDTH / 2.0) / TILE_SIZE;
+    double half_h_tiles = (TFT_HEIGHT / 2.0) / TILE_SIZE;
+    double min_tx = c.min_x + half_w_tiles;
+    double max_tx = c.max_x + 1.0 - half_w_tiles;
+    double min_ty = c.min_y + half_h_tiles;
+    double max_ty = c.max_y + 1.0 - half_h_tiles;
+
+    if (min_tx > max_tx) {
+        tx = (c.min_x + c.max_x + 1.0) / 2.0;
+    } else {
+        tx = clamp_d(tx, min_tx, max_tx);
     }
-    return 1;
+
+    if (min_ty > max_ty) {
+        ty = (c.min_y + c.max_y + 1.0) / 2.0;
+    } else {
+        ty = clamp_d(ty, min_ty, max_ty);
+    }
+
+    center_lon = tile_x_to_lon(tx, zoom_level);
+    center_lat = tile_y_to_lat(ty, zoom_level);
+    center_lat = clamp_d(center_lat, MIN_LAT, MAX_LAT);
+    center_lon = clamp_d(center_lon, MIN_LON, MAX_LON);
 }
 
 // ── Tile cache (LRU, 4 tiles = ~524KB PSRAM) ─────────────
@@ -151,99 +225,107 @@ static CachedTile* cache_evict_slot() {
         if (!tile_cache[i].pixels) return &tile_cache[i];
         if (tile_cache[i].last_used < tile_cache[lru].last_used) lru = i;
     }
-    lv_free(tile_cache[lru].pixels);
+    map_free(tile_cache[lru].pixels);
     tile_cache[lru].pixels = nullptr;
     return &tile_cache[lru];
 }
 
-// ── Tile loading ──────────────────────────────────────────
+// ── Tile loading (PNG) ─────────────────────────────────────
 
-static bool load_tile_jpeg(int zoom, int tx, int ty) {
-    // Check cache first
-    if (cache_lookup(zoom, tx, ty)) return true;
+static bool load_tile(int zoom, int tx, int ty) {
+    if (cache_lookup(zoom, tx, ty)) {
+        set_tile_status("load:cache %d/%d/%d", zoom, tx, ty);
+        return true;
+    }
 
-    // Allocate a cache slot
     CachedTile* slot = cache_evict_slot();
-    if (!slot) return false;
+    if (!slot) {
+        set_tile_status("load:no slot");
+        return false;
+    }
 
-    slot->pixels = (uint16_t*)lv_malloc(TILE_SIZE * TILE_SIZE * 2);
-    if (!slot->pixels) return false;
+    slot->pixels = (uint16_t*)map_alloc(TILE_SIZE * TILE_SIZE * 2);
+    if (!slot->pixels) {
+        set_tile_status("load:no tile buf");
+        return false;
+    }
 
-    // Point tile_rgb565 at the cache buffer for the JPEG decoder callbacks
-    uint16_t* saved_rgb565 = tile_rgb565;
-    tile_rgb565 = slot->pixels;
-
-    // Try .jpg first
     char path[64];
-    snprintf(path, sizeof(path), "/tiles/%d/%d/%d.jpg", zoom, tx, ty);
+    snprintf(path, sizeof(path), SLOPOS_SD_MOUNTPOINT "/tiles/%d/%d/%d.png", zoom, tx, ty);
 
-    if (!SD.exists(path)) {
-        snprintf(path, sizeof(path), "/tiles/%d/%d/%d.jpeg", zoom, tx, ty);
-        if (!SD.exists(path)) {
-            lv_free(slot->pixels);
-            slot->pixels = nullptr;
-            tile_rgb565 = saved_rgb565;
-            return false;
+    FILE* f = fopen(path, "rb");
+    if (!f) {
+        MAP_DEBUG_PRINTF("[map] tile miss: %s\n", path);
+        set_tile_status("load:fopen fail %d/%d/%d", zoom, tx, ty);
+        map_free(slot->pixels); slot->pixels = nullptr; return false;
+    }
+    MAP_DEBUG_PRINTF("[map] tile hit: %s\n", path);
+
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (fsize <= 0 || fsize > 196 * 1024) {
+        set_tile_status("load:size %ld %d/%d/%d", fsize, zoom, tx, ty);
+        fclose(f); map_free(slot->pixels); slot->pixels = nullptr; return false;
+    }
+
+    uint8_t* png_buf = (uint8_t*)map_alloc((size_t)fsize);
+    if (!png_buf) {
+        set_tile_status("load:no png buf %ld", fsize);
+        fclose(f); map_free(slot->pixels); slot->pixels = nullptr; return false;
+    }
+
+    if (fread(png_buf, 1, (size_t)fsize, f) != (size_t)fsize) {
+        set_tile_status("load:read fail %ld", fsize);
+        fclose(f); map_free(png_buf); map_free(slot->pixels); slot->pixels = nullptr; return false;
+    }
+    fclose(f);
+
+    unsigned w, h;
+    uint8_t* rgba = nullptr;
+    unsigned err = lodepng_decode_memory(&rgba, &w, &h, png_buf, (size_t)fsize, LCT_RGBA, 8);
+    map_free(png_buf);
+
+    if (err != 0 || w != TILE_SIZE || h != TILE_SIZE) {
+        set_tile_status("load:png err %u %ux%u", err, w, h);
+        lodepng_free(rgba); map_free(slot->pixels); slot->pixels = nullptr; return false;
+    }
+
+    for (int y = 0; y < TILE_SIZE; y++) {
+        for (int x = 0; x < TILE_SIZE; x++) {
+            int i = (y * TILE_SIZE + x) * 4;
+            uint16_t r = rgba[i] >> 3;
+            uint16_t g = rgba[i + 1] >> 2;
+            uint16_t b = rgba[i + 2] >> 3;
+            slot->pixels[y * TILE_SIZE + x] = (r << 11) | (g << 5) | b;
         }
     }
 
-    JpegInputCtx ctx;
-    ctx.file = SD.open(path, FILE_READ);
-    if (!ctx.file) {
-        lv_free(slot->pixels);
-        slot->pixels = nullptr;
-        tile_rgb565 = saved_rgb565;
-        return false;
-    }
-    ctx.total = ctx.file.size();
-
-    JRESULT rc = jd_prepare(&jdec, jpeg_input_func, jpeg_inbuf, 4096, &ctx);
-    if (rc != JDR_OK) {
-        ctx.file.close();
-        lv_free(slot->pixels);
-        slot->pixels = nullptr;
-        tile_rgb565 = saved_rgb565;
-        return false;
-    }
-
-    // Reject JPEGs larger than tile dimensions (malformed map tiles)
-    if (jdec.width > TILE_SIZE || jdec.height > TILE_SIZE) {
-        ctx.file.close();
-        lv_free(slot->pixels);
-        slot->pixels = nullptr;
-        tile_rgb565 = saved_rgb565;
-        return false;
-    }
-
-    rc = jd_decomp(&jdec, jpeg_output_func, 0);
-    ctx.file.close();
-    tile_rgb565 = saved_rgb565;
-
-    if (rc != JDR_OK) {
-        lv_free(slot->pixels);
-        slot->pixels = nullptr;
-        return false;
-    }
+    lodepng_free(rgba);
 
     slot->zoom = zoom;
     slot->tx = tx;
     slot->ty = ty;
     slot->last_used = ++cache_clock;
+    set_tile_status("load:ok %d/%d/%d %ldB", zoom, tx, ty, fsize);
     return true;
 }
 
-// ── Draw tile to LVGL layer ───────────────────────────────
+// ── Draw tile to canvas buffer ─────────────────────────────
 
-static void draw_tile_from_cache(lv_layer_t* layer, CachedTile* tile,
-                                  int screen_x, int screen_y,
-                                  int src_x, int src_y, int src_w, int src_h) {
-    if (!tile || !tile->pixels) return;
+static void draw_tile_from_cache(CachedTile* tile, int screen_x, int screen_y) {
+    if (!tile || !tile->pixels || !canvas_pixels) return;
 
     // Clamp to screen bounds
     int x1 = screen_x;
     int y1 = screen_y;
     int x2 = screen_x + TILE_SIZE - 1;
     int y2 = screen_y + TILE_SIZE - 1;
+    int src_x = 0;
+    int src_y = 0;
+    int src_w = TILE_SIZE;
+    int src_h = TILE_SIZE;
 
     if (x1 < 0) { src_x -= x1; src_w += x1; x1 = 0; }
     if (y1 < 0) { src_y -= y1; src_h += y1; y1 = 0; }
@@ -253,62 +335,238 @@ static void draw_tile_from_cache(lv_layer_t* layer, CachedTile* tile,
     if (src_x < 0) src_x = 0;
     if (src_y < 0) src_y = 0;
 
-    // Create image buffer for the visible portion
-    size_t px_count = (size_t)src_w * src_h;
-    size_t buf_size = px_count * 2;
-    uint16_t* img_buf = (uint16_t*)lv_malloc(buf_size);
-    if (!img_buf) return;
-
-    int idx = 0;
-    for (int y = src_y; y < src_y + src_h; y++) {
-        for (int x = src_x; x < src_x + src_w; x++) {
-            img_buf[idx++] = tile->pixels[y * TILE_SIZE + x];
-        }
+    uint16_t* dst = (uint16_t*)canvas_pixels;
+    for (int row = 0; row < src_h; row++) {
+        uint16_t* dst_row = dst + (size_t)(y1 + row) * TFT_WIDTH + x1;
+        const uint16_t* src_row = tile->pixels + (size_t)(src_y + row) * TILE_SIZE + src_x;
+        memcpy(dst_row, src_row, (size_t)src_w * sizeof(uint16_t));
     }
-
-    lv_draw_image_dsc_t img_dsc;
-    lv_draw_image_dsc_init(&img_dsc);
-    img_dsc.opa = LV_OPA_COVER;
-
-    lv_area_t area;
-    area.x1 = x1; area.y1 = y1;
-    area.x2 = x2; area.y2 = y2;
-
-    lv_image_dsc_t img;
-    img.header.magic = LV_IMAGE_HEADER_MAGIC;
-    img.header.cf = LV_COLOR_FORMAT_RGB565;
-    img.header.w = (uint32_t)src_w;
-    img.header.h = (uint32_t)src_h;
-    img.header.stride = (uint32_t)(src_w * 2);
-    img.data = (const uint8_t*)img_buf;
-    img.data_size = (uint32_t)buf_size;
-
-    img_dsc.src = &img;
-    lv_draw_image(layer, &img_dsc, &area);
-    // Safe to free now — lv_draw_image on canvas layer is synchronous;
-    // pixel data is consumed by the draw call before it returns.
-    lv_free(img_buf);
 }
 
-// ── Metadata auto-center ──────────────────────────────────
+// ── Tile discovery (auto-center from SD card contents) ────
+
+static bool is_decimal_name(const char* name) {
+    if (!name || !*name) return false;
+    for (const char* p = name; *p; p++) {
+        if (*p < '0' || *p > '9') return false;
+    }
+    return true;
+}
+
+static bool entry_is_png_tile(const struct dirent* e) {
+    if (!e || e->d_name[0] == '.') return false;
+    const char* ext = strrchr(e->d_name, '.');
+    if (!ext || strcasecmp(ext, ".png") != 0) return false;
+
+    // Require a numeric y basename; "12.png" is accepted, "12@2x.png" is not.
+    size_t stem_len = (size_t)(ext - e->d_name);
+    if (stem_len == 0) return false;
+    for (size_t i = 0; i < stem_len; i++) {
+        if (e->d_name[i] < '0' || e->d_name[i] > '9') return false;
+    }
+    return true;
+}
+
+static bool scan_y_range(int zoom, int x, int* min_y, int* max_y, int* sample_y) {
+    if (!min_y || !max_y || !sample_y) return false;
+
+    char y_path[64];
+    snprintf(y_path, sizeof(y_path), SLOPOS_SD_MOUNTPOINT "/tiles/%d/%d", zoom, x);
+
+    DIR* yd = opendir(y_path);
+    if (!yd) return false;
+
+    int mn_y = -1;
+    int mx_y = -1;
+    struct dirent* ye;
+    while ((ye = readdir(yd)) != nullptr) {
+        if (!entry_is_png_tile(ye)) continue;
+        int y = atoi(ye->d_name);
+        if (mn_y < 0) {
+            mn_y = mx_y = y;
+        } else {
+            if (y < mn_y) mn_y = y;
+            if (y > mx_y) mx_y = y;
+        }
+    }
+    closedir(yd);
+
+    if (mn_y < 0) return false;
+    *min_y = mn_y;
+    *max_y = mx_y;
+
+    double mid_y = (mn_y + mx_y) / 2.0;
+    int best_y = -1;
+    double best_dist = 0.0;
+
+    yd = opendir(y_path);
+    if (!yd) return false;
+    while ((ye = readdir(yd)) != nullptr) {
+        if (!entry_is_png_tile(ye)) continue;
+        int y = atoi(ye->d_name);
+        double dist = fabs((double)y - mid_y);
+        if (best_y < 0 || dist < best_dist) {
+            best_y = y;
+            best_dist = dist;
+        }
+    }
+    closedir(yd);
+
+    if (best_y < 0) return false;
+    *sample_y = best_y;
+    return true;
+}
+
+static bool scan_zoom_coverage(int z, TileCoverage* out) {
+    if (!out) return false;
+
+    char x_path[48];
+    snprintf(x_path, sizeof(x_path), SLOPOS_SD_MOUNTPOINT "/tiles/%d", z);
+    DIR* xd = opendir(x_path);
+    if (!xd) return false;
+
+    TileCoverage c = {false, 0, 0, 0, 0, 0, 0};
+    int scanned = 0;
+    struct dirent* xe;
+    while ((xe = readdir(xd)) != nullptr) {
+        if (xe->d_name[0] == '.') continue;
+        if (!is_decimal_name(xe->d_name)) continue;
+
+        int x = atoi(xe->d_name);
+        int mn_y = -1;
+        int mx_y = -1;
+        int sample_y = -1;
+        if (!scan_y_range(z, x, &mn_y, &mx_y, &sample_y)) continue;
+
+        if (!c.valid) {
+            c.valid = true;
+            c.min_x = c.max_x = x;
+            c.min_y = mn_y;
+            c.max_y = mx_y;
+            c.sample_x = x;
+            c.sample_y = sample_y;
+        } else {
+            if (x < c.min_x) c.min_x = x;
+            if (x > c.max_x) c.max_x = x;
+            if (mn_y < c.min_y) c.min_y = mn_y;
+            if (mx_y > c.max_y) c.max_y = mx_y;
+        }
+
+        if ((++scanned % 16) == 0) delay(0);
+    }
+    closedir(xd);
+
+    if (!c.valid) return false;
+
+    double mid_x = (c.min_x + c.max_x) / 2.0;
+    double mid_y = (c.min_y + c.max_y) / 2.0;
+    double best_dist = 0.0;
+    bool have_sample = false;
+
+    xd = opendir(x_path);
+    if (!xd) return false;
+    while ((xe = readdir(xd)) != nullptr) {
+        if (xe->d_name[0] == '.') continue;
+        if (!is_decimal_name(xe->d_name)) continue;
+
+        int x = atoi(xe->d_name);
+        int mn_y = -1;
+        int mx_y = -1;
+        int sample_y = -1;
+        if (!scan_y_range(z, x, &mn_y, &mx_y, &sample_y)) continue;
+
+        double dist_x = (double)x - mid_x;
+        double dist_y = (double)sample_y - mid_y;
+        double dist = dist_x * dist_x + dist_y * dist_y;
+        if (!have_sample || dist < best_dist) {
+            c.sample_x = x;
+            c.sample_y = sample_y;
+            best_dist = dist;
+            have_sample = true;
+        }
+
+        if ((++scanned % 16) == 0) delay(0);
+    }
+    closedir(xd);
+
+    if (!have_sample) return false;
+    *out = c;
+    return true;
+}
+
+static void discover_tiles() {
+    if (!slopos_sdcard_mounted()) {
+        MAP_DEBUG_PRINTLN("[map] discover: SD not mounted");
+        return;
+    }
+
+    reset_tile_coverage();
+
+    const char* tiles_path = SLOPOS_SD_MOUNTPOINT "/tiles";
+    DIR* tiles_dir = opendir(tiles_path);
+    if (!tiles_dir) {
+        MAP_DEBUG_PRINTF("[map] discover: opendir(%s) failed\n", tiles_path);
+        return;
+    }
+    closedir(tiles_dir);
+
+    for (int z = MIN_ZOOM; z <= MAX_ZOOM; z++) {
+        TileCoverage c;
+        if (!scan_zoom_coverage(z, &c)) {
+            MAP_DEBUG_PRINTF("[map] discover: zoom %d has no png tiles\n", z);
+            continue;
+        }
+        tile_coverage[z] = c;
+        if (!have_tile_coverage) {
+            min_available_zoom = z;
+            max_available_zoom = z;
+            have_tile_coverage = true;
+        } else {
+            if (z < min_available_zoom) min_available_zoom = z;
+            if (z > max_available_zoom) max_available_zoom = z;
+        }
+
+        MAP_DEBUG_PRINTF("[map] discover: zoom=%d x=%d-%d y=%d-%d sample=%d/%d\n",
+                         z, c.min_x, c.max_x, c.min_y, c.max_y,
+                         c.sample_x, c.sample_y);
+    }
+
+    if (!have_tile_coverage) {
+        MAP_DEBUG_PRINTLN("[map] discover: no png tiles found");
+        return;
+    }
+
+    zoom_level = max_available_zoom;
+    const TileCoverage& c = tile_coverage[zoom_level];
+    center_lon = tile_x_to_lon((double)c.sample_x + 0.5, zoom_level);
+    center_lat = tile_y_to_lat((double)c.sample_y + 0.5, zoom_level);
+    clamp_view_to_coverage();
+
+    MAP_DEBUG_PRINTF("[map] discover: center=%.4f,%.4f zoom=%d available=%d-%d\n",
+                     center_lat, center_lon, zoom_level,
+                     min_available_zoom, max_available_zoom);
+}
+
+// ── Metadata auto-center (from metadata.json, fallback to discover) ──
 static void load_metadata() {
     if (!slopos_sdcard_mounted()) return;
 
-    File f = SD.open("/tiles/metadata.json", FILE_READ);
+    // Always discover tiles first — this correctly sets zoom_level = best_zoom
+    discover_tiles();
+
+    // If metadata.json has bounds, refine the center from those
+    FILE* f = fopen(SLOPOS_SD_MOUNTPOINT "/tiles/metadata.json", "r");
     if (!f) return;
-
     char buf[512];
-    int len = f.read((uint8_t*)buf, sizeof(buf) - 1);
-    f.close();
-    if (len <= 0) return;
+    size_t len = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    if (len == 0) return;
     buf[len] = '\0';
-
     const char* p = strstr(buf, "\"bounds\"");
     if (!p) return;
     p = strchr(p, '[');
     if (!p) return;
     p++;
-
     double bounds[4];
     int n = 0;
     while (n < 4 && *p) {
@@ -319,19 +577,12 @@ static void load_metadata() {
         p = end;
         n++;
     }
-
     if (n >= 4) {
-        center_lat = (bounds[1] + bounds[3]) / 2.0;  // south + north
-        center_lon = (bounds[0] + bounds[2]) / 2.0;  // west + east
-        // Pick zoom that shows full region width (east-west extent)
-        double lon_span = bounds[2] - bounds[0];  // east - west degrees
-        for (int z = MAX_ZOOM; z >= MIN_ZOOM; z--) {
-            double tile_span = lon_span / 360.0 * (1 << z);
-            if (tile_span * TILE_SIZE <= TFT_WIDTH * 0.8) {
-                zoom_level = z;
-                break;
-            }
-        }
+        center_lat = (bounds[1] + bounds[3]) / 2.0;
+        center_lon = (bounds[0] + bounds[2]) / 2.0;
+        clamp_view_to_coverage();
+        MAP_DEBUG_PRINTF("[map] metadata: center overridden to %.4f,%.4f\n",
+                         center_lat, center_lon);
     }
 }
 
@@ -342,72 +593,56 @@ static void load_metadata() {
 void slopos_map_init() {
     if (initialized) return;
 
-    // Create canvas without parent — reparented when map screen is shown.
-    // Using lv_scr_act() would attach to the splash screen, which is
-    // destroyed 2s later by home_screen_create(), leaving a dangling pointer.
-    map_canvas = lv_canvas_create(nullptr);
-    lv_obj_set_size(map_canvas, TFT_WIDTH, TFT_HEIGHT);
-    lv_obj_align(map_canvas, LV_ALIGN_CENTER, 0, 0);
-
-    // Allocate draw buffer (320×240×2 = 153KB for RGB565)
+    // Allocate draw buffer (320×240×2 = 153KB for RGB565).
+    // DRAM first: LVGL canvas draw ops require CPU/DMA-accessible memory.
     size_t buf_size = (size_t)TFT_WIDTH * TFT_HEIGHT * 2;
-    canvas_pixels = (uint8_t*)lv_malloc(buf_size);
+    canvas_pixels = (uint8_t*)heap_caps_malloc(buf_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!canvas_pixels) {
-        Serial.println("[map] ERROR: Failed to alloc canvas buffer");
-        lv_obj_del(map_canvas);
-        map_canvas = nullptr;
-        initialized = false;
-        return;
+        canvas_pixels = (uint8_t*)heap_caps_malloc(buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     }
-    lv_canvas_set_buffer(map_canvas, canvas_pixels,
-                         TFT_WIDTH, TFT_HEIGHT, LV_COLOR_FORMAT_RGB565);
+    if (!canvas_pixels) return;
 
-    // Allocate JPEG tile decode buffers (use PSRAM if available)
-    tile_rgb565 = (uint16_t*)lv_malloc(TILE_SIZE * TILE_SIZE * 2);  // 131KB
-    jpeg_inbuf  = (uint8_t*)lv_malloc(4096);  // 4KB input buffer
-
-    if (!tile_rgb565 || !jpeg_inbuf) {
-        Serial.println("[map] ERROR: Failed to alloc JPEG decode buffers");
-        slopos_map_deinit();  // frees everything including canvas_pixels
-        return;
-    }
-
-    // Auto-center on downloaded region from metadata.json
+    // Discover tiles and set initial center/zoom.
+    // Canvas is created later in slopos_map_reparent() once we have a real
+    // screen parent — lv_canvas_create(nullptr) in LVGL v9 makes a screen
+    // object, not an orphan widget, so reparenting it silently fails.
     load_metadata();
 
     initialized = true;
 }
 
 void slopos_map_reparent(lv_obj_t* new_parent) {
-    if (map_canvas && new_parent) {
+    if (!initialized || !new_parent || !canvas_pixels) return;
+
+    if (!map_canvas) {
+        // Create canvas with the real screen as parent so LVGL treats it as
+        // a regular widget (not a screen). NULL parent in LVGL v9 = screen.
+        map_canvas = lv_canvas_create(new_parent);
+    } else {
         lv_obj_set_parent(map_canvas, new_parent);
-        lv_obj_set_size(map_canvas, TFT_WIDTH, TFT_HEIGHT);
-        lv_obj_align(map_canvas, LV_ALIGN_CENTER, 0, 0);
-        // When parent screen is auto-deleted (e.g. navigate away),
-        // LVGL recursively deletes map_canvas — free all PSRAM
-        // allocations so repeated map visits don't leak memory.
-        lv_obj_add_event_cb(new_parent, [](lv_event_t* e) {
-            slopos_map_deinit();
-        }, LV_EVENT_DELETE, nullptr);
     }
+
+    lv_obj_set_size(map_canvas, TFT_WIDTH, TFT_HEIGHT);
+    lv_obj_align(map_canvas, LV_ALIGN_CENTER, 0, 0);
+    lv_canvas_set_buffer(map_canvas, canvas_pixels,
+                         TFT_WIDTH, TFT_HEIGHT, LV_COLOR_FORMAT_RGB565);
+    lv_obj_move_to_index(map_canvas, 0);
+
+    lv_obj_add_event_cb(new_parent, [](lv_event_t* e) {
+        slopos_map_deinit();
+    }, LV_EVENT_DELETE, nullptr);
 }
 
 void slopos_map_deinit() {
-    // Free JPEG decode buffers
-    if (tile_rgb565) { lv_free(tile_rgb565); tile_rgb565 = nullptr; }
-    if (jpeg_inbuf)  { lv_free(jpeg_inbuf);  jpeg_inbuf  = nullptr; }
-
     // Free LRU tile cache pixels
     for (int i = 0; i < TILE_CACHE_SIZE; i++) {
         if (tile_cache[i].pixels) {
-            lv_free(tile_cache[i].pixels);
+            map_free(tile_cache[i].pixels);
             tile_cache[i].pixels = nullptr;
         }
     }
 
-    // Free canvas pixel buffer (LVGL may have already freed it,
-    // but our pointer tracks it separately — safe double-check)
-    if (canvas_pixels) { lv_free(canvas_pixels); canvas_pixels = nullptr; }
+    if (canvas_pixels) { heap_caps_free(canvas_pixels); canvas_pixels = nullptr; }
 
     // Canvas widget is destroyed by LVGL via auto-delete —
     // null our pointer so the next map visit reinitializes
@@ -419,31 +654,156 @@ void slopos_map_set_view(double lat, double lon, int zoom) {
     center_lat = clamp_d(lat, MIN_LAT, MAX_LAT);
     center_lon = clamp_d(lon, MIN_LON, MAX_LON);
     zoom_level = clamp(zoom, MIN_ZOOM, MAX_ZOOM);
+    clamp_view_to_coverage();
 }
 
-double slopos_map_get_lat()  { return center_lat; }
-double slopos_map_get_lon()  { return center_lon; }
-int    slopos_map_get_zoom() { return zoom_level; }
+double slopos_map_get_lat()    { return center_lat; }
+double slopos_map_get_lon()    { return center_lon; }
+int    slopos_map_get_zoom()   { return zoom_level; }
 
 void slopos_map_pan(int dx, int dy) {
     // Convert screen pixel delta to tile coordinate delta
     // This properly handles Web Mercator's non-linear latitude scaling
     double tx = lon_to_tile_x(center_lon, zoom_level);
     double ty = lat_to_tile_y(center_lat, zoom_level);
-    tx -= dx / (double)TILE_SIZE;
-    ty -= dy / (double)TILE_SIZE;   // screen y increases downward, tile y too
+    tx += dx / (double)TILE_SIZE;
+    ty += dy / (double)TILE_SIZE;   // screen y increases downward, tile y too
     center_lon = tile_x_to_lon(tx, zoom_level);
     center_lat = tile_y_to_lat(ty, zoom_level);
     center_lat = clamp_d(center_lat, MIN_LAT, MAX_LAT);
     center_lon = clamp_d(center_lon, MIN_LON, MAX_LON);
+    clamp_view_to_coverage();
 }
 
-void slopos_map_zoom_in()  { zoom_level = clamp(zoom_level + 1, MIN_ZOOM, MAX_ZOOM); }
-void slopos_map_zoom_out() { zoom_level = clamp(zoom_level - 1, MIN_ZOOM, MAX_ZOOM); }
+void slopos_map_zoom_in()  {
+    zoom_level = clamp(zoom_level + 1, MIN_ZOOM, MAX_ZOOM);
+    clamp_view_to_coverage();
+}
+
+void slopos_map_zoom_out() {
+    zoom_level = clamp(zoom_level - 1, MIN_ZOOM, MAX_ZOOM);
+    clamp_view_to_coverage();
+}
+
+#if SLOPOS_MAP_DIAGNOSTICS
+static void slopos_map_debug_summary(char* out, size_t out_sz) {
+    if (!out || out_sz == 0) return;
+    out[0] = '\0';
+
+    size_t pos = 0;
+    appendf(out, out_sz, &pos, "SD:%d init:%d z:%d\n",
+            slopos_sdcard_mounted() ? 1 : 0,
+            initialized ? 1 : 0,
+            zoom_level);
+
+    appendf(out, out_sz, &pos, "cov:%d", have_tile_coverage ? 1 : 0);
+    if (have_tile_coverage) {
+        appendf(out, out_sz, &pos, " z:%d-%d", min_available_zoom, max_available_zoom);
+    }
+    appendf(out, out_sz, &pos, "\n");
+    appendf(out, out_sz, &pos, "%s\n", last_tile_status);
+
+    DIR* root = opendir(SLOPOS_SD_MOUNTPOINT);
+    appendf(out, out_sz, &pos, "root:%s", root ? "ok" : "fail");
+    if (root) {
+        int shown = 0;
+        struct dirent* e;
+        while (shown < 3 && (e = readdir(root)) != nullptr) {
+            if (e->d_name[0] == '.') continue;
+            appendf(out, out_sz, &pos, " %s", e->d_name);
+            shown++;
+        }
+        closedir(root);
+    }
+    appendf(out, out_sz, &pos, "\n");
+
+    const char* tiles_path = SLOPOS_SD_MOUNTPOINT "/tiles";
+    DIR* tiles = opendir(tiles_path);
+    appendf(out, out_sz, &pos, "tiles:%s", tiles ? "ok" : "fail");
+    int best_z = -1;
+    if (tiles) {
+        bool zoom_seen[MAX_ZOOM + 1] = {};
+        int shown = 0;
+        struct dirent* e;
+        while ((e = readdir(tiles)) != nullptr) {
+            if (e->d_name[0] == '.') continue;
+            if (shown < 6) {
+                appendf(out, out_sz, &pos, " %s", e->d_name);
+                shown++;
+            }
+            if (!is_decimal_name(e->d_name)) continue;
+            int z = atoi(e->d_name);
+            if (z < MIN_ZOOM || z > MAX_ZOOM) continue;
+            zoom_seen[z] = true;
+            if (z > best_z) best_z = z;
+        }
+        closedir(tiles);
+
+        appendf(out, out_sz, &pos, "\nz:");
+        for (int z = MIN_ZOOM; z <= MAX_ZOOM; z++) {
+            if (zoom_seen[z]) appendf(out, out_sz, &pos, " %d", z);
+        }
+    }
+    appendf(out, out_sz, &pos, "\n");
+
+    if (best_z >= 0) {
+        char z_path[48];
+        snprintf(z_path, sizeof(z_path), SLOPOS_SD_MOUNTPOINT "/tiles/%d", best_z);
+        DIR* zd = opendir(z_path);
+        appendf(out, out_sz, &pos, "z%d:%s", best_z, zd ? "ok" : "fail");
+
+        int best_x = -1;
+        int best_min_y = -1;
+        int best_max_y = -1;
+        int best_sample_y = -1;
+        if (zd) {
+            int shown = 0;
+            struct dirent* e;
+            while ((e = readdir(zd)) != nullptr) {
+                if (e->d_name[0] == '.') continue;
+                if (!is_decimal_name(e->d_name)) continue;
+                int x = atoi(e->d_name);
+                if (shown < 4) {
+                    appendf(out, out_sz, &pos, " %d", x);
+                    shown++;
+                }
+                int mn_y = -1;
+                int mx_y = -1;
+                int sample_y = -1;
+                if (best_x < 0 && scan_y_range(best_z, x, &mn_y, &mx_y, &sample_y)) {
+                    best_x = x;
+                    best_min_y = mn_y;
+                    best_max_y = mx_y;
+                    best_sample_y = sample_y;
+                }
+            }
+            closedir(zd);
+        }
+        appendf(out, out_sz, &pos, "\n");
+
+        if (best_x >= 0) {
+            char sample_path[80];
+            snprintf(sample_path, sizeof(sample_path),
+                     SLOPOS_SD_MOUNTPOINT "/tiles/%d/%d/%d.png",
+                     best_z, best_x, best_sample_y);
+            FILE* f = fopen(sample_path, "rb");
+            appendf(out, out_sz, &pos, "x:%d y:%d-%d\nopen:%s\n",
+                    best_x, best_min_y, best_max_y, f ? "ok" : "fail");
+            if (f) fclose(f);
+        } else {
+            appendf(out, out_sz, &pos, "png:no numeric .png\n");
+        }
+    }
+
+    if (pos >= out_sz) out[out_sz - 1] = '\0';
+}
+#endif
 
 void slopos_map_render() {
     if (!initialized || !map_canvas || !canvas_pixels) return;
 
+    MAP_DEBUG_PRINTF("[map] render: zoom=%d center=%.4f,%.4f\n",
+                     zoom_level, center_lat, center_lon);
     lv_canvas_fill_bg(map_canvas, lv_color_hex(0x0f3460), LV_OPA_COVER);
 
     lv_layer_t layer;
@@ -471,6 +831,14 @@ void slopos_map_render() {
             int n = 1 << zoom_level;
             if (tile_x < 0 || tile_x >= n || tile_y < 0 || tile_y >= n) continue;
 
+            if (have_tile_coverage && tile_coverage[zoom_level].valid) {
+                const TileCoverage& c = tile_coverage[zoom_level];
+                if (tile_x < c.min_x || tile_x > c.max_x ||
+                    tile_y < c.min_y || tile_y > c.max_y) {
+                    continue;
+                }
+            }
+
             int screen_x = (int)(center_px + (tx * px_per_tile) -
                                  (center_tx - (int)center_tx) * px_per_tile);
             int screen_y = (int)(center_py + (ty * px_per_tile) -
@@ -482,12 +850,11 @@ void slopos_map_render() {
                 continue;
             }
 
-            // Try to load and render the JPEG tile (cache-aware)
-            if (slopos_sdcard_mounted() && load_tile_jpeg(zoom_level, tile_x, tile_y)) {
+            // Try to load and render the tile (cache-aware, PNG)
+            if (slopos_sdcard_mounted() && load_tile(zoom_level, tile_x, tile_y)) {
                 CachedTile* ct = cache_lookup(zoom_level, tile_x, tile_y);
                 if (ct) {
-                    draw_tile_from_cache(&layer, ct, screen_x, screen_y,
-                                         0, 0, TILE_SIZE, TILE_SIZE);
+                    draw_tile_from_cache(ct, screen_x, screen_y);
                     any_tile_loaded = true;
                 }
             } else {
@@ -512,19 +879,35 @@ void slopos_map_render() {
 
     // If no tiles loaded at all, show status message
     if (!any_tile_loaded) {
+#if SLOPOS_MAP_DIAGNOSTICS
+        static char status[512];
+        slopos_map_debug_summary(status, sizeof(status));
+#endif
+
         lv_draw_label_dsc_t label_dsc;
         lv_draw_label_dsc_init(&label_dsc);
         label_dsc.color = lv_color_hex(0x8e9297);
+#if SLOPOS_MAP_DIAGNOSTICS
+        label_dsc.text = status;
+#else
         label_dsc.text = slopos_sdcard_mounted() ?
             "No map tiles found\nCopy tiles/ folder\nto SD card root" :
             "No SD card\nInsert SD card with\ntiles/ folder";
+#endif
         label_dsc.text_local = true;
 
         lv_area_t label_area;
+#if SLOPOS_MAP_DIAGNOSTICS
+        label_area.x1 = 8;
+        label_area.y1 = 38;
+        label_area.x2 = TFT_WIDTH - 8;
+        label_area.y2 = TFT_HEIGHT - 34;
+#else
         label_area.x1 = 20;
         label_area.y1 = TFT_HEIGHT / 2 - 24;
         label_area.x2 = TFT_WIDTH - 20;
         label_area.y2 = TFT_HEIGHT / 2 + 24;
+#endif
 
         lv_draw_label(&layer, &label_dsc, &label_area);
     }
@@ -544,16 +927,18 @@ void slopos_map_render() {
     lv_draw_line(&layer, &line_dsc);
 
     lv_canvas_finish_layer(map_canvas, &layer);
+    lv_obj_invalidate(map_canvas);
 }
 
 bool slopos_map_tiles_available() {
     if (!slopos_sdcard_mounted()) return false;
-    // Check for at least one tile at current zoom
     int tx = (int)lon_to_tile_x(center_lon, zoom_level);
     int ty = (int)lat_to_tile_y(center_lat, zoom_level);
     char path[64];
-    snprintf(path, sizeof(path), "/tiles/%d/%d/%d.jpg", zoom_level, tx, ty);
-    return SD.exists(path);
+    snprintf(path, sizeof(path), SLOPOS_SD_MOUNTPOINT "/tiles/%d/%d/%d.png", zoom_level, tx, ty);
+    FILE* f = fopen(path, "r");
+    if (f) { fclose(f); return true; }
+    return false;
 }
 
 void slopos_map_pixel_to_latlon(int px, int py, double* out_lat, double* out_lon) {

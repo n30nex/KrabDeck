@@ -96,9 +96,10 @@
 #define GPS_BAUD_RATE 38400
 
 // ════════════════════════════════════════════════════════
-// SD Card (SPI, shared bus)
+// SD Card (SPI mode, shared bus with LoRa/Display)
+// SCK=PIN_LORA_SCLK(40), MISO=PIN_LORA_MISO(38), MOSI=PIN_LORA_MOSI(41)
 // ════════════════════════════════════════════════════════
-#define PIN_SD_CS        21  // T-Deck microSD card (GPIO 21)
+#define PIN_SD_CS        39  // T-Deck microSD chip select (GPIO 39)
 
 // ════════════════════════════════════════════════════════
 // Audio Buzzer

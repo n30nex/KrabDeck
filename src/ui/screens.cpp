@@ -1480,16 +1480,13 @@ void radio_setup_screen_show()
     lv_label_set_text(svl, LV_SYMBOL_SAVE "  Save & Reboot");
     lv_obj_center(svl);
     lv_obj_add_event_cb(save_btn, [](lv_event_t*) {
-        slopos::NodePrefs np;
-        np.set_defaults();
+        slopos::NodePrefs np = slopos::prefs_get();
         np.freq         = s_freq;
         np.bw           = 62.5f;
         np.sf           = (uint8_t)s_sf;
         np.cr           = (uint8_t)s_cr;
         np.tx_power_dbm = (int8_t)s_pwr;
         np.configured   = true;
-        strncpy(np.node_name, "SlopOS T-Deck", sizeof(np.node_name) - 1);
-        np.node_name[sizeof(np.node_name) - 1] = '\0';
         slopos::prefs_set(np);
         slopos::prefs_save(np);
         ESP.restart();

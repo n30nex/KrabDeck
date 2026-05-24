@@ -6,11 +6,6 @@ This document tracks known issues, bugs, and missing features in SlopOS. Contrib
 
 ## Chat Screen
 
-### Message scroll limiting
-The chat view has no upper bound on how many messages it buffers in memory. After extended use (especially on busy mesh networks with many nodes), the message list grows unbounded, consuming PSRAM and eventually causing slowdowns or crashes.
-
-**What's needed:** A configurable message cap (e.g. 200-500 messages), with oldest messages evicted as new ones arrive. The cap should be per-channel so a busy channel doesn't starve quieter ones.
-
 ### Channel selection — message preview clipping
 When scrolling through channels in the channel selector, message previews (the last message in each channel) don't properly truncate. Long messages overflow the preview area and clip visually, overlapping adjacent UI elements.
 

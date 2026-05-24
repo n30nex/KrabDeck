@@ -51,16 +51,13 @@ tolerated.
 
 ## Submitting Code Changes
 
-### For small fixes (typos, comments, minor bug fixes)
+### Before you start
 
-Open a pull request directly — no prior issue needed.
+1. **Open an issue first** describing what you want to work on — even for small changes. This lets maintainers know someone is working on it and avoids duplicate effort.
+2. Label the issue appropriately (`bug`, `enhancement`, `docs`, etc.).
+3. Small fixes (typos, comments, one-line bug fixes) can skip the issue step if discussed with a maintainer first.
 
-### For larger changes or new features
-
-1. **Open an issue first** to discuss the approach with maintainers.
-2. Wait for consensus before investing significant work.
-
-### Pull Request Process
+### Work on it
 
 1. **Fork the repo** on GitHub.
 2. **Create a branch on your fork** from the `dev` branch:
@@ -83,6 +80,10 @@ Open a pull request directly — no prior issue needed.
 6. **Push to your fork** and open a PR against the `dev` branch.
 7. In the PR description, reference the related issue (`Fixes #123`).
 8. Respond to review feedback promptly.
+
+### After merging
+
+Once the PR is merged, go back to the original issue and close it with notes describing what was done and the outcome. This keeps the issue tracker clean and provides a record of the fix or feature for future reference.
 
 ### Merging
 

@@ -110,9 +110,9 @@ src/
 | **Trackball** | GPIO | UP=3, DOWN=15, LEFT=1, RIGHT=2, CLICK=0. 5-direction + center press |
 | **Battery ADC** | GPIO 4 | Voltage divider, ADC_MULTIPLIER = 2 × 3.3 × 1000 |
 | **Peripheral Power** | GPIO 10 | HIGH = peripherals on |
-| **SD Card** | SDMMC | CMD=21, CLK=14, D0=47, D1=48, D2=16, D3=15 |
+| **SD Card** | SPI (shared bus) | CS=39, shares SCK(40)/MOSI(41)/MISO(38) with LoRa/display. NOT on SDMMC peripheral despite some docs. Filesystem mounted at `/sdcard` via FATFS VFS. |
 
-**Shared SPI bus:** Display and LoRa share SCK(40)/MOSI(41)/MISO(38) with different CS lines. SPI must be initialized once, not re-begun.
+**Shared SPI bus:** Display, LoRa, and microSD all share SCK(40)/MOSI(41)/MISO(38) with different CS lines (display=12, LoRa=9, SD=39). SPI must be initialized once, not re-begun.
 
 ---
 

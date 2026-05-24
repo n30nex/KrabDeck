@@ -96,7 +96,7 @@ TEST_F(TrackballTest, PulsesAfterDeadtimeProduceSeparateEvents) {
 
     // Return to idle and pulse again after deadtime expires
     set_pin(PIN_TRACKBALL_DOWN, false);
-    advance(61);
+    advance(151);
     slopos_trackball_scan();
 
     set_pin(PIN_TRACKBALL_DOWN, true);

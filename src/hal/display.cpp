@@ -23,6 +23,7 @@
 #include "trackball.h"
 #include "tdeck_pins.h"
 #include "../ui/ui.h"
+#include "../ui/chat_screen.h"
 #include <lvgl.h>
 
 #define LGFX_USE_V1
@@ -205,6 +206,14 @@ static void lvgl_kb_cb(lv_indev_t* indev, lv_indev_data_t* data)
     slopos_keyboard_scan();   // force a fresh poll (catches first key after focus)
     int key = slopos_keyboard_get_key();
     if (key > 0 && slopos_keyboard_has_new_event()) {
+        // Always route keyboard input to the chat textarea when the chat
+        // messaging view is active, so the text box stays ready to type in.
+        lv_obj_t* chat_input = slopos::ui::chat_screen_get_input_field();
+        if (chat_input) {
+            lv_group_t* g = lv_group_get_default();
+            if (g) lv_group_focus_obj(chat_input);
+        }
+
         if (key == 0x08) data->key = LV_KEY_BACKSPACE;
         else if (key == 0x0D) data->key = LV_KEY_ENTER;
         else if (key == 0x09) data->key = LV_KEY_NEXT;

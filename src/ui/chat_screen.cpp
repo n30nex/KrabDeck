@@ -57,13 +57,20 @@ static void stabilize_topbar_pill(lv_obj_t* obj)
     lv_obj_set_style_outline_width(obj, 0, (lv_state_t)(LV_STATE_FOCUSED | LV_STATE_EDITED));
 }
 
-// ── Messaging-view widgets ─────────────────────────────────
+// ── Chat screen widget pointers ────────────────────────────
 static lv_obj_t* scr            = nullptr;
 static lv_obj_t* top_bar        = nullptr;
 static lv_obj_t* channel_ribbon = nullptr;
 static lv_obj_t* msg_list       = nullptr;
 static lv_obj_t* input_bar      = nullptr;
 static lv_obj_t* input_field    = nullptr;
+
+// Channel-list view widgets
+static lv_obj_t* ch_list            = nullptr;
+static lv_obj_t* ch_back_btn        = nullptr;
+static lv_obj_t* ch_add_btn         = nullptr;
+static int       ch_focus           = 0;   // 0=list, 1=back, 2=add
+static int       ch_list_selected   = 0;
 
 // ── Messaging-view layout ──────────────────────────────────
 using responsive::TOP_BAR_H;
@@ -205,6 +212,31 @@ static void format_time(char* buf, size_t sz, uint32_t epoch)
     snprintf(buf, sz, "%02d:%02d", (t / 3600) % 24, (t / 60) % 60);
 }
 
+static void apply_ch_row_selection(lv_obj_t* row, bool selected)
+{
+    if (selected) {
+        lv_obj_set_style_border_width(row, 2, 0);
+        lv_obj_set_style_border_color(row, lv_color_hex(ACCENT), 0);
+        lv_obj_set_style_border_opa(row, LV_OPA_COVER, 0);
+    } else {
+        lv_obj_set_style_border_width(row, 0, 0);
+    }
+}
+
+static void clear_ch_row_selection()
+{
+    if (ch_list_selected >= 0 && ch_list_selected < dyn_count && ch_list) {
+        lv_obj_t* row = lv_obj_get_child(ch_list, ch_list_selected);
+        if (row) apply_ch_row_selection(row, false);
+    }
+}
+
+static void clear_ch_focus_buttons()
+{
+    if (ch_back_btn) lv_obj_set_style_border_width(ch_back_btn, 1, 0);
+    if (ch_add_btn) lv_obj_set_style_border_width(ch_add_btn, 0, 0);
+}
+
 static void populate_channel_rows(lv_obj_t* list) {
     for (int i = 0; i < dyn_count; i++) {
         lv_obj_t* row = lv_obj_create(list);
@@ -215,6 +247,8 @@ static void populate_channel_rows(lv_obj_t* list) {
         lv_obj_set_style_border_width(row, 0, 0);
         lv_obj_set_style_pad_all(row, 0, 0);
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_user_data(row, (void*)(intptr_t)i);
+        apply_ch_row_selection(row, i == ch_list_selected);
 
         lv_obj_t* avatar = lv_obj_create(row);
         lv_obj_set_size(avatar, 32, 32);
@@ -342,15 +376,15 @@ static lv_obj_t* make_chat_list_screen()
     lv_obj_set_style_pad_all(top, 0, 0);
     lv_obj_set_style_border_width(top, 0, 0);
 
-    lv_obj_t* back = lv_btn_create(top);
-    lv_obj_set_size(back, 24, LIST_BAR_H - 4);
-    lv_obj_align(back, LV_ALIGN_LEFT_MID, 2, 0);
-    apply_topbar_icon_btn(back);
+    ch_back_btn = lv_btn_create(top);
+    lv_obj_set_size(ch_back_btn, 24, LIST_BAR_H - 4);
+    lv_obj_align(ch_back_btn, LV_ALIGN_LEFT_MID, 2, 0);
+    apply_topbar_icon_btn(ch_back_btn);
     if (can_go_back()) {
-        lv_obj_add_event_cb(back, [](lv_event_t*) { go_back(); }, LV_EVENT_CLICKED, nullptr);
+        lv_obj_add_event_cb(ch_back_btn, [](lv_event_t*) { go_back(); }, LV_EVENT_CLICKED, nullptr);
     }
 
-    lv_obj_t* back_icon = lv_label_create(back);
+    lv_obj_t* back_icon = lv_label_create(ch_back_btn);
     lv_label_set_text(back_icon, LV_SYMBOL_LEFT);
     lv_obj_set_style_text_color(back_icon,
         lv_color_hex(can_go_back() ? ACCENT : TEXT_MUTED), 0);
@@ -460,34 +494,42 @@ static void show_channel_list(lv_scr_load_anim_t anim)
 {
     // Null messaging-view pointers — they're invalid once we leave
     scr = top_bar = channel_ribbon = msg_list = input_bar = input_field = nullptr;
+    ch_list = ch_back_btn = ch_add_btn = nullptr;
+    ch_focus = 0;
 
     refresh_channels();
+    ch_list_selected = 0;
 
     lv_obj_t* s = make_chat_list_screen();
 
-    lv_obj_t* list = lv_obj_create(s);
-    lv_obj_set_size(list, LV_PCT(100), LIST_CONT_H - 32);
-    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, LIST_CONT_Y);
-    lv_obj_set_user_data(list, (void*)0xCA7C);
-    lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(list, 0, 0);
-    lv_obj_set_style_pad_all(list, 0, 0);
-    lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_scroll_dir(list, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
+    ch_list = lv_obj_create(s);
+    lv_obj_set_size(ch_list, LV_PCT(100), LIST_CONT_H - 32);
+    lv_obj_align(ch_list, LV_ALIGN_TOP_MID, 0, LIST_CONT_Y);
+    lv_obj_set_user_data(ch_list, (void*)0xCA7C);
+    lv_obj_set_style_bg_opa(ch_list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ch_list, 0, 0);
+    lv_obj_set_style_pad_all(ch_list, 0, 0);
+    lv_obj_set_flex_flow(ch_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scroll_dir(ch_list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(ch_list, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_remove_flag(ch_list, (lv_obj_flag_t)(
+        LV_OBJ_FLAG_SCROLL_ELASTIC |
+        LV_OBJ_FLAG_SCROLL_MOMENTUM |
+        LV_OBJ_FLAG_SCROLL_CHAIN));
 
-    populate_channel_rows(list);
+    populate_channel_rows(ch_list);
 
-    lv_obj_t* add_btn = lv_btn_create(s);
-    lv_obj_set_size(add_btn, CONTENT_W > 200 ? 180 : CONTENT_W - 20, 28);
-    lv_obj_align(add_btn, LV_ALIGN_TOP_MID, 0, LIST_CONT_Y + LIST_CONT_H - 32);
-    lv_obj_set_style_bg_color(add_btn, lv_color_hex(ACCENT), 0);
-    lv_obj_set_style_radius(add_btn, 0, 0);
-    lv_obj_t* al = lv_label_create(add_btn);
+    ch_add_btn = lv_btn_create(s);
+    lv_obj_set_size(ch_add_btn, CONTENT_W > 200 ? 180 : CONTENT_W - 20, 28);
+    lv_obj_align(ch_add_btn, LV_ALIGN_TOP_MID, 0, LIST_CONT_Y + LIST_CONT_H - 32);
+    lv_obj_set_style_bg_color(ch_add_btn, lv_color_hex(ACCENT), 0);
+    lv_obj_set_style_border_width(ch_add_btn, 0, 0);
+    lv_obj_set_style_radius(ch_add_btn, 0, 0);
+    lv_obj_t* al = lv_label_create(ch_add_btn);
     lv_label_set_text(al, LV_SYMBOL_PLUS " Add # Channel");
     lv_obj_set_style_text_font(al, &lv_font_montserrat_10, 0);
     lv_obj_center(al);
-    lv_obj_add_event_cb(add_btn, [](lv_event_t* e) {
+    lv_obj_add_event_cb(ch_add_btn, [](lv_event_t* e) {
         lv_obj_t* scr = lv_obj_get_screen((lv_obj_t*)lv_event_get_target(e));
         show_add_channel_options(scr);
     }, LV_EVENT_CLICKED, nullptr);
@@ -682,6 +724,10 @@ static void create_message_list()
     lv_obj_set_flex_flow(msg_list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_scroll_dir(msg_list, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(msg_list, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_remove_flag(msg_list, (lv_obj_flag_t)(
+        LV_OBJ_FLAG_SCROLL_ELASTIC |
+        LV_OBJ_FLAG_SCROLL_MOMENTUM |
+        LV_OBJ_FLAG_SCROLL_CHAIN));
 }
 
 static void render_active_messages()
@@ -847,9 +893,13 @@ static void open_channel_messaging(int idx)
     apply_dark_bg(scr);
     disable_scroll(scr);
 
+    ch_list = nullptr;
+
     // When the messaging screen is auto-deleted (e.g. user navigates
     // away without pressing back), null all global widget pointers
     // so chat_screen_add_msg() doesn't dereference freed memory.
+    // NOTE: ch_list is NOT nulled here — show_channel_list() may have
+    // already set it to a new list before this delete callback fires.
     lv_obj_add_event_cb(scr, [](lv_event_t*) {
         scr = top_bar = channel_ribbon = msg_list = input_bar = input_field = nullptr;
     }, LV_EVENT_DELETE, nullptr);
@@ -998,6 +1048,136 @@ void chat_screen_add_msg(const char* channel, const char* sender, const char* te
 
     lv_obj_t* last = lv_obj_get_child(msg_list, lv_obj_get_child_cnt(msg_list) - 1);
     if (last) lv_obj_scroll_to_view(last, LV_ANIM_ON);
+}
+
+// ════════════════════════════════════════════════════
+// Trackball handler
+// ════════════════════════════════════════════════════
+bool chat_screen_handle_trackball(SlopOSTrackballEvent event)
+{
+    if (msg_list) {
+        switch (event) {
+        case SlopOSTrackballEvent::Up:
+            lv_obj_scroll_by(msg_list, 0, -44, LV_ANIM_ON);
+            return true;
+        case SlopOSTrackballEvent::Down:
+            lv_obj_scroll_by(msg_list, 0, 44, LV_ANIM_ON);
+            return true;
+        case SlopOSTrackballEvent::Left:
+            show_channel_list(LV_SCR_LOAD_ANIM_MOVE_RIGHT);
+            return true;
+        case SlopOSTrackballEvent::Right:
+            if (input_field) {
+                lv_group_t* g = lv_group_get_default();
+                if (g) lv_group_focus_obj(input_field);
+            }
+            return true;
+        case SlopOSTrackballEvent::Click:
+            if (input_field) {
+                lv_group_t* g = lv_group_get_default();
+                if (g) lv_group_focus_obj(input_field);
+            }
+            return true;
+        default:
+            return false;
+        }
+    }
+
+    if (ch_list) {
+        switch (event) {
+        case SlopOSTrackballEvent::Up:
+        case SlopOSTrackballEvent::Down: {
+            // Any vertical motion returns focus to the channel list
+            if (ch_focus != 0) {
+                clear_ch_focus_buttons();
+                ch_focus = 0;
+                if (ch_list_selected >= 0 && ch_list_selected < dyn_count) {
+                    lv_obj_t* row = lv_obj_get_child(ch_list, ch_list_selected);
+                    if (row) apply_ch_row_selection(row, true);
+                }
+            }
+            int old = ch_list_selected;
+            if (event == SlopOSTrackballEvent::Up)
+                ch_list_selected = ch_list_selected > 0 ? ch_list_selected - 1 : dyn_count - 1;
+            else
+                ch_list_selected = ch_list_selected < dyn_count - 1 ? ch_list_selected + 1 : 0;
+            if (ch_list_selected != old) {
+                lv_obj_t* old_row = lv_obj_get_child(ch_list, old);
+                if (old_row) apply_ch_row_selection(old_row, false);
+                lv_obj_t* new_row = lv_obj_get_child(ch_list, ch_list_selected);
+                if (new_row) {
+                    apply_ch_row_selection(new_row, true);
+                    lv_obj_scroll_to_view(new_row, LV_ANIM_ON);
+                }
+            }
+            return true;
+        }
+        case SlopOSTrackballEvent::Left:
+            if (ch_focus == 1) {
+                go_back();
+            } else if (ch_focus == 0) {
+                clear_ch_row_selection();
+                ch_focus = 1;
+                if (ch_back_btn) {
+                    lv_obj_set_style_border_width(ch_back_btn, 2, 0);
+                    lv_obj_set_style_border_color(ch_back_btn, lv_color_hex(ACCENT), 0);
+                }
+            } else {
+                // ch_focus == 2, return to list
+                clear_ch_focus_buttons();
+                ch_focus = 0;
+                if (ch_list_selected >= 0) {
+                    lv_obj_t* row = lv_obj_get_child(ch_list, ch_list_selected);
+                    if (row) apply_ch_row_selection(row, true);
+                }
+            }
+            return true;
+        case SlopOSTrackballEvent::Right:
+            if (ch_focus == 2) {
+                if (ch_add_btn) lv_obj_set_style_border_width(ch_add_btn, 0, 0);
+                ch_focus = 0;
+                if (ch_list_selected >= 0) {
+                    lv_obj_t* row = lv_obj_get_child(ch_list, ch_list_selected);
+                    if (row) apply_ch_row_selection(row, true);
+                }
+            } else if (ch_focus == 0) {
+                clear_ch_row_selection();
+                ch_focus = 2;
+                if (ch_add_btn) {
+                    lv_obj_set_style_border_width(ch_add_btn, 2, 0);
+                    lv_obj_set_style_border_color(ch_add_btn, lv_color_hex(ACCENT), 0);
+                }
+            } else {
+                // ch_focus == 1, return to list
+                clear_ch_focus_buttons();
+                ch_focus = 0;
+                if (ch_list_selected >= 0) {
+                    lv_obj_t* row = lv_obj_get_child(ch_list, ch_list_selected);
+                    if (row) apply_ch_row_selection(row, true);
+                }
+            }
+            return true;
+        case SlopOSTrackballEvent::Click:
+            if (ch_focus == 1) {
+                go_back();
+            } else if (ch_focus == 2 && ch_add_btn) {
+                lv_obj_send_event(ch_add_btn, LV_EVENT_CLICKED, nullptr);
+            } else if (ch_list_selected >= 0 && ch_list_selected < dyn_count) {
+                ch_meta[ch_list_selected].unread = 0;
+                open_channel_messaging(ch_list_selected);
+            }
+            return true;
+        default:
+            return true;
+        }
+    }
+
+    return false;
+}
+
+lv_obj_t* chat_screen_get_input_field()
+{
+    return input_field;
 }
 
 } // namespace slopos::ui

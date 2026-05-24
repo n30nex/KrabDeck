@@ -126,9 +126,13 @@ void loop()
 
 bool handle_trackball_event(SlopOSTrackballEvent event)
 {
-    if (home_shown && current_screen() == Screen::Home) {
+    if (!home_shown) return false;
+    if (current_screen() == Screen::Home) {
         home_screen_handle_trackball(event);
         return true;
+    }
+    if (current_screen() == Screen::Chat) {
+        return chat_screen_handle_trackball(event);
     }
     return false;
 }

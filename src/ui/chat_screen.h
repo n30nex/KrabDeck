@@ -19,6 +19,9 @@
 // along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
 
 
+#include "../hal/trackball.h"
+#include <lvgl.h>
+
 namespace slopos::ui {
 
 // Create and show the chat screen
@@ -26,5 +29,11 @@ void chat_screen_show();
 
 // Add a message to the chat display
 void chat_screen_add_msg(const char* channel, const char* sender, const char* text, bool is_self);
+
+// Handle trackball events for the chat screen. Returns true if consumed.
+bool chat_screen_handle_trackball(SlopOSTrackballEvent event);
+
+// Return the chat input textarea object if the messaging view is active, else nullptr.
+lv_obj_t* chat_screen_get_input_field();
 
 } // namespace slopos::ui

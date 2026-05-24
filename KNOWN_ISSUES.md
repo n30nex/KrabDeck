@@ -81,9 +81,7 @@ The offline tile map feature hasn't been thoroughly tested in the field. Known u
 SlopOS should use the same tile directory structure as Ripple firmware so tiles downloaded for one firmware work on the other without re-downloading.
 
 Ripple's convention:
-- **Tile sources:** Pre-downloaded tiles available via Buy Me a Coffee (Europe / US packs). DIY scripts: MTD-Script and a parallel-download fork.
 - **SD card path:** `\tiles` folder at the root of the SD card
-- **Zoom/unlock:** Ripple locks deeper zoom and server management behind a paid unlock — SlopOS should keep all zoom levels free and open
 
 **What's needed:** Ensure SlopOS reads map tiles from `/tiles` on the SD card (same path as Ripple). Document the expected folder structure and zoom level naming in the map renderer so users can drop in tiles from either source.
 

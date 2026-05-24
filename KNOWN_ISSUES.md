@@ -50,39 +50,6 @@ The finder feature needs a proper implementation that sends a zero-hop (TTL=1) p
 
 ---
 
-## Heard Screen → Packets Screen — ✅ Fixed
-
-### Replaced with raw packet log
-The Heard screen has been replaced with a raw packet log ("Packets" on the home screen) showing the last 50 received transmissions with timestamps, source, RSSI, SNR, and payload type (ADVERT, DM, CHANNEL, ANON).
-
-**What was done:**
-- Renamed home screen icon from "HEARD" to "PACKETS" with `LV_SYMBOL_LIST`
-- Replaced the tabular node-list view with a scrollable packet log (newest first)
-- Each entry shows: `HH:MM` timestamp, source name (truncated with `...`), RSSI value (color-coded green/orange/red), SNR value, and packet type (color-coded)
-- Added `_onPacket` callback to `SlopMesh` that fires for every received packet (advert, DM, channel message, anonymous data) with source, RSSI, SNR, and type
-- RSSI is captured from the radio driver at the moment the packet is received (alongside SNR from `Packet._snr`)
-- Packet log buffer stores up to 50 entries in `mesh_wrapper.cpp` via `logPacket()` callback
-- Exposed via `getPacketLogCount()` / `getPacketLogEntry()` in `mesh_wrapper.h`
-
----
-
-## Map Screen — ✅ Fixed
-
-### Rendered offline map tiles from SD
-PR #42 (gadgethd) implemented the full offline map tile system:
-- PNG tile decode via lodepng with PSRAM-backed cache (4 tiles, ~524KB)
-- Ripple-compatible `/tiles/{z}/{x}/{y}.png` path structure (same as Ripple firmware)
-- Auto-discovery of tile coverage via SD directory scan
-- Auto-center on available tile set
-- `clamp_view_to_coverage()` keeps pan/zoom within available tiles
-- Direct canvas pixel copy for performance, 200ms rate-limited render
-- PSRAM-first allocator for all tile/canvas buffers
-- Deferred initial render (250ms) to avoid blocking screen transition
-- Extended map touch events for drag pan
-- Hardware tested on LilyGo T-Deck with z10-z14 tile set
-
----
-
 ## Terminal
 
 ### Undocumented commands
@@ -102,13 +69,6 @@ Common commands that should be documented:
 | `save` | Force save state to NVS |
 | `reset` | Reboot the device |
 | `gps` | Show current GPS fix data |
-
----
-
-## Radio Setup
-
-### Custom RF parameters — ✅ Fixed
-The Radio Setup screen now has a "Custom RF..." button below the frequency presets that opens a pixel-themed dialog with +/- dial controls for all five radio parameters (frequency, spreading factor, bandwidth, coding rate, transmit power). Values persist through the existing Save & Reboot flow.
 
 ---
 

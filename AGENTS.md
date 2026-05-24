@@ -2,7 +2,7 @@
 
 **You are an AI agent working on the SlopOS T-Deck firmware.** This file is your instruction manual. Read it before modifying code.
 
-**Do not modify this file in PRs.** It is AI context. Only the repo owner updates it directly. It is in `.gitignore` and will not be committed.
+**Do not modify this file in any PR.** It is AI agent context. Only the repo owner changes it. Any PR that touches `AGENTS.md` will be rejected without review.
 
 ---
 

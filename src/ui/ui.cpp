@@ -27,6 +27,7 @@ using namespace slopos::responsive;
 #include "../mesh/mesh_wrapper.h"
 #include "../hal/battery.h"
 #include "../hal/prefs.h"
+#include "../fonts/emoji_font.h"
 #include <Arduino.h>
 #include <lvgl.h>
 
@@ -39,6 +40,9 @@ static bool home_shown = false;
 
 void init()
 {
+    // Register emoji font as fallback for all Montserrat fonts
+    emoji_font_register_fallback();
+
     // ── Splash Screen ─────────────────────────────────
     splash_scr = lv_obj_create(nullptr);
     theme::apply_dark_bg(splash_scr);

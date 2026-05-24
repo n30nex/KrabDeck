@@ -83,7 +83,7 @@ tolerated.
 
 ### After merging
 
-Once the PR is merged, go back to the original issue and close it with notes describing what was done and the outcome. This keeps the issue tracker clean and provides a record of the fix or feature for future reference.
+Once the PR is merged, the maintainer closes the original issue with notes describing what was done and the outcome. This keeps the issue tracker clean and provides a record of the fix or feature for future reference.
 
 ### Merging
 

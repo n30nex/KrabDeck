@@ -13,6 +13,36 @@ When scrolling through channels in the channel selector, message previews (the l
 
 ---
 
+## Emoji Support
+
+### Incomplete emoji character coverage
+PR #25 added emoji support with LVGL font fallback and an emoji picker, but only a subset of Unicode emoji codepoints have actual glyphs in the font. A large number of emoji render as empty boxes (missing glyph rectangles) both in chat messages and in the picker itself.
+
+**What's needed:** A full emoji font implementation. Options:
+- **LVGL built-in emoji font** — LVGL v9 includes an optional emoji font (`LV_FONT_EMOJI`) that can be enabled in `lv_conf.h`. This covers a much wider range of codepoints but adds ~100-200KB to the firmware binary.
+- **Custom subset font** — build a custom LVGL font that includes the most commonly used emoji (smileys, gestures, symbols) while keeping the binary size down. Tools like `lv_font_conv` can generate a subset font from any TTF.
+- **Two-stage fallback** — use the current custom font as the primary and add `LV_FONT_EMOJI` as a secondary fallback layer so common emoji render well and obscure ones at least don't show as boxes.
+
+Any approach should be tested against a reference emoji set to verify coverage before merging.
+
+---
+
+## Trackball Navigation
+
+### Universal back-swipe not implemented
+The trackball left-swipe (back/navigate to previous screen) currently only works on the Chat screen (PR #21). Every other screen requires reaching for the back button in the top-left corner, which is awkward during one-handed use.
+
+**What's needed:** Make the trackball left-swipe a universal back gesture on every screen. Implementation pattern from `chat_screen.cpp` should be extracted into `navigation.cpp/h` so all screens can register a back-swipe handler.
+
+However, this needs to handle screens that have their own left/right navigation (e.g. scrolling through contacts alphabetically, paging through channel lists, or horizontal content). On those screens, a single left-swipe would conflict with the screen's own navigation. Two approaches:
+- **Two-swipe commit:** The first left-swipe deselects/neutralises the current screen's navigation state (e.g. exits the scroll context). The second left-swipe then triggers the back gesture. This gives the user a deliberate two-step flow — "navigate past content, then go back."
+- **Timing-based:** A quick left swipe scrolls the content; a longer hold-and-swipe-left triggers the back gesture. Differentiable by swipe speed/duration.
+- **Edge zone:** Only trigger back-swipe when the trackball is swiped left from a neutral/resting state (no active list selection). If the user is actively scrolling a channel list, the left swipe scrolls the list instead.
+
+The two-swipe commit approach is the most intuitive and least prone to accidental backs. It also gives clear visual feedback — the first swipe can clear any selection highlights or scroll to the top of the list, making it obvious that the next left swipe will go back.
+
+---
+
 ## Signal Bars
 
 ### RSSI-based signal strength indicator
@@ -88,3 +118,143 @@ Common commands that should be documented:
 ## How to Help
 
 Pick any item from the list above and open a PR against the `dev` branch. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full contribution workflow.
+
+---
+
+## UI Performance
+
+### LVGL tick starvation during LoRa TX
+The main loop calls `slopos::mesh::loop()` (which may do blocking LoRa TX/RX taking 100-500ms) before `lv_timer_handler()`. During that period, LVGL is not serviced, causing visible UI stuttering — animations freeze, button feedback lags, and scrolling jerks.
+
+**What's needed:** Defer long mesh operations to a separate task or state machine, interleave `lv_timer_handler()` calls during mesh loop iterations, or use FreeRTOS task priorities to keep LVGL responsive.
+
+### Status bar save_counter overflow
+`ui.cpp` uses a `uint8_t save_counter` that increments without resetting after reaching 10. It continues incrementing to 255, causing the save counter to trip continuously for ~245 iterations (every 30s), then pauses for ~2 hours until uint8_t wraps around to 0. During the pause, settings are not persisted.
+
+**What's needed:** Reset `save_counter = 0` after triggering the save, not just `>= 10`.
+
+---
+
+## Mesh Networking
+
+### Channel hash lookup only checks first byte
+The `searchChannelsByHash` function in `slop_mesh.h` compares only the first byte of the 32-byte channel hash to find a matching channel. With 8 channels and uniformly random hashes, there is an ~11% collision probability. When a collision occurs, an encrypted group message is decrypted with the wrong channel key, producing garbage text and displaying the wrong channel name.
+
+**What's needed:** Replace the single-byte `hash[0] == _channels[i].channel.hash[0]` comparison with a full `memcmp` of the entire hash array.
+
+### No contact expiry / eviction
+The contact list has a hard cap of 64 entries (`SLOP_MAX_CONTACTS`). Once full, new contacts are silently dropped. There is no TTL-based eviction, LRU replacement, or purge of stale entries. Contacts not seen for hours or days still occupy a slot, preventing discovery of new nodes.
+
+**What's needed:** Implement periodic eviction — purge contacts with `last_seen` older than a configurable threshold (e.g. 30 minutes) when the list is full.
+
+### Advert rate limiting at mesh layer only
+The 10-second advert cooldown is only enforced in the UI (button disabled state). The `sendAdvert()` function in `mesh_wrapper.cpp` has no rate-limiting of its own — it can be called programmatically (e.g. from the Terminal's `advert` command) without protection, potentially flooding the mesh.
+
+**What's needed:** Add a timestamp check in `sendAdvert()` that rejects calls within `ADVERT_COOLDOWN_SECONDS`.
+
+### Missing null-termination on short payloads
+In `slop_mesh.h`, the payload text null-termination is conditional: `if (len > 1) data[len - 1] = '\0'`. For `len == 1`, no null byte is written, so the C string read from `data` may run past the buffer, causing undefined behavior or leaking stack data.
+
+**What's needed:** Always null-terminate: `data[len - 1] = '\0';` unconditionally.
+
+---
+
+## Map Screen
+
+### Large allocations not using PSRAM
+The map renderer allocates large buffers (131KB tile cache, 153KB canvas) via `lv_malloc()`, which draws from DRAM heap (~320KB total). Two consecutive map renders can consume 284KB of DRAM, leaving only ~36KB for LVGL and other operations, causing allocation failures and crashes.
+
+**What's needed:** Use `heap_caps_malloc(size, MALLOC_CAP_SPIRAM)` for large map buffers, keeping only small allocations (4KB JPEG input buffer) on DRAM.
+
+### LRU cache clock uint32_t wrap
+The tile LRU cache uses a `uint32_t cache_clock` that increments monotonically. After ~4 billion increments (or ~50 days of continuous use at 1kHz), it wraps to 0, breaking cache eviction comparisons — newly cached tiles have lower `last_used` values than old ones, causing premature eviction of recently used tiles.
+
+**What's needed:** Use `uint64_t` for `cache_clock`, or implement a wrapping-aware comparison.
+
+---
+
+## Touch / Input
+
+### I2C bus speed race — touch runs at 100kHz instead of 400kHz
+The I2C bus is shared between the GT911 touch controller (400kHz capable) and the keyboard MCU (100kHz). The init sequence sets 400kHz for touch, then overwrites it to 100kHz during keyboard init. After that, ALL subsequent I2C operations (including touch reads) run at 100kHz. Touch is functional but reads at 1/4 speed, increasing touch latency by ~3-4x.
+
+**What's needed:** Restore `Wire.setClock(400000)` after keyboard init completes, or use 100kHz for both (GT911 works at any speed up to 400kHz).
+
+### Trackball LEFT fires on both edges
+All trackball directions fire on falling edge only (one event per physical detent). LEFT fires on BOTH rising and falling edges, producing 2 events per detent. The 80ms deadtime (vs 150ms for others) doesn't prevent the double-fire — it only limits the minimum inter-event gap. In UI navigation, moving LEFT advances 2 items while other directions advance 1.
+
+**What's needed:** Change LEFT to fire on falling edge only (same as other directions), or implement edge-agnostic debounce that fires exactly once per detent.
+
+---
+
+## Screen Navigation
+
+### Navigation history stack is broken
+The navigation system uses a circular buffer with MAX_HISTORY=8. `push_history` wraps around and overwrites the oldest entry when full. `pop_history` decrements `history_top` without wrapping — after wrapping occurs, it reads `history[-1]` (out-of-bounds, undefined behavior). The stack can only hold 8 items but there are 14+ screen types.
+
+**What's needed:** Replace the circular buffer with a simple linear stack: drop the oldest entry when full instead of wrapping. Fix `pop_history` to never read below index 0.
+
+---
+
+## Chat Screen
+
+### Text input max_length exceeds buffer
+`lv_textarea_set_max_length(input_field, 160)` allows 160 characters, but `ChannelMessage::text` is `char text[160]` — 159 chars + 1 null terminator. The max_length should be 159 to prevent a 1-byte overflow of the null terminator.
+
+**What's needed:** Change max_length to 159.
+
+### Home screen three tiles map to same screen
+The home screen 4x3 grid has three tiles (REPEATERS, FINDER, HEARD) that all navigate to `Screen::Heard`. This appears to be unintentional — they should navigate to separate screens or at least be documented.
+
+**What's needed:** Verify the intended behavior and either fix the screen targets or document the duplicate mapping.
+
+---
+
+## Onboarding
+
+### ESP.restart() without flash write completion
+The onboarding screen's Done button calls `ESP.restart()` immediately after `chat_save_messages()`. If the SPIFFS write hasn't completed (due to write caching), the save data is lost after reboot.
+
+**What's needed:** Add a small delay (`delay(100)`) between the save and the restart, or set a flag for the main loop to handle the restart.
+
+---
+
+## Potential Bugs
+
+The following code defects were identified during a comprehensive code audit. These are not user-facing feature gaps but bugs that may cause crashes, data corruption, or incorrect behavior under specific conditions.
+
+### Uninitialized stack data in channel snapshot (`screens.cpp:170-171`)
+`exportChannels` fills up to `n` channel names, but the loop iterates to 8 regardless. Names at indices `n`..`7` read uninitialized stack garbage, and `nm[0] == '#'` accesses undefined bytes.
+
+### Home screen tile grid extra_h logic incorrect (`home_screen.cpp:340-349`)
+The `extra_h` distribution for uneven row heights adds `row` to the Y position, compounding the offset incorrectly. This causes tile rows to overlap or be misaligned when `extra_h > 0`.
+
+### Static fallback buffer shared across callbacks (`slop_mesh.h:114-116`)
+A `static char fallback[16]` buffer is reused across all `onAdvertRecv` invocations. Currently safe because callers copy the name immediately, but any future deferred use of the returned pointer gets overwritten data.
+
+### Screen title inconsistency (`screens.cpp:545`)
+`network_screen_show()` creates a screen titled "Finder" instead of "Network". The function name and documentation say "Network" (nodes seen in last 2 min).
+
+### Double NVS write in radio setup (`screens.cpp:1668`)
+`prefs_set(np)` already calls `prefs_save(np)`. The explicit `prefs_save(np)` on the next line writes the same data to NVS twice, adding unnecessary flash write cycles.
+
+### Frequency preset selection highlight not cleared (`screens.cpp:1564-1576`)
+When clicking a new frequency preset button, only the clicked button changes color. The previously selected button retains its highlight, making multiple presets appear selected simultaneously.
+
+### Touch coordinate bounds uses > instead of >= (`touch.cpp:206`)
+`raw_x > TOUCH_SENSOR_X` allows coordinates exactly at the max boundary (240 or 320) to pass the filter, producing slightly-off display coordinates after scaling.
+
+### Trackball click has no deadtime gate (`trackball.cpp:35`)
+The click button has 0ms deadtime between events. The 20ms scan-based debounce typically suffices, but bouncy switches could double-trigger.
+
+### TX power no range validation (`prefs.cpp:21,38`)
+`tx_power_dbm` is stored as `int8_t` without clamping to the SX1262's valid range (2-22 dBm). Invalid values could cause unpredictable radio behavior.
+
+### Static locals persist across radio screen visits (`screens.cpp:1529-1536`)
+Static variables (`s_freq`, `s_sf`, etc.) retain their values between function calls. If the user modifies a value and navigates away without saving, the stale value persists and overrides the saved preference on the next visit.
+
+### Trace result labels accumulate (`screens.cpp:1282-1313`)
+Each tap on the Trace screen creates a new result label widget, but only the most recent pointer is tracked. Previous label widgets remain as orphaned children stacking up visually.
+
+### Double reparent callback registration (`map_renderer.cpp:389`)
+`slopos_map_reparent()` is called on every `map_screen_show()`, each time registering another `LV_EVENT_DELETE` callback. While `slopos_map_deinit()` is idempotent, it adds wasteful callback overhead.

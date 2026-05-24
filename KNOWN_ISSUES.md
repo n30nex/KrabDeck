@@ -223,38 +223,5 @@ The onboarding screen's Done button calls `ESP.restart()` immediately after `cha
 
 The following code defects were identified during a comprehensive code audit. These are not user-facing feature gaps but bugs that may cause crashes, data corruption, or incorrect behavior under specific conditions.
 
-### Uninitialized stack data in channel snapshot (`screens.cpp:170-171`)
-`exportChannels` fills up to `n` channel names, but the loop iterates to 8 regardless. Names at indices `n`..`7` read uninitialized stack garbage, and `nm[0] == '#'` accesses undefined bytes.
-
-### Home screen tile grid extra_h logic incorrect (`home_screen.cpp:340-349`)
-The `extra_h` distribution for uneven row heights adds `row` to the Y position, compounding the offset incorrectly. This causes tile rows to overlap or be misaligned when `extra_h > 0`.
-
-### Static fallback buffer shared across callbacks (`slop_mesh.h:114-116`)
-A `static char fallback[16]` buffer is reused across all `onAdvertRecv` invocations. Currently safe because callers copy the name immediately, but any future deferred use of the returned pointer gets overwritten data.
-
-### Screen title inconsistency (`screens.cpp:545`)
-`network_screen_show()` creates a screen titled "Finder" instead of "Network". The function name and documentation say "Network" (nodes seen in last 2 min).
-
-### Double NVS write in radio setup (`screens.cpp:1668`)
-`prefs_set(np)` already calls `prefs_save(np)`. The explicit `prefs_save(np)` on the next line writes the same data to NVS twice, adding unnecessary flash write cycles.
-
-### Frequency preset selection highlight not cleared (`screens.cpp:1564-1576`)
-When clicking a new frequency preset button, only the clicked button changes color. The previously selected button retains its highlight, making multiple presets appear selected simultaneously.
-
-### Touch coordinate bounds uses > instead of >= (`touch.cpp:206`)
-`raw_x > TOUCH_SENSOR_X` allows coordinates exactly at the max boundary (240 or 320) to pass the filter, producing slightly-off display coordinates after scaling.
-
-### Trackball click has no deadtime gate (`trackball.cpp:35`)
-The click button has 0ms deadtime between events. The 20ms scan-based debounce typically suffices, but bouncy switches could double-trigger.
-
-### TX power no range validation (`prefs.cpp:21,38`)
-`tx_power_dbm` is stored as `int8_t` without clamping to the SX1262's valid range (2-22 dBm). Invalid values could cause unpredictable radio behavior.
-
-### Static locals persist across radio screen visits (`screens.cpp:1529-1536`)
-Static variables (`s_freq`, `s_sf`, etc.) retain their values between function calls. If the user modifies a value and navigates away without saving, the stale value persists and overrides the saved preference on the next visit.
-
-### Trace result labels accumulate (`screens.cpp:1282-1313`)
-Each tap on the Trace screen creates a new result label widget, but only the most recent pointer is tracked. Previous label widgets remain as orphaned children stacking up visually.
-
-### Double reparent callback registration (`map_renderer.cpp:389`)
-`slopos_map_reparent()` is called on every `map_screen_show()`, each time registering another `LV_EVENT_DELETE` callback. While `slopos_map_deinit()` is idempotent, it adds wasteful callback overhead.
+### Screen title inconsistency (`screens.cpp:563`)
+`network_screen_show()` creates a screen titled "Finder" instead of "Network". The function name and documentation say "Network" (nodes seen in last 2 min). Either the title or the function name should be made consistent.

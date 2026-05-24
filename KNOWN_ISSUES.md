@@ -216,12 +216,3 @@ The home screen 4x3 grid has three tiles (REPEATERS, FINDER, HEARD) that all nav
 The onboarding screen's Done button calls `ESP.restart()` immediately after `chat_save_messages()`. If the SPIFFS write hasn't completed (due to write caching), the save data is lost after reboot.
 
 **What's needed:** Add a small delay (`delay(100)`) between the save and the restart, or set a flag for the main loop to handle the restart.
-
----
-
-## Potential Bugs
-
-The following code defects were identified during a comprehensive code audit. These are not user-facing feature gaps but bugs that may cause crashes, data corruption, or incorrect behavior under specific conditions.
-
-### Screen title inconsistency (`screens.cpp:563`)
-`network_screen_show()` creates a screen titled "Finder" instead of "Network". The function name and documentation say "Network" (nodes seen in last 2 min). Either the title or the function name should be made consistent.

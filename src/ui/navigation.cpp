@@ -62,7 +62,7 @@ void navigate_to(Screen screen)
     case Screen::Chat:       chat_screen_show();       break;
     case Screen::Contacts:   contacts_screen_show();   break;
     case Screen::Channels:   channels_screen_show();  break;
-    case Screen::Network:    network_screen_show();    break;
+    case Screen::Network:    finder_screen_show();    break;
     case Screen::Heard:      heard_screen_show();      break;
     case Screen::Map:        map_screen_show();        break;
     case Screen::Advertise:  advertise_screen_show();  break;
@@ -89,7 +89,7 @@ void go_back()
     case Screen::Chat:       chat_screen_show();       break;
     case Screen::Contacts:   contacts_screen_show();   break;
     case Screen::Channels:   channels_screen_show();  break;
-    case Screen::Network:    network_screen_show();    break;
+    case Screen::Network:    finder_screen_show();    break;
     case Screen::Heard:      heard_screen_show();      break;
     case Screen::Map:        map_screen_show();        break;
     case Screen::Advertise:  advertise_screen_show();  break;

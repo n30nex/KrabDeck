@@ -181,7 +181,7 @@ Use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 || 2 | Chat (channels + DM) | `chat_screen.cpp` | ✅ |
 || 3 | Contacts (alphabetical, tap→DM) | `screens.cpp` | ✅ |
 || 4 | Channels (list + create #hashtag/PSK) | `screens.cpp` | ✅ |
-|| 5 | Network (nodes seen in last 2 min) | `screens.cpp` | ✅ |
+|| 5 | Finder (nearby nodes) | `screens.cpp` | ✅ |
 || 6 | Packets (raw packet log, 50 entries) | `screens.cpp` | ✅ |
 || 7 | Map (touch pan, auto-center) | `screens.cpp` | ✅ |
 || 8 | Advertise (broadcast presence) | `screens.cpp` | ✅ |

@@ -556,9 +556,9 @@ void contacts_screen_show()
 }
 
 // ════════════════════════════════════════════════════════
-// Network — "Nearby Now": nodes seen recently
+// Finder — nearby nodes
 // ════════════════════════════════════════════════════════
-void network_screen_show()
+void finder_screen_show()
 {
     lv_obj_t* scr = make_screen_full("Finder");
 

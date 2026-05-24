@@ -120,8 +120,7 @@ upstream/dev  ─────►  your-fork/dev
                     push && open PR ──► upstream/dev
 ```
 
-- The `dev` branch is the integration branch — all PRs merge here.
-- The `main` branch contains stable releases only.
+- The `dev` branch is the integration branch — all PRs merge here. There is no `main` branch; releases are tagged directly on `dev`.
 - Rebase your branch on `dev` before opening a PR to avoid merge conflicts:
   ```
   git fetch upstream
@@ -130,7 +129,7 @@ upstream/dev  ─────►  your-fork/dev
 
 ## Style Guide
 
-Follow the existing C++ style (`.clang-format` is checked in):
+Follow the existing C++ style (no `.clang-format` file — conventions are listed below):
 
 | Convention | Rule |
 |------------|------|

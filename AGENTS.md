@@ -85,15 +85,17 @@ src/
 │   ├── responsive.h       # Display-size-agnostic layout helpers
 │   ├── home_screen.cpp/h  # 4x3 icon grid, top/bottom bars
 │   ├── chat_screen.cpp/h  # Channels, DM, message bubbles
-│   ├── screens.cpp/h      # All 11+ other screens
+│   ├── screens.cpp/h      # Heard, Contacts, Map, Settings, etc.
+│   ├── onboarding_screen.cpp/h  # First-boot setup wizard
 │   ├── navigation.cpp/h   # Screen routing with slide transitions
 │   └── ui.cpp/h           # Splash→Home transition
 ├── app/
-│   └── map_renderer.cpp/h # Offline map (SD card tiles, TJpgDec, PSRAM canvas)
+│   └── map_renderer.cpp/h # Offline map (SD card tiles, PNG/JPEG decode, PSRAM canvas)
 ├── diagnostics/
 │   └── debug.cpp/h        # Debug dumps (SLOPOS_DEBUG=1 build)
-├── utils/                 # Reserved for utility helpers
-└── lib/meshcore/          # Git submodule → MeshCore
+├── fonts/
+│   └── emoji_font_setup.cpp/h  # Emoji font fallback for LVGL
+└── lib/meshcore/          # Git submodule → MeshCore (at repo root)
 ```
 
 ---
@@ -105,14 +107,16 @@ src/
 | **ESP32-S3** | MCU | 240 MHz, 16 MB flash, 8 MB PSRAM |
 | **LoRa SX1262** | SPI (shared) | NSS=9, SCK=40, MISO=38, MOSI=41, DIO1=45, RST=17, BUSY=13 |
 | **Display ST7789** | SPI (shared) | CS=12, DC=11, backlight=42, 320x240. Native orientation = 240x320 portrait + rotation(1) |
-| **Touch GT911** | I2C (0x5D) | 400 kHz, coordinate transform: SWAP_XY + MIRROR_X for rotation(1) |
 | **Keyboard** | I2C (0x55) | ESP32-C3 MCU, 100 kHz. Key mode returns ASCII. Backlight via 0x01/0x02 commands |
 | **Trackball** | GPIO | UP=3, DOWN=15, LEFT=1, RIGHT=2, CLICK=0. 5-direction + center press |
+| **Touch GT911** | I2C (0x5D) | SDA=18, SCL=8, INT=16. 400 kHz. Transforms for rotation(1): SWAP_XY=true, MIRROR_X=false, MIRROR_Y=true |
 | **Battery ADC** | GPIO 4 | Voltage divider, ADC_MULTIPLIER = 2 × 3.3 × 1000 |
 | **Peripheral Power** | GPIO 10 | HIGH = peripherals on |
-| **SD Card** | SPI (shared bus) | CS=39, shares SCK(40)/MOSI(41)/MISO(38) with LoRa/display. NOT on SDMMC peripheral despite some docs. Filesystem mounted at `/sdcard` via FATFS VFS. |
+| **GPS** | UART (Serial1) | RX=43, TX=44, baud 38400 |
+| **Buzzer** | GPIO 46 | Active low |
+| **SD Card** | SPI (shared bus) | CS=21, shares SCK(40)/MOSI(41)/MISO(38) with LoRa/display. Mounted at `/sdcard` via FATFS VFS. |
 
-**Shared SPI bus:** Display, LoRa, and microSD all share SCK(40)/MOSI(41)/MISO(38) with different CS lines (display=12, LoRa=9, SD=39). SPI must be initialized once, not re-begun.
+**Shared SPI bus:** Display, LoRa, and microSD all share SCK(40)/MOSI(41)/MISO(38) with different CS lines (display=12, LoRa=9, SD=21). SPI must be initialized once, not re-begun.
 
 ---
 
@@ -152,38 +156,38 @@ The `make_screen_full(title)` helper in `screens.cpp` creates all of this. Use i
 
 Use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 
-| Screen | Symbol |
-|--------|--------|
-| Chat | `LV_SYMBOL_ENVELOPE` |
-| Contacts | `LV_SYMBOL_CALL` |
-| Channels | `LV_SYMBOL_HASH` |
-| Network | `LV_SYMBOL_WIFI` |
-| Heard | `LV_SYMBOL_BELL` |
-| Map | `LV_SYMBOL_GPS` |
-| Settings | `LV_SYMBOL_SETTINGS` |
-| Terminal | `LV_SYMBOL_KEYBOARD` |
-| Hamburger (≡) | `LV_SYMBOL_LIST` |
-| Back (←) | `LV_SYMBOL_LEFT` |
+| CHATS | `LV_SYMBOL_ENVELOPE` | Chat |
+| CONTACTS | `LV_SYMBOL_CALL` | Contacts |
+| REPEATERS | `LV_SYMBOL_WIFI` | Heard (network) |
+| FINDER | `LV_SYMBOL_EYE_OPEN` | Network |
+| PACKETS | `LV_SYMBOL_LIST` | Heard (packet log) |
+| MAP | `LV_SYMBOL_GPS` | Map |
+| ADVERTISE | `LV_SYMBOL_AUDIO` | Advertise |
+| SETTINGS | `LV_SYMBOL_SETTINGS` | Settings |
+| TRACE | `LV_SYMBOL_SHUFFLE` | Trace |
+| TERMINAL | `LV_SYMBOL_KEYBOARD` | Terminal |
+| SETUP | `LV_SYMBOL_SETTINGS` | Onboarding |
+| SIGNAL | `LV_SYMBOL_BARS` | Signal |
 
 ### All Screens
 
-| # | Screen | Source | Status |
+|| # | Screen | Source | Status |
 |---|--------|--------|--------|
-| 0 | Splash | `ui.cpp` | ✅ |
-| 1 | Home (4x3 grid) | `home_screen.cpp` | ✅ |
-| 2 | Chat (channels + DM) | `chat_screen.cpp` | ✅ |
-| 3 | Contacts (alphabetical, tap→DM) | `screens.cpp` | ✅ |
-| 4 | Channels (list + create #hashtag/PSK) | `screens.cpp` | ✅ |
-| 5 | Network (nodes seen in last 2 min) | `screens.cpp` | ✅ |
-| 6 | Heard (searchable RSSI list) | `screens.cpp` | ⚠️ see KNOWN_ISSUES.md |
-| 7 | Map (touch pan, SD tiles) | `screens.cpp` | ⚠️ see KNOWN_ISSUES.md |
-| 8 | Advertise (broadcast presence) | `screens.cpp` | ✅ |
-| 9 | Settings (radio, keyboard BL, date/time) | `screens.cpp` | ✅ |
-| 10 | Trace (path discovery per contact) | `screens.cpp` | ⚠️ see KNOWN_ISSUES.md |
-| 11 | Terminal (colored log + commands) | `screens.cpp` | ⚠️ see KNOWN_ISSUES.md |
-| 12 | Noise floor bar (green/orange/red) | `screens.cpp` | ✅ |
-| 13 | Signal (live RSSI, SNR, radio params) | `screens.cpp` | ✅ |
-| 14 | Radio Setup (freq, SF, power selectors) | `screens.cpp` | ✅ |
+|| 0 | Splash | `ui.cpp` | ✅ |
+|| 1 | Home (4x3 grid) | `home_screen.cpp` | ✅ |
+|| 2 | Chat (channels + DM) | `chat_screen.cpp` | ✅ |
+|| 3 | Contacts (alphabetical, tap→DM) | `screens.cpp` | ✅ |
+|| 4 | Channels (list + create #hashtag/PSK) | `screens.cpp` | ✅ |
+|| 5 | Network (nodes seen in last 2 min) | `screens.cpp` | ✅ |
+|| 6 | Packets (raw packet log, 50 entries) | `screens.cpp` | ✅ |
+|| 7 | Map (touch pan, SD tiles) | `screens.cpp` | ⚠️ see KNOWN_ISSUES.md |
+|| 8 | Advertise (broadcast presence) | `screens.cpp` | ✅ |
+|| 9 | Settings (radio, keyboard BL, date/time) | `screens.cpp` | ✅ |
+|| 10 | Trace (path discovery per contact) | `screens.cpp` | ⚠️ see KNOWN_ISSUES.md |
+|| 11 | Terminal (colored log + commands) | `screens.cpp` | ⚠️ see KNOWN_ISSUES.md |
+|| 12 | Signal (live RSSI, SNR, radio params) | `screens.cpp` | ✅ |
+|| 13 | Radio Setup (freq, SF, BW, CR, power) | `screens.cpp` | ✅ |
+|| 14 | Onboarding (wizard) | `onboarding_screen.cpp` | ✅ |
 
 ---
 
@@ -319,7 +323,7 @@ When working on this codebase, follow this sequence:
 | Display init | ST7789 native = 240x320 portrait. Set panel 240x320, then `rotation(1)` for 320x240 landscape |
 | Backlight | `_panel.setLight(&_light)` before `setPanel(&_panel)` — missing = black screen |
 | LVGL tick | `lv_tick_set_cb()` after `lv_init()` — missing = refresh never fires |
-| Touch coords | After rotation(1): SWAP_XY=false, MIRROR_X=true |
+|| Touch coords | After rotation(1): SWAP_XY=true, MIRROR_X=false, MIRROR_Y=true |
 | Keyboard | `Wire.read()` returns `int`, store in `int` not `char` — 0xFF vs -1 collision |
 | strncpy | Does NOT null-terminate if source >= n. Always `dest[n-1] = '\0'` |
 | Auto-delete | `lv_scr_load_anim(..., true)` deletes old screen + all children. Register `LV_EVENT_DELETE` to null globals |

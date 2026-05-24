@@ -10,17 +10,17 @@ Built on the [MeshCore](https://github.com/meshcore-dev/MeshCore) mesh networkin
 
 | Feature | Status |
 |---------|--------|
-| Dark Discord-like UI (LVGL v9) | ✅ Complete |
-| Home screen (3×4 icon grid + status bars) | ✅ Complete |
+| Dark Discord-like UI (LVGL v9.3.0) | ✅ Complete |
+| Home screen (4×3 icon grid + status bars) | ✅ Complete |
 | Chat screen (channel list, message bubbles, text input) | ✅ Complete |
-| Heard / Contacts / Repeaters screens | ✅ Complete |
-| Signal / Noise diagnostic screens | ✅ Complete |
-| Map (offline tiles placeholder) | ✅ Complete |
+| Packets / Contacts / Repeaters screens | ✅ Complete |
+| Signal / Network diagnostics screens | ✅ Complete |
+| Map (offline tiles + PNG/JPEG decode) | ✅ Complete |
 | Settings / Terminal / Trace screens | ✅ Complete |
-| Finder / Advertise screens | ✅ Complete |
+| Finder / Advertise / Onboarding wizard screens | ✅ Complete |
 | MeshCore protocol (radio, routing, encryption) | ✅ Integrated |
 | T-Deck HAL (display, battery, LoRa, pins) | ✅ Complete |
-| Unit tests (12 modules) | ✅ 161 tests |
+| Unit tests (13 modules) | ✅ 171 tests |
 | Touch input driver (GT911) | ✅ Complete |
 | Keyboard input driver (I2C, ESP32-C3 MCU) | ✅ Complete |
 | Full mesh messaging (send/receive queue + UI integration) | ✅ Complete |
@@ -31,7 +31,7 @@ Built on the [MeshCore](https://github.com/meshcore-dev/MeshCore) mesh networkin
 ## Test Suite
 
 ```bash
-# Run all 161 tests on native platform (no hardware needed)
+# Run all 171 tests on native platform (no hardware needed)
 pio test -e native_test -v
 
 # Run a specific test module
@@ -41,7 +41,7 @@ pio test -e native_test -f test_battery -v
 | Test Module | Tests | What's Covered |
 |-------------|-------|----------------|
 | `test_touch` | 22 | GT911 coordinate mapping, multitouch parsing, press→release lifecycle |
-| `test_keyboard` | 19 | Matrix scan, keymap, debounce, ghost detection, LVGL mapping |
+| `test_keyboard` | 20 | Matrix scan, keymap, debounce, ghost detection, LVGL mapping |
 | `test_battery` | 16 | mV→% conversion, clamping, monotonicity, edge cases, ADC math |
 | `test_sdcard` | 15 | SPI init, mount, read/write, directory listing, edge cases |
 | `test_mesh_messaging` | 15 | Message queue, send/receive, channel ops, contact export |
@@ -49,6 +49,7 @@ pio test -e native_test -f test_battery -v
 | `test_mesh_wrapper` | 13 | API signatures, return value ranges, unread count init |
 | `test_navigation` | 12 | Forward/back with history stack, deep nav chains, all pairs |
 | `test_gps` | 12 | NMEA parsing, coordinate conversion, fix detection |
+| `test_trackball` | 9 | Direction debounce, deadtime, click detection, idle calibration |
 | `test_pins` | 9 | GPIO ranges, SPI/I2C bus conflicts, duplicate detection, LoRa params |
 | `test_theme` | 7 | Color darkness, vibrancy, distinctness, readability hierarchy |
 | `test_build` | 7 | All headers compile together, cross-module API consistency |
@@ -80,27 +81,32 @@ SlopOS-tdeck/
 │   │   ├── tdeck_pins.h    ← Complete T-Deck pinout + version string
 │   │   ├── tdeck_board.h   ← TDeckBoard :: mesh::MainBoard
 │   │   ├── display.cpp/h   ← LovyanGFX ST7789 + LVGL driver
+│   │   ├── trackball.cpp/h ← 5-direction trackball (debounce, event queue)
 │   │   ├── battery.cpp/h   ← ADC battery (mV + %)
 │   │   ├── touch.cpp/h     ← GT911 touch controller (I2C)
-│   │   ├── keyboard.cpp/h  ← QWERTY matrix keyboard scanner
+│   │   ├── keyboard.cpp/h  ← I2C keyboard (ESP32-C3 MCU)
 │   │   ├── gps.cpp/h       ← NMEA GPS parser (Serial1)
-│   │   ├── sdcard.cpp/h    ← microSD card (SPI)
+│   │   ├── sdcard.cpp/h    ← microSD card (SPI, shared bus)
 │   │   └── prefs.cpp/h     ← NVS preferences (radio config, identity)
 │   ├── mesh/
 │   │   ├── mesh_wrapper.cpp/h  ← SX1262 radio init, RTC, mesh API
 │   │   └── slop_mesh.h     ← SlopMesh : mesh::Mesh subclass
 │   ├── app/
-│   │   └── map_renderer.cpp/h  ← Offline map tile renderer
+│   │   └── map_renderer.cpp/h  ← Offline map tile renderer (PNG/JPEG, PSRAM canvas)
+│   ├── fonts/
+│   │   └── emoji_font_setup.cpp/h  ← Emoji font fallback
 │   └── ui/
 │       ├── theme.h         ← Discord-inspired dark palette
-│       ├── home_screen.cpp/h   ← 3×4 icon grid + top/bottom bars
+│       ├── responsive.h    ← Adaptive layout helpers (bars, grids, dialogs)
+│       ├── home_screen.cpp/h   ← 4×3 icon grid + top/bottom bars
 │       ├── chat_screen.cpp/h   ← Discord-like chat (channels, bubbles, input)
-│       ├── screens.cpp/h   ← All 11 other screens
+│       ├── screens.cpp/h   ← Heard, Map, Settings, Terminals, etc.
+│       ├── onboarding_screen.cpp/h  ← First-boot setup wizard
 │       ├── navigation.cpp/h    ← Screen routing with animations
 │       └── ui.cpp/h        ← Splash → Home transition
 ├── boards/t-deck.json      ← PlatformIO board definition
 ├── platformio.ini          ← Build config (ESP32-S3 + LVGL + MeshCore)
-└── test/                   ← Unit test directory (12 modules, 161 tests)
+├── test/                   ← Unit test directory (13 modules, 171 tests)
 ```
 
 ## Build & Flash
@@ -242,7 +248,7 @@ Round 2 — review-back (108K tokens):
 - CRITICAL: map image descriptor initialization, path validity via `Packet::copyPath`
 - HIGH: group text null-termination, JPEG output bounds, canvas allocation error path
 
-All fixes compiled and tested: **160/161 tests pass, ESP32 build SUCCESS (RAM 40.5%, Flash 15.9%)**
+All fixes compiled and tested: **171/171 tests pass, ESP32 build SUCCESS (RAM 40.5%, Flash 15.9%)**
 
 ## License
 
@@ -265,9 +271,10 @@ This project builds on and incorporates open source software from the following 
 |---------|---------|-----------------|
 | [MeshCore](https://github.com/meshcore-dev/MeshCore) | MIT | Mesh networking protocol (submodule at `lib/meshcore/`). Also: RTC clock (`ESP32RTCClock`), auto-off display timer, deep sleep patterns, and `NodePrefs` struct — all adapted from MeshCore's companion radio firmware. |
 | [LilyGo T-Deck Keyboard_ESP32C3](https://github.com/Xinyuan-LilyGO/T-Deck) | MIT | I2C keyboard protocol reference — our `keyboard.cpp` driver is based on the command set and keymap from this firmware (© 2023 Shenzhen Xin Yuan Electronic Technology Co., Ltd) |
-| [LVGL](https://github.com/lvgl/lvgl) | MIT | Embedded GUI framework (v9.5) |
+| [LVGL](https://github.com/lvgl/lvgl) | MIT | Embedded GUI framework (v9.3.0) |
 | [LovyanGFX](https://github.com/lovyan03/LovyanGFX) | FreeBSD | Display driver for ST7789 TFT |
 | [RadioLib](https://github.com/jgromes/RadioLib) | MIT | SX1262 LoRa radio driver |
+| [Adafruit BusIO](https://github.com/adafruit/Adafruit_BusIO) | MIT | I2C/SPI bus abstraction for sensor/display drivers |
 | [Arduino Crypto](https://github.com/rweather/arduinolibs) | MIT | AES/SHA for MeshCore packet encryption |
 | [Google Test](https://github.com/google/googletest) | BSD-3-Clause | Unit testing framework |
 | [ed25519](https://github.com/orlp/ed25519) | zlib/libpng | Embedded Ed25519 crypto (Orson Peters) — bundled in MeshCore at `lib/meshcore/lib/ed25519/` |

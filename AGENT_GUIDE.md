@@ -51,8 +51,10 @@ src/
 │   ├── battery.cpp/h      # ADC mV→%
 │   ├── touch.cpp/h        # GT911 capacitive touch (I2C, 400 kHz)
 │   ├── keyboard.cpp/h     # I2C keyboard (ESP32-C3 MCU at 0x55)
+│   ├── trackball.cpp/h    # 5-direction trackball (debounce, event queue)
 │   ├── prefs.cpp/h        # NodePrefs persisted in NVS (freq, SF, power, etc.)
-│   └── gps.cpp/h          # GPS NMEA parser
+│   ├── gps.cpp/h          # GPS NMEA parser
+│   └── sdcard.cpp/h       # SD card init, status, path helpers
 ├── mesh/
 │   ├── slop_mesh.h        # Mesh subclass — routing, channels, message handling
 │   └── mesh_wrapper.cpp/h # Public API for the UI layer
@@ -66,6 +68,9 @@ src/
 │   └── ui.cpp/h           # Splash→Home transition
 ├── app/
 │   └── map_renderer.cpp/h # Offline map (SD card tiles, TJpgDec, PSRAM canvas)
+├── diagnostics/
+│   └── debug.cpp/h        # Debug dumps (SLOPOS_DEBUG=1 build)
+├── utils/                 # Reserved for utility helpers
 └── lib/meshcore/          # Git submodule → MeshCore
 ```
 
@@ -129,6 +134,8 @@ Use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 |--------|--------|
 | Chat | `LV_SYMBOL_ENVELOPE` |
 | Contacts | `LV_SYMBOL_CALL` |
+| Channels | `LV_SYMBOL_HASH` |
+| Network | `LV_SYMBOL_WIFI` |
 | Heard | `LV_SYMBOL_BELL` |
 | Map | `LV_SYMBOL_GPS` |
 | Settings | `LV_SYMBOL_SETTINGS` |
@@ -143,17 +150,18 @@ Use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 | 0 | Splash | `ui.cpp` | ✅ |
 | 1 | Home (4x3 grid) | `home_screen.cpp` | ✅ |
 | 2 | Chat (channels + DM) | `chat_screen.cpp` | ✅ |
-| 3 | Contacts (tap→DM) | `screens.cpp` | ✅ |
-| 4 | Repeaters (→Heard) | `screens.cpp` | ✅ |
-| 5 | Finder | `screens.cpp` | ✅ |
-| 6 | Heard (live RSSI) | `screens.cpp` | ✅ |
+| 3 | Contacts (alphabetical, tap→DM) | `screens.cpp` | ✅ |
+| 4 | Channels (list + create #hashtag/PSK) | `screens.cpp` | ✅ |
+| 5 | Network (nodes seen in last 2 min) | `screens.cpp` | ✅ |
+| 6 | Heard (searchable RSSI list) | `screens.cpp` | ✅ |
 | 7 | Map (touch pan, SD tiles) | `screens.cpp` | ✅ |
-| 8 | Advertise | `screens.cpp` | 🟡 status never updates |
+| 8 | Advertise (broadcast presence) | `screens.cpp` | 🟡 status never updates |
 | 9 | Settings (radio, keyboard BL, date/time) | `screens.cpp` | ✅ |
-| 10 | Trace | `screens.cpp` | ✅ |
-| 11 | Terminal | `screens.cpp` | ✅ |
-| 12 | Noise floor bar | `screens.cpp` | ✅ |
-| 13 | Signal (RSSI, SNR, params) | `screens.cpp` | 🟡 radio params hardcoded |
+| 10 | Trace (path discovery per contact) | `screens.cpp` | ✅ |
+| 11 | Terminal (colored log + commands) | `screens.cpp` | ✅ |
+| 12 | Noise floor bar (green/orange/red) | `screens.cpp` | ✅ |
+| 13 | Signal (live RSSI, SNR, radio params) | `screens.cpp` | ✅ |
+| 14 | Radio Setup (freq, SF, power selectors) | `screens.cpp` | ✅ |
 
 ---
 
@@ -187,18 +195,18 @@ slopos::mesh::getNoiseFloor()              // Current noise floor dBm
 ## Testing
 
 ```bash
-pio test -e native_test -v       # All 171 tests (no hardware)
+pio test -e native_test -v       # All 172 tests (no hardware)
 pio test -e native_test -f test_touch -v     # One module
 ```
 
 **Critical rules:**
 - Tests use `test/test_<name>/` dirs with `main.cpp` entry points. Wrong naming = not discovered.
-- Hardware is mocked in `test/mocks/` (lvgl.h, Arduino.h, RadioLib.h, etc.)
-- `MockMeshMessage.channel` field added recently — tests match production struct layout.
+- Hardware is mocked in `test/mocks/` (Arduino.h, lvgl.h, RadioLib.h, LovyanGFX.hpp, Wire.h, etc.)
+- `mock_prefs.cpp` provides byte-level NVS prefs stubs when HAL modules depend on prefs.
 - Always run tests before pushing. A PR with failing tests is rejected.
 
 **New code = new tests.** Minimum:
-- HAL changes → add mock + test
+- HAL changes → add mock + test (e.g., `test_trackball` for trackball HAL)
 - New screen → navigation test + message display test
 - API changes → update existing mock stubs
 
@@ -215,6 +223,9 @@ pio device monitor -b 115200
 
 # Debug build (extra serial output)
 pio run -e SlopOS_TDeck_debug
+
+# Trackball debug build (raw GPIO state visible)
+pio run -e SlopOS_TDeck_trackball_debug
 ```
 
 ---
@@ -239,7 +250,7 @@ Main + dev branch model:
 1. List PRs: `gh pr list --repo hermes-gadget/SlopOS-tdeck --state open`
 2. Check diff: `gh pr diff N` or `git fetch origin pull/N/head:pr-N && git diff dev...pr-N`
 3. Build: `pio run -e SlopOS_TDeck`
-4. Test: `pio test -e native_test -v` (must pass 171/171)
+4. Test: `pio test -e native_test -v` (must pass 172/172)
 5. Review: check logic, edge cases, buffer overflow, strncpy null termination, `\\n` literal bugs, missing scroll disables, dangling pointers after auto-delete
 6. Merge: `gh pr merge N --squash --delete-branch --repo hermes-gadget/SlopOS-tdeck`
 7. If merge fails (conflicts): cherry-pick new commits only, or squash-merge locally

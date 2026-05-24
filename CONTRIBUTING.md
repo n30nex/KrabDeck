@@ -79,7 +79,8 @@ tolerated.
    ```
 6. **Push to your fork** and open a PR against the `dev` branch.
 7. In the PR description, reference the related issue (`Fixes #123`).
-8. Respond to review feedback promptly.
+8. **Update KNOWN_ISSUES.md** — remove any entry your changes fix, and add any new issues you discovered during testing.
+9. Respond to review feedback promptly.
 
 ### After merging
 

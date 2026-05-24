@@ -89,6 +89,10 @@ Once the PR is merged, the maintainer closes the original issue with notes descr
 
 Pull requests are merged via `gh pr merge --squash --delete-branch`. Squash merging keeps the commit history on `dev` clean — each PR becomes one atomic commit. Feature branches are deleted after merge.
 
+### Hardware Testing
+
+For any non-trivial change (anything beyond a typo, comment, or obvious one-line fix), the PR must be tested on actual hardware by a maintainer before merging. Do not merge AI agent or contributor PRs with substantive changes until hardware-tested. Small fixes can be merged on code review alone.
+
 ### Pull Request Guidelines
 
 - **One feature / fix = one PR.** Smaller PRs are reviewed faster.

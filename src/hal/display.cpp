@@ -20,6 +20,7 @@
 #include "display.h"
 #include "touch.h"
 #include "keyboard.h"
+#include "prefs.h"
 #include "trackball.h"
 #include "tdeck_pins.h"
 #include "../ui/ui.h"
@@ -346,6 +347,7 @@ void slopos_display_loop()
     // Auto-off: turn off backlight after inactivity
     if (display_on && millis() > auto_off_at) {
         tft.setBrightness(0);
+        slopos_keyboard_set_brightness(0);
         display_on = false;
     }
 
@@ -362,6 +364,7 @@ void slopos_display_wake()
 {
     if (!display_on) {
         tft.setBrightness(255);
+        slopos_keyboard_set_brightness(slopos::prefs_get().kbd_backlight);
         display_on = true;
         wake_refresh_pending = true;
     }

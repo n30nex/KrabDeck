@@ -447,17 +447,14 @@ void contacts_screen_show()
 {
     lv_obj_t* scr = make_screen_full("Contacts");
 
-    char names[32][32];
-    int n = slopos::mesh::exportContacts(names, 32);
+    slopos::mesh::ContactInfo contacts[32];
+    int n = slopos::mesh::exportContactsFull(contacts, 32);
 
     // Sort alphabetically
-    for (int i = 0; i < n-1; i++)
-        for (int j = i+1; j < n; j++)
-            if (strcmp(names[j], names[i]) < 0) {
-                char tmp[32];
-                strncpy(tmp, names[i], 31); tmp[31] = '\0';
-                strncpy(names[i], names[j], 31); names[i][31] = '\0';
-                strncpy(names[j], tmp, 31); names[j][31] = '\0';
+    for (int i = 0; i < n - 1; i++)
+        for (int j = i + 1; j < n; j++)
+            if (strcmp(contacts[j].name, contacts[i].name) < 0) {
+                auto tmp = contacts[i]; contacts[i] = contacts[j]; contacts[j] = tmp;
             }
 
     if (n == 0) {
@@ -477,18 +474,63 @@ void contacts_screen_show()
         return;
     }
 
-    lv_obj_t* list = lv_list_create(scr);
+    lv_obj_t* list = lv_obj_create(scr);
     lv_obj_set_size(list, LV_PCT(100), CONTENT_H);
     lv_obj_align(list, LV_ALIGN_TOP_MID, 0, CONTENT_Y);
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list, 0, 0);
+    lv_obj_set_style_pad_all(list, 0, 0);
+    lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scroll_dir(list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
+
+    static constexpr int ROW_H = 32;
 
     for (int i = 0; i < n; i++) {
-        lv_obj_t* btn = lv_list_add_btn(list, LV_SYMBOL_CALL, names[i]);
-        lv_obj_set_style_bg_color(btn,
+        auto& c = contacts[i];
+
+        lv_obj_t* row = lv_obj_create(list);
+        lv_obj_set_size(row, LV_PCT(100), ROW_H);
+        lv_obj_set_style_bg_color(row,
             lv_color_hex(i % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
-        lv_obj_add_event_cb(btn, [](lv_event_t*) {
-            navigate_to(Screen::Chat);
+        lv_obj_set_style_bg_color(row,
+            lv_color_hex(ACCENT), LV_STATE_PRESSED);
+        lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_opa(row, LV_OPA_20, LV_STATE_PRESSED);
+        lv_obj_set_style_border_width(row, 0, 0);
+        lv_obj_set_style_pad_all(row, 0, 0);
+        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+
+        // Icon
+        lv_obj_t* icon = lv_label_create(row);
+        lv_label_set_text(icon, LV_SYMBOL_CALL);
+        lv_obj_set_style_text_color(icon, lv_color_hex(ACCENT), 0);
+        lv_obj_set_style_text_font(icon, &lv_font_montserrat_12, 0);
+        lv_obj_align(icon, LV_ALIGN_LEFT_MID, 6, 0);
+
+        // Name
+        lv_obj_t* name_l = lv_label_create(row);
+        lv_label_set_text(name_l, c.name);
+        lv_obj_set_style_text_color(name_l, lv_color_hex(TEXT_PRIMARY), 0);
+        lv_obj_set_style_text_font(name_l, &lv_font_montserrat_12, 0);
+        lv_obj_align(name_l, LV_ALIGN_LEFT_MID, 28, 0);
+
+        // RSSI
+        char rssi_buf[12];
+        snprintf(rssi_buf, sizeof(rssi_buf), "%ddBm", c.rssi);
+        lv_obj_t* rssi_l = lv_label_create(row);
+        lv_label_set_text(rssi_l, rssi_buf);
+        lv_obj_set_style_text_color(rssi_l, lv_color_hex(TEXT_SECONDARY), 0);
+        lv_obj_set_style_text_font(rssi_l, &lv_font_montserrat_10, 0);
+        lv_obj_align(rssi_l, LV_ALIGN_RIGHT_MID, -6, 0);
+
+        lv_obj_add_event_cb(row, [](lv_event_t* e) {
+            lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
+            lv_obj_t* name_l = lv_obj_get_child(target, 1);
+            if (name_l) {
+                const char* name = lv_label_get_text(name_l);
+                chat_screen_open_dm(name);
+            }
         }, LV_EVENT_CLICKED, nullptr);
     }
 
@@ -1184,25 +1226,57 @@ void trace_screen_show()
 
     lv_label_set_text(info, "Tap a contact to trace the path.");
 
-    lv_obj_t* list = lv_list_create(scr);
+    lv_obj_t* list = lv_obj_create(scr);
     lv_obj_set_size(list, LV_PCT(100), CONTENT_H - 26);
     lv_obj_align(list, LV_ALIGN_TOP_MID, 0, CONTENT_Y + 24);
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list, 0, 0);
+    lv_obj_set_style_pad_all(list, 0, 0);
+    lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scroll_dir(list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
 
-    char buf[48];
+    static constexpr int ROW_H = 32;
+
     for (int i = 0; i < total; i++) {
         bool has_path = slopos::mesh::contactHasPath(i);
-        snprintf(buf, sizeof(buf), "%s  %s",
-                 names[i], has_path ? "[path known]" : "[no path]");
-        lv_obj_t* btn = lv_list_add_btn(list,
-            has_path ? LV_SYMBOL_GPS : LV_SYMBOL_WARNING, buf);
-        lv_obj_set_style_bg_color(btn,
+
+        lv_obj_t* row = lv_obj_create(list);
+        lv_obj_set_size(row, LV_PCT(100), ROW_H);
+        lv_obj_set_style_bg_color(row,
             lv_color_hex(i % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
+        lv_obj_set_style_bg_color(row,
+            lv_color_hex(ACCENT), LV_STATE_PRESSED);
+        lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_opa(row, LV_OPA_20, LV_STATE_PRESSED);
+        lv_obj_set_style_border_width(row, 0, 0);
+        lv_obj_set_style_pad_all(row, 0, 0);
+        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+
+        // Icon
+        lv_obj_t* icon = lv_label_create(row);
+        lv_label_set_text(icon, has_path ? LV_SYMBOL_GPS : LV_SYMBOL_WARNING);
+        lv_obj_set_style_text_color(icon, lv_color_hex(ACCENT), 0);
+        lv_obj_set_style_text_font(icon, &lv_font_montserrat_12, 0);
+        lv_obj_align(icon, LV_ALIGN_LEFT_MID, 6, 0);
+
+        // Name
+        lv_obj_t* name_l = lv_label_create(row);
+        lv_label_set_text(name_l, names[i]);
+        lv_obj_set_style_text_color(name_l, lv_color_hex(TEXT_PRIMARY), 0);
+        lv_obj_set_style_text_font(name_l, &lv_font_montserrat_12, 0);
+        lv_obj_align(name_l, LV_ALIGN_LEFT_MID, 28, 0);
+
+        // Path status
+        lv_obj_t* status_l = lv_label_create(row);
+        lv_label_set_text(status_l, has_path ? "[path known]" : "[no path]");
+        lv_obj_set_style_text_color(status_l, lv_color_hex(TEXT_SECONDARY), 0);
+        lv_obj_set_style_text_font(status_l, &lv_font_montserrat_10, 0);
+        lv_obj_align(status_l, LV_ALIGN_RIGHT_MID, -6, 0);
 
         if (has_path) {
             int contact_idx = i;
-            lv_obj_add_event_cb(btn, [](lv_event_t* e) {
+            lv_obj_add_event_cb(row, [](lv_event_t* e) {
                 int idx = (int)(intptr_t)lv_event_get_user_data(e);
                 uint32_t tag;
                 if (slopos::mesh::sendTrace(idx, &tag)) {

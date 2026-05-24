@@ -20,14 +20,16 @@ When scrolling through channels in the channel selector, message previews (the l
 
 ## Contacts Screen
 
-### Theme integration
+### Theme integration — ✅ Fixed
 Contacts are rendered too dark, blending into the background. On the dark pixel theme (`#0A0A0A` / `#111111` backgrounds), the secondary text color makes contact names and RSSI values nearly invisible.
 
-**What's needed:**
-- Bump contrast on contact names and labels to at least `#EAEAEA` (TEXT_PRIMARY)
-- Use `#00BFFF` (ACCENT) for the selected/highlighted contact
-- Ensure RSSI/SNR values use a visible muted color like `#949BA4` (TEXT_SECONDARY)
-- The `#5C6067` (TEXT_MUTED) range is too dark for body text on this theme
+**What was done:**
+- Refactored from `lv_list_add_btn` to manual flex-column rows with explicit text colors
+- Contact names → `TEXT_PRIMARY` (`#F2F3F5`)
+- Call icon → `ACCENT` (`#00BFFF`)
+- RSSI values now shown per contact using `TEXT_SECONDARY` (`#949BA4`)
+- Pressed row background gets an `ACCENT` tint at 20% opacity
+- Tapping a contact now opens a DM conversation directly
 
 ---
 
@@ -94,10 +96,16 @@ The offline tile map feature hasn't been thoroughly tested in the field. Known u
 
 ## Trace Screen
 
-### Theme contrast
+### Theme contrast — ✅ Fixed
 The Trace screen (path quality to a selected contact) uses text colors that are too dark against the background, making it hard to read hop-by-hop metrics.
 
-**What's needed:** Same treatment as the Contacts screen — bump text colors to at least TEXT_SECONDARY (`#949BA4`) for labels and TEXT_PRIMARY (`#EAEAEA`) for values. Use ACCENT (`#00BFFF`) for the direct/active path highlight.
+**What was done:**
+- Refactored from `lv_list_add_btn` to manual flex-column rows with explicit text colors
+- Contact names → `TEXT_PRIMARY` (`#F2F3F5`)
+- Path status labels (`[path known]` / `[no path]`) → `TEXT_SECONDARY` (`#949BA4`)
+- GPS/warning icon → `ACCENT` (`#00BFFF`)
+- Trace result label → `ACCENT` (`#00BFFF`)
+- Pressed row background gets an `ACCENT` tint at 20% opacity
 
 ---
 

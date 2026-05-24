@@ -1156,11 +1156,52 @@ void chat_screen_show()
     show_channel_list(LV_SCR_LOAD_ANIM_MOVE_LEFT);
 }
 
+void chat_screen_open_dm(const char* contact_name)
+{
+    if (!contact_name || !contact_name[0]) return;
+
+    navigate_to(Screen::Chat);
+    refresh_channels();
+
+    char dm_name[32];
+    snprintf(dm_name, sizeof(dm_name), "DM: %s", contact_name);
+
+    int idx = find_channel_idx(dm_name);
+    if (idx < 0 && dyn_count < MAX_CHANNELS) {
+        idx = dyn_count;
+        strncpy(dyn_channels[idx], dm_name, 31);
+        dyn_channels[idx][31] = '\0';
+        dyn_count++;
+    }
+
+    if (idx >= 0 && idx < MAX_CHANNELS) {
+        open_channel_messaging(idx);
+    }
+}
+
 void chat_screen_add_msg(const char* channel, const char* sender, const char* text, bool is_self)
 {
     uint32_t now = slopos::mesh::getCurrentTime();
+
+    // Map DM messages (empty channel) to "DM: <sender>" conversation
+    char dm_buf[32];
+    if (!channel || !channel[0]) {
+        snprintf(dm_buf, sizeof(dm_buf), "DM: %s", sender);
+        channel = dm_buf;
+    }
+
     int idx = find_channel_idx(channel);
-    if (idx < 0 || idx >= MAX_CHANNELS) return;
+    if (idx < 0) {
+        if (dyn_count < MAX_CHANNELS) {
+            idx = dyn_count;
+            strncpy(dyn_channels[idx], channel, 31);
+            dyn_channels[idx][31] = '\0';
+            dyn_count++;
+        } else {
+            return;
+        }
+    }
+    if (idx >= MAX_CHANNELS) return;
 
     append_channel_message(idx, sender, text, now, is_self);
 

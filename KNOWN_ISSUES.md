@@ -18,21 +18,6 @@ When scrolling through channels in the channel selector, message previews (the l
 
 ---
 
-## Contacts Screen
-
-### Theme integration — ✅ Fixed
-Contacts are rendered too dark, blending into the background. On the dark pixel theme (`#0A0A0A` / `#111111` backgrounds), the secondary text color makes contact names and RSSI values nearly invisible.
-
-**What was done:**
-- Refactored from `lv_list_add_btn` to manual flex-column rows with explicit text colors
-- Contact names → `TEXT_PRIMARY` (`#F2F3F5`)
-- Call icon → `ACCENT` (`#00BFFF`)
-- RSSI values now shown per contact using `TEXT_SECONDARY` (`#949BA4`)
-- Pressed row background gets an `ACCENT` tint at 20% opacity
-- Tapping a contact now opens a DM conversation directly
-
----
-
 ## Signal Bars
 
 ### RSSI-based signal strength indicator
@@ -91,21 +76,6 @@ The offline tile map feature hasn't been thoroughly tested in the field. Known u
 - GPS pin integration with map centering
 
 **What's needed:** Field testing with various SD cards, tile sets, and GPS conditions. A test script for the tile downloader would also help contributors validate their tile packs before putting them on the SD card.
-
----
-
-## Trace Screen
-
-### Theme contrast — ✅ Fixed
-The Trace screen (path quality to a selected contact) uses text colors that are too dark against the background, making it hard to read hop-by-hop metrics.
-
-**What was done:**
-- Refactored from `lv_list_add_btn` to manual flex-column rows with explicit text colors
-- Contact names → `TEXT_PRIMARY` (`#F2F3F5`)
-- Path status labels (`[path known]` / `[no path]`) → `TEXT_SECONDARY` (`#949BA4`)
-- GPS/warning icon → `ACCENT` (`#00BFFF`)
-- Trace result label → `ACCENT` (`#00BFFF`)
-- Pressed row background gets an `ACCENT` tint at 20% opacity
 
 ---
 

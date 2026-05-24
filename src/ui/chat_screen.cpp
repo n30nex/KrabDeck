@@ -24,11 +24,13 @@
 #include "../hal/tdeck_pins.h"
 #include "../hal/battery.h"
 #include "../mesh/mesh_wrapper.h"
+#include "../hal/prefs.h"
 #include "../fonts/emoji_font.h"
 #include <lvgl.h>
 #include <cstring>
 #include <cstdio>
 #include <SPIFFS.h>
+#include <esp_heap_caps.h>
 
 namespace slopos::ui {
 
@@ -86,7 +88,9 @@ static constexpr int TOP_H      = TOP_BAR_H;
 static constexpr int INPUT_H    = 35;
 // BOT_BAR_H, DIVIDER_H used directly from responsive namespace
 static constexpr int BUBBLE_PAD = 6;
-static constexpr int MAX_MSGS      = 8;
+static constexpr uint16_t CHAT_MSGS_MAX         = 200;
+static constexpr uint16_t CHAT_MSGS_DEFAULT_CAP = 200;
+static constexpr uint16_t CHAT_MSGS_MIN_CAP     = 8;
 static constexpr int MAX_MSG_BYTES = 149; // max text bytes for mesh payload (MAX_PAYLOAD - 1)
 static constexpr int MAX_NAME_LEN  = 31;  // max chars for channel/contact names (buffer - null)
 static constexpr int MSG_LIST_Y    = TOP_H + DIVIDER_H;
@@ -119,8 +123,58 @@ struct ChannelMessage {
     uint32_t timestamp;
     bool     is_self;
 };
-static ChannelMessage ch_msgs[MAX_CHANNELS][MAX_MSGS];
-static uint8_t        ch_msg_count[MAX_CHANNELS];
+static ChannelMessage* ch_msgs[MAX_CHANNELS] = {nullptr};
+static uint16_t       ch_msg_capacity[MAX_CHANNELS] = {0};
+static uint16_t       ch_msg_count[MAX_CHANNELS];
+
+static void ensure_channel_buffer(int idx)
+{
+    if (idx < 0 || idx >= MAX_CHANNELS) return;
+    if (ch_msgs[idx] || ch_msg_capacity[idx] == CHAT_MSGS_MAX) return;
+
+    const size_t bytes = CHAT_MSGS_MAX * sizeof(ChannelMessage);
+    ch_msgs[idx] = (ChannelMessage*)heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!ch_msgs[idx]) {
+        ch_msg_capacity[idx] = 0;
+    } else {
+        ch_msg_capacity[idx] = CHAT_MSGS_MAX;
+    }
+}
+
+static bool has_channel_buffer(int idx)
+{
+    return idx >= 0 && idx < MAX_CHANNELS && ch_msgs[idx] != nullptr;
+}
+
+static uint16_t chat_msg_cap()
+{
+    const uint16_t configured = slopos::prefs_get().chat_msg_cap;
+    if (configured == 0) return CHAT_MSGS_DEFAULT_CAP;
+    if (configured < CHAT_MSGS_MIN_CAP) return CHAT_MSGS_MIN_CAP;
+    if (configured > CHAT_MSGS_MAX) return CHAT_MSGS_MAX;
+    return configured;
+}
+
+static void trim_channel_history(int idx, uint16_t cap)
+{
+    if (idx < 0 || idx >= MAX_CHANNELS || cap == 0) {
+        return;
+    }
+    ensure_channel_buffer(idx);
+    if (!has_channel_buffer(idx)) {
+        return;
+    }
+
+    const uint16_t buf_cap = ch_msg_capacity[idx];
+    const uint16_t effective_cap = (cap < buf_cap) ? cap : buf_cap;
+    if (ch_msg_count[idx] <= effective_cap) {
+        return;
+    }
+
+    uint16_t drop = ch_msg_count[idx] - effective_cap;
+    memmove(&ch_msgs[idx][0], &ch_msgs[idx][drop], effective_cap * sizeof(ChannelMessage));
+    ch_msg_count[idx] = effective_cap;
+}
 
 // ── Forward declarations ───────────────────────────────────
 static void show_channel_list(lv_scr_load_anim_t anim);
@@ -347,11 +401,16 @@ static void append_channel_message(int idx, const char* sender, const char* text
                                    uint32_t timestamp, bool is_self)
 {
     if (idx < 0 || idx >= MAX_CHANNELS) return;
+    ensure_channel_buffer(idx);
+    if (!has_channel_buffer(idx)) return;
 
-    uint8_t pos = ch_msg_count[idx];
-    if (pos >= MAX_MSGS) {
-        for (int i = 1; i < MAX_MSGS; i++) ch_msgs[idx][i - 1] = ch_msgs[idx][i];
-        pos = MAX_MSGS - 1;
+    const uint16_t cap = chat_msg_cap();
+    trim_channel_history(idx, cap);
+
+    uint16_t pos = ch_msg_count[idx];
+    if (pos >= cap) {
+        for (uint16_t i = 1; i < cap; i++) ch_msgs[idx][i - 1] = ch_msgs[idx][i];
+        pos = cap - 1;
     } else {
         ch_msg_count[idx]++;
     }
@@ -740,8 +799,12 @@ static void render_active_messages()
 {
     if (!msg_list || active_channel < 0 || active_channel >= MAX_CHANNELS) return;
 
+    const uint16_t cap = chat_msg_cap();
+    trim_channel_history(active_channel, cap);
+    if (!has_channel_buffer(active_channel)) return;
+
     lv_obj_clean(msg_list);
-    for (uint8_t i = 0; i < ch_msg_count[active_channel]; i++) {
+    for (uint16_t i = 0; i < ch_msg_count[active_channel]; i++) {
         ChannelMessage& msg = ch_msgs[active_channel][i];
         create_bubble(msg_list, msg.sender, msg.text, msg.timestamp, msg.is_self);
     }
@@ -1221,7 +1284,9 @@ void chat_screen_add_msg(const char* channel, const char* sender, const char* te
     if (!visible) return;
 
     create_bubble(msg_list, sender, text, now, is_self);
-    if (lv_obj_get_child_cnt(msg_list) > MAX_MSGS)
+
+    const uint16_t cap = chat_msg_cap();
+    if (lv_obj_get_child_cnt(msg_list) > cap)
         lv_obj_del(lv_obj_get_child(msg_list, 0));
 
     lv_obj_t* last = lv_obj_get_child(msg_list, lv_obj_get_child_cnt(msg_list) - 1);
@@ -1365,16 +1430,19 @@ lv_obj_t* chat_screen_get_input_field()
 static constexpr uint32_t MSG_MAGIC = 0x536d534c; // "SLmS"
 static constexpr uint8_t  MSG_VERSION = 1;
 static constexpr size_t   MSG_MAX_CHANNELS = 16;
-static constexpr size_t   MSG_MAX_PER_CHANNEL = 8;
+static constexpr size_t   MSG_MAX_PER_CHANNEL = CHAT_MSGS_MAX;
+static constexpr size_t   MSG_RECORD_BYTES = 32 + 160 + 4 + 1;
 static constexpr size_t   MSG_MAX_FILE_SIZE =
     4 + 1 + 1 +
-    MSG_MAX_CHANNELS * (32 + 1 + MSG_MAX_PER_CHANNEL * (32 + 160 + 4 + 1));
+    MSG_MAX_CHANNELS * (32 + 1 + MSG_MAX_PER_CHANNEL * MSG_RECORD_BYTES);
 
 void chat_save_messages()
 {
     if (!SPIFFS.begin(false)) return;
     File f = SPIFFS.open("/msgs", "w");
     if (!f) return;
+
+    const uint16_t cap = chat_msg_cap();
 
     uint32_t magic = MSG_MAGIC;
     f.write((const uint8_t*)&magic, 4);
@@ -1389,7 +1457,8 @@ void chat_save_messages()
 
     for (int i = 0; i < dyn_count && i < MSG_MAX_CHANNELS; i++) {
         if (ch_msg_count[i] == 0) continue;
-        uint8_t mc = ch_msg_count[i] > MSG_MAX_PER_CHANNEL ? MSG_MAX_PER_CHANNEL : ch_msg_count[i];
+        if (!has_channel_buffer(i)) continue;
+        uint8_t mc = ch_msg_count[i] > cap ? (uint8_t)cap : (uint8_t)ch_msg_count[i];
 
         uint8_t ch_buf[32] = {0};
         memcpy(ch_buf, dyn_channels[i], strnlen(dyn_channels[i], 31));
@@ -1457,37 +1526,73 @@ void chat_load_messages()
         if (f.read(&msg_count, 1) != 1) break;
         if (msg_count > MSG_MAX_PER_CHANNEL) msg_count = MSG_MAX_PER_CHANNEL;
 
-        size_t msg_block = msg_count * (32 + 160 + 4 + 1);
-        if (f.position() + msg_block > file_size) break;
-
         int idx = find_channel_idx(ch_name);
-        if (idx < 0 || idx >= MAX_CHANNELS) {
-            f.seek(f.position() + msg_block);
-            continue;
-        }
 
+        // Keep loaded history bounded by the normal append-path. This preserves
+        // existing cap semantics and keeps the newest messages when historical
+        // files contain more entries than the configured runtime cap.
         for (int j = 0; j < msg_count; j++) {
-            if (j >= MAX_MSGS) {
-                f.seek(f.position() + (32 + 160 + 4 + 1));
+            if (f.position() + MSG_RECORD_BYTES > file_size) {
+                f.close();
+                return;
+            }
+
+            char sender[32] = {0};
+            if (f.read((uint8_t*)sender, 32) != 32) {
+                f.close();
+                return;
+            }
+
+            char text[160] = {0};
+            if (f.read((uint8_t*)text, 160) != 160) {
+                f.close();
+                return;
+            }
+
+            uint32_t timestamp;
+            if (f.read((uint8_t*)&timestamp, 4) != 4) {
+                f.close();
+                return;
+            }
+
+            uint8_t self;
+            if (f.read(&self, 1) != 1) {
+                f.close();
+                return;
+            }
+
+            sender[31] = '\0';
+            text[159] = '\0';
+
+            if (idx < 0 || idx >= MAX_CHANNELS) {
                 continue;
             }
-            ChannelMessage& msg = ch_msgs[idx][j];
-            if (f.read((uint8_t*)msg.sender, 32) != 32) break;
-            if (f.read((uint8_t*)msg.text, 160) != 160) break;
-            if (f.read((uint8_t*)&msg.timestamp, 4) != 4) break;
-            uint8_t self;
-            if (f.read(&self, 1) != 1) break;
-            msg.is_self = (self != 0);
-            msg.sender[31] = '\0';
-            msg.text[159] = '\0';
 
-            ch_meta[idx].timestamp = msg.timestamp;
-            strncpy(ch_meta[idx].preview, msg.text, sizeof(ch_meta[idx].preview) - 1);
-            ch_meta[idx].preview[sizeof(ch_meta[idx].preview) - 1] = '\0';
+            append_channel_message(idx, sender, text, timestamp, self != 0);
         }
-        ch_msg_count[idx] = msg_count;
     }
     f.close();
+}
+
+uint16_t chat_screen_get_message_cap()
+{
+    return chat_msg_cap();
+}
+
+void chat_screen_set_message_cap(uint16_t cap)
+{
+    const uint16_t clamped =
+        (cap == 0) ? CHAT_MSGS_DEFAULT_CAP :
+        (cap < CHAT_MSGS_MIN_CAP ? CHAT_MSGS_MIN_CAP :
+         (cap > CHAT_MSGS_MAX ? CHAT_MSGS_MAX : cap));
+
+    slopos::NodePrefs np = slopos::prefs_get();
+    np.chat_msg_cap = clamped;
+    slopos::prefs_set(np);
+
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        trim_channel_history(i, clamped);
+    }
 }
 
 } // namespace slopos::ui

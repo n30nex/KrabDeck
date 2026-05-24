@@ -11,6 +11,8 @@ cd SlopOS-tdeck
 pio test -e native_test -v
 ```
 
+**Important:** MeshCore lives as a git submodule at `lib/meshcore/`. If you cloned without `--recurse-submodules`, run `git submodule update --init` — nothing compiles without it.
+
 ## Table of Contents
 
 - [Code of Conduct](#code-of-conduct)
@@ -82,6 +84,10 @@ Open a pull request directly — no prior issue needed.
 7. In the PR description, reference the related issue (`Fixes #123`).
 8. Respond to review feedback promptly.
 
+### Merging
+
+Pull requests are merged via `gh pr merge --squash --delete-branch`. Squash merging keeps the commit history on `dev` clean — each PR becomes one atomic commit. Feature branches are deleted after merge.
+
 ### Pull Request Guidelines
 
 - **One feature / fix = one PR.** Smaller PRs are reviewed faster.
@@ -136,7 +142,59 @@ pio test -e native_test -v
 pio test -e native_test -f test_battery -v
 ```
 
-All new code should include unit tests. See `test/` for examples.
+### Test structure
+
+PlatformIO discovers tests in `test/test_<name>/` directories. Each suite needs its own directory with a `main.cpp` entry point — `test/unit/` or `test/integration/` is not discovered.
+
+### Coverage expectations
+
+Every module should include unit tests:
+
+| Module | What to test |
+|--------|-------------|
+| HAL (battery, touch, keyboard, GPS) | ADC formulas, coordinate mapping, I2C protocol, NMEA parsing |
+| Mesh wrapper | API contract, return value ranges, message queue |
+| Navigation | Screen routing, back-stack logic, same-screen noop |
+| Theme | Color contrast, brightness hierarchy, constant consistency |
+| Build integration | All headers compile together without conflicts |
+
+New screens or features should include at least basic integration tests (navigation routing, message display, widget lifecycle). Tests run on the native host — no hardware needed.
+
+## Design Guide
+
+The UI follows a **pixel / blocky retro aesthetic** inspired by Discord's dark theme on an 8-bit display. Key principles:
+
+### Palette
+
+| Role | Hex | Notes |
+|------|-----|-------|
+| Background (primary) | `#0F0F0F` | Deep black, not navy |
+| Background (secondary) | `#181818` | Status bars, dialog backgrounds |
+| Background (tertiary) | `#1E1E1E` | Card backgrounds, incoming bubbles |
+| Background (input) | `#252525` | Text input fields |
+| Accent | `#00BFFF` | Bright cyan, buttons and highlights |
+| Text (primary) | `#F2F3F5` | Crisp white on dark |
+| Text (secondary) | `#949BA4` | Subtitles, metadata |
+
+Theme constants are defined in `src/ui/theme.h`.
+
+### Layout
+
+- **Zero radius** everywhere — no pill buttons, no round cards. Use `lv_obj_set_style_radius(obj, 0, 0)`.
+- **2px minimum borders** — cards, inputs, and buttons get thick solid outlines from the palette.
+- **4-column grid** on the home screen (320px T-Deck), no scrolling, 12 tiles per page. Smaller displays auto-adapt via `src/ui/responsive.h`.
+
+### Typography
+
+- Use LVGL's built-in Montserrat at small sizes (10px-14px) — it reads naturally blocky on the 320x240 TFT.
+- Icon labels use LV_SYMBOL_* vector icons (FontAwesome bundle built into LVGL) — not emoji, not raw Unicode.
+- Prefer `LV_SYMBOL_LIST` for the hamburger (≡) icon and `LV_SYMBOL_LEFT` for back (←) buttons over raw code points.
+
+### Consistency
+
+- All screens should call `apply_dark_bg()` and `apply_topbar_icon_btn()` from `src/ui/theme.h`.
+- Screens share a `make_screen()` helper with a ← back button and dark top bar — use it instead of building custom top bars.
+- When in doubt, match the style of an existing screen rather than introducing a new visual pattern.
 
 ## License
 

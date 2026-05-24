@@ -2,3 +2,6 @@
 # Any PR touching these files will require owner review and approval.
 /AGENTS.md @hermes-gadget
 /CLAUDE.md @hermes-gadget
+/CONTRIBUTING.md @hermes-gadget
+/KNOWN_ISSUES.md @hermes-gadget
+.github/workflows/ @hermes-gadget

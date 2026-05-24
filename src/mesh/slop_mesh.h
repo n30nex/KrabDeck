@@ -14,6 +14,9 @@
 namespace slopos {
 namespace mesh {
 
+// Forward declaration for packet logging (defined in mesh_wrapper.cpp)
+void pushPacketLog(const char* source, int rssi, float snr, const char* type);
+
 static constexpr int SLOP_MAX_CONTACTS  = 64;
 static constexpr int SLOP_MAX_CHANNELS  = 8;
 #define OUT_PATH_UNKNOWN  0xFF
@@ -74,7 +77,7 @@ protected:
     }
 
     // ── Incoming peer data (DM / REQ / RESPONSE) ────
-    void onPeerDataRecv(::mesh::Packet* pkt, uint8_t type, int sender_idx,
+    void onPeerDataRecv(::mesh::Packet*, uint8_t type, int sender_idx,
                         const uint8_t* secret, uint8_t* data, size_t len) override
     {
         // Accept TXT_MSG, REQ, and RESPONSE payloads as incoming messages
@@ -101,7 +104,7 @@ protected:
     }
 
     // ── Contact discovery ─────────────────────────────
-    void onAdvertRecv(::mesh::Packet*, const ::mesh::Identity& id, uint32_t timestamp,
+    void onAdvertRecv(::mesh::Packet* pkt, const ::mesh::Identity& id, uint32_t timestamp,
                       const uint8_t* app_data, size_t app_data_len) override
     {
         // Parse advert using MeshCore's standard parser
@@ -120,9 +123,10 @@ protected:
         for (int i = 0; i < _nContacts; i++)
             if (_contacts[i].id.matches(id)) {
                 _contacts[i].last_seen = timestamp;
-                // Update name if changed (e.g. user renamed device)
+                _contacts[i].last_rssi = (int)_radio->getLastRSSI();
                 strncpy(_contacts[i].name, name, sizeof(_contacts[i].name) - 1);
                 _contacts[i].name[sizeof(_contacts[i].name) - 1] = '\0';
+                pushPacketLog(name, _contacts[i].last_rssi, pkt->getSNR(), "ADVERT");
                 return;
             }
 
@@ -131,11 +135,12 @@ protected:
         SlopContact& c = _contacts[_nContacts++];
         c.id = id;
         c.last_seen = timestamp;
-        c.last_rssi = 0;
+        c.last_rssi = (int)_radio->getLastRSSI();
         self_id.calcSharedSecret(c.secret, id);
 
         strncpy(c.name, name, sizeof(c.name) - 1);
         c.name[sizeof(c.name) - 1] = '\0';
+        pushPacketLog(name, c.last_rssi, pkt->getSNR(), "ADVERT");
     }
 
     // ── Group text ────────────────────────────────────
@@ -200,7 +205,7 @@ protected:
     }
 
     // ── Anonymous data ────────────────────────────────
-    void onAnonDataRecv(::mesh::Packet* pkt, const uint8_t* secret,
+    void onAnonDataRecv(::mesh::Packet*, const uint8_t* secret,
                         const ::mesh::Identity& sender,
                         uint8_t* data, size_t len) override
     {
@@ -291,6 +296,21 @@ public:
         // Future: handle application-specific raw data
     }
 
+    // ── Packet-level RX logging ───────────────────────
+    void logRx(::mesh::Packet* pkt, int, float) override {
+        const char* tname;
+        switch (pkt->getPayloadType()) {
+            case PAYLOAD_TYPE_ADVERT:   tname = "ADVERT_RX"; break;
+            case PAYLOAD_TYPE_ACK:      tname = "ACK";        break;
+            case PAYLOAD_TYPE_TXT_MSG:  tname = "DM_RX";      break;
+            case PAYLOAD_TYPE_GRP_TXT:
+            case PAYLOAD_TYPE_GRP_DATA: tname = "GRP_RX";     break;
+            case PAYLOAD_TYPE_ANON_REQ: tname = "ANON_RX";    break;
+            case PAYLOAD_TYPE_TRACE:    tname = "TRACE";      break;
+            default:                    tname = "PKT_RX";     break;
+        }
+        pushPacketLog("RADIO", (int)_radio->getLastRSSI(), pkt->getSNR(), tname);
+    }
 
     SlopMesh(::mesh::Radio& r, ::mesh::MillisecondClock& ms, ::mesh::RNG& rng,
              ::mesh::RTCClock& rtc, ::mesh::PacketManager& mgr, ::mesh::MeshTables& tbl)

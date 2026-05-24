@@ -50,17 +50,19 @@ The finder feature needs a proper implementation that sends a zero-hop (TTL=1) p
 
 ---
 
-## Heard Screen
+## Heard Screen → Packets Screen — ✅ Fixed
 
-### Needs redesign or replacement
-The Heard screen currently shows a raw list of heard nodes with RSSI values, but it duplicates functionality present in the Network screen and lacks useful sorting or filtering.
+### Replaced with raw packet log
+The Heard screen has been replaced with a raw packet log ("Packets" on the home screen) showing the last 50 received transmissions with timestamps, source, RSSI, SNR, and payload type (ADVERT, DM, CHANNEL, ANON).
 
-**Possible directions:**
-- **Re-implement as a signal history view** — show RSSI/SNR trends per node over time (last 10 heard events), so users can see if a node is getting closer or farther
-- **Merge into Network screen** — add a signal strength column and remove Heard entirely
-- **Keep as a raw packet log** — show the last N heard transmissions with timestamps, source, RSSI, SNR, and payload type. Useful for debugging mesh behavior but not for daily use
-
-Open to ideas from the community.
+**What was done:**
+- Renamed home screen icon from "HEARD" to "PACKETS" with `LV_SYMBOL_LIST`
+- Replaced the tabular node-list view with a scrollable packet log (newest first)
+- Each entry shows: `HH:MM` timestamp, source name (truncated with `...`), RSSI value (color-coded green/orange/red), SNR value, and packet type (color-coded)
+- Added `_onPacket` callback to `SlopMesh` that fires for every received packet (advert, DM, channel message, anonymous data) with source, RSSI, SNR, and type
+- RSSI is captured from the radio driver at the moment the packet is received (alongside SNR from `Packet._snr`)
+- Packet log buffer stores up to 50 entries in `mesh_wrapper.cpp` via `logPacket()` callback
+- Exposed via `getPacketLogCount()` / `getPacketLogEntry()` in `mesh_wrapper.h`
 
 ---
 

@@ -60,7 +60,7 @@ static const IconDef icons[] = {
     {"CONTACTS",  LV_SYMBOL_CALL,       false, Screen::Contacts},
     {"REPEATERS", LV_SYMBOL_WIFI,       false, Screen::Heard},
     {"FINDER",    LV_SYMBOL_EYE_OPEN,   false, Screen::Network},
-    {"HEARD",     LV_SYMBOL_VOLUME_MID, false, Screen::Heard},
+    {"PACKETS",   LV_SYMBOL_LIST,       false, Screen::Heard},
     {"MAP",       LV_SYMBOL_GPS,        false, Screen::Map},
     {"ADVERTISE", LV_SYMBOL_AUDIO,      false, Screen::Advertise},
     {"SETTINGS",  LV_SYMBOL_SETTINGS,   false, Screen::Settings},

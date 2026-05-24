@@ -24,6 +24,14 @@ struct ContactInfo {
     uint32_t last_seen;
 };
 
+struct PacketLogEntry {
+    uint32_t timestamp;
+    char     source[32];
+    int      rssi;
+    float    snr;
+    char     type[16];
+};
+
 bool init(bool spiffs_ok = true);
 void loop();
 
@@ -64,6 +72,11 @@ bool setSystemTime(uint32_t epoch_seconds);
 
 void getCurrentLocalDateTime(int* year, int* month, int* day, int* hour, int* minute);
 uint32_t makeEpoch(int year, int month, int day, int hour, int minute);
+
+// Packet log
+int  getPacketLogCount();
+bool getPacketLogEntry(int index, PacketLogEntry* out);
+void pushPacketLog(const char* source, int rssi, float snr, const char* type);
 
 // Trace route
 bool sendTrace(int contact_idx, uint32_t* out_tag);

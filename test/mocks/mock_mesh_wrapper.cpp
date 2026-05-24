@@ -68,6 +68,32 @@ float getLastSNR()  { return mock_snr; }
 bool sendAdvert() { return false; }
 void saveState() {}
 
+// ── Packet log ──────────────────────────────────
+
+static PacketLogEntry mock_pkt_log[8];
+static int mock_pkt_count = 0;
+
+int getPacketLogCount() { return mock_pkt_count; }
+bool getPacketLogEntry(int index, PacketLogEntry* out) {
+    if (index < 0 || index >= mock_pkt_count || !out) return false;
+    *out = mock_pkt_log[index];
+    return true;
+}
+
+void mock_push_packet(const char* source, int rssi, float snr, const char* type) {
+    if (mock_pkt_count >= 8) return;
+    PacketLogEntry& e = mock_pkt_log[mock_pkt_count++];
+    strncpy(e.source, source, sizeof(e.source) - 1);
+    e.source[sizeof(e.source) - 1] = '\0';
+    e.rssi = rssi;
+    e.snr = snr;
+    strncpy(e.type, type, sizeof(e.type) - 1);
+    e.type[sizeof(e.type) - 1] = '\0';
+    e.timestamp = 0;
+}
+
+void mock_clear_packets() { mock_pkt_count = 0; }
+
 // ── Test helpers ─────────────────────────────────
 
 void mock_push_message(const char* sender, const char* text) {

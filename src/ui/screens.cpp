@@ -1552,7 +1552,144 @@ void advertise_screen_show()
 }
 
 // ════════════════════════════════════════════════════════
-// Radio Setup — configure frequency, SF, power
+// Radio Setup state — shared between main screen and Custom RF screen
+static float s_rf_freq = 869.618f;
+static int   s_rf_sf   = 8;
+static float s_rf_bw   = 62.5f;
+static int   s_rf_cr   = 5;
+static int   s_rf_pwr  = 22;
+
+void custom_rf_screen_show()
+{
+    using namespace slopos::theme;
+    using responsive::CONTENT_Y, responsive::CONTENT_W, responsive::CONTENT_H;
+
+    lv_obj_t* scr = make_screen_full("Custom RF");
+
+    int y = CONTENT_Y + 4;
+    int row_h = 28;
+    int lbl_w = 50;
+    int inp_w = CONTENT_W - lbl_w - 12;
+
+    // Pre-fill from shared state
+    char freq_buf[16], sf_buf[8], bw_buf[12], cr_buf[8], pwr_buf[8];
+    snprintf(freq_buf, sizeof(freq_buf), "%.3f", s_rf_freq);
+    snprintf(sf_buf,   sizeof(sf_buf),   "%d",   s_rf_sf);
+    snprintf(bw_buf,   sizeof(bw_buf),   "%.1f",  s_rf_bw);
+    snprintf(cr_buf,   sizeof(cr_buf),   "%d",   s_rf_cr);
+    snprintf(pwr_buf,  sizeof(pwr_buf),  "%d",   s_rf_pwr);
+
+    struct { const char* label; const char* val; lv_obj_t* ta; } fields[] = {
+        {"Freq", freq_buf, nullptr},
+        {"SF",   sf_buf,   nullptr},
+        {"BW",   bw_buf,   nullptr},
+        {"CR",   cr_buf,   nullptr},
+        {"Pwr",  pwr_buf,  nullptr},
+    };
+
+    lv_group_t* grp = lv_group_get_default();
+    for (int i = 0; i < 5; i++) {
+        lv_obj_t* lbl = lv_label_create(scr);
+        lv_label_set_text(lbl, fields[i].label);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(TEXT_SECONDARY), 0);
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_10, 0);
+        lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 8, y + 3);
+
+        lv_obj_t* ta = lv_textarea_create(scr);
+        lv_obj_set_size(ta, inp_w, 20);
+        lv_obj_align(ta, LV_ALIGN_TOP_LEFT, 8 + lbl_w, y);
+        lv_obj_set_style_bg_color(ta, lv_color_hex(BG_INPUT), 0);
+        lv_obj_set_style_text_color(ta, lv_color_hex(TEXT_PRIMARY), 0);
+        lv_obj_set_style_text_font(ta, &lv_font_montserrat_10, 0);
+        lv_obj_set_style_border_width(ta, 0, 0);
+        lv_textarea_set_one_line(ta, true);
+        lv_textarea_set_text(ta, fields[i].val);
+        fields[i].ta = ta;
+        if (grp) lv_group_add_obj(grp, ta);
+        y += row_h;
+    }
+    if (grp && fields[0].ta) lv_group_focus_obj(fields[0].ta);
+
+    // Error label
+    lv_obj_t* err_lbl = lv_label_create(scr);
+    lv_obj_set_style_text_color(err_lbl, lv_color_hex(ACCENT_RED), 0);
+    lv_obj_set_style_text_font(err_lbl, &lv_font_montserrat_10, 0);
+    lv_obj_set_width(err_lbl, CONTENT_W);
+    lv_obj_align(err_lbl, LV_ALIGN_TOP_LEFT, 8, y);
+    lv_label_set_text(err_lbl, "");
+
+    y += 22;
+
+    // Apply button
+    auto* btn = lv_btn_create(scr);
+    lv_obj_set_size(btn, 160, 28);
+    lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, y);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(ACCENT_GREEN), 0);
+    lv_obj_set_style_radius(btn, 0, 0);
+    auto* bl = lv_label_create(btn);
+    lv_label_set_text(bl, "Apply");
+    lv_obj_center(bl);
+    lv_obj_add_event_cb(btn, [](lv_event_t*) {
+        // Find textareas by scanning children of root scr
+        lv_obj_t* scr = lv_scr_act();
+        // Walk children looking for textareas (5 of them)
+        lv_obj_t* ta_freq = nullptr;
+        lv_obj_t* ta_sf   = nullptr;
+        lv_obj_t* ta_bw   = nullptr;
+        lv_obj_t* ta_cr   = nullptr;
+        lv_obj_t* ta_pwr  = nullptr;
+        int found = 0;
+        uint32_t cnt = lv_obj_get_child_cnt(scr);
+        for (uint32_t i = 0; i < cnt && found < 5; i++) {
+            lv_obj_t* child = lv_obj_get_child(scr, i);
+            if (lv_obj_check_type(child, &lv_textarea_class)) {
+                switch (found) {
+                    case 0: ta_freq = child; break;
+                    case 1: ta_sf   = child; break;
+                    case 2: ta_bw   = child; break;
+                    case 3: ta_cr   = child; break;
+                    case 4: ta_pwr  = child; break;
+                }
+                found++;
+            }
+        }
+
+        float freq = atof(lv_textarea_get_text(ta_freq));
+        int   sf   = atoi(lv_textarea_get_text(ta_sf));
+        float bw   = atof(lv_textarea_get_text(ta_bw));
+        int   cr   = atoi(lv_textarea_get_text(ta_cr));
+        int   pwr  = atoi(lv_textarea_get_text(ta_pwr));
+
+        const char* err = nullptr;
+        if (freq < 400.0f || freq > 930.0f)              err = "Freq: 400.0 - 930.0 MHz";
+        else if (sf < 7 || sf > 12)                      err = "SF: 7 - 12";
+        else if (bw < 7.8f || bw > 500.0f)               err = "BW: 7.8 - 500 kHz";
+        else if (cr < 5 || cr > 8)                       err = "CR: 4/5 - 4/8";
+        else if (pwr < 2 || pwr > 22)                    err = "TX Pwr: 2 - 22 dBm";
+
+        // Find err_lbl (last label before the button, positioned dynamically)
+        // Simple approach: create a fresh label each time
+        if (err) {
+            lv_obj_t* el = lv_obj_get_child(scr, lv_obj_get_child_cnt(scr) - 2);
+            if (lv_obj_check_type(el, &lv_label_class)) {
+                lv_label_set_text(el, err);
+            }
+            return;
+        }
+
+        s_rf_freq = freq;
+        s_rf_sf   = sf;
+        s_rf_bw   = bw;
+        s_rf_cr   = cr;
+        s_rf_pwr  = pwr;
+        go_back();
+    }, LV_EVENT_CLICKED, nullptr);
+
+    show_screen(scr);
+}
+
+// ════════════════════════════════════════════════════════
+// Radio Setup — configure frequency, SF, BW, power
 // ════════════════════════════════════════════════════════
 void radio_setup_screen_show()
 {
@@ -1560,16 +1697,13 @@ void radio_setup_screen_show()
 
     const slopos::NodePrefs& p = slopos::prefs_get();
 
-    static float s_freq = 869.618f;
-    static int   s_sf   = 8;
-    static int   s_cr   = 5;
-    static int   s_pwr  = 22;
-    s_freq = p.configured ? p.freq          : 869.618f;
-    s_sf   = p.configured ? p.sf            : 8;
-    s_cr   = p.configured ? p.cr            : 5;
-    s_pwr  = p.configured ? p.tx_power_dbm  : 22;
+    s_rf_freq = p.configured ? p.freq          : 869.618f;
+    s_rf_sf   = p.configured ? p.sf            : 8;
+    s_rf_bw   = p.configured ? p.bw            : 62.5f;
+    s_rf_cr   = p.configured ? p.cr            : 5;
+    s_rf_pwr  = p.configured ? p.tx_power_dbm  : 22;
 
-    // Warning (2 lines — compact to save vertical space)
+    // Warning
     auto* warn = lv_label_create(scr);
     lv_label_set_text(warn,
         "Check local regulations. Incorrect settings may be illegal.");
@@ -1581,110 +1715,163 @@ void radio_setup_screen_show()
     lv_obj_set_style_text_font(warn, &lv_font_montserrat_10, 0);
     lv_obj_align(warn, LV_ALIGN_TOP_LEFT, 0, CONTENT_Y + 2);
 
-    // Frequency presets (compact: 18px buttons, 20px spacing)
+    // ── Left column: frequency presets ────────────────────
+    int lx = 4;
+    int lw = 148;
     static const struct { const char* label; float freq; } freqs[] = {
-        {"868.000 MHz (EU)", 868.000f},
-        {"869.525 MHz (UK)", 869.525f},
-        {"869.618 MHz (UK)", 869.618f},
-        {"915.000 MHz (US)", 915.000f},
-        {"433.500 MHz (EU)", 433.500f},
+        {"868.000 (EU)",   868.000f},
+        {"869.525 (UK)",   869.525f},
+        {"869.618 (UK)",   869.618f},
+        {"915.000 (US)",   915.000f},
+        {"433.500 (EU)",   433.500f},
     };
+    static constexpr int NUM_FREQS = 5;
+    static lv_obj_t* freq_btns[NUM_FREQS] = {};
 
-    int y = CONTENT_Y + 32;
-    for (auto& f : freqs) {
+    int ly = CONTENT_Y + 26;
+    int btn_h = 18;
+    for (int i = 0; i < NUM_FREQS; i++) {
         auto* btn = lv_btn_create(scr);
-        lv_obj_set_size(btn, 200, 18);
-        lv_obj_align(btn, LV_ALIGN_TOP_LEFT, 8, y);
+        lv_obj_set_size(btn, lw, btn_h);
+        lv_obj_align(btn, LV_ALIGN_TOP_LEFT, lx, ly);
         lv_obj_set_style_bg_color(btn, lv_color_hex(
-            fabsf(s_freq - f.freq) < 0.001f ? 0x2a5a2a : BG_TERTIARY), 0);
+            fabsf(s_rf_freq - freqs[i].freq) < 0.001f ? 0x2a5a2a : BG_TERTIARY), 0);
         lv_obj_set_style_radius(btn, 0, 0);
         lv_obj_set_style_border_width(btn, 0, 0);
         auto* tl = lv_label_create(btn);
-        lv_label_set_text(tl, f.label);
+        lv_label_set_text(tl, freqs[i].label);
         lv_obj_set_style_text_font(tl, &lv_font_montserrat_10, 0);
         lv_obj_center(tl);
+        freq_btns[i] = btn;
+
         lv_obj_add_event_cb(btn, [](lv_event_t* e) {
-            float* pf = (float*)lv_event_get_user_data(e);
-            s_freq = *pf;
-            lv_obj_set_style_bg_color((lv_obj_t*)lv_event_get_target(e),
-                lv_color_hex(0x2a5a2a), 0);
-        }, LV_EVENT_CLICKED, (void*)&f.freq);
-        y += 20;
+            int idx = (int)(intptr_t)lv_event_get_user_data(e);
+            s_rf_freq = freqs[idx].freq;
+            for (int j = 0; j < NUM_FREQS; j++) {
+                lv_obj_set_style_bg_color(freq_btns[j],
+                    lv_color_hex(j == idx ? 0x2a5a2a : BG_TERTIARY), 0);
+            }
+        }, LV_EVENT_CLICKED, (void*)(intptr_t)i);
+        ly += 22;
     }
 
-    // SF + TX power side-by-side on one row — centered layout
-    int row_y = y + 2;
-    int mid_point = DISPLAY_W / 2;
+    // ── Right column: controls ────────────────────────────
+    int rx = lx + lw + 6;
+    int rw = DISPLAY_W - rx - 4;
+    int ry = CONTENT_Y + 26;
     char buf[64];
 
-    // SF (left side: label at 8, +/- at mid-58/mid-24)
-    snprintf(buf, sizeof(buf), "SF: %d", s_sf);
+    // Custom RF button
+    auto* custom_btn = lv_btn_create(scr);
+    lv_obj_set_size(custom_btn, rw, 22);
+    lv_obj_align(custom_btn, LV_ALIGN_TOP_LEFT, rx, ry);
+    lv_obj_set_style_bg_color(custom_btn, lv_color_hex(ACCENT), 0);
+    lv_obj_set_style_radius(custom_btn, 0, 0);
+    lv_obj_set_style_border_width(custom_btn, 0, 0);
+    auto* ctl = lv_label_create(custom_btn);
+    lv_label_set_text(ctl, "Custom RF...");
+    lv_obj_set_style_text_font(ctl, &lv_font_montserrat_10, 0);
+    lv_obj_center(ctl);
+    lv_obj_add_event_cb(custom_btn, [](lv_event_t*) {
+        custom_rf_screen_show();
+    }, LV_EVENT_CLICKED, nullptr);
+    ry += 28;
+
+    // SF row
+    snprintf(buf, sizeof(buf), "SF:%d", s_rf_sf);
     auto* sf_lbl = lv_label_create(scr);
     lv_label_set_text(sf_lbl, buf);
     lv_obj_set_style_text_color(sf_lbl, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(sf_lbl, &lv_font_montserrat_10, 0);
-    lv_obj_align(sf_lbl, LV_ALIGN_TOP_LEFT, 8, row_y);
-
-    auto* sf_plus = lv_btn_create(scr);
-    lv_obj_set_size(sf_plus, 30, 22);
-    lv_obj_align(sf_plus, LV_ALIGN_TOP_LEFT, mid_point - 58, row_y - 2);
-    lv_obj_set_style_bg_color(sf_plus, lv_color_hex(ACCENT), 0);
-    lv_obj_set_style_radius(sf_plus, 0, 0);
-    auto* spl = lv_label_create(sf_plus); lv_label_set_text(spl, "+"); lv_obj_center(spl);
-    lv_obj_add_event_cb(sf_plus, [](lv_event_t* e) {
-        if (s_sf < 12) { s_sf++;
-            char b[16]; snprintf(b, sizeof(b), "SF: %d", s_sf);
-            lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b); }
-    }, LV_EVENT_CLICKED, (void*)sf_lbl);
+    lv_obj_align(sf_lbl, LV_ALIGN_TOP_LEFT, rx, ry);
 
     auto* sf_minus = lv_btn_create(scr);
-    lv_obj_set_size(sf_minus, 30, 22);
-    lv_obj_align(sf_minus, LV_ALIGN_TOP_LEFT, mid_point - 24, row_y - 2);
+    lv_obj_set_size(sf_minus, 24, 20);
+    lv_obj_align(sf_minus, LV_ALIGN_TOP_LEFT, rx + rw - 54, ry - 2);
     lv_obj_set_style_bg_color(sf_minus, lv_color_hex(ACCENT_RED), 0);
     lv_obj_set_style_radius(sf_minus, 0, 0);
     auto* sml = lv_label_create(sf_minus); lv_label_set_text(sml, "-"); lv_obj_center(sml);
     lv_obj_add_event_cb(sf_minus, [](lv_event_t* e) {
-        if (s_sf > 6) { s_sf--;
-            char b[16]; snprintf(b, sizeof(b), "SF: %d", s_sf);
-            lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b); }
+        if (s_rf_sf > 6) { s_rf_sf--; char b[16]; snprintf(b, sizeof(b), "SF:%d", s_rf_sf); lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b); }
     }, LV_EVENT_CLICKED, (void*)sf_lbl);
 
-    // TX power (right side: label at mid+4, +/- at DISPLAY_W-78/DISPLAY_W-44)
-    snprintf(buf, sizeof(buf), "TX: %d dBm", s_pwr);
+    auto* sf_plus = lv_btn_create(scr);
+    lv_obj_set_size(sf_plus, 24, 20);
+    lv_obj_align(sf_plus, LV_ALIGN_TOP_LEFT, rx + rw - 26, ry - 2);
+    lv_obj_set_style_bg_color(sf_plus, lv_color_hex(ACCENT), 0);
+    lv_obj_set_style_radius(sf_plus, 0, 0);
+    auto* spl = lv_label_create(sf_plus); lv_label_set_text(spl, "+"); lv_obj_center(spl);
+    lv_obj_add_event_cb(sf_plus, [](lv_event_t* e) {
+        if (s_rf_sf < 12) { s_rf_sf++; char b[16]; snprintf(b, sizeof(b), "SF:%d", s_rf_sf); lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b); }
+    }, LV_EVENT_CLICKED, (void*)sf_lbl);
+    ry += 24;
+
+    // BW row
+    snprintf(buf, sizeof(buf), "BW:%.1f", s_rf_bw);
+    auto* bw_lbl = lv_label_create(scr);
+    lv_label_set_text(bw_lbl, buf);
+    lv_obj_set_style_text_color(bw_lbl, lv_color_hex(TEXT_PRIMARY), 0);
+    lv_obj_set_style_text_font(bw_lbl, &lv_font_montserrat_10, 0);
+    lv_obj_align(bw_lbl, LV_ALIGN_TOP_LEFT, rx, ry);
+
+    auto* bw_minus = lv_btn_create(scr);
+    lv_obj_set_size(bw_minus, 24, 20);
+    lv_obj_align(bw_minus, LV_ALIGN_TOP_LEFT, rx + rw - 54, ry - 2);
+    lv_obj_set_style_bg_color(bw_minus, lv_color_hex(ACCENT_RED), 0);
+    lv_obj_set_style_radius(bw_minus, 0, 0);
+    auto* bml = lv_label_create(bw_minus); lv_label_set_text(bml, "-"); lv_obj_center(bml);
+    lv_obj_add_event_cb(bw_minus, [](lv_event_t* e) {
+        float v[] = {500.0f,250.0f,125.0f,62.5f,41.7f,31.25f,20.8f,15.6f,10.4f,7.8f};
+        for (auto& x : v) if (s_rf_bw > x + 0.01f) { s_rf_bw = x; break; }
+        char b[24]; snprintf(b, sizeof(b), "BW:%.1f", s_rf_bw); lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b);
+    }, LV_EVENT_CLICKED, (void*)bw_lbl);
+
+    auto* bw_plus = lv_btn_create(scr);
+    lv_obj_set_size(bw_plus, 24, 20);
+    lv_obj_align(bw_plus, LV_ALIGN_TOP_LEFT, rx + rw - 26, ry - 2);
+    lv_obj_set_style_bg_color(bw_plus, lv_color_hex(ACCENT), 0);
+    lv_obj_set_style_radius(bw_plus, 0, 0);
+    auto* bpl = lv_label_create(bw_plus); lv_label_set_text(bpl, "+"); lv_obj_center(bpl);
+    lv_obj_add_event_cb(bw_plus, [](lv_event_t* e) {
+        float v[] = {7.8f,10.4f,15.6f,20.8f,31.25f,41.7f,62.5f,125.0f,250.0f,500.0f};
+        for (auto& x : v) if (s_rf_bw < x - 0.01f) { s_rf_bw = x; break; }
+        char b[24]; snprintf(b, sizeof(b), "BW:%.1f", s_rf_bw); lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b);
+    }, LV_EVENT_CLICKED, (void*)bw_lbl);
+    ry += 24;
+
+    // TX power row
+    snprintf(buf, sizeof(buf), "TX:%d", s_rf_pwr);
     auto* pwr_lbl = lv_label_create(scr);
     lv_label_set_text(pwr_lbl, buf);
     lv_obj_set_style_text_color(pwr_lbl, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(pwr_lbl, &lv_font_montserrat_10, 0);
-    lv_obj_align(pwr_lbl, LV_ALIGN_TOP_LEFT, mid_point + 4, row_y);
-
-    auto* pwr_plus = lv_btn_create(scr);
-    lv_obj_set_size(pwr_plus, 30, 22);
-    lv_obj_align(pwr_plus, LV_ALIGN_TOP_LEFT, DISPLAY_W - 78, row_y - 2);
-    lv_obj_set_style_bg_color(pwr_plus, lv_color_hex(ACCENT), 0);
-    lv_obj_set_style_radius(pwr_plus, 0, 0);
-    auto* ppl = lv_label_create(pwr_plus); lv_label_set_text(ppl, "+"); lv_obj_center(ppl);
-    lv_obj_add_event_cb(pwr_plus, [](lv_event_t* e) {
-        if (s_pwr < 22) { s_pwr++;
-            char b[24]; snprintf(b, sizeof(b), "TX: %d dBm", s_pwr);
-            lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b); }
-    }, LV_EVENT_CLICKED, (void*)pwr_lbl);
+    lv_obj_align(pwr_lbl, LV_ALIGN_TOP_LEFT, rx, ry);
 
     auto* pwr_minus = lv_btn_create(scr);
-    lv_obj_set_size(pwr_minus, 30, 22);
-    lv_obj_align(pwr_minus, LV_ALIGN_TOP_LEFT, DISPLAY_W - 44, row_y - 2);
+    lv_obj_set_size(pwr_minus, 24, 20);
+    lv_obj_align(pwr_minus, LV_ALIGN_TOP_LEFT, rx + rw - 54, ry - 2);
     lv_obj_set_style_bg_color(pwr_minus, lv_color_hex(ACCENT_RED), 0);
     lv_obj_set_style_radius(pwr_minus, 0, 0);
     auto* pml = lv_label_create(pwr_minus); lv_label_set_text(pml, "-"); lv_obj_center(pml);
     lv_obj_add_event_cb(pwr_minus, [](lv_event_t* e) {
-        if (s_pwr > 2) { s_pwr--;
-            char b[24]; snprintf(b, sizeof(b), "TX: %d dBm", s_pwr);
-            lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b); }
+        if (s_rf_pwr > 2) { s_rf_pwr--; char b[24]; snprintf(b, sizeof(b), "TX:%d", s_rf_pwr); lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b); }
     }, LV_EVENT_CLICKED, (void*)pwr_lbl);
 
-    // Save & Reboot button (in flow, below SF/TX row)
+    auto* pwr_plus = lv_btn_create(scr);
+    lv_obj_set_size(pwr_plus, 24, 20);
+    lv_obj_align(pwr_plus, LV_ALIGN_TOP_LEFT, rx + rw - 26, ry - 2);
+    lv_obj_set_style_bg_color(pwr_plus, lv_color_hex(ACCENT), 0);
+    lv_obj_set_style_radius(pwr_plus, 0, 0);
+    auto* ppl = lv_label_create(pwr_plus); lv_label_set_text(ppl, "+"); lv_obj_center(ppl);
+    lv_obj_add_event_cb(pwr_plus, [](lv_event_t* e) {
+        if (s_rf_pwr < 22) { s_rf_pwr++; char b[24]; snprintf(b, sizeof(b), "TX:%d", s_rf_pwr); lv_label_set_text((lv_obj_t*)lv_event_get_user_data(e), b); }
+    }, LV_EVENT_CLICKED, (void*)pwr_lbl);
+    ry += 28;
+
+    // Save & Reboot
     auto* save_btn = lv_btn_create(scr);
-    lv_obj_set_size(save_btn, 160, 32);
-    lv_obj_align(save_btn, LV_ALIGN_TOP_MID, 0, row_y + 26);
+    lv_obj_set_size(save_btn, rw, 28);
+    lv_obj_align(save_btn, LV_ALIGN_TOP_LEFT, rx, ry);
     lv_obj_set_style_bg_color(save_btn, lv_color_hex(ACCENT_GREEN), 0);
     lv_obj_set_style_radius(save_btn, 0, 0);
     auto* svl = lv_label_create(save_btn);
@@ -1692,11 +1879,11 @@ void radio_setup_screen_show()
     lv_obj_center(svl);
     lv_obj_add_event_cb(save_btn, [](lv_event_t*) {
         slopos::NodePrefs np = slopos::prefs_get();
-        np.freq         = s_freq;
-        np.bw           = 62.5f;
-        np.sf           = (uint8_t)s_sf;
-        np.cr           = (uint8_t)s_cr;
-        np.tx_power_dbm = (int8_t)s_pwr;
+        np.freq         = s_rf_freq;
+        np.bw           = s_rf_bw;
+        np.sf           = (uint8_t)s_rf_sf;
+        np.cr           = (uint8_t)s_rf_cr;
+        np.tx_power_dbm = (int8_t)s_rf_pwr;
         np.configured   = true;
         slopos::prefs_set(np);
         slopos::prefs_save(np);

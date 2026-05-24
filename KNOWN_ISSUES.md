@@ -131,6 +131,24 @@ Common commands that should be documented:
 
 ---
 
+## Launcher Compatibility
+
+### SlopOS doesn't work under bmorcelli/Launcher
+[Launcher](https://github.com/bmorcelli/Launcher) is an ESP32 app launcher with explicit T-Deck support (display, touch, keyboard, SD card). A user tried running SlopOS as a Launcher-launched app and ran into problems — the keyboard doesn't work properly, and many other things break.
+
+**Root cause:** SlopOS is built as standalone firmware that expects full hardware control at boot. Launcher initialises the display, keyboard, I2C, SPI, and LoRa pins before handing off, which leaves GPIOs, peripheral registers, and I2C bus state in an incompatible state when SlopOS starts.
+
+**What's needed — a `launcher-compatible` build target or a compatibility layer:**
+- Ensure all peripheral init (keyboard I2C, display, LoRa SPI, GPIOs, PSRAM) is safe to re-init even if already configured by a bootloader or launcher
+- Partition table must coexist with Launcher's OTA partition scheme — likely needs a unified partition layout
+- Display handoff: ST7789 registers may be in an unknown state — LovyanGFX handles this on init but needs testing
+- LoRa radio: Launcher disables LoRa CS for SD card access — SlopOS needs to fully reset and re-init the SX1262 on boot
+- Keyboard: the I2C keyboard MCU (0x55) may already be claimed or in key mode — must force re-init via Wire + backlight commands
+- Trackball GPIOs may have internal pull states changed by Launcher — need explicit `pinMode` re-init
+- LoRa SPI bus (shared with display) must be safely re-initialised without conflicting with any prior configuration
+
+---
+
 ## How to Help
 
 Pick any item from the list above and open a PR against the `dev` branch. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the full contribution workflow.

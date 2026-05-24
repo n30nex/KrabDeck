@@ -79,6 +79,9 @@ void init()
     lv_scr_load(splash_scr);
     splash_start = millis();
     home_shown = false;
+
+    // Restore persisted message history from SPIFFS
+    chat_load_messages();
 }
 
 void loop()
@@ -113,11 +116,13 @@ void loop()
             }
             home_screen_update_time(tbuf);
         }
-        // Persist mesh state (contacts, identity) every 5 min
+        // Persist state every 5 min (catches unexpected power loss)
         static uint8_t save_counter = 0;
         if (++save_counter >= 10) {
             save_counter = 0;
             slopos::mesh::saveState();
+            slopos::mesh::saveChannels();
+            chat_save_messages();
         }
     }
 

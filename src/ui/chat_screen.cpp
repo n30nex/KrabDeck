@@ -28,6 +28,7 @@
 #include <lvgl.h>
 #include <cstring>
 #include <cstdio>
+#include <SPIFFS.h>
 
 namespace slopos::ui {
 
@@ -1301,6 +1302,138 @@ bool chat_screen_handle_trackball(SlopOSTrackballEvent event)
 lv_obj_t* chat_screen_get_input_field()
 {
     return input_field;
+}
+
+// ════════════════════════════════════════════════════
+// Message persistence via SPIFFS
+// ════════════════════════════════════════════════════
+
+static constexpr uint32_t MSG_MAGIC = 0x536d534c; // "SLmS"
+static constexpr uint8_t  MSG_VERSION = 1;
+static constexpr size_t   MSG_MAX_CHANNELS = 16;
+static constexpr size_t   MSG_MAX_PER_CHANNEL = 8;
+static constexpr size_t   MSG_MAX_FILE_SIZE =
+    4 + 1 + 1 +
+    MSG_MAX_CHANNELS * (32 + 1 + MSG_MAX_PER_CHANNEL * (32 + 160 + 4 + 1));
+
+void chat_save_messages()
+{
+    if (!SPIFFS.begin(false)) return;
+    File f = SPIFFS.open("/msgs", "w");
+    if (!f) return;
+
+    uint32_t magic = MSG_MAGIC;
+    f.write((const uint8_t*)&magic, 4);
+    f.write(&MSG_VERSION, 1);
+
+    int ch_count = 0;
+    for (int i = 0; i < dyn_count && i < MSG_MAX_CHANNELS; i++) {
+        if (ch_msg_count[i] > 0) ch_count++;
+    }
+    uint8_t cc = (uint8_t)ch_count;
+    f.write(&cc, 1);
+
+    for (int i = 0; i < dyn_count && i < MSG_MAX_CHANNELS; i++) {
+        if (ch_msg_count[i] == 0) continue;
+        uint8_t mc = ch_msg_count[i] > MSG_MAX_PER_CHANNEL ? MSG_MAX_PER_CHANNEL : ch_msg_count[i];
+
+        uint8_t ch_buf[32] = {0};
+        memcpy(ch_buf, dyn_channels[i], strnlen(dyn_channels[i], 31));
+        f.write(ch_buf, 32);
+
+        f.write(&mc, 1);
+        for (int j = 0; j < mc; j++) {
+            const ChannelMessage& msg = ch_msgs[i][j];
+
+            uint8_t sender_buf[32] = {0};
+            memcpy(sender_buf, msg.sender, strnlen(msg.sender, 31));
+            f.write(sender_buf, 32);
+
+            uint8_t text_buf[160] = {0};
+            memcpy(text_buf, msg.text, strnlen(msg.text, 159));
+            f.write(text_buf, 160);
+
+            f.write((const uint8_t*)&msg.timestamp, 4);
+            uint8_t self = msg.is_self ? 1 : 0;
+            f.write(&self, 1);
+        }
+    }
+    f.close();
+}
+
+void chat_load_messages()
+{
+    if (dyn_count == 0) {
+        dyn_count = slopos::mesh::exportChannels(dyn_channels, MAX_CHANNELS);
+        if (dyn_count == 0 && slopos::mesh::joinPublicChannel()) {
+            dyn_count = slopos::mesh::exportChannels(dyn_channels, MAX_CHANNELS);
+        }
+        if (dyn_count == 0) {
+            strncpy(dyn_channels[0], "#general", sizeof(dyn_channels[0]) - 1);
+            dyn_channels[0][sizeof(dyn_channels[0]) - 1] = '\0';
+            dyn_count = 1;
+        }
+    }
+
+    if (!SPIFFS.begin(false)) return;
+    if (!SPIFFS.exists("/msgs")) return;
+    File f = SPIFFS.open("/msgs", "r");
+    if (!f) return;
+
+    size_t file_size = f.size();
+    if (file_size < 6 || file_size > MSG_MAX_FILE_SIZE) { f.close(); return; }
+
+    uint32_t magic;
+    if (f.read((uint8_t*)&magic, 4) != 4 || magic != MSG_MAGIC) { f.close(); return; }
+
+    uint8_t ver;
+    if (f.read(&ver, 1) != 1 || ver != MSG_VERSION) { f.close(); return; }
+
+    uint8_t ch_count;
+    if (f.read(&ch_count, 1) != 1) { f.close(); return; }
+    if (ch_count > MSG_MAX_CHANNELS) { f.close(); return; }
+
+    for (int ci = 0; ci < ch_count; ci++) {
+        if (f.position() + 33 > file_size) break;
+
+        char ch_name[33] = {0};
+        if (f.read((uint8_t*)ch_name, 32) != 32) break;
+
+        uint8_t msg_count;
+        if (f.read(&msg_count, 1) != 1) break;
+        if (msg_count > MSG_MAX_PER_CHANNEL) msg_count = MSG_MAX_PER_CHANNEL;
+
+        size_t msg_block = msg_count * (32 + 160 + 4 + 1);
+        if (f.position() + msg_block > file_size) break;
+
+        int idx = find_channel_idx(ch_name);
+        if (idx < 0 || idx >= MAX_CHANNELS) {
+            f.seek(f.position() + msg_block);
+            continue;
+        }
+
+        for (int j = 0; j < msg_count; j++) {
+            if (j >= MAX_MSGS) {
+                f.seek(f.position() + (32 + 160 + 4 + 1));
+                continue;
+            }
+            ChannelMessage& msg = ch_msgs[idx][j];
+            if (f.read((uint8_t*)msg.sender, 32) != 32) break;
+            if (f.read((uint8_t*)msg.text, 160) != 160) break;
+            if (f.read((uint8_t*)&msg.timestamp, 4) != 4) break;
+            uint8_t self;
+            if (f.read(&self, 1) != 1) break;
+            msg.is_self = (self != 0);
+            msg.sender[31] = '\0';
+            msg.text[159] = '\0';
+
+            ch_meta[idx].timestamp = msg.timestamp;
+            strncpy(ch_meta[idx].preview, msg.text, sizeof(ch_meta[idx].preview) - 1);
+            ch_meta[idx].preview[sizeof(ch_meta[idx].preview) - 1] = '\0';
+        }
+        ch_msg_count[idx] = msg_count;
+    }
+    f.close();
 }
 
 } // namespace slopos::ui

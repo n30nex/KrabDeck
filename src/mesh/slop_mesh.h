@@ -411,6 +411,22 @@ public:
         return true;
     }
 
+    bool loadChannel(const uint8_t* secret, size_t secret_len, const uint8_t* hash, const char* name) {
+        if (_nChannels >= SLOP_MAX_CHANNELS) return false;
+        for (int i = 0; i < _nChannels; i++) {
+            if (strcmp(_channels[i].name, name) == 0) return true;
+        }
+        SlopChannel& ch = _channels[_nChannels];
+        memset(&ch, 0, sizeof(ch));
+        size_t cp = secret_len < sizeof(ch.channel.secret) ? secret_len : sizeof(ch.channel.secret);
+        memcpy(ch.channel.secret, secret, cp);
+        memcpy(ch.channel.hash, hash, sizeof(ch.channel.hash));
+        strncpy(ch.name, name, sizeof(ch.name) - 1);
+        ch.name[sizeof(ch.name) - 1] = '\0';
+        _nChannels++;
+        return true;
+    }
+
     bool addHashtagChannel(const char* name) {
         if (_nChannels >= SLOP_MAX_CHANNELS || !name) return false;
 

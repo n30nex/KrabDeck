@@ -2,6 +2,7 @@
 #include "navigation.h"
 #include "theme.h"
 #include "responsive.h"
+#include "chat_screen.h"
 #include "../hal/prefs.h"
 #include "../mesh/mesh_wrapper.h"
 #include <Arduino.h>
@@ -373,6 +374,8 @@ static void build_step3()
         slopos::mesh::setOwnName(s_name);
         slopos::prefs_set(np);
         slopos::prefs_save(np);
+        slopos::mesh::saveChannels();
+        chat_save_messages();
         ESP.restart();
     }, LV_EVENT_CLICKED, nullptr);
 }

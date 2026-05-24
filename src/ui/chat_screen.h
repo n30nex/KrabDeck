@@ -36,4 +36,8 @@ bool chat_screen_handle_trackball(SlopOSTrackballEvent event);
 // Return the chat input textarea object if the messaging view is active, else nullptr.
 lv_obj_t* chat_screen_get_input_field();
 
+// Persist/restore per-channel message history to/from SPIFFS
+void chat_save_messages();
+void chat_load_messages();
+
 } // namespace slopos::ui

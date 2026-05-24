@@ -52,6 +52,8 @@ float getLastSNR();
 
 bool sendAdvert();
 void saveState();
+void saveChannels();
+void loadChannels();
 
 // RTC time for UI comparisons
 uint32_t getCurrentTime();

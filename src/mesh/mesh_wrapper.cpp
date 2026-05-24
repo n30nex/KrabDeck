@@ -12,6 +12,7 @@
 #include "slop_mesh.h"
 
 #include <SPIFFS.h>
+#include <Preferences.h>
 #include <time.h>
 #include <Mesh.h>
 #include <helpers/SimpleMeshTables.h>
@@ -205,6 +206,9 @@ bool init(bool spiffs_ok)
     }
 
     g_mesh->begin();
+
+    // Restore persisted channels from NVS
+    loadChannels();
 
     // Only broadcast advert if user has explicitly configured radio params.
     // Compile-time defaults may be illegal in some regions — transmit gating
@@ -413,6 +417,47 @@ bool contactHasPath(int idx) {
     if (!g_mesh) return false;
     auto* c = g_mesh->getContact(idx);
     return c && c->out_path_len != OUT_PATH_UNKNOWN;
+}
+
+void saveChannels() {
+    if (!g_mesh) return;
+    Preferences nvs;
+    if (!nvs.begin("slopos", false)) return;
+    int n = g_mesh->getChannelCount();
+    nvs.putUChar("ch_cnt", (uint8_t)n);
+    for (int i = 0; i < n; i++) {
+        auto* ch = g_mesh->getChannel(i);
+        if (!ch) continue;
+        char key[16];
+        snprintf(key, sizeof(key), "ch_%d_name", i);
+        nvs.putString(key, ch->name);
+        snprintf(key, sizeof(key), "ch_%d_sec", i);
+        nvs.putBytes(key, ch->channel.secret, sizeof(ch->channel.secret));
+        snprintf(key, sizeof(key), "ch_%d_hash", i);
+        nvs.putBytes(key, ch->channel.hash, sizeof(ch->channel.hash));
+    }
+    nvs.end();
+}
+
+void loadChannels() {
+    if (!g_mesh) return;
+    Preferences nvs;
+    if (!nvs.begin("slopos", true)) return;
+    int n = nvs.getUChar("ch_cnt", 0);
+    for (int i = 0; i < n; i++) {
+        char key[16];
+        char name[32];
+        uint8_t secret[32];
+        uint8_t hash[32];
+        snprintf(key, sizeof(key), "ch_%d_name", i);
+        nvs.getString(key, name, sizeof(name));
+        snprintf(key, sizeof(key), "ch_%d_sec", i);
+        nvs.getBytes(key, secret, sizeof(secret));
+        snprintf(key, sizeof(key), "ch_%d_hash", i);
+        nvs.getBytes(key, hash, sizeof(hash));
+        if (name[0]) g_mesh->loadChannel(secret, sizeof(secret), hash, name);
+    }
+    nvs.end();
 }
 
 void saveState() {

@@ -22,6 +22,7 @@
 #include "theme.h"
 #include "responsive.h"
 #include "home_screen.h"
+#include "chat_screen.h"
 #include "../hal/tdeck_pins.h"
 #include "../hal/battery.h"
 #include "../hal/sdcard.h"
@@ -1489,6 +1490,8 @@ void radio_setup_screen_show()
         np.configured   = true;
         slopos::prefs_set(np);
         slopos::prefs_save(np);
+        slopos::mesh::saveChannels();
+        chat_save_messages();
         ESP.restart();
     }, LV_EVENT_CLICKED, nullptr);
 

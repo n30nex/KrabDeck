@@ -4,33 +4,6 @@ This document tracks known issues, bugs, and missing features in SlopOS. Contrib
 
 ---
 
-## Chat Screen
-
-### Channel selection — message preview clipping
-When scrolling through channels in the channel selector, message previews (the last message in each channel) don't properly truncate. Long messages overflow the preview area and clip visually, overlapping adjacent UI elements.
-
-**What's needed:** Proper string truncation in the channel list — clamp preview text to fit the available width, appending "..." when truncated. The `build_channel_string` function in `home_screen.cpp` was recently hardened (PR #29) — a similar approach should be applied to the preview text in the channel selector.
-
-
-## Signal Bars
-
-### RSSI-based signal strength indicator
-There's no visual signal strength indicator anywhere in the UI. Users have to navigate to the Heard screen and read raw RSSI numbers to gauge link quality.
-
-**What's needed:** A small signal bar widget (1-5 bars) based on the last received message's RSSI from each contact. Bars should be rendered with the pixel aesthetic — blocky, no curves. Reference threshold levels:
-
-| Bars | RSSI Range |
-|------|-----------|
-| 5    | > -70 dBm |
-| 4    | -70 to -85 dBm |
-| 3    | -85 to -95 dBm |
-| 2    | -95 to -105 dBm |
-| 1    | < -105 dBm |
-
-Could be shown next to each contact in the Contacts screen, in the chat header, and on the home screen mesh status.
-
----
-
 ## Finder
 
 ### Zero-hop ping for nearby discovery
@@ -41,28 +14,6 @@ The finder feature needs a proper implementation that sends a zero-hop (TTL=1) p
 - A response handler that collects replies over a short window (2-3 seconds)
 - Display results grouped by RSSI (strongest first)
 - Cooldown of 30 seconds between pings to avoid flooding
-
----
-
-## Terminal
-
-### Undocumented commands
-The built-in serial/diagnostics terminal exposes several internal commands but there's no documentation on what's available or what each command does. Users have to read the source code to discover features.
-
-**What's needed:** A `help` command that lists all available commands with a one-line description. A `help <command>` variant that shows usage details. The help text should be stored as a single `const char*` array in `src/ui/terminal.cpp` so it stays easy to update.
-
-Common commands that should be documented:
-| Command | Description |
-|---------|-------------|
-| `help` | List available commands |
-| `status` | Show mesh status, node count, uptime |
-| `channels` | List joined channels |
-| `nodes` | List known nodes |
-| `signal` | Show RSSI/SNR for last heard transmission |
-| `send <text>` | Send a text message to the current channel |
-| `save` | Force save state to NVS |
-| `reset` | Reboot the device |
-| `gps` | Show current GPS fix data |
 
 ---
 
@@ -149,9 +100,9 @@ All trackball directions fire on falling edge only (one event per physical deten
 ## Screen Navigation
 
 ### Navigation history stack is broken
-The navigation system uses a circular buffer with MAX_HISTORY=8. `push_history` wraps around and overwrites the oldest entry when full. `pop_history` decrements `history_top` without wrapping — after wrapping occurs, it reads `history[-1]` (out-of-bounds, undefined behavior). The stack can only hold 8 items but there are 14+ screen types.
+The navigation system uses a circular buffer with MAX_HISTORY=8. `push_history` wraps around and overwrites the oldest entry when full. `pop_history` decrements `history_top` without wrapping — after wrapping occurs, the stack has no way to distinguish new entries from overwritten ones. The stack can only hold 8 items but there are 14+ screen types.
 
-**What's needed:** Replace the circular buffer with a simple linear stack: drop the oldest entry when full instead of wrapping. Fix `pop_history` to never read below index 0.
+**What's needed:** Replace the circular buffer with a simple linear stack: drop the oldest entry when full instead of wrapping. Fix `pop_history` to handle wrap-around correctly.
 
 ---
 
@@ -191,31 +142,9 @@ Each command in the Terminal screen creates a new LVGL label widget (`screens.cp
 
 ---
 
-## Chat Screen
-
-### Emoji truncation on multi-byte codepoints
-The send path truncates message text by byte count (`chat_screen.cpp:933`), not codepoint boundary. If a 4-byte emoji (e.g. 🚀 = `\xF0\x9F\x9A\x80`) starts at byte 147 of 149, only 2 of the 4 bytes are copied, producing invalid UTF-8 which is then transmitted over the mesh.
-
-**What's needed:** Replace byte-level truncation with codepoint-aware truncation — walk backward from the limit to ensure the last character boundary is valid, or reduce the max byte count to account for multi-byte trailing characters.
-
-### Emoji rendering — picker has full color, but inline emoji are 4bpp grayscale
-The emoji picker dialog uses 52 pre-rendered color images extracted from NotoColorEmoji.ttf (CBDT table), showing Android-style filled color emoji. However, emoji in chat message bubbles, channel names, and the autocomplete popup all render through the LVGL font fallback system:
-
-- **Inline emoji**: Uses `emoji_font`, a 4bpp grayscale font generated from Noto Emoji (B&W outline font) via `lv_font_conv`. These render as low-resolution grayscale outlines on the 16-bit display. LVGL labels cannot embed `lv_image_dsc_t` objects — fonts and images are separate rendering paths.
-- **363 codepoints**: Only 363 emoji codepoints are included in `emoji_font`. Any emoji outside this set displays as a blank placeholder box.
-- **Variation selectors**: Mobile clients append U+FE0F (VARIATION SELECTOR-16) to emoji, e.g. `❤️` = U+2764 + U+FE0F. The font doesn't include U+FE0F, so LVGL renders a placeholder box after every variation-selector emoji. A `strip_variation_selectors()` helper is in `chat_screen.cpp` to remove these before display.
-- **Autocomplete**: Shows color images for the 52 picker emoji via `lv_img`, falls back to font glyphs for the remaining ~290. The color images are the same CBDT-extracted ones used in the picker.
-- **Emoji size mismatch**: `emoji_font` uses 16px glyphs but chat message labels use 12px primary fonts. Emoji render 33% larger than neighboring text.
-
-**How to fix this properly:** Either (a) regenerate `emoji_font` at matching sizes (12px, 10px), or (b) refactor chat bubbles to use `lv_spangroup` with mixed image+text spans, or (c) port the LVGL FreeType engine integration to render the CBDT color font directly.
-
----
-
 ## SPI / Display
 
 ### Display and SD card share the same SPI host
 The display uses `SPI3_HOST` (`display.cpp:45`) and the SD card also uses `HSPI` (`sdcard.cpp:31`). On ESP32-S3, `HSPI` maps to `SPI3_HOST` — the same SPI peripheral. Both configure the same host through different driver instances (LovyanGFX internal vs Arduino SPIClass). The comment in `sdcard.cpp:29` says "LovyanGFX and RadioLib use SPI2 (FSPI)" which is incorrect — the display code clearly uses SPI3_HOST. While this works in practice because each transaction reconfigures the GPIO matrix, clock speed differences (40MHz display vs 4MHz SD) create a fragile architecture where one driver's transaction can interfere with the other's register state.
 
 **What's needed:** Either (a) move SD card to `FSPI` (`SPI2_HOST`), which is the default Arduino SPI bus and not used by the display, or (b) move the display to `SPI2_HOST` and keep SD on `SPI3`. Update the comment in `sdcard.cpp` to reflect the actual bus assignment.
-
----

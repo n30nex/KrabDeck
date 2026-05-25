@@ -249,6 +249,12 @@ bool slopos_trackball_next_event(SlopOSTrackballEvent* out)
     return true;
 }
 
+void slopos_trackball_inject(SlopOSTrackballEvent event)
+{
+    if (event == SlopOSTrackballEvent::None) return;
+    queue_event(event);
+}
+
 void slopos_trackball_reset_scan_state()
 {
     const uint32_t now = millis();

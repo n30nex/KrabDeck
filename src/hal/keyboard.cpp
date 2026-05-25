@@ -235,3 +235,21 @@ void slopos_keyboard_consume_key()
     latched_key   = 0;
     has_new_event = false;
 }
+
+void slopos_keyboard_inject(uint8_t key_code)
+{
+    latched_key = key_code;
+    has_new_event = true;
+    current_key = key_code;
+
+    // Track modifier state based on key code
+    if (key_code >= 'A' && key_code <= 'Z') {
+        shift_held = true;
+    } else if (key_code >= 'a' && key_code <= 'z') {
+        shift_held = false;
+    }
+    switch (key_code) {
+    case 0x0C: alt_held = !alt_held; break;
+    default:   break;
+    }
+}

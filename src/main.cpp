@@ -16,6 +16,9 @@
 #if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
 #include "diagnostics/debug.h"
 #endif
+#if defined(SLOPOS_REMOTE_TEST) && SLOPOS_REMOTE_TEST
+#include "test/test_controller.h"
+#endif
 
 static slopos::TDeckBoard board;
 
@@ -60,11 +63,18 @@ void setup()
         const slopos::NodePrefs& p = slopos::prefs_get();
         slopos::mesh::setOwnName(p.node_name);
     }
+#if defined(SLOPOS_REMOTE_TEST) && SLOPOS_REMOTE_TEST
+    // Remote test mode — no LoRa radio initialised.
+    // All mesh messages are injected via test controller.
+    Serial.println("[boot] REMOTE TEST MODE — LoRa radio disabled");
+    slopos_test_controller_init();
+#else
     if (!slopos::mesh::init(spiffs_ok))
         Serial.println("[boot] WARNING: Radio init failed");
 #if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
     else
         Serial.println("[boot] step 7: mesh radio initialized");
+#endif
 #endif
 
     slopos::ui::init();
@@ -105,7 +115,11 @@ void loop()
         }
     }
 
+#if defined(SLOPOS_REMOTE_TEST) && SLOPOS_REMOTE_TEST
+    slopos_test_controller_loop();
+#else
     slopos::mesh::loop();
+#endif
     slopos_gps_loop();
     slopos_display_loop();
     slopos::ui::loop();

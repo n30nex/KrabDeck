@@ -60,3 +60,7 @@ void slopos_keyboard_reset_scan_state();
 // Consume/clear the current key event (used by LVGL indev after reporting a press).
 // Prevents the same character from being fed again on the next read.
 void slopos_keyboard_consume_key();
+
+// Inject a simulated keypress (for remote test mode).
+// key_code: ASCII character or special code (0x0D=Enter, 0x08=Backspace, 0x1B=Esc).
+void slopos_keyboard_inject(uint8_t key_code);

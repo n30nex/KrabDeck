@@ -78,6 +78,10 @@ int  getPacketLogCount();
 bool getPacketLogEntry(int index, PacketLogEntry* out);
 void pushPacketLog(const char* source, int rssi, float snr, const char* type);
 
+// Inject a simulated incoming message into the message queue (for remote test mode).
+// No radio transmission occurs. The message appears as if received from another node.
+void injectMessage(const char* sender, const char* channel, const char* text);
+
 // Trace route
 bool sendTrace(int contact_idx, uint32_t* out_tag);
 bool hasTraceResult();

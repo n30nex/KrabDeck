@@ -157,6 +157,25 @@ void pushPacketLog(const char* source, int rssi, float snr, const char* type) {
     if (pkt_log_count < MAX_PACKET_LOG) pkt_log_count++;
 }
 
+// Inject a simulated message into the queue (for remote test mode — no radio)
+// All functions in this file that access the radio check for g_mesh == nullptr,
+// so this is safe to call without radio initialisation.
+void injectMessage(const char* sender, const char* channel, const char* text)
+{
+    if (!sender || !text) return;
+    queue_push(sender, channel, text);
+    if (!channel || channel[0] == '\0') {
+        pushPacketLog(sender, -50, 8.0f, "DM");
+    } else {
+        pushPacketLog(sender, -50, 8.0f, "CHANNEL");
+    }
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
+    Serial.printf("[test] injected msg from %s%s%s: %s\n",
+                  sender, channel && channel[0] ? " in " : "",
+                  channel && channel[0] ? channel : "", text);
+#endif
+}
+
 bool init(bool spiffs_ok)
 {
     fallback_clock.begin();

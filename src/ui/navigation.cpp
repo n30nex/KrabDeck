@@ -49,9 +49,14 @@ static bool history_empty() {
     return history_top < 0;
 }
 
+static int back_swipe_commit = 0; // counter for two-swipe commit
+
 void navigate_to(Screen screen)
 {
     if (screen == current) return;
+
+    back_swipe_commit = 0; // reset back-swipe state on new navigation
+    highlight_back_button(false);
 
     // Push current screen onto history before navigating away
     push_history(current);
@@ -79,6 +84,9 @@ void navigate_to(Screen screen)
 void go_back()
 {
     if (history_empty()) return; // nowhere to go back to
+
+    back_swipe_commit = 0; // reset back-swipe state on back navigation
+    highlight_back_button(false);
 
     Screen target = pop_history();
     // Navigate directly without pushing current (we're going back, not forward)
@@ -111,6 +119,31 @@ bool can_go_back()
 Screen current_screen()
 {
     return current;
+}
+
+// ════════════════════════════════════════════════════
+// Universal back-swipe (two-swipe commit)
+// ════════════════════════════════════════════════════
+bool handle_back_swipe(SlopOSTrackballEvent event)
+{
+    // Any non-Left event resets the counter and clears visual feedback
+    if (event != SlopOSTrackballEvent::Left) {
+        back_swipe_commit = 0;
+        highlight_back_button(false);
+        return false;
+    }
+
+    back_swipe_commit++;
+    if (back_swipe_commit >= 2) {
+        back_swipe_commit = 0;
+        highlight_back_button(false);
+        go_back();
+        return true;
+    }
+
+    // First left swipe: show visual feedback on the back button
+    highlight_back_button(true);
+    return true;
 }
 
 } // namespace slopos::ui

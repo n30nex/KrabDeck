@@ -302,6 +302,35 @@ The debug build (`SlopOS_TDeck_debug`) enables:
 
 The release build (`SlopOS_TDeck`) suppresses all of these via `NDEBUG` and the absence of `SLOPOS_DEBUG=1`. Only critical errors and warnings print in release mode.
 
+### Remote Test Controller
+
+A serial-controlled testing mode for automated and manual testing. Enabled by the `SlopOS_TDeck_remote_test` build env:
+
+```bash
+pio run -e SlopOS_TDeck_remote_test
+```
+
+**SAFETY: No LoRa radio is initialised in this mode.** All mesh messages are simulated via injection. The radio hardware is never touched.
+
+Available commands over serial (USB CDC at 115200 baud):
+
+| Command | Example | Description |
+|---------|---------|-------------|
+| `help` | `help` | Show command list |
+| `nav <screen>` | `nav chat` | Navigate to screen |
+| `back` | `back` | Go back in nav stack |
+| `tb <dir>` | `tb click` | Simulate trackball (up/down/left/right/click) |
+| `type <text>` | `type Hello` | Type text via keyboard injection |
+| `press <key>` | `press enter` | Press special key (enter/backspace/esc) |
+| `inject <from> [channel=<ch>] <msg>` | `inject Bob channel=general hi` | Simulate incoming mesh message |
+| `screen` | `screen` | Show current screen name |
+| `status` | `status` | Show heap and PSRAM |
+
+Injection HAL functions (usable from native tests too):
+- `slopos_trackball_inject(SlopOSTrackballEvent)` — queues events into the same buffer as GPIO scanning
+- `slopos_keyboard_inject(uint8_t)` — injects keypresses into the LVGL keypad pipeline
+- `slopos::mesh::injectMessage(sender, channel, text)` — pushes a fake message into the mesh receive queue
+
 ---
 
 ## Versioning & Release

@@ -25,6 +25,8 @@
 #include "tdeck_pins.h"
 #include "../ui/ui.h"
 #include "../ui/chat_screen.h"
+#include "../diagnostics/debug_cfg.h"
+#include "../diagnostics/debug.h"
 #include <lvgl.h>
 
 #define LGFX_USE_V1
@@ -92,7 +94,7 @@ static lv_display_t* lv_disp = nullptr;
 static lv_color_t* draw_buf = nullptr;
 
 // ── Debug: expose last flush area for diagnostics ────────
-#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
+#if SLOPOS_DEBUG_DISPLAY
 static lv_area_t dbg_last_flush_area = {0,0,0,0};
 static uint32_t  dbg_flush_count = 0;
 const lv_area_t* slopos_debug_last_flush_area() { return &dbg_last_flush_area; }
@@ -157,14 +159,20 @@ static void dispatch_trackball_events()
 // ── LVGL flush callback ─────────────────────────────────
 static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map)
 {
-#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
+#if SLOPOS_DEBUG_DISPLAY
     dbg_last_flush_area = *area;
     dbg_flush_count++;
-    Serial.printf("[flush] #%lu  area=(%ld,%ld,%ld,%ld) w=%ld h=%ld pixels=%ld\n",
-                  (unsigned long)dbg_flush_count,
-                  (long)area->x1, (long)area->y1, (long)area->x2, (long)area->y2,
-                  (long)(area->x2 - area->x1 + 1), (long)(area->y2 - area->y1 + 1),
-                  (long)((area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1)));
+    // Runtime level + feature check only when full debug module is compiled
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
+    if (slopos::debug::get_level() >= 2 && slopos::debug::feat_get_display())
+#endif
+    {
+        Serial.printf("[flush] #%lu  area=(%ld,%ld,%ld,%ld) w=%ld h=%ld pixels=%ld\n",
+                      (unsigned long)dbg_flush_count,
+                      (long)area->x1, (long)area->y1, (long)area->x2, (long)area->y2,
+                      (long)(area->x2 - area->x1 + 1), (long)(area->y2 - area->y1 + 1),
+                      (long)((area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1)));
+    }
 #endif
     uint32_t w = area->x2 - area->x1 + 1;
     uint32_t h = area->y2 - area->y1 + 1;
@@ -276,11 +284,16 @@ static void lvgl_trackball_cb(lv_indev_t* indev, lv_indev_data_t* data)
 }
 
 // ── Public API ───────────────────────────────────────────
-#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
+#if SLOPOS_DEBUG_DISPLAY
 static void lvgl_invalidate_cb(lv_event_t* e)
 {
     lv_area_t* area = (lv_area_t*)lv_event_get_param(e);
-    if (area) {
+#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
+    if (area && slopos::debug::get_level() >= 2 && slopos::debug::feat_get_display())
+#else
+    if (area)
+#endif
+    {
         Serial.printf("[inv] area=(%ld,%ld,%ld,%ld) w=%ld h=%ld\n",
                       (long)area->x1, (long)area->y1, (long)area->x2, (long)area->y2,
                       (long)(area->x2 - area->x1 + 1), (long)(area->y2 - area->y1 + 1));
@@ -315,7 +328,7 @@ bool slopos_display_init()
                                LV_DISPLAY_RENDER_MODE_PARTIAL);
     }
 
-#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
+#if SLOPOS_DEBUG_DISPLAY
     lv_display_add_event_cb(lv_disp, lvgl_invalidate_cb, LV_EVENT_INVALIDATE_AREA, nullptr);
     Serial.println("[debug] LVGL invalidate area tracking enabled");
 #endif
@@ -366,6 +379,8 @@ bool slopos_display_init()
 void slopos_display_loop()
 {
     // Serial screenshot trigger: send "SCREENSHOT" over USB serial
+    // Disabled in remote test mode — the test controller handles capture
+#if !defined(SLOPOS_REMOTE_TEST) || !SLOPOS_REMOTE_TEST
     if (Serial.available()) {
         static char cmd_buf[32];
         static uint8_t cmd_pos = 0;
@@ -380,6 +395,7 @@ void slopos_display_loop()
             cmd_buf[cmd_pos++] = c;
         }
     }
+#endif
 
     slopos_touch_loop();
     slopos_keyboard_scan();
@@ -392,8 +408,8 @@ void slopos_display_loop()
     }
 
     // Auto-off: turn off backlight after inactivity
-    // Disabled in SLOPOS_DEBUG builds — the screen must stay on for observation
-#if !defined(SLOPOS_DEBUG) || !SLOPOS_DEBUG
+    // Disabled in display debug builds — the screen must stay on for observation
+#if !SLOPOS_DEBUG_DISPLAY
     if (display_on && millis() > auto_off_at) {
         tft.setBrightness(0);
         slopos_keyboard_set_brightness(0);

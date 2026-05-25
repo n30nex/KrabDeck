@@ -99,8 +99,6 @@ const lv_area_t* slopos_debug_last_flush_area() { return &dbg_last_flush_area; }
 uint32_t slopos_debug_flush_count() { return dbg_flush_count; }
 #endif
 
-#include "../diagnostics/debug.h"
-
 // ── Auto-off timer ──────────────────────────────────
 // Based on MeshCore's AUTO_OFF_MILLIS pattern (MIT license)
 static constexpr uint32_t AUTO_OFF_MS  = 30000;  // 30 seconds
@@ -162,13 +160,11 @@ static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px
 #if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
     dbg_last_flush_area = *area;
     dbg_flush_count++;
-    if (slopos::debug::get_level() >= 2) {
-        Serial.printf("[flush] #%lu  area=(%ld,%ld,%ld,%ld) w=%ld h=%ld pixels=%ld\n",
-                      (unsigned long)dbg_flush_count,
-                      (long)area->x1, (long)area->y1, (long)area->x2, (long)area->y2,
-                      (long)(area->x2 - area->x1 + 1), (long)(area->y2 - area->y1 + 1),
-                      (long)((area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1)));
-    }
+    Serial.printf("[flush] #%lu  area=(%ld,%ld,%ld,%ld) w=%ld h=%ld pixels=%ld\n",
+                  (unsigned long)dbg_flush_count,
+                  (long)area->x1, (long)area->y1, (long)area->x2, (long)area->y2,
+                  (long)(area->x2 - area->x1 + 1), (long)(area->y2 - area->y1 + 1),
+                  (long)((area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1)));
 #endif
     uint32_t w = area->x2 - area->x1 + 1;
     uint32_t h = area->y2 - area->y1 + 1;
@@ -193,8 +189,24 @@ static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px
 }
 
 // ── Touch read callback ──────────────────────────────────
+
+#if defined(SLOPOS_REMOTE_TEST)
+// Test touch injection for remote test controller
+static lv_point_t test_touch_point = {0, 0};
+static bool test_touch_pressed = false;
+#endif
+
 static void lvgl_touch_cb(lv_indev_t* indev, lv_indev_data_t* data)
 {
+#if defined(SLOPOS_REMOTE_TEST)
+    if (test_touch_pressed) {
+        data->point = test_touch_point;
+        data->state = LV_INDEV_STATE_PRESSED;
+        test_touch_pressed = false;
+        slopos_display_wake();
+        return;
+    }
+#endif
     int x, y;
     bool pressed = false;
     if (slopos_touch_get(&x, &y, &pressed) && pressed) {
@@ -267,7 +279,6 @@ static void lvgl_trackball_cb(lv_indev_t* indev, lv_indev_data_t* data)
 #if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
 static void lvgl_invalidate_cb(lv_event_t* e)
 {
-    if (slopos::debug::get_level() < 2) return;
     lv_area_t* area = (lv_area_t*)lv_event_get_param(e);
     if (area) {
         Serial.printf("[inv] area=(%ld,%ld,%ld,%ld) w=%ld h=%ld\n",
@@ -364,7 +375,8 @@ void slopos_display_loop()
         restore_display_after_sleep();
     }
 
-    // Auto-off: turn off backlight after inactivity (disabled in debug builds)
+    // Auto-off: turn off backlight after inactivity
+    // Disabled in SLOPOS_DEBUG builds — the screen must stay on for observation
 #if !defined(SLOPOS_DEBUG) || !SLOPOS_DEBUG
     if (display_on && millis() > auto_off_at) {
         tft.setBrightness(0);
@@ -397,3 +409,17 @@ bool slopos_display_is_on()
 {
     return display_on;
 }
+
+void slopos_display_set_brightness(uint8_t brightness)
+{
+    tft.setBrightness(brightness);
+}
+
+#if defined(SLOPOS_REMOTE_TEST)
+void slopos_test_set_touch(int x, int y)
+{
+    test_touch_point.x = x;
+    test_touch_point.y = y;
+    test_touch_pressed = true;
+}
+#endif

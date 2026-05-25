@@ -464,6 +464,7 @@ Before submitting a PR (or before merging someone else's), use this checklist to
 - [ ] `pio test -e native_test -v` passes (all tests)
 - [ ] `pio run -e SlopOS_TDeck` builds without error
 - [ ] PlatformIO discovers test dirs correctly (`test/test_<name>/main.cpp`)
+- [ ] PR body declares how hardware testing was done: "Remote test" (serial-controlled), "Physical hardware test", or both. If neither is stated, auto-decline.
 
 #### Known Issue Detection
 - [ ] Does this PR fix a documented issue in `KNOWN_ISSUES.md`? If so, remove that section.
@@ -477,14 +478,15 @@ Before submitting a PR (or before merging someone else's), use this checklist to
 **For reviewers (maintainer only beyond step 5):**
 1. List PRs: `gh pr list --repo hermes-gadget/SlopOS-tdeck --state open`
 2. Check diff: `gh pr diff N` or `git fetch origin pull/N/head:pr-N && git diff dev...pr-N`
-3. Build: `pio run -e SlopOS_TDeck`
-4. Test: `pio test -e native_test -v` (all tests must pass)
-5. Run the [Code Audit Checklist](#code-audit-checklist) — check every applicable item
-6. If the PR came from an AI agent: read the full diff for logic errors beyond what the agent self-checked. Agents miss subtle race conditions and edge-case buffer overflows.
-7. Merge: `gh pr merge N --squash --delete-branch --repo hermes-gadget/SlopOS-tdeck`
-8. If merge fails (conflicts): cherry-pick new commits only, or squash-merge locally
-9. If PR branch has stale commits: cherry-pick new commits onto dev, close PR
-10. Close the related issue with notes describing what was done
+3. Verify PR body declares testing method — "Remote test" (serial-controlled), "Physical hardware test", or both. If missing, decline with: "PR must state how hardware testing was done — remote test, physical hardware, or both."
+4. Build: `pio run -e SlopOS_TDeck`
+5. Test: `pio test -e native_test -v` (all tests must pass)
+6. Run the [Code Audit Checklist](#code-audit-checklist) — check every applicable item
+7. If the PR came from an AI agent: read the full diff for logic errors beyond what the agent self-checked. Agents miss subtle race conditions and edge-case buffer overflows.
+8. Merge: `gh pr merge N --squash --delete-branch --repo hermes-gadget/SlopOS-tdeck`
+9. If merge fails (conflicts): cherry-pick new commits only, or squash-merge locally
+10. If PR branch has stale commits: cherry-pick new commits onto dev, close PR
+11. Close the related issue with notes describing what was done
 
 ### Rejection triggers
 
@@ -502,6 +504,7 @@ Before submitting a PR (or before merging someone else's), use this checklist to
 | `uint8_t` counters that increment forever without resetting | Save counter wraps after 255 iterations, stopping persistence for ~2 hours |
 | Screens with unbounded widget accumulation | Thousands of orphan LVGL labels leak heap — cap at 64 |
 | `ESP.restart()` without delay for pending flash writes | SPIFFS/NVS save may be lost on reboot |
+| PR body missing hardware testing declaration | Cannot verify the change works on real hardware — must state "Remote test", "Physical hardware test", or both |
 | New dependency without GPL-3.0 compatibility check | License incompatibility blocks the entire project |
 | Commented-out code, dead code paths, or "temporary fix" markers | Unmaintainable — no such thing as permanent temporary code |
 

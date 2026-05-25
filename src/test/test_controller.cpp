@@ -31,13 +31,20 @@
 // ── Constants ────────────────────────────────────────────
 static constexpr uint32_t CMD_POLL_MS = 50;   // check Serial every 50ms
 static constexpr size_t   CMD_BUF_SIZE = 256;
-static constexpr size_t   TYPE_CHUNK_DELAY = 20;  // ms between injected chars
+static constexpr size_t   TYPE_BUF_SIZE = 256;   // max chars in type queue
+static constexpr size_t   TYPE_CHUNK_DELAY = 50; // ms between injected chars, must give LVGL time to consume
 
 // ── State ────────────────────────────────────────────────
 static bool     initialized = false;
 static uint32_t last_poll_ms = 0;
 static char     cmd_buf[CMD_BUF_SIZE];
 static size_t   cmd_pos = 0;
+
+// Type queue — drained one char per loop iteration so LVGL can consume each keypress
+static char     type_buf[TYPE_BUF_SIZE];
+static size_t   type_pos = 0;    // next char to inject
+static size_t   type_count = 0;  // total chars in queue
+static uint32_t type_last_inject_ms = 0;
 
 // ── Screen name lookup ───────────────────────────────────
 struct ScreenEntry {
@@ -143,13 +150,20 @@ static void cmd_type(const char* text) {
         Serial.println("[test] type: no text provided");
         return;
     }
-    int count = 0;
-    for (const char* p = text; *p; p++) {
-        slopos_keyboard_inject((uint8_t)*p);
-        delay(TYPE_CHUNK_DELAY);
-        count++;
+    // Don't overwrite an in-progress type
+    if (type_count > 0) {
+        Serial.println("[test] type: still typing previous text, wait for it to finish");
+        return;
     }
-    Serial.printf("[test] typed %d chars\n", count);
+    type_pos = 0;
+    type_count = 0;
+    size_t len = strlen(text);
+    if (len > TYPE_BUF_SIZE - 1) len = TYPE_BUF_SIZE - 1;
+    memcpy(type_buf, text, len);
+    type_buf[len] = '\0';
+    type_count = len;
+    type_last_inject_ms = 0;  // inject first char on next loop
+    Serial.printf("[test] queued %d chars to type\n", (int)type_count);
 }
 
 static void cmd_press(const char* key) {
@@ -309,6 +323,18 @@ void slopos_test_controller_loop() {
     if (!initialized) return;
 
     uint32_t now = millis();
+
+    // Drain type queue: inject one character per loop iteration
+    if (type_count > 0 && (now - type_last_inject_ms >= TYPE_CHUNK_DELAY)) {
+        slopos_keyboard_inject((uint8_t)type_buf[type_pos]);
+        type_pos++;
+        type_count--;
+        type_last_inject_ms = now;
+        if (type_count == 0) {
+            Serial.printf("[test] type done: %d chars\n", (int)type_pos);
+        }
+    }
+
     if (now - last_poll_ms < CMD_POLL_MS) return;
     last_poll_ms = now;
 

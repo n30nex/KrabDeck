@@ -71,7 +71,7 @@ static void queue_push(const char* sender, const char* channel, const char* text
     msg_head = (msg_head + 1) % MAX_QUEUED;
     msg_count++;
     // Log as packet entry (accessible via Packets screen)
-    if (sender && sender[0]) {
+    if (sender && sender[0] && g_mesh) {
         int rssi = (int)radio_driver.getLastRSSI();
         float snr = radio_driver.getLastSNR();
         const char* ptype = (channel && channel[0]) ? "CHANNEL" : "DM";
@@ -380,9 +380,9 @@ const char* getOwnName() { return own_name; }
 
 // ── Radio stats ─────────────────────────────────
 
-int getNoiseFloor()   { return radio_driver.getNoiseFloor(); }
-int getLastRSSI()     { return (int)radio_driver.getLastRSSI(); }
-float getLastSNR()    { return radio_driver.getLastSNR(); }
+int getNoiseFloor()   { return g_mesh ? (int)radio_driver.getNoiseFloor() : -120; }
+int getLastRSSI()     { return g_mesh ? (int)radio_driver.getLastRSSI() : 0; }
+float getLastSNR()    { return g_mesh ? radio_driver.getLastSNR() : 0.0f; }
 
 bool sendAdvert() {
     bool has_fix = slopos_gps_has_fix();

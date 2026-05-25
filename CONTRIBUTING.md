@@ -188,12 +188,13 @@ For hardware-validated PR testing, flash the debug build and check serial output
 # Build debug firmware
 pio run -e SlopOS_TDeck_debug
 
-# Flash via Pi gateway
-scp .pio/build/SlopOS_TDeck_debug/firmware-merged.bin hermes-pi:/tmp/
-ssh hermes-pi "source ~/hermes-venv/bin/activate && esptool --chip esp32s3 --port /dev/ttyACM0 --baud 921600 write-flash 0x0 /tmp/firmware-merged.bin && rm /tmp/firmware-merged.bin"
+# Flash to device (via USB or remote gateway)
+# Local: pio run -e SlopOS_TDeck_debug -t upload
+# Remote: scp .bin to gateway, flash via esptool
 
-# Capture boot log
-ssh hermes-pi "stty -F /dev/ttyACM0 115200 raw -echo && timeout 15 cat /dev/ttyACM0" > /tmp/boot-log.txt
+# Capture boot log (adjust port as needed)
+# Local: pio device monitor -b 115200 --port <port>
+# Remote: ssh <gateway> "stty -F <port> 115200 raw -echo && timeout 15 cat <port>" > /tmp/boot-log.txt
 ```
 
 Verify in the boot log:

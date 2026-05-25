@@ -272,15 +272,15 @@ Local (USB cable connected directly):
 pio device monitor -b 115200
 ```
 
-Remote (via Pi hardware gateway — see `raspberry-pi` skill):
+Remote (if a hardware gateway is available for USB device access):
 ```bash
-# Live tail
-ssh hermes-pi "stty -F /dev/ttyACM0 115200 raw -echo && cat /dev/ttyACM0"
+# Live tail — replace <host> and <port> as appropriate
+ssh <gateway-host> "stty -F <serial-port> 115200 raw -echo && cat <serial-port>"
 
 # Capture full boot (reset + read)
-ssh hermes-pi 'source ~/hermes-venv/bin/activate && python3 -c "
+ssh <gateway-host> 'python3 -c "
 import serial, time
-s = serial.Serial(\"/dev/ttyACM0\", 115200, timeout=10)
+s = serial.Serial(\"<serial-port>\", 115200, timeout=10)
 s.setDTR(False); s.setRTS(False); time.sleep(0.1)
 s.setDTR(True); time.sleep(0.1); s.setDTR(False)
 time.sleep(2)

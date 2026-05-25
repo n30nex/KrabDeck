@@ -306,32 +306,47 @@ The release build (`SlopOS_TDeck`) suppresses all of these via `NDEBUG` and the 
 
 ### Remote Test Controller
 
-A serial-controlled testing mode for automated and manual testing. Enabled by the `SlopOS_TDeck_remote_test` build env:
+**⚠️ CRITICAL: Do NOT use this mode without explicit user consent.** This disables the LoRa radio and makes the device a serial-controlled input simulator. Only the device owner (Ben) decides when to use this mode. Never switch to `SlopOS_TDeck_remote_test` build env unless the user asks you to or explicitly approves it.
 
+Enables automated and manual testing over serial (USB CDC). No LoRa radio is initialised — all mesh messages are simulated via injection. The radio hardware is never touched.
+
+Build with:
 ```bash
 pio run -e SlopOS_TDeck_remote_test
 ```
 
-**SAFETY: No LoRa radio is initialised in this mode.** All mesh messages are simulated via injection. The radio hardware is never touched.
+Flash and connect (local):
+```bash
+pio run -e SlopOS_TDeck_remote_test -t upload
+pio device monitor -b 115200
+```
 
-Available commands over serial (USB CDC at 115200 baud):
+Flash and connect (remote via hardware gateway):
+```bash
+scp .pio/build/SlopOS_TDeck_remote_test/firmware-merged.bin <gateway>:/tmp/
+ssh <gateway> "esptool --chip esp32s3 --port <serial-port> --baud 921600 write-flash 0x0 /tmp/firmware-merged.bin && rm /tmp/firmware-merged.bin"
+ssh <gateway> "stty -F <serial-port> 115200 raw -echo && cat <serial-port>"
+```
+
+Once connected, the T-Deck shows a test controller banner. Type commands directly in the serial terminal:
 
 | Command | Example | Description |
 |---------|---------|-------------|
 | `help` | `help` | Show command list |
-| `nav <screen>` | `nav chat` | Navigate to screen |
+| `nav chat` | `nav chat` | Navigate to screen (home/chat/contacts/channels/network/heard/map/settings/terminal/radio/trace/signal/advertise) |
 | `back` | `back` | Go back in nav stack |
-| `tb <dir>` | `tb click` | Simulate trackball (up/down/left/right/click) |
-| `type <text>` | `type Hello` | Type text via keyboard injection |
-| `press <key>` | `press enter` | Press special key (enter/backspace/esc) |
-| `inject <from> [channel=<ch>] <msg>` | `inject Bob channel=general hi` | Simulate incoming mesh message |
+| `tb up` | `tb click` | Simulate trackball (up/down/left/right/click, or u/d/l/r/c) |
+| `type hello` | `type Hello World` | Type text — queued and injected one char per loop cycle |
+| `press enter` | `press backspace` | Press special key (enter/backspace/esc/tab) |
+| `inject Alice Hello!` | `inject Bob channel=general hi` | Simulate incoming mesh message (no radio!) |
 | `screen` | `screen` | Show current screen name |
 | `status` | `status` | Show heap and PSRAM |
 
-Injection HAL functions (usable from native tests too):
-- `slopos_trackball_inject(SlopOSTrackballEvent)` — queues events into the same buffer as GPIO scanning
-- `slopos_keyboard_inject(uint8_t)` — injects keypresses into the LVGL keypad pipeline
-- `slopos::mesh::injectMessage(sender, channel, text)` — pushes a fake message into the mesh receive queue
+Safety guarantees:
+- No LoRa radio initialised — `slopos::mesh::init()` is never called
+- All `sendMessage`, `sendChannelMessage`, `sendAdvert` return false (g_mesh is null)
+- Radio accessors (`getLastRSSI`, `getLastSNR`, `getNoiseFloor`) return dummy values
+- No SPI transactions ever reach the SX1262 hardware
 
 ---
 

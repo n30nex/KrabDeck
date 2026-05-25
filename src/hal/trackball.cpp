@@ -89,7 +89,8 @@ static void queue_event(SlopOSTrackballEvent event)
                   raw_pin_active(buttons[4]),
                   (unsigned long)millis());
 #if defined(SLOPOS_TRACKBALL_DEBUG_SHADOW)
-    return;
+    // Shadow debug mode: the debug print above fires, and we still queue the event
+    // so trackball input is not silently dropped during shadow debugging.
 #endif
 #endif
 

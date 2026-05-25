@@ -262,9 +262,9 @@ The display uses `SPI3_HOST` (`display.cpp:45`) and the SD card also uses `HSPI`
 
 ## Diagnostics
 
-### Debug mode issues
-When `SLOPOS_TRACKBALL_DEBUG_SHADOW` is defined (`trackball.cpp:91-93`), the debug print fires but the event is short-circuited — all trackball input is silently dropped during shadow debugging.
+### ~~Debug mode issues~~ Fixed
+When `SLOPOS_TRACKBALL_DEBUG_SHADOW` is defined (`trackball.cpp:91-93`), the debug print fires but the event is short-circuited — all trackball input is silently dropped during shadow debugging. 
 
 The `debug.h` header declares functions unconditionally, but `debug.cpp` wraps all implementation in `#if defined(SLOPOS_DEBUG)`. Any non-debug code that calls a debug function will get a linker error. Current call sites are properly guarded, but this is a latent risk for future code.
 
-**What's needed:** Fix the shadow debug mode so it logs events but still queues them. Wrap debug.h declarations in the same `#if defined(SLOPOS_DEBUG)` guard, or provide empty inline stubs.
+**Fixed:** Shadow debug mode now logs events and still queues them. `debug.h` declarations guarded behind `#if defined(SLOPOS_DEBUG)` with empty inline stubs for non-debug builds.

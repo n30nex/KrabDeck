@@ -19,6 +19,8 @@
 #define SLOPOS_DEBUG_LEVEL 2
 #endif
 
+#if defined(SLOPOS_DEBUG)
+
 namespace slopos {
 namespace debug {
 
@@ -39,3 +41,27 @@ void dump_mesh_state();
 
 } // namespace debug
 } // namespace slopos
+
+#else
+
+// Empty inline stubs for non-debug builds — safe to call from any code
+// without linker errors, compiled to zero instructions.
+namespace slopos {
+namespace debug {
+
+inline void init() {}
+inline void loop() {}
+inline void set_level(uint8_t) {}
+inline uint8_t get_level() { return 0; }
+inline void dump_system() {}
+inline void dump_lvgl_rendering() {}
+inline void dump_trackball_state() {}
+inline void dump_home_screen_layout() {}
+inline void dump_memory() {}
+inline void dump_display_config() {}
+inline void dump_mesh_state() {}
+
+} // namespace debug
+} // namespace slopos
+
+#endif

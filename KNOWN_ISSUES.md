@@ -113,11 +113,6 @@ The main loop calls `slopos::mesh::loop()` (which may do blocking LoRa TX/RX tak
 
 **What's needed:** Defer long mesh operations to a separate task or state machine, interleave `lv_timer_handler()` calls during mesh loop iterations, or use FreeRTOS task priorities to keep LVGL responsive.
 
-### Status bar save_counter overflow
-`ui.cpp` uses a `uint8_t save_counter` that increments without resetting after reaching 10. It continues incrementing to 255, causing the save counter to trip continuously for ~245 iterations (every 30s), then pauses for ~2 hours until uint8_t wraps around to 0. During the pause, settings are not persisted.
-
-**What's needed:** Reset `save_counter = 0` after triggering the save, not just `>= 10`.
-
 ---
 
 ## Mesh Networking
@@ -145,11 +140,6 @@ In `slop_mesh.h`, the payload text null-termination is conditional: `if (len > 1
 ---
 
 ## Map Screen
-
-### Large allocations not using PSRAM
-The map renderer allocates large buffers (131KB tile cache, 153KB canvas) via `lv_malloc()`, which draws from DRAM heap (~320KB total). Two consecutive map renders can consume 284KB of DRAM, leaving only ~36KB for LVGL and other operations, causing allocation failures and crashes.
-
-**What's needed:** Use `heap_caps_malloc(size, MALLOC_CAP_SPIRAM)` for large map buffers, keeping only small allocations (4KB JPEG input buffer) on DRAM.
 
 ### LRU cache clock uint32_t wrap
 The tile LRU cache uses a `uint32_t cache_clock` that increments monotonically. After ~4 billion increments (or ~50 days of continuous use at 1kHz), it wraps to 0, breaking cache eviction comparisons — newly cached tiles have lower `last_used` values than old ones, causing premature eviction of recently used tiles.
@@ -183,15 +173,10 @@ The navigation system uses a circular buffer with MAX_HISTORY=8. `push_history` 
 
 ## Chat Screen
 
-### Text input max_length exceeds buffer
-`lv_textarea_set_max_length(input_field, 160)` allows 160 characters, but `ChannelMessage::text` is `char text[160]` — 159 chars + 1 null terminator. The max_length should be 159 to prevent a 1-byte overflow of the null terminator.
+### REPEATERS tile navigates to Packets screen instead of a nodes/repeaters view
+The REPEATERS tile on the home screen 4x3 grid navigates to `Screen::Heard` — the same raw Packets log as the PACKETS tile (`home_screen.cpp:62-64`). Both tiles open identical screens. FINDER correctly navigates to `Screen::Network`. There is no dedicated screen for listing nearby nodes by signal strength.
 
-**What's needed:** Change max_length to 159.
-
-### Home screen three tiles map to same screen
-The home screen 4x3 grid has three tiles (REPEATERS, FINDER, HEARD) that all navigate to `Screen::Heard`. This appears to be unintentional — they should navigate to separate screens or at least be documented.
-
-**What's needed:** Verify the intended behavior and either fix the screen targets or document the duplicate mapping.
+**What's needed:** Either create a dedicated repeaters/nodes screen that lists known contacts sorted by RSSI, or redirect REPEATERS to `Screen::Network` (Finder) which already surfaces nearby nodes. The current double-mapping gives users two identical icon tiles with no functional difference.
 
 ---
 
@@ -242,21 +227,64 @@ The emoji picker dialog uses 52 pre-rendered color images extracted from NotoCol
 
 ---
 
-## Mesh Networking
-
-### Missing null-termination on short non-text payloads
-In `slop_mesh.h:93-95`, the payload text null-termination is conditional: `if (len > 1) data[len - 1] = '\0'`. For non-text payloads with `len == 1`, no null byte is written, so downstream uses of `strlen()`, `strncpy()`, or string formatting read past the buffer into uninitialized stack data.
-
-**What's needed:** Always null-terminate: `data[len - 1] = '\0';` unconditionally (see also existing entry about the same issue in `slop_mesh.h`).
-
----
-
 ## SPI / Display
 
 ### Display and SD card share the same SPI host
 The display uses `SPI3_HOST` (`display.cpp:45`) and the SD card also uses `HSPI` (`sdcard.cpp:31`). On ESP32-S3, `HSPI` maps to `SPI3_HOST` — the same SPI peripheral. Both configure the same host through different driver instances (LovyanGFX internal vs Arduino SPIClass). The comment in `sdcard.cpp:29` says "LovyanGFX and RadioLib use SPI2 (FSPI)" which is incorrect — the display code clearly uses SPI3_HOST. While this works in practice because each transaction reconfigures the GPIO matrix, clock speed differences (40MHz display vs 4MHz SD) create a fragile architecture where one driver's transaction can interfere with the other's register state.
 
 **What's needed:** Either (a) move SD card to `FSPI` (`SPI2_HOST`), which is the default Arduino SPI bus and not used by the display, or (b) move the display to `SPI2_HOST` and keep SD on `SPI3`. Update the comment in `sdcard.cpp` to reflect the actual bus assignment.
+
+---
+
+## Map Screen
+
+### Delete callback registered only once — map canvas becomes dangling after second visit
+
+`slopos_map_reparent()` uses a `static bool delete_cb_registered` flag to guard callback registration (`map_renderer.cpp:631`). On the first map screen visit the callback is registered and fires on close, calling `slopos_map_deinit()` which frees `canvas_pixels`, tile cache, and sets `initialized = false`. On the second map screen visit, `slopos_map_init()` reallocates correctly and `slopos_map_reparent()` creates a new canvas — but `delete_cb_registered` is already `true`, so the cleanup callback is never registered on the new screen parent. When the second map screen closes, `slopos_map_deinit()` is never called: `canvas_pixels` (153 KB) and up to four tile cache buffers (~524 KB) stay allocated, and `initialized` stays `true`. On the third map screen visit, `slopos_map_init()` returns early, then `slopos_map_reparent()` calls `lv_obj_set_parent(map_canvas, new_parent)` with `map_canvas` pointing to the LVGL object from the second visit — which was already deleted. This is a use-after-free that corrupts the LVGL object tree or crashes.
+
+**What's needed:** Reset `delete_cb_registered = false` inside `slopos_map_deinit()` so the callback is re-registered on every subsequent map screen open. Alternatively, remove the guard entirely and call `lv_obj_remove_event_cb_with_user_data` before re-adding the callback each time `slopos_map_reparent()` is called.
+
+---
+
+## Onboarding
+
+### Empty node name accepted by wizard — saved to NVS and broadcast
+
+The "Next" button handler in Step 1 checks `if (text && text[0])` before copying the name but still advances to step 2 regardless (`onboarding_screen.cpp:103-112`). If the user clears the input and presses Next, `s_name` retains its previous value (empty string on first boot). When Done is pressed, the empty name is written to NVS via `prefs_set()` and passed to `mesh::setOwnName()`. The device broadcasts adverts with no name — other nodes generate a fallback like `node_XX`, but the user's own UI shows a blank entry in Settings and the home screen.
+
+**What's needed:** In the Next button event handler, add an early return if the input is empty: check `!text || !text[0]` and return before `s_step = 1`. Optionally flash the input field border `ACCENT_RED` to signal the required field.
+
+### "Full Radio Setup" button discards wizard SF and TX power values
+
+In Step 3 of the wizard, tapping "Full Radio Setup..." calls `radio_setup_screen_show()` directly without saving the current `s_sf`, `s_pwr`, or `s_freq` wizard state to prefs (`onboarding_screen.cpp:355-357`). The user configures radio settings in the Radio Setup screen and returns via the back button. The wizard's Done button then writes `s_sf`, `s_pwr`, and `s_freq` — still at the wizard-entered defaults — to NVS, overwriting whatever the Radio Setup screen had saved.
+
+**What's needed:** When re-entering Step 3 after a navigation away, reload `s_sf`, `s_pwr`, and `s_freq` from `prefs_get()` so the wizard reflects the current saved state. Alternatively, remove the "Full Radio Setup" button from the wizard and instruct users to visit Settings → Radio Setup after completing onboarding.
+
+---
+
+## Chat Screen
+
+### Channel message buffer has no DRAM fallback — messages silently dropped if PSRAM exhausted
+
+`ensure_channel_buffer()` allocates the per-channel message store exclusively from PSRAM (`chat_screen.cpp:137`). If PSRAM allocation fails — for example when the map tile cache and canvas buffer are resident — `ch_msgs[idx]` remains null and `ch_msg_capacity[idx]` is set to 0 with no error notification. Every subsequent `append_channel_message()` call checks `has_channel_buffer()` and silently returns without storing or displaying the message. Users see an empty channel with no indication that incoming messages are being discarded.
+
+**What's needed:** Add a DRAM fallback: if `heap_caps_malloc(MALLOC_CAP_SPIRAM)` fails, retry with `heap_caps_malloc(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)`. Since DRAM is limited (~320 KB total), consider allocating at a reduced capacity (e.g. `CHAT_MSGS_MIN_CAP = 8` messages) when falling back to DRAM, and notify the user that history is limited.
+
+---
+
+## Settings
+
+### `makeEpoch` may dereference stale TZ environment pointer after `setenv`
+
+In `mesh_wrapper.cpp:465-470`, `makeEpoch()` stores the current TZ string via `getenv("TZ")`, then calls `setenv("TZ", "UTC0", 1)` to force UTC before `mktime()`. On ESP32/newlib, `getenv()` returns a pointer directly into the environment's internal string storage. The subsequent `setenv()` with overwrite=1 frees and replaces that string, leaving `old_tz` as a dangling pointer. The later `setenv("TZ", old_tz, 1)` restoring the old timezone reads from the freed pointer — undefined behavior that can manifest as corrupted timezone state or a crash when the user saves the date/time in Settings or Onboarding.
+
+**What's needed:** Copy the old TZ value to a stack buffer before calling `setenv`:
+```cpp
+char old_tz_buf[64] = {};
+const char* old_tz_raw = getenv("TZ");
+if (old_tz_raw) strncpy(old_tz_buf, old_tz_raw, sizeof(old_tz_buf) - 1);
+// use old_tz_buf for restoration; check old_tz_buf[0] instead of old_tz_raw
+```
 
 ---
 

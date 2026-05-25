@@ -13,8 +13,6 @@ PR #25 added emoji support with LVGL font fallback and an emoji picker, but only
 
 ---
 
----
-
 ## Finder
 
 ### Zero-hop ping for nearby discovery

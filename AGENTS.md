@@ -304,7 +304,7 @@ The release build (`SlopOS_TDeck`) suppresses all of these via `NDEBUG` and the 
 
 ### Remote Test Controller
 
-**⚠️ CRITICAL: Do NOT use this mode without explicit user consent.** This disables the LoRa radio and makes the device a serial-controlled input simulator. Only the device owner (Ben) decides when to use this mode. Never switch to `SlopOS_TDeck_remote_test` build env unless the user asks you to or explicitly approves it.
+**⚠️ CRITICAL: Do NOT use this mode without explicit user consent.** This disables the LoRa radio and makes the device a serial-controlled input simulator. Only the user decides when to use this mode. Never switch to `SlopOS_TDeck_remote_test` build env unless the user asks you to or explicitly approves it.
 
 Enables automated and manual testing over serial (USB CDC). No LoRa radio is initialised — all mesh messages are simulated via injection. The radio hardware is never touched.
 
@@ -345,6 +345,15 @@ Safety guarantees:
 - All `sendMessage`, `sendChannelMessage`, `sendAdvert` return false (g_mesh is null)
 - Radio accessors (`getLastRSSI`, `getLastSNR`, `getNoiseFloor`) return dummy values
 - No SPI transactions ever reach the SX1262 hardware
+
+**⚠️ LIMITATION: Cannot test physical input hardware.** Remote test mode simulates trackball, keyboard, and touch programmatically — events are injected directly into the input queues. This means it **cannot** validate:
+- GPIO debounce timing, edge detection, or signal quality
+- Physical switch feel or actuation
+- I2C bus timing or peripheral detection
+- Trackball direction sensitivity or deadtime behavior
+- Any issue where the root cause is in the physical layer (pin states, interrupts, pull resistors)
+
+If the issue involves physical input hardware (trackball, keyboard, touch, buttons), remote test mode is not appropriate — it needs real hardware testing on the device.
 
 ---
 

@@ -31,6 +31,7 @@
 #include <cstdio>
 #include <SPIFFS.h>
 #include <esp_heap_caps.h>
+#include "utils/utf8_util.h"
 
 namespace slopos::ui {
 
@@ -928,8 +929,9 @@ static void do_send()
     // Byte-level truncation to mesh payload limit (MAX_MSG_BYTES = 149)
     // LVGL's max_length is character-based, but mesh limits are byte-based,
     // so multi-byte UTF-8 text needs explicit truncation before sending.
+    // Use utf8_truncate_bytes to avoid splitting a multi-byte codepoint.
     char text[150];
-    size_t len = strnlen(raw, MAX_MSG_BYTES);
+    size_t len = slopos::utf8_truncate_bytes(raw, MAX_MSG_BYTES);
     memcpy(text, raw, len);
     text[len] = '\0';
 

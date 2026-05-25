@@ -180,6 +180,28 @@ Every module should include unit tests:
 
 New screens or features should include at least basic integration tests (navigation routing, message display, widget lifecycle). Tests run on the native host — no hardware needed.
 
+### Hardware Testing
+
+For hardware-validated PR testing, flash the debug build and check serial output:
+
+```bash
+# Build debug firmware
+pio run -e SlopOS_TDeck_debug
+
+# Flash via Pi gateway
+scp .pio/build/SlopOS_TDeck_debug/firmware-merged.bin hermes-pi:/tmp/
+ssh hermes-pi "source ~/hermes-venv/bin/activate && esptool --chip esp32s3 --port /dev/ttyACM0 --baud 921600 write-flash 0x0 /tmp/firmware-merged.bin && rm /tmp/firmware-merged.bin"
+
+# Capture boot log
+ssh hermes-pi "stty -F /dev/ttyACM0 115200 raw -echo && timeout 15 cat /dev/ttyACM0" > /tmp/boot-log.txt
+```
+
+Verify in the boot log:
+- No `FATAL` or `CRASH` or `PANIC` errors
+- All `[boot] step N:` messages appear in sequence
+- `[mesh] SlopMesh initialized` confirms radio init
+- `[boot] === SlopOS T-Deck ready ===` at the end
+
 ## Design Guide
 
 The UI follows a **pixel / blocky retro aesthetic** inspired by Discord's dark theme on an 8-bit display. Key principles:

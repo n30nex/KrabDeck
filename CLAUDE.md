@@ -252,18 +252,57 @@ pio test -e native_test -f test_touch -v     # One module
 ## Build & Tools
 
 ```bash
-# Build firmware
+# Build firmware (release — no serial debug output)
 pio run -e SlopOS_TDeck
 
-# Monitor
-pio device monitor -b 115200
-
-# Debug build (extra serial output)
+# Debug build (full boot sequence + periodic diagnostics over serial)
 pio run -e SlopOS_TDeck_debug
 
 # Trackball debug build (raw GPIO state visible)
 pio run -e SlopOS_TDeck_trackball_debug
+
+# Run native tests (no hardware)
+pio test -e native_test -v
 ```
+
+### Serial Debugging
+
+All `Serial.print`/`printf` output goes through **USB CDC** (`/dev/ttyACM0`). This is controlled by `ARDUINO_USB_CDC_ON_BOOT=1` in `platformio.ini` — do not change it back to 0 without ensuring GPS pins 43/44 don't conflict.
+
+Local (USB cable connected directly):
+```bash
+pio device monitor -b 115200
+```
+
+Remote (via Pi hardware gateway):
+```bash
+# Live tail
+ssh hermes-pi "stty -F /dev/ttyACM0 115200 raw -echo && cat /dev/ttyACM0"
+
+# Capture full boot (reset + read)
+ssh hermes-pi 'source ~/hermes-venv/bin/activate && python3 -c "
+import serial, time
+s = serial.Serial(\"/dev/ttyACM0\", 115200, timeout=10)
+s.setDTR(False); s.setRTS(False); time.sleep(0.1)
+s.setDTR(True); time.sleep(0.1); s.setDTR(False)
+time.sleep(2)
+t0 = time.time()
+while time.time() - t0 < 8:
+    c = s.read(1)
+    if c: print(c.decode(\"utf-8\", errors=\"replace\"), end=\"\", flush=True)
+s.close()
+"'
+```
+
+The debug build (`SlopOS_TDeck_debug`) enables:
+- Step-by-step boot logging (`[boot] step N: ...`)
+- Periodic heap/PSRAM/battery stats (`[stat]`)
+- Display flush tracking (`[flush] #N`)
+- Trackball pin states (`[pins]`)
+- On-demand debug dump via `slopos_debug_dump()`
+- Map tile discovery logging
+
+The release build (`SlopOS_TDeck`) suppresses all of these via `NDEBUG` and the absence of `SLOPOS_DEBUG=1`. Only critical errors and warnings print in release mode.
 
 ---
 

@@ -108,6 +108,33 @@ For any non-trivial change (anything beyond a typo, comment, or obvious one-line
 - If you change public API or UI, update relevant documentation.
 - New screens or features should include LVGL integration tests.
 
+### PR Template
+
+When opening a pull request, use this structure in the description:
+
+```markdown
+## Summary
+<!-- Brief description of the change and why it's needed -->
+
+Fixes #ISSUE_NUMBER
+
+## Testing
+<!-- REQUIRED: State how hardware testing was done -->
+
+Testing method: [Remote test / Physical hardware test / Both]
+
+<!--
+Remote test = SlopOS_TDeck_remote_test build env, serial-controlled simulation
+Physical hardware test = flashed to real T-Deck, verified by human
+-->
+
+## Checklist
+- [ ] `pio test -e native_test -v` passes
+- [ ] `pio run -e SlopOS_TDeck` builds
+- [ ] No new warnings or errors
+- [ ] KNOWN_ISSUES.md updated (if applicable)
+```
+
 ### Protected Files
 
 The following files require separate PRs and cannot be bundled with feature or bug fix PRs. Any PR touching these files will require CODEOWNER review and approval:

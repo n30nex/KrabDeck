@@ -132,7 +132,24 @@ protected:
                 return;
             }
 
-        if (_nContacts >= SLOP_MAX_CONTACTS) return;
+        if (_nContacts >= SLOP_MAX_CONTACTS) {
+            // List full — evict the contact with the oldest last_seen (LRU)
+            int oldest = 0;
+            for (int i = 1; i < SLOP_MAX_CONTACTS; i++) {
+                if (_contacts[i].last_seen < _contacts[oldest].last_seen)
+                    oldest = i;
+            }
+            SlopContact& c = _contacts[oldest];
+            c.id = id;
+            c.last_seen = timestamp;
+            c.last_rssi = (int)_radio->getLastRSSI();
+            c.out_path_len = OUT_PATH_UNKNOWN;
+            self_id.calcSharedSecret(c.secret, id);
+            strncpy(c.name, name, sizeof(c.name) - 1);
+            c.name[sizeof(c.name) - 1] = '\0';
+            pushPacketLog(name, c.last_rssi, pkt->getSNR(), "ADVERT");
+            return;
+        }
 
         SlopContact& c = _contacts[_nContacts++];
         c.id = id;

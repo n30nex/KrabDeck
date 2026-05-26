@@ -247,30 +247,6 @@ All screens from the SlopOS T-Deck UI, captured from a live device running the p
 | **Signal & SNR** | ![Signal](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/signal.png) | Signal diagnostics screen showing RSSI, SNR, noise floor, and packet success rate for the current radio configuration. |
 | **Radio Setup** | ![Radio](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/radio.png) | Advanced radio configuration: frequency band, spreading factor, coding rate, TX power, and RX gain boost. |
 
-## Known Issues
-
-| Issue | Status |
-|-------|--------|
-| **No SD card = expected warning** | Normal — `[boot] INFO: No SD card detected` is not an error |
-| **GPS requires external antenna** | T-Deck GPS is weak without active antenna |
-| **Radio silent on first boot until configured** | By design — compile-time defaults may be illegal in some regions; user must open Settings → Radio Setup to enable TX |
-| **Map screen leaks PSRAM on repeated visits** | Fixed in next beta — added `slopos_map_deinit()` to free canvas, JPEG, and tile cache buffers |
-| **GPS parser parsed wrong fields since beta-0.1.12** | Fixed in next beta — off-by-one strtok skip shifted all fields; GPS lat/lon/time/altitude now correct |
-| **Mesh text over-read on corrupt packets** | Fixed in next beta — forced null-termination on incoming peer and group text payloads |
-
-## Recent Audit (Codex, May 2026)
-
-Round 1 — initial audit (274K tokens):
-- Found 15 issues; 8 confirmed real after cross-check
-- 2 CRITICAL + 6 HIGH fixed across `slop_mesh.h`, `mesh_wrapper.cpp`, `gps.cpp`, `map_renderer.cpp`
-
-Round 2 — review-back (108K tokens):
-- Found 9 additional issues; 5 confirmed actionable
-- CRITICAL: map image descriptor initialization, path validity via `Packet::copyPath`
-- HIGH: group text null-termination, JPEG output bounds, canvas allocation error path
-
-All fixes compiled and tested: **171/171 tests pass, ESP32 build SUCCESS (RAM 40.5%, Flash 15.9%)**
-
 ## License
 
 GPL-3.0-or-later
@@ -301,5 +277,3 @@ This project builds on and incorporates open source software from the following 
 | [ed25519](https://github.com/orlp/ed25519) | zlib/libpng | Embedded Ed25519 crypto (Orson Peters) — bundled in MeshCore at `lib/meshcore/lib/ed25519/` |
 | [ESP32 Arduino Core](https://github.com/espressif/arduino-esp32) | LGPL-2.1 | ESP32-S3 hardware abstraction and Arduino framework (LGPL→GPLv2+ bridge compatible) |
 | [PlatformIO](https://github.com/platformio/platformio-core) | Apache 2.0 | Build system (not linked into firmware) |
-
-> **License compliance policy:** All external code must be verified against GPLv3 compatibility before inclusion. See the `open-source-licenses` skill for the full dependency audit and compatibility matrix.

@@ -20,7 +20,7 @@ Built on the [MeshCore](https://github.com/meshcore-dev/MeshCore) mesh networkin
 | Finder / Advertise / Onboarding wizard screens | ✅ Complete |
 | MeshCore protocol (radio, routing, encryption) | ✅ Integrated |
 | T-Deck HAL (display, battery, LoRa, pins) | ✅ Complete |
-| Unit tests (13 modules) | ✅ 171 tests |
+| Unit tests (13 modules) | ✅ 276 tests |
 | Touch input driver (GT911) | ✅ Complete |
 | Keyboard input driver (I2C, ESP32-C3 MCU) | ✅ Complete |
 | Full mesh messaging (send/receive queue + UI integration) | ✅ Complete |
@@ -31,7 +31,7 @@ Built on the [MeshCore](https://github.com/meshcore-dev/MeshCore) mesh networkin
 ## Test Suite
 
 ```bash
-# Run all 171 tests on native platform (no hardware needed)
+# Run all 276 tests on native platform (no hardware needed)
 pio test -e native_test -v
 
 # Run a specific test module
@@ -225,6 +225,28 @@ esptool.py --chip esp32s3 --port COM21 --baud 921600 \
 ```
 
 See [`firmware/README.md`](firmware/README.md) for details.
+
+## Screenshots
+
+All screens from the SlopOS T-Deck UI, captured from a live device running the production firmware build.
+
+| Screen | Screenshot | Description |
+|--------|-----------|-------------|
+| **Home** | ![Home](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/home.png) | 4×3 icon grid launcher with CHATS, CONTACTS, REPEATERS, FINDER, PACKETS, MAP, ADVERTISE, SETTINGS, TRACE, TERMINAL, SETUP, SIGNAL. Top bar shows current channel, bottom bar shows device name + battery. |
+| **Onboarding** | ![Onboarding](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/onboarding.png) | First-boot setup wizard (3 steps) — configure node name, radio frequency, and spreading factor before the device is usable. |
+| **Chat** | ![Chat](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/chat.png) | Direct message view showing message bubbles between the user and a contact. Includes text input, sent/received messages with timestamps, and navigation to channel chats. |
+| **Channels** | ![Channels](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/channels.png) | Channel list showing all active mesh channels and rooms the device is subscribed to. Tap to enter a channel's chat view. |
+| **Contacts** | ![Contacts](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/contacts.png) | Lists companions (ADV_TYPE_CHAT) and room servers (ADV_TYPE_ROOM) that have been heard on the mesh. Tap a contact to send a direct message. |
+| **Repeaters** | ![Repeaters](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/repeaters.png) | Lists infrastructure relay nodes (ADV_TYPE_REPEATER) heard on the mesh. Repeaters extend network range and are filtered separately from contacts. |
+| **Finder** | ![Finder](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/network.png) | Ping Nearby interface — press the button to discover nodes on the local mesh. Shows ping results and known repeaters. |
+| **Heard / Packets** | ![Heard](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/heard.png) | Packet log showing all received mesh packets with timestamp, source, RSSI, SNR, and type columns. Useful for network diagnostics. |
+| **Map** | ![Map](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/map.png) | Offline tile map renderer showing node locations (from GPS) with pan and zoom. Renders PNG/JPEG tiles from SD card or PSRAM cache. |
+| **Advertise** | ![Advertise](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/advertise.png) | Send an advert (presence beacon) to the mesh so other nodes discover you. Shows advert type, cooldown, and last advertised timestamp. |
+| **Settings** | ![Settings](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/settings.png) | Device configuration: node name, radio params (frequency, SF, power, gain), display timeout, backlight, GPS toggle, and factory reset. |
+| **Trace** | ![Trace](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/trace.png) | Real-time routing trace showing packet paths through the mesh — source → hops → destination with per-hop RSSI/SNR. |
+| **Terminal** | ![Terminal](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/terminal.png) | Serial-style command interface for direct MeshCore CLI commands (e.g. `info`, `status`, `nodes`, `channels`). |
+| **Signal & SNR** | ![Signal](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/signal.png) | Signal diagnostics screen showing RSSI, SNR, noise floor, and packet success rate for the current radio configuration. |
+| **Radio Setup** | ![Radio](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/radio.png) | Advanced radio configuration: frequency band, spreading factor, coding rate, TX power, and RX gain boost. |
 
 ## Known Issues
 

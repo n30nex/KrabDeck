@@ -584,3 +584,142 @@ SlopOS has no region concept. In a multi-region deployment, a T-Deck may not rec
 ---
 
 *Last updated: 2026-05-26. Cross-reference with `KNOWN_ISSUES.md` for bugs and workarounds in implemented features.*
+
+---
+
+## Implementation Plan
+
+This section provides a phased roadmap for implementing the missing features above. Phases are ordered by dependency, effort, and practical value. Items within a phase can be done in any order.
+
+### Dependency Summary
+
+The full MeshCore protocol analysis reveals **no strict topological ordering** among the six main payload types (`PAYLOAD_TYPE_ACK`, `MULTIPART`, `GRP_DATA`, `ANON_REQ`, `CONTROL`, `RAW_CUSTOM`). None requires another to be implemented first. The only dependency chain in the entire list is:
+
+```
+Advert parsing → Node type field → Room server fetch
+                 └→ Location field → Map markers
+```
+
+Everything else is independent and can be implemented in any sequence.
+
+---
+
+### Phase 0 — Quick Wins (S-effort, all independent)
+
+Self-contained changes that deliver immediate value and build codebase familiarity. No new screens or protocol work required — mostly Settings rows, toggles, and minor UI additions.
+
+| # | Feature | Why here |
+|---|---------|----------|
+| 1 | Keyboard backlight control | Settings slider, wires existing API |
+| 2 | Message history cap control | Settings dialog, already partially built |
+| 3 | Display brightness control | Settings slider, new `NodePrefs` field |
+| 4 | Auto-backlight timeout control | Settings dropdown, replaces hardcoded 30s |
+| 5 | Graceful shutdown from UI | Settings button, saves state then deep sleep |
+| 6 | Flood max hops | Settings spinner, `Mesh::setFloodMax()` |
+| 7 | TX/RX delay tuning | Settings numbers, only affects timing |
+| 8 | TX/RX airtime display | Signal screen addition, read-only metrics |
+| 9 | Packet statistics | Signal screen counters, read-only |
+| 10 | Contact SNR display | Add field to `SlopContact`, display in Contacts |
+| 11 | Message timestamps | Chat bubble footer, data already in `MeshMessage` |
+| 12 | Unread message badges | Home screen badge counter, incremented per new msg |
+| 13 | PSK channel import via UI | Channel dialog variant, mesh layer already supports it |
+| 14 | GPS clock sync | GPS NMEA parser auto-syncs RTC on first fix |
+| 15 | GPS location sharing policy | `NodePrefs` enum, gates advert GPS inclusion |
+| 16 | Periodic auto-advert | Main loop timer, uses existing `sendAdvert()` |
+
+**Estimated total:** 16 small PRs, each testable in native tests + quick HW smoke test.
+
+---
+
+### Phase 1 — Advert Parsing (enables Phase 2)
+
+Extract richer data from incoming adverts. These are the foundation for contact details, map markers, and node-type-aware UI.
+
+| # | Feature | Effort | Why here |
+|---|---------|--------|----------|
+| 1 | Contact locations from adverts | M | Read `parser.getIntLat/Lon()` in `onAdvertRecv`, stores in `SlopContact` |
+| 2 | Contact node type from adverts | S | Read `parser.getType()`, adds `node_type` to `SlopContact` |
+| 3 | Contact details screen | M | New screen showing all `SlopContact` fields + Send Trace |
+
+**Dependency:** Do #1 and #2 in either order. #3 uses data from both.
+
+---
+
+### Phase 2 — Radio Configuration
+
+Medium-effort radio features that enhance configurability but don't change protocol behavior.
+
+| # | Feature | Effort | Why here |
+|---|---------|--------|----------|
+| 1 | RX gain boost toggle | S | `NodePrefs` flag, `RadioLibWrapper::setRxBoostedGainMode()` |
+| 2 | Temporary radio config | M | Live-apply without NVS write, with revert timer |
+| 3 | Duty cycle enforcement | M | Surface MeshCore budget, add configurable limit |
+| 4 | Node type selection | M | `ADV_TYPE_*` selector; repeater mode needs relay config |
+
+---
+
+### Phase 3 — Messaging Polish
+
+UI and protocol improvements to the chat experience.
+
+| # | Feature | Effort | Why here |
+|---|---------|--------|----------|
+| 1 | Channel removal | S | Swipe-to-delete gesture, channel array management |
+| 2 | Message delivery status (ACK) | M | Pending/acked/failed state in chat, `onAckRecv` hook |
+| 3 | Message search | M | Chat screen search mode, substring filter |
+| 4 | Signal bars widget | S | 1–5 bar `lv_draw` helper, apply to Contacts/Heard/Finder |
+| 5 | Per-contact RSSI/SNR history | L | `lv_chart` sparkline in Contact Detail or Signal |
+
+**Depends on Phase 1** if you want contact details to show history.
+
+---
+
+### Phase 4 — Advanced Protocol
+
+New packet types and application layer features that extend the protocol surface.
+
+| # | Feature | Effort | Why here |
+|---|---------|--------|----------|
+| 1 | Anonymous requests | M | Send path + UI entry for messaging unknown nodes |
+| 2 | Group data datagrams | M | Type-code registry, `sendGroupDatagram()` API |
+| 3 | Multipart messages | L | Reassembly buffer per sender, segmentation send |
+| 4 | Raw custom payloads | L | Application dispatch interface, registration API |
+| 5 | Room server message fetch | L | **Depends on:** Phase 1 #2 (node type detection for `ADV_TYPE_ROOM`) |
+
+---
+
+### Phase 5 — UI & Hardware
+
+Visual and hardware integration features that are self-contained but larger layout or system changes.
+
+| # | Feature | Effort | Why here |
+|---|---------|--------|----------|
+| 1 | QR code generation | L | QR library (2KB), LVGL canvas rendering, Share buttons |
+| 2 | QR code / URI import | M | URI parser, Terminal command, Add Contact dialog |
+| 3 | Contact locations on Map | M | **Depends on:** Phase 1 #1 (contact location data) |
+| 4 | OTA firmware update | L | WiFi/BLE init, partition layout, download + flash progress |
+| 5 | BLE companion protocol | L | Enable BLE, implement companion command set, modem mode toggle |
+| 6 | Region management | L | Region config UI, `RegionMap` integration with MeshCore |
+| 7 | ACL / contact permissions | L | Permission field on contacts, UI for promotion, action gating |
+| 8 | Device admin password | M | Optional PIN hashed in NVS, prompt on Settings/Terminal entry |
+| 9 | Launcher compatibility | M | Build target + re-init layer for `bmorcelli/Launcher` |
+
+---
+
+### Suggested Sequence
+
+```
+Phase 0  →  Phase 1  →  Phase 2  →  Phase 3  →  Phase 4  →  Phase 5
+(quick      (advert     (radio      (messaging  (advanced   (hard/
+ wins)       parsing)    config)      polish)     protocol)   infra)
+```
+
+Within each phase, items are in rough priority order. Start with the first ones as they unblock or inform the rest.
+
+### Implementation Tips
+
+- **Phase 0** items are ideal for quick sessions. Each is a 1–2 hour change.
+- **After Phase 1**, update `docs/CONTACTS_SCREEN.md` and `docs/MESH_NETWORKING.md` to reflect new advert fields.
+- **After Phase 3**, add ACK status to `docs/CHAT_SCREEN.md`.
+- **Any PR adding a `NodePrefs` field** must validate NVS migration — old firmware's saved prefs won't have the new field. `prefs_get()` uses `Preferences::getBytes()` which zero-fills missing keys; use the default-value pattern already in `prefs_get()`.
+- **Protocol payload type features** (Phase 4) should include native-test mock coverage for new parse/dispatch paths in `test/slop_mesh_test.cpp`.

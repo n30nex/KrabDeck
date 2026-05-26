@@ -53,9 +53,7 @@ The main loop calls `slopos::mesh::loop()` (which may do blocking LoRa TX/RX tak
 ## Mesh Networking
 
 ### No contact expiry / eviction
-The contact list has a hard cap of 64 entries (`SLOP_MAX_CONTACTS`). Once full, new contacts are silently dropped. There is no TTL-based eviction, LRU replacement, or purge of stale entries. Contacts not seen for hours or days still occupy a slot, preventing discovery of new nodes.
-
-**What's needed:** Implement periodic eviction — purge contacts with `last_seen` older than a configurable threshold (e.g. 30 minutes) when the list is full.
+**FIXED in PR #109:** Replaced the silent `return` in `onAdvertRecv` with LRU eviction. When the contact list is full (`SLOP_MAX_CONTACTS=64`) and a new contact arrives, the contact with the oldest `last_seen` timestamp is evicted and the new contact takes its slot. Also resets `out_path_len` on evicted slots. Added 9 unit tests: fill-to-max, LRU eviction, dedup after eviction, re-add after eviction, bulk eviction preservation, and multi-continent integrity.
 
 ---
 

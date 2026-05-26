@@ -80,9 +80,7 @@ All trackball directions fire on falling edge only (one event per physical deten
 ## Screen Navigation
 
 ### Navigation history stack is broken
-The navigation system uses a circular buffer with MAX_HISTORY=8. `push_history` wraps around and overwrites the oldest entry when full. `pop_history` decrements `history_top` without wrapping — after wrapping occurs, the stack has no way to distinguish new entries from overwritten ones. The stack can only hold 8 items but there are 14+ screen types.
-
-**What's needed:** Replace the circular buffer with a simple linear stack: drop the oldest entry when full instead of wrapping. Fix `pop_history` to handle wrap-around correctly.
+**FIXED in PR #106:** Replaced the circular buffer with a linear stack. Back-navigation now works correctly regardless of navigation depth — dropping the oldest entry by shifting when full instead of wrapping.
 
 ---
 

@@ -529,6 +529,35 @@ bool contactHasPath(int idx) {
     return c && c->out_path_len != OUT_PATH_UNKNOWN;
 }
 
+// ── Ping Nearby ────────────────────────────────
+bool sendPingNearby() {
+    return g_mesh ? g_mesh->sendPingNearby() : false;
+}
+
+bool pingIsActive() {
+    return g_mesh ? g_mesh->pingIsActive() : false;
+}
+
+bool pingOnCooldown() {
+    return g_mesh ? g_mesh->pingOnCooldown() : false;
+}
+
+uint32_t pingCooldownRemaining() {
+    return g_mesh ? g_mesh->pingCooldownRemaining() : 0;
+}
+
+int getPingResultCount() {
+    return g_mesh ? g_mesh->getPingResultCount() : 0;
+}
+
+const PingResult* getPingResult(int i) {
+    if (!g_mesh) return nullptr;
+    auto* r = g_mesh->getPingResult(i);
+    if (!r) return nullptr;
+    // Return as public PingResult (same layout, but from different namespace)
+    return reinterpret_cast<const PingResult*>(r);
+}
+
 void saveChannels() {
     if (!g_mesh) return;
     Preferences nvs;

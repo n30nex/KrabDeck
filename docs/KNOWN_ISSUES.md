@@ -7,13 +7,14 @@ This document tracks known issues, bugs, and missing features in SlopOS. Contrib
 ## Finder
 
 ### Zero-hop ping for nearby discovery
-The finder feature needs a proper implementation that sends a zero-hop (TTL=1) ping to discover nearby repeaters. Currently there's no way to probe what's in immediate radio range without relying on periodic adverts.
+**IMPLEMENTED in PR #112:** Added a "Ping Nearby" feature that sends a zero-hop (TTL=1) CONTROL broadcast to discover nearby nodes:
 
-**What's needed:**
-- A "Ping Nearby" action that sends a broadcast with hop limit = 1
-- A response handler that collects replies over a short window (2-3 seconds)
-- Display results grouped by RSSI (strongest first)
-- Cooldown of 30 seconds between pings to avoid flooding
+- **Send**: `sendPingNearby()` creates a `PAYLOAD_TYPE_CONTROL` packet with `"PING:<tag>"` payload and sends via `sendZeroHop()`
+- **Response**: Receiving nodes auto-respond with `"PONG:<tag>:<name>:<rssi>"` via `sendZeroHop()`
+- **Collection**: Pinger collects PONG responses tagged with its unique ping tag over a 3-second window
+- **UI**: Finder screen now has a "Ping Nearby" button; shows responders with RSSI after collection window ends
+- **Cooldown**: 30-second cooldown between pings
+- **Protocol**: Uses standard MeshCore `PAYLOAD_TYPE_CONTROL` packets, interoperable with any MeshCore node that implements `onControlDataRecv`
 
 ---
 

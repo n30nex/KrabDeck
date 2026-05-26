@@ -90,5 +90,17 @@ void   getTracePath(uint8_t* snrs_out, uint8_t* hashes_out);
 void   clearTraceResult();
 bool   contactHasPath(int contact_idx);
 
+// ── Ping Nearby ─────────────────────────────────
+struct PingResult {
+    char name[32];
+    int rssi;
+};
+bool     sendPingNearby();
+bool     pingIsActive();
+bool     pingOnCooldown();
+uint32_t pingCooldownRemaining();
+int      getPingResultCount();
+const PingResult* getPingResult(int i);
+
 } // namespace mesh
 } // namespace slopos

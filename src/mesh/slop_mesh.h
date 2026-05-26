@@ -62,6 +62,21 @@ class SlopMesh : public ::mesh::Mesh {
     uint8_t  _last_trace_snrs[MAX_PATH_SIZE];
     uint8_t  _last_trace_hashes[MAX_PATH_SIZE];
 
+    // ── Ping Nearby ────────────────────────────────
+    static constexpr int PING_RESULTS_MAX = 32;
+    static constexpr uint32_t PING_COOLDOWN_MS = 30000;
+    static constexpr uint32_t PING_WINDOW_MS = 3000;
+
+    uint32_t _ping_tag = 0;
+    uint32_t _ping_sent_at = 0;
+    uint32_t _ping_last_at = 0;
+    int      _ping_n_results = 0;
+    struct PingResult {
+        char name[32];
+        int rssi;
+    };
+    PingResult _ping_results[PING_RESULTS_MAX];
+
 protected:
     // ── Peer DB ──────────────────────────────────────
     int searchPeersByHash(const uint8_t* hash) override {
@@ -305,9 +320,73 @@ public:
         // ACK received — handled internally by MeshCore for reliable delivery
     }
 
-    // ── Control data ──────────────────────────────────
+    // ── Ping Nearby ──────────────────────────────
     void onControlDataRecv(::mesh::Packet* pkt) override {
-        // Future: handle discovery/control packets
+        if (!pkt || pkt->payload_len < 5) return;
+        if ((pkt->payload[0] & 0x80) == 0) return;
+
+        // PING received — respond with PONG containing our name and RSSI
+        if (memcmp(pkt->payload, "PING:", 5) == 0) {
+            int rssi = (int)_radio->getLastRSSI();
+            // Tag is after "PING:" (hex string)
+            size_t tag_start = 5;
+            size_t tag_len = pkt->payload_len - tag_start;
+            if (tag_len > 16) tag_len = 16;
+
+            char pong[128];
+            int n = snprintf(pong, sizeof(pong), "PONG:%.*s:%s:%d",
+                             (int)tag_len, (const char*)(pkt->payload + tag_start),
+                             _own_name[0] ? _own_name : "unknown",
+                             rssi);
+            if (n > 0 && (size_t)n <= sizeof(pong)) {
+                ::mesh::Packet* resp = createRawData((uint8_t*)pong, (size_t)n);
+                if (resp) {
+                    resp->payload[0] |= 0x80;
+                    sendZeroHop(resp);
+                }
+            }
+            return;
+        }
+
+        // PONG received — collect if it matches our active ping
+        if (memcmp(pkt->payload, "PONG:", 5) == 0 && _ping_sent_at != 0 && _ping_tag != 0) {
+            if (_ping_n_results >= PING_RESULTS_MAX) return;
+            uint32_t now_ms = _ms->getMillis();
+            if (now_ms > _ping_sent_at + PING_WINDOW_MS) return;
+
+            // Format: PONG:<tag>:<name>:<rssi>
+            // Extract tag to verify it matches our ping
+            const char* tag_end = (const char*)memchr(pkt->payload + 5, ':', pkt->payload_len - 5);
+            if (!tag_end) return;
+
+            size_t tag_len = (size_t)(tag_end - (const char*)pkt->payload - 5);
+            if (tag_len == 0) return;
+
+            // Check tag matches
+            char recv_tag[20];
+            if (tag_len > sizeof(recv_tag) - 1) tag_len = sizeof(recv_tag) - 1;
+            memcpy(recv_tag, pkt->payload + 5, tag_len);
+            recv_tag[tag_len] = '\0';
+
+            char our_tag[20];
+            snprintf(our_tag, sizeof(our_tag), "%08lx", (unsigned long)_ping_tag);
+            if (strcmp(recv_tag, our_tag) != 0) return;
+
+            // Parse name (between second ':' and third ':')
+            const char* remaining = tag_end + 1;
+            size_t rem_len = pkt->payload_len - (size_t)(remaining - (const char*)pkt->payload);
+            const char* rssi_start = (const char*)memchr(remaining, ':', rem_len);
+            if (!rssi_start) return;
+
+            size_t name_len = (size_t)(rssi_start - remaining);
+            if (name_len > 31) name_len = 31;
+
+            PingResult& pr = _ping_results[_ping_n_results++];
+            memcpy(pr.name, remaining, name_len);
+            pr.name[name_len] = '\0';
+            pr.rssi = atoi(rssi_start + 1);
+            return;
+        }
     }
 
     // ── Raw custom data ───────────────────────────────
@@ -557,6 +636,57 @@ public:
 
     // ── Prefs ─────────────────────────────────────────
     slopos::NodePrefs& prefs() { return _prefs; }
+
+    // ── Ping Nearby ─────────────────────────────────
+    // Send a zero-hop PING to discover nearby nodes
+    bool sendPingNearby() {
+        uint32_t now = _ms->getMillis();
+        if (now - _ping_last_at < PING_COOLDOWN_MS) return false;
+
+        // Generate a unique tag for this ping
+        _ping_tag = (uint32_t)(now ^ (uint32_t)(intptr_t)this);
+        _ping_sent_at = now;
+        _ping_last_at = now;
+        _ping_n_results = 0;
+
+        char ping[20];
+        int n = snprintf(ping, sizeof(ping), "PING:%08lx", (unsigned long)_ping_tag);
+        if (n <= 0 || (size_t)n > sizeof(ping)) return false;
+
+        ::mesh::Packet* pkt = createRawData((uint8_t*)ping, (size_t)n);
+        if (!pkt) return false;
+        pkt->payload[0] |= 0x80; // ensure control-disco bit
+        sendZeroHop(pkt);
+        return true;
+    }
+
+    bool pingIsActive() const {
+        if (_ping_sent_at == 0) return false;
+        return _ms->getMillis() < _ping_sent_at + PING_WINDOW_MS;
+    }
+
+    bool pingOnCooldown() const {
+        if (_ping_last_at == 0) return false;
+        return _ms->getMillis() < _ping_last_at + PING_COOLDOWN_MS;
+    }
+
+    uint32_t pingCooldownRemaining() const {
+        if (_ping_last_at == 0) return 0;
+        uint32_t now = _ms->getMillis();
+        if (now >= _ping_last_at + PING_COOLDOWN_MS) return 0;
+        return (_ping_last_at + PING_COOLDOWN_MS) - now;
+    }
+
+    int getPingResultCount() const { return _ping_n_results; }
+    const PingResult* getPingResult(int i) const {
+        return (i >= 0 && i < _ping_n_results) ? &_ping_results[i] : nullptr;
+    }
+
+    void clearPingState() {
+        _ping_tag = 0;
+        _ping_sent_at = 0;
+        _ping_n_results = 0;
+    }
 };
 
 } // namespace mesh

@@ -385,6 +385,7 @@ int exportContactsFull(ContactInfo* out, int max) {
         if (c && c->name[0]) {
             strncpy(out[n].name, c->name, 31);
             out[n].name[31] = '\0';
+            out[n].type = c->type;
             out[n].rssi = c->last_rssi;
             out[n].last_seen = c->last_seen;
             n++;

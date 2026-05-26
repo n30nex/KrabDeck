@@ -131,4 +131,29 @@ TEST_F(MeshWrapperTest, GetRecentNodesReturnsNonNegative) {
     EXPECT_LE(count, 4);
 }
 
+// ── ContactInfo struct includes type field ──────────────
+TEST_F(MeshWrapperTest, ContactInfoHasTypeField) {
+    slopos::mesh::ContactInfo ci;
+    // type should be a uint8_t; verify it compiles and has a known default
+    // In native test mode (no mesh init), exportContactsFull returns 0,
+    // but the struct layout is what we're testing.
+    EXPECT_EQ(sizeof(ci.type), sizeof(uint8_t));
+}
+
+// ── ADV_TYPE constants have expected values ────────────
+TEST_F(MeshWrapperTest, AdvTypeConstants) {
+    EXPECT_EQ(ADV_TYPE_NONE, 0);
+    EXPECT_EQ(ADV_TYPE_CHAT, 1);
+    EXPECT_EQ(ADV_TYPE_REPEATER, 2);
+    EXPECT_EQ(ADV_TYPE_ROOM, 3);
+    EXPECT_EQ(ADV_TYPE_SENSOR, 4);
+}
+
+// ── exportContactsFull returns valid ContactInfo data ───
+TEST_F(MeshWrapperTest, ExportContactsFullReturnsNonNegative) {
+    slopos::mesh::ContactInfo contacts[4];
+    int count = slopos::mesh::exportContactsFull(contacts, 4);
+    EXPECT_GE(count, 0);
+}
+
 } // anonymous namespace

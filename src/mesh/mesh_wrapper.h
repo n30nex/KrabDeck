@@ -7,6 +7,13 @@
 #pragma once
 #include <cstdint>
 
+// Node type identifiers from MeshCore adverts — kept local so UI code can filter.
+#define ADV_TYPE_NONE      0
+#define ADV_TYPE_CHAT      1
+#define ADV_TYPE_REPEATER  2
+#define ADV_TYPE_ROOM      3
+#define ADV_TYPE_SENSOR    4
+
 namespace slopos {
 namespace mesh {
 
@@ -20,6 +27,7 @@ struct MeshMessage {
 
 struct ContactInfo {
     char name[32];
+    uint8_t type;  // ADV_TYPE_* (ADV_TYPE_CHAT=companion, ADV_TYPE_REPEATER, ADV_TYPE_ROOM, etc.)
     int  rssi;
     uint32_t last_seen;
 };

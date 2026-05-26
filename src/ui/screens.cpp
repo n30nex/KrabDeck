@@ -470,8 +470,19 @@ void contacts_screen_show()
 {
     lv_obj_t* scr = make_screen_full("Contacts");
 
-    slopos::mesh::ContactInfo contacts[32];
-    int n = slopos::mesh::exportContactsFull(contacts, 32);
+    slopos::mesh::ContactInfo all_contacts[32];
+    int total = slopos::mesh::exportContactsFull(all_contacts, 32);
+
+    // Filter to companions (CHAT) and room servers (ROOM)
+    int n = 0;
+    for (int i = 0; i < total; i++) {
+        if (all_contacts[i].type == ADV_TYPE_CHAT ||
+            all_contacts[i].type == ADV_TYPE_ROOM) {
+            if (n < i) all_contacts[n] = all_contacts[i];
+            n++;
+        }
+    }
+    slopos::mesh::ContactInfo* contacts = all_contacts;
 
     // Sort alphabetically
     for (int i = 0; i < n - 1; i++)
@@ -484,8 +495,10 @@ void contacts_screen_show()
         lv_obj_t* info = lv_label_create(scr);
         lv_label_set_text(info,
             "No contacts yet.\n\n"
-            "Nodes appear here once they broadcast an advert or send you a message.\n\n"
-            "Tap to send a direct message.");
+            "Companions (chat nodes) and room servers\n"
+            "appear here once they broadcast an advert\n"
+            "or send you a message.\n\n"
+            "Tap a contact to send a direct message.");
         lv_obj_set_width(info, CONTENT_W);
         lv_obj_set_style_pad_left(info, 8, 0);
         lv_obj_set_style_pad_right(info, 8, 0);
@@ -691,6 +704,91 @@ void finder_screen_show()
             lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_AUDIO, "Listening...");
             lv_obj_set_style_bg_color(item, lv_color_hex(BG_TERTIARY), 0);
         }
+    }
+
+    show_screen(scr);
+}
+
+// ════════════════════════════════════════════════════════
+// Repeaters — infrastructure relay nodes only
+// ════════════════════════════════════════════════════════
+void repeaters_screen_show()
+{
+    lv_obj_t* scr = make_screen_full("Repeaters");
+
+    slopos::mesh::ContactInfo contacts[32];
+    int total = slopos::mesh::exportContactsFull(contacts, 32);
+
+    // Filter to repeaters only
+    int n = 0;
+    for (int i = 0; i < total; i++) {
+        if (contacts[i].type == ADV_TYPE_REPEATER) {
+            if (n < i) contacts[n] = contacts[i];
+            n++;
+        }
+    }
+
+    if (n == 0) {
+        lv_obj_t* info = lv_label_create(scr);
+        lv_label_set_text(info,
+            "No repeaters found.\n\n"
+            "Repeaters are infrastructure relay nodes\n"
+            "that extend the range of the mesh network.");
+        lv_obj_set_width(info, CONTENT_W);
+        lv_obj_set_style_pad_left(info, 8, 0);
+        lv_obj_set_style_pad_right(info, 8, 0);
+        lv_obj_set_style_text_align(info, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_color(info, lv_color_hex(TEXT_PRIMARY), 0);
+        lv_obj_set_style_text_font(info, &lv_font_montserrat_12, 0);
+        lv_obj_align(info, LV_ALIGN_TOP_LEFT, 0, CONTENT_Y + 4);
+        show_screen(scr);
+        return;
+    }
+
+    lv_obj_t* list = lv_obj_create(scr);
+    lv_obj_set_size(list, LV_PCT(100), CONTENT_H);
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, CONTENT_Y);
+    lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(list, 0, 0);
+    lv_obj_set_style_pad_all(list, 0, 0);
+    lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scroll_dir(list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
+
+    static constexpr int ROW_H = 32;
+
+    for (int i = 0; i < n; i++) {
+        auto& c = contacts[i];
+
+        lv_obj_t* row = lv_obj_create(list);
+        lv_obj_set_size(row, LV_PCT(100), ROW_H);
+        lv_obj_set_style_bg_color(row,
+            lv_color_hex(i % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
+        lv_obj_set_style_border_width(row, 0, 0);
+        lv_obj_set_style_pad_all(row, 0, 0);
+
+        // Icon
+        lv_obj_t* icon = lv_label_create(row);
+        lv_label_set_text(icon, LV_SYMBOL_WIFI);
+        lv_obj_set_style_text_color(icon, lv_color_hex(ACCENT), 0);
+        lv_obj_set_style_text_font(icon, &lv_font_montserrat_12, 0);
+        lv_obj_align(icon, LV_ALIGN_LEFT_MID, 6, 0);
+
+        // Name
+        lv_obj_t* name_l = lv_label_create(row);
+        lv_label_set_text(name_l, c.name);
+        lv_obj_set_style_text_color(name_l, lv_color_hex(TEXT_PRIMARY), 0);
+        lv_obj_set_style_text_font(name_l, &lv_font_montserrat_12, 0);
+        lv_obj_align(name_l, LV_ALIGN_LEFT_MID, 28, 0);
+
+        // RSSI
+        char rssi_buf[12];
+        snprintf(rssi_buf, sizeof(rssi_buf), "%ddBm", c.rssi);
+        lv_obj_t* rssi_l = lv_label_create(row);
+        lv_label_set_text(rssi_l, rssi_buf);
+        lv_obj_set_style_text_color(rssi_l, lv_color_hex(TEXT_SECONDARY), 0);
+        lv_obj_set_style_text_font(rssi_l, &lv_font_montserrat_10, 0);
+        lv_obj_align(rssi_l, LV_ALIGN_RIGHT_MID, -6, 0);
     }
 
     show_screen(scr);

@@ -85,11 +85,6 @@ The tile LRU cache uses a `uint32_t cache_clock` that increments monotonically. 
 
 ## Touch / Input
 
-### I2C bus speed race — touch runs at 100kHz instead of 400kHz
-The I2C bus is shared between the GT911 touch controller (400kHz capable) and the keyboard MCU (100kHz). The init sequence sets 400kHz for touch, then overwrites it to 100kHz during keyboard init. After that, ALL subsequent I2C operations (including touch reads) run at 100kHz. Touch is functional but reads at 1/4 speed, increasing touch latency by ~3-4x.
-
-**What's needed:** Restore `Wire.setClock(400000)` after keyboard init completes, or use 100kHz for both (GT911 works at any speed up to 400kHz).
-
 ### Trackball LEFT fires on both edges
 All trackball directions fire on falling edge only (one event per physical detent). LEFT fires on BOTH rising and falling edges, producing 2 events per detent. The 80ms deadtime (vs 150ms for others) doesn't prevent the double-fire — it only limits the minimum inter-event gap. In UI navigation, moving LEFT advances 2 items while other directions advance 1.
 

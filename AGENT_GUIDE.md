@@ -20,7 +20,7 @@ pio test -e native_test -f test_keyboard -v
 pio run -e SlopOS_TDeck
 
 # List all test modules
-pio test -e native_test --list-tests 2>/dev/null || pio test -e native_test -h
+pio test -e native_test --list-tests
 ```
 
 MeshCore is at `lib/meshcore/` — a git submodule. `git submodule update --init` if you cloned without `--recurse-submodules`.
@@ -54,16 +54,25 @@ src/
 │   ├── chat_screen.cpp/h  # Channels, DM, message bubbles
 │   ├── screens.cpp/h      # Heard, Contacts, Map, Settings, Trace, Terminal, Signal, Channels, Finder, Advertise, Radio Setup, Custom RF
 │   ├── onboarding_screen.cpp/h  # First-boot setup wizard
-│   ├── navigation.cpp/h   # Screen routing with slide transitions
+│   ├── navigation.cpp/h   # Screen routing with slide transitions, universal back-swipe
 │   └── ui.cpp/h           # Splash→Home transition, main loop updates
 ├── app/
 │   ├── map_renderer.cpp/h # Offline map (PNG tiles via lodepng, PSRAM cache)
 │   └── lodepng_alloc.cpp  # lodepng allocator → PSRAM with DRAM fallback
 ├── diagnostics/
+│   ├── debug_cfg.h        # Per-feature debug flag selection (runtime toggle)
 │   └── debug.cpp/h        # Debug dumps (SLOPOS_DEBUG=1 build)
 ├── fonts/
-│   └── emoji_font_setup.cpp/h  # Emoji font fallback for LVGL
-├── utils/                 # (empty — placeholder for utility modules)
+│   ├── emoji_font_setup.cpp/h  # Emoji font fallback registration for LVGL
+│   ├── emoji_font.c/h          # Compiled emoji font bitmap data (16px, Noto Emoji derivative)
+│   ├── emoji_data.cpp/h        # Discord-style emoji short name ↔ UTF-8 lookup (343 entries)
+│   └── emoji_images/           # Emoji picker image assets (generated)
+│       ├── emoji_picker_images.h
+│       └── emoji_picker_index.h
+├── test/                  # Remote test controller (SLOPOS_REMOTE_TEST=1)
+│   └── test_controller.cpp/h  # Serial-driven test harness — inject events, nav, type, screen capture
+├── utils/                 # Utility modules
+│   └── utf8_util.h       # UTF-8 safe truncation (emoji-aware byte cutting)
 └── lib/
     ├── meshcore/            # Git submodule → MeshCore (at repo root)
     └── lodepng/             # PNG decode library (zlib license, PSRAM allocators)
@@ -122,6 +131,8 @@ The `make_screen_full(title)` helper in `screens.cpp` creates all of this. Use i
 - `go_back()` — returns to previous screen (nav stack, 8-entry circular buffer)
 - `show_screen(scr)` — loads a screen created with `lv_obj_create(nullptr)` (used by sub-screens like Custom RF)
 - `can_go_back()` — returns true if there's a previous screen to return to
+- `current_screen()` — returns the currently active `Screen` enum value
+- `handle_back_swipe(event)` — universal two-swipe commit back gesture. First Left event consumed (neutralise), second Left triggers `go_back()`. Non-Left events reset the counter. Call from trackball dispatch for screens without their own Left handler.
 
 ### Icons
 
@@ -147,18 +158,18 @@ Use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 | # | Screen | Source | Status |
 |---|--------|--------|--------|
 | 0 | Splash | `ui.cpp` | ✅ |
-| 1 | Home (4x3 grid) | `home_screen.cpp` | ✅ |
+| 1 | Home (4x3 grid, 12 tiles) | `home_screen.cpp` | ✅ |
 | 2 | Chat (channels + DM) | `chat_screen.cpp` | ✅ |
 | 3 | Contacts (alphabetical, tap→DM) | `screens.cpp` | ✅ |
 | 4 | Channels (list + create #hashtag/PSK) | `screens.cpp` | ✅ |
-| 5 | Finder (nearby nodes) | `screens.cpp` | ✅ |
-| 6 | Packets (raw packet log, 50 entries) | `screens.cpp` | ✅ |
+| 5 | Finder / Network (nearby nodes) | `screens.cpp` | ✅ |
+| 6 | Packets / Heard (packet log, 50 entries) | `screens.cpp` | ⚠️ Both REPEATERS and PACKETS home tiles map here (see KNOWN_ISSUES.md) |
 | 7 | Map (touch pan, auto-center) | `screens.cpp` | ✅ |
 | 8 | Advertise (broadcast presence, status timer) | `screens.cpp` | ✅ |
 | 9 | Settings (radio, keyboard BL, date/time) | `screens.cpp` | ✅ |
-| 10 | Trace (path discovery per contact) | `screens.cpp` | ⚠️ see docs/KNOWN_ISSUES.md |
-| 11 | Terminal (colored log + commands) | `screens.cpp` | ⚠️ see docs/KNOWN_ISSUES.md |
-| 12 | Signal (live RSSI, SNR, noise floor, radio params) | `screens.cpp` | ✅ |
+| 10 | Trace (path discovery per contact) | `screens.cpp` | ⚠️ see KNOWN_ISSUES.md |
+| 11 | Terminal (colored log + commands) | `screens.cpp` | ⚠️ see KNOWN_ISSUES.md |
+| 12 | Signal (live RSSI, SNR, noise floor, radio params from prefs) | `screens.cpp` | ✅ |
 | 13 | Radio Setup (freq presets, SF/BW/CR/Pwr controls, save & reboot) | `screens.cpp` | ✅ |
 | 14 | Onboarding (wizard) | `onboarding_screen.cpp` | ✅ |
 | — | Custom RF (sub-screen of Radio Setup — Freq, SF, BW, CR, Pwr text inputs with Apply) | `screens.cpp` | ✅ |
@@ -172,20 +183,46 @@ MeshCore is a submodule at `lib/meshcore/`. The UI never touches MeshCore direct
 **Key mesh wrapper API:**
 
 ```cpp
-slopos::mesh::init(spiffs_ok)          // Boot — load identity, start radio
-slopos::mesh::loop()                   // Call from main loop
-slopos::mesh::sendMessage(name, text)  // Direct message
-slopos::mesh::sendChannelMessage(ch, text)  // Group message
-slopos::mesh::addChannel(name, psk_b64)     // PSK channel
-slopos::mesh::addHashtagChannel(name)       // Hash-of-name channel
-slopos::mesh::exportContacts(out, max)      // Name list
-slopos::mesh::exportChannels(out, max)      // Channel name list
+slopos::mesh::init(spiffs_ok)              // Boot — load identity, start radio
+slopos::mesh::loop()                       // Call from main loop
+slopos::mesh::sendMessage(name, text)      // Direct message
+slopos::mesh::sendChannelMessage(ch, text) // Group message
+slopos::mesh::addChannel(name, psk_b64)    // PSK channel
+slopos::mesh::addHashtagChannel(name)      // Hash-of-name channel
+slopos::mesh::joinPublicChannel()          // Join "Public" with default PSK
+slopos::mesh::exportContacts(out, max)     // Name list
+slopos::mesh::exportContactsFull(out, max) // Name + RSSI + last_seen
+slopos::mesh::exportChannels(out, max)     // Channel name list
+slopos::mesh::pollMessages(out, max)       // Non-blocking message fetch
+slopos::mesh::pendingMessageCount()        // Messages waiting in queue
+slopos::mesh::setOwnName(name)             // Set this node's display name
+slopos::mesh::getOwnName()                 // Get this node's display name
 slopos::mesh::getNoiseFloor()              // Current noise floor dBm
 slopos::mesh::getLastRSSI()                // Last received message RSSI
 slopos::mesh::getLastSNR()                 // Last received message SNR
 slopos::mesh::getContactCount()            // Number of known contacts
 slopos::mesh::getChannelCount()            // Number of joined channels
 slopos::mesh::sendAdvert()                 // Broadcast advert
+slopos::mesh::getLastAdvertTime()          // Timestamp of last advert
+slopos::mesh::getLastAdvertSuccess()       // Whether last advert succeeded
+slopos::mesh::getLastAdvertUsedGps()       // Whether GPS data was included
+slopos::mesh::saveState()                  // Save contacts to NVS
+slopos::mesh::saveChannels()               // Save channels to NVS
+slopos::mesh::loadChannels()               // Restore channels from NVS
+slopos::mesh::injectMessage(sender, ch, text)  // Simulate incoming (test only)
+slopos::mesh::getCurrentTime()             // RTC epoch seconds
+slopos::mesh::setSystemTime(epoch)         // Set RTC from UI
+slopos::mesh::getCurrentLocalDateTime()    // Breakdown: y/m/d/h/m
+slopos::mesh::makeEpoch(y, m, d, h, mn)    // Create epoch from components
+slopos::mesh::getPacketLogCount()          // Entries in packet log
+slopos::mesh::getPacketLogEntry(i, out)    // Read one packet log entry
+slopos::mesh::pushPacketLog(src, rssi, snr, type) // Add packet log entry
+slopos::mesh::sendTrace(idx, &tag)         // Send trace route request
+slopos::mesh::hasTraceResult()             // Trace reply received?
+slopos::mesh::getTracePathLen()            // SNR/hop count in trace
+slopos::mesh::getTracePath(snrs, hashes)   // Get trace path data
+slopos::mesh::clearTraceResult()           // Reset trace state
+slopos::mesh::contactHasPath(idx)          // Does contact have a known path?
 ```
 
 **Messages arrive** via `chat_screen_add_msg(channel, sender, text, is_self)`. The chat screen maintains per-channel message caches (8 messages each, 16 channels max).
@@ -199,7 +236,7 @@ slopos::mesh::sendAdvert()                 // Broadcast advert
 
 ## Testing
 
-**Current test count: 172** (171 passed, 1 skipped for native_test).
+**Current test count: 213** (212 passed, 1 skipped for native_test).
 
 ```bash
 pio test -e native_test -v       # All tests (no hardware)
@@ -222,6 +259,8 @@ Test modules:
 | `test_build` | Compilation checks for all modules |
 | `test_navigation` | Screen navigation and history |
 | `test_map` | Map renderer PSRAM allocators |
+| `test_emoji` | Emoji font data, glyph coverage, fallback registration, Discord-style autocomplete |
+| `test_chat_truncation` | UTF-8 safe message truncation (emoji-aware byte cutting) |
 
 **Critical rules:**
 - Tests use `test/test_<name>/` dirs with `main.cpp` entry points. Wrong naming = not discovered.
@@ -247,6 +286,13 @@ pio run -e SlopOS_TDeck_debug
 
 # Trackball debug build (raw GPIO state visible)
 pio run -e SlopOS_TDeck_trackball_debug
+
+# Per-feature debug builds — enable only one subsystem's debug output
+pio run -e SlopOS_TDeck_debug_display  # Display flush/invalidate/auto-off
+pio run -e SlopOS_TDeck_debug_mesh     # Mesh message rx/tx, radio init
+pio run -e SlopOS_TDeck_debug_ui       # UI boot steps, screen transitions
+pio run -e SlopOS_TDeck_debug_map      # Map tile loading, rendering
+pio run -e SlopOS_TDeck_debug_diag     # Periodic stats & system dumps
 
 # Run native tests (no hardware)
 pio test -e native_test -v
@@ -288,6 +334,10 @@ The debug build (`SlopOS_TDeck_debug`) enables:
 - Trackball pin states (`[pins]`)
 - On-demand debug dump via `slopos_debug_dump()`
 - Map tile discovery logging
+
+**Per-feature debug environments** (`SlopOS_TDeck_debug_display`, `_mesh`, `_ui`, `_map`, `_diag`) enable only one subsystem's debug output at a time. They share `debug_cfg.h` infrastructure which supports runtime feature toggle (`debug feat 0/1` in remote test mode) and a `feat_set_all_mask()` aggregator.
+
+The master `SLOPOS_DEBUG=1` flag enables all features simultaneously (backward compatible). Individual `-DSLOPOS_DEBUG_DISPLAY=1` etc. flags enable just that one feature, controlled at compile time by `#if SLOPOS_DEBUG_DISPLAY` guards throughout the codebase.
 
 The release build (`SlopOS_TDeck`) suppresses all of these via `NDEBUG` and the absence of `SLOPOS_DEBUG=1`. Only critical errors and warnings print in release mode.
 
@@ -351,7 +401,7 @@ If the issue involves physical input hardware (trackball, keyboard, touch, butto
 Main + dev branch model:
 - `dev` — integration branch. All PRs merge here.
 - `main` — stable releases only.
-- Tags: `beta-0.1.XX` (zero-padded for correct sort: `beta-0.1.09` not `beta-0.1.9`)
+- Tags: `beta-0.1.XX` (zero-padded for correct sort: `beta-0.1.09` not `beta-0.1.9`). Current: `beta-0.1.32`
 
 **Release flow (maintainer only):**
 1. Update `SLOPOS_VERSION` in `tdeck_pins.h`
@@ -363,12 +413,12 @@ Main + dev branch model:
 
 ## Radio Setup
 
-The Radio Setup screen (`screens.cpp:1804`) provides a two-column layout:
+The Radio Setup screen (`screens.cpp:1824`) provides a two-column layout:
 - **Left column:** Frequency presets (868.000 EU, 869.525 UK, 869.618 UK, 915.000 US, 433.500 EU)
 - **Right column:** "Custom RF..." button → opens Custom RF sub-screen, SF −/+ controls (7-12), BW −/+ controls (steps through 500/250/125/62.5/41.7/31.25/20.8/15.6/10.4/7.8 kHz), TX power −/+ controls (2-22 dBm)
 - **Bottom:** Save & Reboot button (writes prefs, saves channels and messages, then `ESP.restart()`)
 
-Radio params are stored in module-level `static` vars (`s_rf_freq`, `s_rf_sf`, `s_rf_bw`, `s_rf_cr`, `s_rf_pwr`) in `screens.cpp:1666-1670`, shared between `radio_setup_screen_show` and `custom_rf_screen_show`. These defaults to 869.618 MHz / SF8 / 62.5 kHz / CR 4/5 / 22 dBm.
+Radio params are stored in module-level `static` vars (`s_rf_freq`, `s_rf_sf`, `s_rf_bw`, `s_rf_cr`, `s_rf_pwr`) in `screens.cpp:1686-1690`, shared between `radio_setup_screen_show` and `custom_rf_screen_show`. These defaults to 869.618 MHz / SF8 / 62.5 kHz / CR 4/5 / 22 dBm.
 
 ### Custom RF Sub-Screen
 
@@ -395,29 +445,29 @@ On "Apply", validated values are written to the shared state and `go_back()` is 
 | Radio Setup Save & Reboot no delay | Calls `ESP.restart()` immediately after `prefs_set()`, `saveChannels()`, and `chat_save_messages()` — no delay for flash writes to complete (see docs/KNOWN_ISSUES.md) |
 | SF label via `user_data` | The SF −/+ buttons use `(void*)sf_lbl` as event user_data, but `sf_lbl` is a stack-local variable in `radio_setup_screen_show`. While `sf_lbl` is alive for the screen's lifetime, the pointer is only valid as long as the widget exists — fragile if screen is recreated |
 | BW discrete stepping | BW uses a hardcoded float array and cycles through values via a loop with `x + 0.01f` tolerance — values near boundaries may not snap correctly due to float comparison |
-| `src/utils/` empty directory | Exists but contains no files — may be a leftover or placeholder, not currently used |
+| `src/utils/` no longer empty | Now contains `utf8_util.h` — the empty placeholder was replaced by a real utility module for UTF-8 safe truncation |
+| `SLOPOS_RUNTIME_FEAT()` macro scope | The `debug_cfg.h` `SLOPOS_RUNTIME_FEAT()` macro only works under full `SLOPOS_DEBUG=1` build. In per-feature builds (e.g. `SLOPOS_DEBUG_MESH=1` alone), the macro expands to nothing — runtime `debug feat 0/1` toggle has no effect. Only compile-time `#if SLOPOS_DEBUG_MESH` guards control output. |
+| Emoji font pointer init ordering | `emoji_font.h` declares mutable globals `emoji_wrapped_montserrat_*` that are initialized to raw Montserrat before `emoji_font_setup()` runs. Any code accessing these font pointers during boot (before the setup function runs) gets un-wrapped fonts without emoji fallback glyphs. |
+| Navigation back-swipe state reset | `back_swipe_commit` is reset to 0 at the start of both `navigate_to()` and `go_back()`. If a screen transition is triggered mid-back-swipe (e.g. by a screen's constructor calling navigate internally), the two-swipe sequence is broken — the user must start over from zero Left events. |
+| `debug_cfg.h` unconditional declarations | All `feat_set_*()` / `feat_get_*()` declarations in `debug_cfg.h` compile unconditionally, but their implementations in `debug.cpp` are wrapped in `#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG`. In non-debug builds, the declarations exist but implementations are stubs — linking succeeds because the stubs in `debug.h` provide the actual bodies. This is fragile: if `debug.cpp` is ever excluded from build, link errors will surface. |
 
 ---
 
 ## Known Issues Reference
 
-All known issues are documented in `docs/KNOWN_ISSUES.md`. Key categories:
-- **Chat Screen:** Channel selection preview clipping, text input max_length off-by-one, emoji truncation on multi-byte codepoints, three home tiles mapping to same screen
-- **Emoji Support:** Incomplete glyph coverage (PR #25)
-- **Trackball:** LEFT fires on both edges, universal back-swipe not implemented
-- **Signal Bars:** No visual RSSI indicator
-- **Finder:** Zero-hop ping not implemented
-- **Terminal:** Undocumented commands, unbounded label accumulation
+All known issues are documented in `KNOWN_ISSUES.md`. Key categories:
+- **Finder:** Zero-hop ping for nearby discovery not implemented
 - **Launcher Compatibility:** SlopOS doesn't work under bmorcelli/Launcher
-- **UI Performance:** LVGL tick starvation during TX, save_counter overflow
-- **Mesh Networking:** Channel hash only checks first byte, no contact expiry, advert rate limiting only at UI layer, missing null-termination on short payloads
-- **Map Screen:** Large allocations not using PSRAM, LRU cache clock uint32_t wrap
-- **Touch/Input:** I2C bus speed race (100kHz instead of 400kHz)
-- **Screen Navigation:** Navigation history stack broken (circular buffer UB)
+- **UI Performance:** LVGL tick starvation during LoRa TX
+- **Mesh Networking:** Channel hash only checks first byte, no contact expiry/eviction, advert rate limiting only at UI layer, missing null-termination on short payloads
+- **Map Screen:** LRU cache clock uint32_t wrap after ~50 days of continuous use
+- **Touch/Input:** I2C bus speed race (touch runs at 100kHz instead of 400kHz), trackball LEFT fires on both edges
+- **Screen Navigation:** Navigation history stack broken (circular buffer wrap bug)
+- **Chat Screen:** REPEATERS tile navigates to Packets screen instead of nodes/repeaters view
 - **Onboarding:** ESP.restart() without flash write completion
 - **GPS:** No NMEA checksum validation
-- **SPI/Display:** Display and SD card share same SPI host
-- **Diagnostics:** Debug shadow mode drops events, header guard mismatch
+- **Terminal:** Unbounded label accumulation
+- **SPI/Display:** Display and SD card share the same SPI host
 
 ---
 

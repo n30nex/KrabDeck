@@ -2,7 +2,9 @@
 
 This document catalogs features present in the MeshCore protocol and ecosystem that are not yet implemented in SlopOS-TDeck firmware. It is intended as a roadmap reference — not a bug tracker. Bugs and workarounds belong in `KNOWN_ISSUES.md`.
 
-SlopOS-TDeck is a standalone companion-radio firmware for the LilyGo T-Deck. It interoperates with any MeshCore node but does not implement every capability the protocol supports.
+SlopOS-TDeck is a standalone **companion-radio firmware** for the LilyGo T-Deck. It interoperates with any MeshCore node but is designed for the end-user handheld experience — not for infrastructure roles (repeaters, room servers, sensors).
+
+Features in this document are tagged to distinguish companion-relevant from infrastructure-only items. The implementation plan (§ below) only covers **companion features**. Infrastructure items are documented here for reference but are not planned.
 
 All MeshCore file paths below are relative to the root of `https://github.com/meshcore-dev/MeshCore` (main branch). The submodule in this repo is pinned to a specific commit — if a symbol can't be found, check `lib/meshcore/` directly.
 
@@ -198,11 +200,11 @@ SlopOS currently includes GPS coordinates in the Advertise screen when a fix is 
 
 ---
 
-### Periodic auto-advert — S
+### Periodic auto-advert — S *(infrastructure)*
+
+> **Not planned for companion.** Repeater/infrastructure nodes need auto-advert so they're always discoverable. Companion nodes advertise on-demand via the Advertise screen.
 
 Standalone MeshCore nodes broadcast periodic adverts so they are discoverable without user action. SlopOS only sends an advert when the user manually taps the Advertise screen. Nodes powered on for hours without manually advertising are invisible to new nodes.
-
-**What's needed:** Add an `advert_interval_minutes` setting to `NodePrefs`. From the main loop (or a FreeRTOS timer), call `slopos::mesh::sendAdvert()` when the interval has elapsed. Enforce the existing cooldown to prevent accidental flooding.
 
 **MeshCore reference:**
 - `src/helpers/CommonCLI.h` — `NodePrefs::advert_interval` (uint8_t, in minutes/2; value 10 = every 20 min), `NodePrefs::flood_advert_interval` (uint8_t, in hours)
@@ -283,9 +285,9 @@ The inverse of the above: a user on another device shows a `meshcore://` URI. Sl
 
 ---
 
-### Room server message fetch — L
+### Room server message fetch — L *(infrastructure)*
 
-MeshCore defines Room Server nodes that store up to 32 messages per user for offline retrieval. SlopOS has no concept of room servers and no fetch mechanism.
+> **Not planned for companion.** Room server fetch lets a node retrieve stored messages from a room server while offline. Companion nodes are always reachable via DM and don't need this — it's a room server infrastructure feature.
 
 **What's needed:** Detect room server contacts by their `ADV_TYPE_ROOM` advert type (needs "Contact node type" feature above). Add a "Fetch from room server" action to the Contacts screen. Implement the REQ/RESPONSE packet exchange for message retrieval.
 
@@ -367,7 +369,9 @@ The 30-second auto-off timeout is hardcoded in `src/hal/display.cpp`. Users in b
 
 ---
 
-### Node type selection — M
+### Node type selection — M *(infrastructure)*
+
+> **Not planned for companion.** Companion nodes always advertise as `ADV_TYPE_CHAT`. Selecting repeater/room/sensor types is for infrastructure deployments.
 
 MeshCore adverts carry an `ADV_TYPE_*` flag. SlopOS always broadcasts `ADV_TYPE_CHAT`. Users running a dedicated T-Deck as a fixed relay might want to advertise as a repeater.
 
@@ -516,9 +520,9 @@ There is no way to shut down the device from the UI. The user must hold the powe
 
 ---
 
-### Launcher compatibility — M
+### Launcher compatibility — M *(infrastructure)*
 
-Also tracked in `KNOWN_ISSUES.md`. SlopOS does not run correctly under `bmorcelli/Launcher` because it expects full hardware control at boot and re-initialises peripherals from a known-zero state.
+> **Not planned for companion.** This is a niche build target for running under `bmorcelli/Launcher`. Not relevant to the core companion experience.
 
 **What's needed:** A `launcher-compatible` build target (`pio run -e SlopOS_TDeck_launcher`) that skips hardware init steps already performed by the launcher and handles shared peripheral state gracefully.
 
@@ -553,11 +557,11 @@ There is no password protecting the Settings or Terminal screens. Anyone with ph
 
 ## Interoperability
 
-### BLE companion protocol (expose T-Deck as a companion radio) — L
+### BLE companion protocol (expose T-Deck as a companion radio) — L *(infrastructure)*
+
+> **Not planned for companion.** This turns the T-Deck into a BLE modem for a phone app — a different product than a standalone handheld companion. The T-Deck IS the companion already.
 
 MeshCore defines a BLE UART companion protocol (Nordic UART service, UUID `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`) that allows a smartphone app to use the T-Deck as a mesh radio modem. SlopOS does not expose this protocol — it is a standalone UI device, not a radio modem.
-
-Implementing this would allow the Flutter `SlopOS-client` app to optionally use the T-Deck as a BLE radio rather than its standalone UI, making it dual-mode.
 
 **What's needed:** Enable the ESP32-S3 BLE stack. Implement the companion protocol command set. Add a "BLE modem mode" toggle in Settings that suspends the standalone UI and enters companion mode.
 
@@ -567,7 +571,9 @@ Implementing this would allow the Flutter `SlopOS-client` app to optionally use 
 
 ---
 
-### Region management — L
+### Region management — L *(infrastructure)*
+
+> **Not planned for companion.** Multi-region routing is a repeater feature. Companion nodes join one region and don't need to manage region tables.
 
 MeshCore v1.10+ allows configuring which mesh sub-regions a node participates in. This is primarily a repeater feature but affects routing in multi-region deployments.
 
@@ -583,21 +589,23 @@ SlopOS has no region concept. In a multi-region deployment, a T-Deck may not rec
 
 ---
 
-*Last updated: 2026-05-26. Cross-reference with `KNOWN_ISSUES.md` for bugs and workarounds in implemented features.*
+*Last updated: 2026-05-26. Infrastructure-only features (auto-advert, node type selection, room server fetch, BLE modem mode, region management, launcher compatibility) are documented for reference but excluded from the companion implementation plan. Cross-reference with `KNOWN_ISSUES.md` for bugs and workarounds in implemented features.*
 
 ---
 
 ## Implementation Plan
 
-This section provides a phased roadmap for implementing the missing features above. Phases are ordered by dependency, effort, and practical value. Items within a phase can be done in any order.
+This section provides a phased roadmap for implementing **companion features only** — infrastructure/repeater items (auto-advert, node type selection, room server fetch, BLE modem mode, region management, launcher) are documented above for reference but excluded from the plan.
+
+Phases are ordered by dependency, effort, and practical value. Items within a phase can be done in any order.
 
 ### Dependency Summary
 
-The full MeshCore protocol analysis reveals **no strict topological ordering** among the six main payload types (`PAYLOAD_TYPE_ACK`, `MULTIPART`, `GRP_DATA`, `ANON_REQ`, `CONTROL`, `RAW_CUSTOM`). None requires another to be implemented first. The only dependency chain in the entire list is:
+The MeshCore protocol analysis reveals **no strict topological ordering** among the payload types. The only companion-relevant dependency chain is:
 
 ```
-Advert parsing → Node type field → Room server fetch
-                 └→ Location field → Map markers
+Advert parsing → Location field → Contact locations on Map
+                   └→ Data fields → Contact details screen
 ```
 
 Everything else is independent and can be implemented in any sequence.
@@ -625,15 +633,14 @@ Self-contained changes that deliver immediate value and build codebase familiari
 | 13 | PSK channel import via UI | Channel dialog variant, mesh layer already supports it |
 | 14 | GPS clock sync | GPS NMEA parser auto-syncs RTC on first fix |
 | 15 | GPS location sharing policy | `NodePrefs` enum, gates advert GPS inclusion |
-| 16 | Periodic auto-advert | Main loop timer, uses existing `sendAdvert()` |
 
-**Estimated total:** 16 small PRs, each testable in native tests + quick HW smoke test.
+**Estimated total:** 15 small PRs, each testable in native tests + quick HW smoke test.
 
 ---
 
-### Phase 1 — Advert Parsing (enables Phase 2)
+### Phase 1 — Advert Parsing
 
-Extract richer data from incoming adverts. These are the foundation for contact details, map markers, and node-type-aware UI.
+Extract richer data from incoming adverts. Foundation for contact details, map markers, and location-aware UI.
 
 | # | Feature | Effort | Why here |
 |---|---------|--------|----------|
@@ -647,14 +654,13 @@ Extract richer data from incoming adverts. These are the foundation for contact 
 
 ### Phase 2 — Radio Configuration
 
-Medium-effort radio features that enhance configurability but don't change protocol behavior.
+Medium-effort radio features that enhance configurability for the companion user.
 
 | # | Feature | Effort | Why here |
 |---|---------|--------|----------|
 | 1 | RX gain boost toggle | S | `NodePrefs` flag, `RadioLibWrapper::setRxBoostedGainMode()` |
 | 2 | Temporary radio config | M | Live-apply without NVS write, with revert timer |
 | 3 | Duty cycle enforcement | M | Surface MeshCore budget, add configurable limit |
-| 4 | Node type selection | M | `ADV_TYPE_*` selector; repeater mode needs relay config |
 
 ---
 
@@ -676,7 +682,7 @@ UI and protocol improvements to the chat experience.
 
 ### Phase 4 — Advanced Protocol
 
-New packet types and application layer features that extend the protocol surface.
+New packet types and application features that extend what a companion can do on the mesh.
 
 | # | Feature | Effort | Why here |
 |---|---------|--------|----------|
@@ -684,13 +690,12 @@ New packet types and application layer features that extend the protocol surface
 | 2 | Group data datagrams | M | Type-code registry, `sendGroupDatagram()` API |
 | 3 | Multipart messages | L | Reassembly buffer per sender, segmentation send |
 | 4 | Raw custom payloads | L | Application dispatch interface, registration API |
-| 5 | Room server message fetch | L | **Depends on:** Phase 1 #2 (node type detection for `ADV_TYPE_ROOM`) |
 
 ---
 
 ### Phase 5 — UI & Hardware
 
-Visual and hardware integration features that are self-contained but larger layout or system changes.
+Self-contained larger features for the companion experience.
 
 | # | Feature | Effort | Why here |
 |---|---------|--------|----------|
@@ -698,11 +703,8 @@ Visual and hardware integration features that are self-contained but larger layo
 | 2 | QR code / URI import | M | URI parser, Terminal command, Add Contact dialog |
 | 3 | Contact locations on Map | M | **Depends on:** Phase 1 #1 (contact location data) |
 | 4 | OTA firmware update | L | WiFi/BLE init, partition layout, download + flash progress |
-| 5 | BLE companion protocol | L | Enable BLE, implement companion command set, modem mode toggle |
-| 6 | Region management | L | Region config UI, `RegionMap` integration with MeshCore |
-| 7 | ACL / contact permissions | L | Permission field on contacts, UI for promotion, action gating |
-| 8 | Device admin password | M | Optional PIN hashed in NVS, prompt on Settings/Terminal entry |
-| 9 | Launcher compatibility | M | Build target + re-init layer for `bmorcelli/Launcher` |
+| 5 | ACL / contact permissions | L | Permission field on contacts, UI for promotion, action gating |
+| 6 | Device admin password | M | Optional PIN hashed in NVS, prompt on Settings/Terminal entry |
 
 ---
 

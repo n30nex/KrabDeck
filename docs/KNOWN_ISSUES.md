@@ -62,9 +62,7 @@ The contact list has a hard cap of 64 entries (`SLOP_MAX_CONTACTS`). Once full, 
 ## Map Screen
 
 ### LRU cache clock uint32_t wrap
-The tile LRU cache uses a `uint32_t cache_clock` that increments monotonically. After ~4 billion increments (or ~50 days of continuous use at 1kHz), it wraps to 0, breaking cache eviction comparisons — newly cached tiles have lower `last_used` values than old ones, causing premature eviction of recently used tiles.
-
-**What's needed:** Use `uint64_t` for `cache_clock`, or implement a wrapping-aware comparison.
+**FIXED in PR #107:** Changed `cache_clock` and `last_used` from `uint32_t` to `uint64_t` — safe for 584 million years of continuous use at 1kHz. Also extracted the tile cache into a reusable module (`tile_cache.h`/`.cpp`) with 11 unit tests covering init, lookup, eviction ordering, and the memory-free contract.
 
 ---
 

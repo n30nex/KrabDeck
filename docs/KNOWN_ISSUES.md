@@ -107,9 +107,7 @@ The onboarding screen's Done button calls `ESP.restart()` immediately after `cha
 ## GPS
 
 ### No NMEA checksum validation
-Raw GPS NMEA sentences from the L76K module include a `*XX` checksum suffix that is never validated (`gps.cpp`). Corrupted sentences from noisy GPS reception are parsed as valid data, potentially giving incorrect coordinates, altitude, or fix status.
-
-**What's needed:** Implement NMEA checksum validation — extract the checksum from after the `*` in the sentence, compute XOR of all bytes between `$` and `*`, and compare. Discard sentences that don't match.
+**FIXED in PR #101:** Added `nmea_checksum_valid()` — validates the `*XX` XOR checksum on NMEA sentences before parsing. Corrupted sentences are silently discarded. Sentences without checksums are still accepted.
 
 ---
 

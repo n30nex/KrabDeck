@@ -62,11 +62,6 @@ The contact list has a hard cap of 64 entries (`SLOP_MAX_CONTACTS`). Once full, 
 
 **What's needed:** Implement periodic eviction — purge contacts with `last_seen` older than a configurable threshold (e.g. 30 minutes) when the list is full.
 
-### Advert rate limiting at mesh layer only
-The 10-second advert cooldown is only enforced in the UI (button disabled state). The `sendAdvert()` function in `mesh_wrapper.cpp` has no rate-limiting of its own — it can be called programmatically (e.g. from the Terminal's `advert` command) without protection, potentially flooding the mesh.
-
-**What's needed:** Add a timestamp check in `sendAdvert()` that rejects calls within `ADVERT_COOLDOWN_SECONDS`.
-
 ### Missing null-termination on short payloads
 In `slop_mesh.h`, the payload text null-termination is conditional: `if (len > 1) data[len - 1] = '\0'`. For `len == 1`, no null byte is written, so the C string read from `data` may run past the buffer, causing undefined behavior or leaking stack data.
 

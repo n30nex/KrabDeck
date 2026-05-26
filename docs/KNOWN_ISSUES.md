@@ -115,6 +115,4 @@ All trackball directions fire on falling edge only (one event per physical deten
 ## SPI / Display
 
 ### Display and SD card share the same SPI host
-The display uses `SPI3_HOST` (`display.cpp:45`) and the SD card also uses `HSPI` (`sdcard.cpp:31`). On ESP32-S3, `HSPI` maps to `SPI3_HOST` — the same SPI peripheral. Both configure the same host through different driver instances (LovyanGFX internal vs Arduino SPIClass). The comment in `sdcard.cpp:29` says "LovyanGFX and RadioLib use SPI2 (FSPI)" which is incorrect — the display code clearly uses SPI3_HOST. While this works in practice because each transaction reconfigures the GPIO matrix, clock speed differences (40MHz display vs 4MHz SD) create a fragile architecture where one driver's transaction can interfere with the other's register state.
-
-**What's needed:** Either (a) move SD card to `FSPI` (`SPI2_HOST`), which is the default Arduino SPI bus and not used by the display, or (b) move the display to `SPI2_HOST` and keep SD on `SPI3`. Update the comment in `sdcard.cpp` to reflect the actual bus assignment.
+**FIXED in PR #108:** Moved SD card from SPI3_HOST (HSPI) to SPI2_HOST (FSPI). The display (LovyanGFX via ESP-IDF) retains exclusive use of SPI3_HOST. SD now shares SPI2_HOST with the LoRa radio (both via Arduino SPIClass), which has proper mutual exclusion via the SPI transaction mechanism. Also updated the incorrect comment in `sdcard.cpp`.

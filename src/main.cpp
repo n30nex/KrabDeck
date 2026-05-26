@@ -120,13 +120,14 @@ void loop()
         }
     }
 
+    // Process display/LVGL first so UI stays responsive during mesh ops
+    slopos_display_loop();
+    slopos_gps_loop();
 #if defined(SLOPOS_REMOTE_TEST) && SLOPOS_REMOTE_TEST
     slopos_test_controller_loop();
 #else
     slopos::mesh::loop();
 #endif
-    slopos_gps_loop();
-    slopos_display_loop();
     slopos::ui::loop();
 
 #if SLOPOS_DEBUG_DIAG

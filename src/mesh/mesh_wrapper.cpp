@@ -278,11 +278,27 @@ bool init(bool spiffs_ok)
     return true;
 }
 
+// ── LVGL timer forward declaration ───────────────────────
+// Called periodically during mesh loop to prevent UI stuttering.
+// Declared here rather than including lvgl.h to keep dependency light.
+extern "C" uint32_t lv_timer_handler(void);
+
 void loop()
 {
     if (!initialized || !g_mesh) return;
-    g_mesh->loop();  // handles radio_driver.loop() internally
+    g_mesh->loop();  // Dispatcher::loop() — fast, non-blocking
     rtc_clock.tick();
+
+    // Service LVGL timers so UI remains responsive even during
+    // sustained mesh activity (periodic adverts, packet bursts).
+    // Called at ~50 Hz to keep animations and input feedback smooth
+    // without adding meaningful overhead.
+    static uint32_t last_lvgl = 0;
+    uint32_t now = millis();
+    if (now - last_lvgl > 20) {
+        last_lvgl = now;
+        lv_timer_handler();
+    }
 }
 
 // ── Send ────────────────────────────────────────

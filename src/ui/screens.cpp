@@ -668,9 +668,28 @@ void finder_screen_show()
     // ── Repeaters from contact list ────────────────
     slopos::mesh::ContactInfo contacts[32];
     int total = slopos::mesh::exportContactsFull(contacts, 32);
+    if (total > 32) total = 32;
+    if (total < 0) total = 0;
+
+    // Build a set of ping responder names so we don't double-show
+    bool is_ping_responder[32] = {};
+    if (have_ping) {
+        int np = slopos::mesh::getPingResultCount();
+        for (int i = 0; i < np && i < 32; i++) {
+            auto* r = slopos::mesh::getPingResult(i);
+            if (!r) continue;
+            for (int j = 0; j < total; j++) {
+                if (strcmp(r->name, contacts[j].name) == 0) {
+                    is_ping_responder[j] = true;
+                    break;
+                }
+            }
+        }
+    }
+
     int n_repeaters = 0;
     for (int i = 0; i < total; i++) {
-        if (contacts[i].type == ADV_TYPE_REPEATER) {
+        if (contacts[i].type == ADV_TYPE_REPEATER && !is_ping_responder[i]) {
             if (n_repeaters < i) contacts[n_repeaters] = contacts[i];
             n_repeaters++;
         }
@@ -685,12 +704,22 @@ void finder_screen_show()
     }
 
     // ── Empty state ────────────────────────────────
-    if (row_n == 0 && !slopos::mesh::pingIsActive() && !slopos::mesh::pingOnCooldown()) {
+    bool show_empty = (row_n == 0);
+    if (show_empty) {
+        // Choose message based on state
+        const char* msg;
+        if (slopos::mesh::pingIsActive()) {
+            msg = "Listening for nearby nodes...";
+        } else if (have_ping) {
+            msg = "Ping complete — no nodes responded.\n\n"
+                  "Try again later or check the\nRepeaters screen for infrastructure\nrelay nodes.";
+        } else {
+            msg = "No nodes found nearby.\n\n"
+                  "Press \"Ping Nearby\" to discover\n"
+                  "repeaters and other nodes on\nyour local mesh.";
+        }
         lv_obj_t* empty = lv_label_create(scr);
-        lv_label_set_text(empty,
-            "No nodes found nearby.\n\n"
-            "Press \"Ping Nearby\" to discover\n"
-            "repeaters and other nodes on\nyour local mesh.");
+        lv_label_set_text(empty, msg);
         lv_obj_set_width(empty, CONTENT_W);
         lv_obj_set_style_pad_left(empty, 8, 0);
         lv_obj_set_style_pad_right(empty, 8, 0);

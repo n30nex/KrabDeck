@@ -21,6 +21,8 @@ This document tracks known issues, bugs, and missing features in SlopOS. Contrib
 ## Launcher Compatibility
 
 ### SlopOS doesn't work under bmorcelli/Launcher
+**DEFERRED — needs further investigation into bmorcelli/Launcher's init sequence and partition layout before scoping the work.**
+
 [Launcher](https://github.com/bmorcelli/Launcher) is an ESP32 app launcher with explicit T-Deck support (display, touch, keyboard, SD card). A user tried running SlopOS as a Launcher-launched app and ran into problems — the keyboard doesn't work properly, and many other things break.
 
 **Root cause:** SlopOS is built as standalone firmware that expects full hardware control at boot. Launcher initialises the display, keyboard, I2C, SPI, and LoRa pins before handing off, which leaves GPIOs, peripheral registers, and I2C bus state in an incompatible state when SlopOS starts.
@@ -110,4 +112,6 @@ Pick any item from the list above and open a PR against the `dev` branch. See [`
 ## SPI / Display
 
 ### Display and SD card share the same SPI host
-**FIXED in PR #108:** Moved SD card from SPI3_HOST (HSPI) to SPI2_HOST (FSPI). The display (LovyanGFX via ESP-IDF) retains exclusive use of SPI3_HOST. SD now shares SPI2_HOST with the LoRa radio (both via Arduino SPIClass), which has proper mutual exclusion via the SPI transaction mechanism. Also updated the incorrect comment in `sdcard.cpp`.
+**FIXED in PR #108 + follow-up:** The original fix (PR #108) moved the SD card from SPI3_HOST to SPI2_HOST, but this created a GPIO matrix conflict — the LoRa mesh init called `lora_spi.begin()` on SPI2_HOST, which remapped pins 40/41/38 away from SPI3_HOST, silently disconnecting the display.
+
+**Real fix:** Moved the display from SPI3_HOST to SPI2_HOST in `display.cpp`, so all three bus-sharing devices (display, LoRa, SD) use the same SPI2_HOST with different CS lines. No cross-host pin contention.

@@ -26,10 +26,9 @@
 #include <cstring>
 
 // T-Deck SD card uses SPI on the shared LoRa/display bus (GPIO40/38/41).
-// FSPI (SPI2_HOST) is used here; the display (LovyanGFX) uses SPI3_HOST (HSPI)
-// directly via ESP-IDF. This bus shares SPI2_HOST with the LoRa radio (RadioLib
-// via Arduino SPIClass), so both use the same driver stack with proper mutual
-// exclusion via the SPI transaction mechanism.
+// FSPI (SPI2_HOST) is used here; the display also uses SPI2_HOST (via
+// LovyanGFX), and the LoRa radio uses SPI2_HOST (via RadioLib). All three
+// devices share the same SPI host and bus pins with different CS lines.
 static SPIClass sd_spi(FSPI);
 
 static bool mounted = false;

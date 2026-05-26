@@ -89,9 +89,9 @@ The navigation system uses a circular buffer with MAX_HISTORY=8. `push_history` 
 ## Chat Screen
 
 ### REPEATERS tile navigates to Packets screen instead of a nodes/repeaters view
-The REPEATERS tile on the home screen 4x3 grid navigates to `Screen::Heard` — the same raw Packets log as the PACKETS tile (`home_screen.cpp:62-64`). Both tiles open identical screens. FINDER correctly navigates to `Screen::Network`. There is no dedicated screen for listing nearby nodes by signal strength.
+**FIXED in PR #99:** REPEATERS now redirects to `Screen::Network` (same as FINDER), which surfaces nearby nodes by signal strength.
 
-**What's needed:** Either create a dedicated repeaters/nodes screen that lists known contacts sorted by RSSI, or redirect REPEATERS to `Screen::Network` (Finder) which already surfaces nearby nodes. The current double-mapping gives users two identical icon tiles with no functional difference.
+**Remaining:** A dedicated repeaters/nodes screen with RSSI-sorted list would be better than borrowing FINDER's screen, but the duplicate-icon bug is fixed.
 
 ---
 

@@ -138,14 +138,22 @@ TEST_F(TrackballTest, HeldDirectionDoesNotRepeat) {
 }
 
 TEST_F(TrackballTest, DirectionIdleLevelIsCalibratedAtInit) {
+    // Calibrate with LEFT already active (mid-detent at boot)
     set_pin(PIN_TRACKBALL_LEFT, true);
     reset_scan_state_after_settle();
 
+    // No event for steady state
     slopos_trackball_scan();
     SlopOSTrackballEvent event = SlopOSTrackballEvent::None;
     EXPECT_FALSE(next(&event));
 
+    // Release (rising edge) → no event (falling-edge-only applies to all directions)
     set_pin(PIN_TRACKBALL_LEFT, false);
+    slopos_trackball_scan();
+    EXPECT_FALSE(next(&event));
+
+    // Re-activate (falling edge) → should fire
+    set_pin(PIN_TRACKBALL_LEFT, true);
     slopos_trackball_scan();
     ASSERT_TRUE(next(&event));
     EXPECT_EQ(event, SlopOSTrackballEvent::Left);

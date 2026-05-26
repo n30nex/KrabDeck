@@ -7,7 +7,6 @@
 
 static constexpr uint32_t CLICK_DEBOUNCE_MS = 20;
 static constexpr uint32_t DIRECTION_DEADTIME_MS = 150;
-static constexpr uint32_t LEFT_DEADTIME_MS = 80;
 static constexpr uint32_t DIRECTION_SETTLE_MS = 250;
 static constexpr uint8_t EVENT_QUEUE_SIZE = 8;
 
@@ -30,7 +29,7 @@ struct ButtonState {
 static ButtonState buttons[] = {
     {PIN_TRACKBALL_UP,    SlopOSTrackballEvent::Up,    true,  HIGH, false, false, 0, 0, DIRECTION_DEADTIME_MS},
     {PIN_TRACKBALL_DOWN,  SlopOSTrackballEvent::Down,  true,  HIGH, false, false, 0, 0, DIRECTION_DEADTIME_MS},
-    {PIN_TRACKBALL_LEFT,  SlopOSTrackballEvent::Left,  true,  HIGH, false, false, 0, 0, LEFT_DEADTIME_MS},
+    {PIN_TRACKBALL_LEFT,  SlopOSTrackballEvent::Left,  true,  HIGH, false, false, 0, 0, DIRECTION_DEADTIME_MS},
     {PIN_TRACKBALL_RIGHT, SlopOSTrackballEvent::Right, true,  HIGH, false, false, 0, 0, DIRECTION_DEADTIME_MS},
     {PIN_TRACKBALL_BTN,   SlopOSTrackballEvent::Click, false, HIGH, false, false, 0, 0, CLICK_DEBOUNCE_MS},
 };
@@ -155,8 +154,7 @@ static void scan_direction(ButtonState& btn, uint32_t now)
     if (now - initialized_at < DIRECTION_SETTLE_MS) return;
 
     // Fire only on falling edge (HIGH→LOW) — one event per physical detent
-    // LEFT is an exception: fires on both edges for better responsiveness
-    if (btn.event != SlopOSTrackballEvent::Left && raw == HIGH) return;
+    if (raw == HIGH) return;
 
     if (btn.last_event_at != 0 && now - btn.last_event_at < btn.deadtime_ms) return;
 

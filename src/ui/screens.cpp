@@ -600,7 +600,7 @@ void finder_screen_show()
     lv_obj_set_style_bg_opa(ping_row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(ping_row, 0, 0);
     lv_obj_set_flex_flow(ping_row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(ping_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_flex_align(ping_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     if (slopos::mesh::pingIsActive()) {
         // Ping in progress — show countdown
@@ -641,7 +641,7 @@ void finder_screen_show()
         }, LV_EVENT_CLICKED, nullptr);
     }
 
-    // ── Contact list / ping results ────────────────
+    // ── Content list ───────────────────────────────
     lv_obj_t* list = lv_list_create(scr);
     lv_obj_set_size(list, LV_PCT(100), CONTENT_H - 44);
     lv_obj_align(list, LV_ALIGN_TOP_MID, 0, CONTENT_Y + 28);
@@ -651,8 +651,8 @@ void finder_screen_show()
     char buf[80];
     int row_n = 0;
 
+    // ── Ping results ───────────────────────────────
     if (have_ping) {
-        // Show ping results (in arrival order)
         int n = slopos::mesh::getPingResultCount();
         for (int i = 0; i < n; i++) {
             auto* r = slopos::mesh::getPingResult(i);
@@ -663,9 +663,47 @@ void finder_screen_show()
             lv_obj_set_style_bg_color(item,
                 lv_color_hex(row_n % 2 == 1 ? BG_TERTIARY : BG_INPUT), 0);
         }
-        // Footer
-        snprintf(buf, sizeof(buf), "%s %d node%s responded", LV_SYMBOL_OK,
-                 n, n == 1 ? "" : "s");
+    }
+
+    // ── Repeaters from contact list ────────────────
+    slopos::mesh::ContactInfo contacts[32];
+    int total = slopos::mesh::exportContactsFull(contacts, 32);
+    int n_repeaters = 0;
+    for (int i = 0; i < total; i++) {
+        if (contacts[i].type == ADV_TYPE_REPEATER) {
+            if (n_repeaters < i) contacts[n_repeaters] = contacts[i];
+            n_repeaters++;
+        }
+    }
+
+    for (int i = 0; i < n_repeaters; i++) {
+        row_n++;
+        snprintf(buf, sizeof(buf), "%s  %ddBm", contacts[i].name, contacts[i].rssi);
+        lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_WIFI, buf);
+        lv_obj_set_style_bg_color(item,
+            lv_color_hex(row_n % 2 == 1 ? BG_TERTIARY : BG_INPUT), 0);
+    }
+
+    // ── Empty state ────────────────────────────────
+    if (row_n == 0 && !slopos::mesh::pingIsActive() && !slopos::mesh::pingOnCooldown()) {
+        lv_obj_t* empty = lv_label_create(scr);
+        lv_label_set_text(empty,
+            "No nodes found nearby.\n\n"
+            "Press \"Ping Nearby\" to discover\n"
+            "repeaters and other nodes on\nyour local mesh.");
+        lv_obj_set_width(empty, CONTENT_W);
+        lv_obj_set_style_pad_left(empty, 8, 0);
+        lv_obj_set_style_pad_right(empty, 8, 0);
+        lv_obj_set_style_text_align(empty, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_color(empty, lv_color_hex(TEXT_SECONDARY), 0);
+        lv_obj_set_style_text_font(empty, &lv_font_montserrat_12, 0);
+        lv_obj_align(empty, LV_ALIGN_CENTER, 0, 0);
+    }
+
+    // ── Footer ─────────────────────────────────────
+    if (row_n > 0) {
+        snprintf(buf, sizeof(buf), "%s %d node%s", LV_SYMBOL_OK,
+                 row_n, row_n == 1 ? "" : "s");
         lv_obj_t* foot = lv_label_create(scr);
         lv_obj_set_width(foot, CONTENT_W);
         lv_obj_set_style_pad_left(foot, 8, 0);
@@ -674,36 +712,6 @@ void finder_screen_show()
         lv_obj_set_style_text_font(foot, &lv_font_montserrat_10, 0);
         lv_obj_align(foot, LV_ALIGN_BOTTOM_MID, 0, -4);
         lv_label_set_text(foot, buf);
-    } else {
-        // Show contacts sorted by most recently seen (fallback)
-        slopos::mesh::ContactInfo contacts[32];
-        int n = slopos::mesh::exportContactsFull(contacts, 32);
-        uint32_t now = slopos::mesh::getCurrentTime();
-
-        // Sort by most recently seen
-        for (int i = 0; i < n-1; i++)
-            for (int j = i+1; j < n; j++)
-                if (contacts[j].last_seen > contacts[i].last_seen) {
-                    auto tmp = contacts[i]; contacts[i] = contacts[j]; contacts[j] = tmp;
-                }
-
-        int recent_n = 0;
-        for (int i = 0; i < n; i++) {
-            int32_t age_s = (int32_t)(now - contacts[i].last_seen);
-            if (age_s < 0) age_s = 0;
-            if (age_s > 120) continue;
-            recent_n++;
-            snprintf(buf, sizeof(buf), "%s  %ds ago  %ddBm",
-                     contacts[i].name, age_s, contacts[i].rssi);
-            lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_WIFI, buf);
-            lv_obj_set_style_bg_color(item,
-                lv_color_hex(recent_n % 2 == 1 ? BG_TERTIARY : BG_INPUT), 0);
-        }
-
-        if (recent_n == 0 && !slopos::mesh::pingOnCooldown()) {
-            lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_AUDIO, "Listening...");
-            lv_obj_set_style_bg_color(item, lv_color_hex(BG_TERTIARY), 0);
-        }
     }
 
     show_screen(scr);

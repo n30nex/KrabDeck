@@ -65,9 +65,7 @@ Pick any item from the list above and open a PR against the `dev` branch. See [`
 ## Touch / Input
 
 ### Trackball LEFT fires on both edges
-All trackball directions fire on falling edge only (one event per physical detent). LEFT fires on BOTH rising and falling edges, producing 2 events per detent. The 80ms deadtime (vs 150ms for others) doesn't prevent the double-fire — it only limits the minimum inter-event gap. In UI navigation, moving LEFT advances 2 items while other directions advance 1.
-
-**What's needed:** Change LEFT to fire on falling edge only (same as other directions), or implement edge-agnostic debounce that fires exactly once per detent.
+**FIXED in PR #111:** Removed the LEFT-specific exception in `scan_direction` — LEFT now fires on falling edge only, matching UP/DOWN/RIGHT. Aligned `LEFT_DEADTIME_MS` (80 → 150) with `DIRECTION_DEADTIME_MS` since the shorter deadtime was only needed to partially mitigate the double-fire. Updated the `DirectionIdleLevelIsCalibratedAtInit` test to verify falling-edge-only behavior.
 
 ---
 

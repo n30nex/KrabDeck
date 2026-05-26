@@ -37,6 +37,7 @@ enum class Screen {
     Terminal,
     Signal,
     RadioSetup,
+    Repeaters,
     Onboarding,
     COUNT
 };

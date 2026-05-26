@@ -75,6 +75,7 @@ static void dispatch_screen(Screen screen) {
     case Screen::Terminal:   terminal_screen_show();   break;
     case Screen::Signal:     signal_screen_show();     break;
     case Screen::RadioSetup: radio_setup_screen_show(); break;
+    case Screen::Repeaters:  repeaters_screen_show();   break;
     case Screen::Onboarding: onboarding_screen_show(); break;
     default: break;
     }

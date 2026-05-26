@@ -27,6 +27,7 @@ struct SlopContact {
     ::mesh::Identity id;
     uint8_t  secret[PUB_KEY_SIZE];
     char     name[32];
+    uint8_t  type;          // ADV_TYPE_* from the advert (CHAT, REPEATER, ROOM, etc.)
     uint32_t last_seen;    // RTC timestamp of last advert
     int      last_rssi;    // RSSI of last received packet (dBm)
     uint8_t  out_path_len; // OUT_PATH_UNKNOWN if no known direct path
@@ -141,6 +142,7 @@ protected:
             if (_contacts[i].id.matches(id)) {
                 _contacts[i].last_seen = timestamp;
                 _contacts[i].last_rssi = (int)_radio->getLastRSSI();
+                _contacts[i].type = parser.getType();
                 strncpy(_contacts[i].name, name, sizeof(_contacts[i].name) - 1);
                 _contacts[i].name[sizeof(_contacts[i].name) - 1] = '\0';
                 pushPacketLog(name, _contacts[i].last_rssi, pkt->getSNR(), "ADVERT");
@@ -158,6 +160,7 @@ protected:
             c.id = id;
             c.last_seen = timestamp;
             c.last_rssi = (int)_radio->getLastRSSI();
+            c.type = parser.getType();
             c.out_path_len = OUT_PATH_UNKNOWN;
             self_id.calcSharedSecret(c.secret, id);
             strncpy(c.name, name, sizeof(c.name) - 1);
@@ -170,6 +173,7 @@ protected:
         c.id = id;
         c.last_seen = timestamp;
         c.last_rssi = (int)_radio->getLastRSSI();
+        c.type = parser.getType();
         self_id.calcSharedSecret(c.secret, id);
 
         strncpy(c.name, name, sizeof(c.name) - 1);

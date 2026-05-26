@@ -34,6 +34,7 @@ lv_obj_t* term_get_input();
 void trace_screen_show();
 void channels_screen_show();
 void finder_screen_show();
+void repeaters_screen_show();
 void advertise_screen_show();
 void radio_setup_screen_show();
 void custom_rf_screen_show();

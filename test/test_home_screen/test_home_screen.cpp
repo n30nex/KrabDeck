@@ -46,6 +46,7 @@ enum class Screen {
     Terminal,
     Signal,
     RadioSetup,
+    Repeaters,
     Onboarding,
     COUNT
 };
@@ -61,7 +62,7 @@ struct IconDef {
 static const IconDef icons[] = {
     {"CHATS",     "\x0e",  true,  Screen::Chat},
     {"CONTACTS",  "\x0f",  false, Screen::Contacts},
-    {"REPEATERS", "\x15",  false, Screen::Network},   // FIXED: was Heard, now Network
+    {"REPEATERS", "\x15",  false, Screen::Repeaters},
     {"FINDER",    "\x12",  false, Screen::Network},
     {"PACKETS",   "\x0b",  false, Screen::Heard},
     {"MAP",       "\x13",  false, Screen::Map},
@@ -87,14 +88,19 @@ TEST(HomeScreenIconTest, AllTilesHaveUniqueTargets) {
     }
     // FIXED: only PACKETS = 1 tile pointing to Heard
     EXPECT_EQ(heard_count, 1)
-        << "Only PACKETS should target Heard (REPEATERS now targets Network)";
+        << "Only PACKETS should target Heard (REPEATERS now targets Repeaters)";
 }
 
-TEST(HomeScreenIconTest, RepeatersTargetsNetwork) {
-    // REPEATERS now goes to Screen::Network (nodes by signal strength)
-    // instead of Screen::Heard (raw packets log)
-    EXPECT_EQ(icons[2].target, Screen::Network)
-        << "REPEATERS should target Network (nodes view), not Heard";
+TEST(HomeScreenIconTest, RepeatersTargetsRepeaters) {
+    // REPEATERS now goes to Screen::Repeaters (dedicated repeaters-only view)
+    EXPECT_EQ(icons[2].target, Screen::Repeaters)
+        << "REPEATERS should target Repeaters screen (repeaters only)";
+}
+
+TEST(HomeScreenIconTest, RepeatersAndFinderAreDifferent) {
+    // REPEATERS and FINDER should go to different screens
+    EXPECT_NE(icons[2].target, icons[3].target)
+        << "REPEATERS and FINDER should go to different screens";
 }
 
 TEST(HomeScreenIconTest, PacketsTargetsHeard) {

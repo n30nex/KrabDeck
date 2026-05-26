@@ -2,9 +2,9 @@
 
 This document catalogs features present in the MeshCore protocol and ecosystem that are not yet implemented in SlopOS-TDeck firmware. It is intended as a roadmap reference — not a bug tracker. Bugs and workarounds belong in `KNOWN_ISSUES.md`.
 
-SlopOS-TDeck is a standalone **companion-radio firmware** for the LilyGo T-Deck. It interoperates with any MeshCore node but is designed for the end-user handheld experience — not for infrastructure roles (repeaters, room servers, sensors).
+SlopOS-TDeck is a standalone **companion-radio firmware** for the LilyGo T-Deck. It interoperates with any MeshCore node but is designed for the end-user handheld experience — not for infrastructure roles (dedicated repeaters, room servers, sensors).
 
-Features in this document are tagged to distinguish companion-relevant from infrastructure-only items. The implementation plan (§ below) only covers **companion features**. Infrastructure items are documented here for reference but are not planned.
+Features in this document are tagged to distinguish companion-relevant from infrastructure-only items. The implementation plan (§ below) only covers **companion features**. Truly infrastructure-only items (BLE modem mode, region management, launcher compatibility) are documented for reference but are not planned.
 
 All MeshCore file paths below are relative to the root of `https://github.com/meshcore-dev/MeshCore` (main branch). The submodule in this repo is pinned to a specific commit — if a symbol can't be found, check `lib/meshcore/` directly.
 
@@ -62,6 +62,24 @@ SlopOS handles incoming anonymous requests in `onAnonDataRecv` (displays as `ano
 - `src/Packet.h` — `#define PAYLOAD_TYPE_ANON_REQ 0x07`
 - `src/Mesh.h` — `Mesh::createAnonDatagram()` (send), `virtual void onAnonDataRecv(Packet*, const uint8_t* secret, const Identity& sender, uint8_t* data, size_t len)` (receive callback)
 - `examples/simple_room_server/MyMesh.cpp` — example usage: room server uses anonymous requests for status/telemetry queries
+
+---
+
+### Direct request/response (PAYLOAD_TYPE_REQ 0x00 / PAYLOAD_TYPE_RESPONSE 0x01) — M
+
+The Core Protocol defines direct-encrypted REQ and RESPONSE payloads for request/response exchanges between any two nodes. These are not yet used in SlopOS. They enable several companion features:
+- **Room server message fetch**: send a REQ to a room server to retrieve stored messages, parse the RESPONSE
+- **Path discovery**: send a REQ asking a node for its known path to another node
+- **Capability query**: ask a node what features/protocols it supports
+
+`onRecv` in `src/mesh/slop_mesh.h` dispatches these payload types but the response handlers are stubs.
+
+**What's needed:** Map REQ type codes (application-defined, see `REQ_TYPE_*` constants in `examples/simple_room_server/`). Add a `sendRequest(contact, req_type, data)` wrapper API. Wire response dispatch to application callbacks (message store, path registry, etc.).
+
+**Core Protocol spec reference:**
+- `§2.9` — Direct-encrypted payloads: REQ (0x00) and RESPONSE (0x01) share the same wire format as TEXT and PATH payloads (destination hash + encrypted data)
+- `§2.10` — Anonymous request (separate, listed above)
+- `examples/simple_room_server/MyMesh.h` — `REQ_TYPE_GET_STATUS`, `REQ_TYPE_GET_TELEMETRY_DATA`, `REQ_TYPE_KEEP_ALIVE`
 
 ---
 
@@ -200,11 +218,9 @@ SlopOS currently includes GPS coordinates in the Advertise screen when a fix is 
 
 ---
 
-### Periodic auto-advert — S *(infrastructure)*
+### Periodic auto-advert — S
 
-> **Not planned for companion.** Repeater/infrastructure nodes need auto-advert so they're always discoverable. Companion nodes advertise on-demand via the Advertise screen.
-
-Standalone MeshCore nodes broadcast periodic adverts so they are discoverable without user action. SlopOS only sends an advert when the user manually taps the Advertise screen. Nodes powered on for hours without manually advertising are invisible to new nodes.
+Companion nodes can broadcast periodic adverts so they are discoverable without user action. SlopOS currently only sends an advert when the user manually taps the Advertise screen. Nodes powered on for hours without manually advertising are invisible to new nodes. This is optional companion behaviour — the user can toggle it on/off.
 
 **MeshCore reference:**
 - `src/helpers/CommonCLI.h` — `NodePrefs::advert_interval` (uint8_t, in minutes/2; value 10 = every 20 min), `NodePrefs::flood_advert_interval` (uint8_t, in hours)
@@ -285,11 +301,11 @@ The inverse of the above: a user on another device shows a `meshcore://` URI. Sl
 
 ---
 
-### Room server message fetch — L *(infrastructure)*
+### Room server message fetch — L
 
-> **Not planned for companion.** Room server fetch lets a node retrieve stored messages from a room server while offline. Companion nodes are always reachable via DM and don't need this — it's a room server infrastructure feature.
+A companion node can request stored messages from a room server over the mesh using the REQ/RESPONSE payload types. Companion nodes are not always in range of the room server and may want to synchronise missed messages on reconnection.
 
-**What's needed:** Detect room server contacts by their `ADV_TYPE_ROOM` advert type (needs "Contact node type" feature above). Add a "Fetch from room server" action to the Contacts screen. Implement the REQ/RESPONSE packet exchange for message retrieval.
+**What's needed:** Detect room server contacts by their `ADV_TYPE_ROOM` advert type (needs "Contact node type" feature above). Add a "Fetch from room server" action to the Contacts screen or a dedicated room interaction screen. Implement the REQ/RESPONSE payload exchange (using `PAYLOAD_TYPE_REQ` 0x00 and `PAYLOAD_TYPE_RESPONSE` 0x01 — direct-encrypted request/response packets between any two nodes). Parse the response and merge received messages into the local message store.
 
 **MeshCore reference:**
 - `examples/simple_room_server/MyMesh.h` + `MyMesh.cpp` — full room server implementation: `PostInfo` struct, cyclic post queue (`MAX_UNSYNCED_POSTS` = 32), `pushPostToClient()` — how stored messages are encoded and sent back to a client via encrypted datagrams
@@ -369,13 +385,11 @@ The 30-second auto-off timeout is hardcoded in `src/hal/display.cpp`. Users in b
 
 ---
 
-### Node type selection — M *(infrastructure)*
+### Node type selection — M
 
-> **Not planned for companion.** Companion nodes always advertise as `ADV_TYPE_CHAT`. Selecting repeater/room/sensor types is for infrastructure deployments.
+Companion nodes advertise as `ADV_TYPE_CHAT` by default, but the firmware could allow selecting other types. For example, a dedicated T-Deck in a fixed location might want to advertise as a repeater or room server. The advert type is a configuration choice.
 
-MeshCore adverts carry an `ADV_TYPE_*` flag. SlopOS always broadcasts `ADV_TYPE_CHAT`. Users running a dedicated T-Deck as a fixed relay might want to advertise as a repeater.
-
-Note: enabling repeat mode changes packet forwarding behavior — companion nodes do not relay packets by default. This is a significant protocol change.
+Note: selecting a non-CHAT advert type changes packet forwarding behaviour — companion nodes do not relay packets by default. This is a significant protocol change.
 
 **What's needed:** An "Advanced" section in Settings with a node type selector. For repeater mode: enable the MeshCore relay path and increase advert frequency.
 
@@ -589,13 +603,13 @@ SlopOS has no region concept. In a multi-region deployment, a T-Deck may not rec
 
 ---
 
-*Last updated: 2026-05-26. Infrastructure-only features (auto-advert, node type selection, room server fetch, BLE modem mode, region management, launcher compatibility) are documented for reference but excluded from the companion implementation plan. Cross-reference with `KNOWN_ISSUES.md` for bugs and workarounds in implemented features.*
+*Last updated: 2026-05-26. Truly infrastructure-only features (BLE modem mode, region management, launcher compatibility) are documented for reference but excluded from the companion implementation plan. Cross-reference with `KNOWN_ISSUES.md` for bugs and workarounds in implemented features.*
 
 ---
 
 ## Implementation Plan
 
-This section provides a phased roadmap for implementing **companion features only** — infrastructure/repeater items (auto-advert, node type selection, room server fetch, BLE modem mode, region management, launcher) are documented above for reference but excluded from the plan.
+This section provides a phased roadmap for implementing **companion features only** — truly infrastructure-only items (BLE modem mode, region management, launcher compatibility) are documented above for reference but excluded from the plan.
 
 Phases are ordered by dependency, effort, and practical value. Items within a phase can be done in any order.
 
@@ -661,6 +675,8 @@ Medium-effort radio features that enhance configurability for the companion user
 | 1 | RX gain boost toggle | S | `NodePrefs` flag, `RadioLibWrapper::setRxBoostedGainMode()` |
 | 2 | Temporary radio config | M | Live-apply without NVS write, with revert timer |
 | 3 | Duty cycle enforcement | M | Surface MeshCore budget, add configurable limit |
+| 4 | Periodic auto-advert | S | Configurable advert interval, toggle in Settings |
+| 5 | Node type selection | M | Settings dropdown for ADV_TYPE, changes forwarding behaviour |
 
 ---
 
@@ -687,9 +703,10 @@ New packet types and application features that extend what a companion can do on
 | # | Feature | Effort | Why here |
 |---|---------|--------|----------|
 | 1 | Anonymous requests | M | Send path + UI entry for messaging unknown nodes |
-| 2 | Group data datagrams | M | Type-code registry, `sendGroupDatagram()` API |
-| 3 | Multipart messages | L | Reassembly buffer per sender, segmentation send |
-| 4 | Raw custom payloads | L | Application dispatch interface, registration API |
+| 2 | Direct request/response (REQ/RESPONSE) | M | `sendRequest()` wrapper, type code registry, room server fetch, path discovery |
+| 3 | Group data datagrams | M | Type-code registry, `sendGroupDatagram()` API |
+| 4 | Multipart messages | L | Reassembly buffer per sender, segmentation send |
+| 5 | Raw custom payloads | L | Application dispatch interface, registration API |
 
 ---
 
@@ -702,9 +719,10 @@ Self-contained larger features for the companion experience.
 | 1 | QR code generation | L | QR library (2KB), LVGL canvas rendering, Share buttons |
 | 2 | QR code / URI import | M | URI parser, Terminal command, Add Contact dialog |
 | 3 | Contact locations on Map | M | **Depends on:** Phase 1 #1 (contact location data) |
-| 4 | OTA firmware update | L | WiFi/BLE init, partition layout, download + flash progress |
-| 5 | ACL / contact permissions | L | Permission field on contacts, UI for promotion, action gating |
-| 6 | Device admin password | M | Optional PIN hashed in NVS, prompt on Settings/Terminal entry |
+| 4 | Room server message fetch | M | **Depends on:** Phase 1 #2 (contact type parsing), Phase 4 #2 (REQ/RESPONSE). UI action to fetch messages from ADV_TYPE_ROOM contacts. |
+| 5 | OTA firmware update | L | WiFi/BLE init, partition layout, download + flash progress |
+| 6 | ACL / contact permissions | L | Permission field on contacts, UI for promotion, action gating |
+| 7 | Device admin password | M | Optional PIN hashed in NVS, prompt on Settings/Terminal entry |
 
 ---
 

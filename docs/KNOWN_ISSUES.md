@@ -98,9 +98,7 @@ The navigation system uses a circular buffer with MAX_HISTORY=8. `push_history` 
 ## Onboarding
 
 ### ESP.restart() without flash write completion
-The onboarding screen's Done button calls `ESP.restart()` immediately after `chat_save_messages()`. If the SPIFFS write hasn't completed (due to write caching), the save data is lost after reboot.
-
-**What's needed:** Add a small delay (`delay(100)`) between the save and the restart, or set a flag for the main loop to handle the restart.
+**FIXED in PR #102:** Added `delay(100)` between save calls and `ESP.restart()` in the onboarding screen Done button handler to allow SPIFFS writes to flush.
 
 ---
 

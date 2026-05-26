@@ -112,9 +112,7 @@ The navigation system uses a circular buffer with MAX_HISTORY=8. `push_history` 
 ## Terminal
 
 ### Unbounded label accumulation
-Each command in the Terminal screen creates a new LVGL label widget (`screens.cpp:1221-1227`). There is no upper bound or pruning — after hundreds of commands, thousands of label widgets accumulate in the LVGL object tree, consuming heap. Labels are only freed when the user navigates away.
-
-**What's needed:** Cap the number of visible terminal lines (e.g. 64), deleting the oldest label when the cap is reached. A `lv_obj_clean()` on the log container before adding the new line would also work but is more disruptive to the scroll state.
+**FIXED in PR #104:** Added `MAX_TERM_LINES=64` with oldest-line pruning in `term_add_line()`. Labels no longer accumulate indefinitely.
 
 ---
 

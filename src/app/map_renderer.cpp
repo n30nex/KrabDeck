@@ -18,6 +18,7 @@
 
 
 #include "map_renderer.h"
+#include "tile_cache.h"
 #include "../hal/tdeck_pins.h"
 #include "../hal/sdcard.h"
 #include <Arduino.h>
@@ -198,52 +199,20 @@ static void clamp_view_to_coverage() {
 }
 
 // ── Tile cache (LRU, 4 tiles = ~524KB PSRAM) ─────────────
-struct CachedTile {
-    int zoom, tx, ty;
-    uint16_t* pixels;
-    uint32_t last_used;
-};
-static constexpr int TILE_CACHE_SIZE = 4;
+// Types and functions defined in tile_cache.h / tile_cache.cpp
 static CachedTile tile_cache[TILE_CACHE_SIZE];
-static uint32_t   cache_clock = 0;
-
-static CachedTile* cache_lookup(int zoom, int tx, int ty) {
-    for (int i = 0; i < TILE_CACHE_SIZE; i++) {
-        if (tile_cache[i].pixels &&
-            tile_cache[i].zoom == zoom &&
-            tile_cache[i].tx == tx &&
-            tile_cache[i].ty == ty) {
-            tile_cache[i].last_used = ++cache_clock;
-            return &tile_cache[i];
-        }
-    }
-    return nullptr;
-}
-
-static CachedTile* cache_evict_slot() {
-    int lru = 0;
-    for (int i = 0; i < TILE_CACHE_SIZE; i++) {
-        if (!tile_cache[i].pixels) return &tile_cache[i];
-        if (tile_cache[i].last_used < tile_cache[lru].last_used) lru = i;
-    }
-    map_free(tile_cache[lru].pixels);
-    tile_cache[lru].pixels = nullptr;
-    return &tile_cache[lru];
-}
+static uint64_t   cache_clock = 0;
 
 // ── Tile loading (PNG) ─────────────────────────────────────
 
 static bool load_tile(int zoom, int tx, int ty) {
-    if (cache_lookup(zoom, tx, ty)) {
+    if (tile_cache_lookup(tile_cache, TILE_CACHE_SIZE, zoom, tx, ty, &cache_clock)) {
         set_tile_status("load:cache %d/%d/%d", zoom, tx, ty);
         return true;
     }
 
-    CachedTile* slot = cache_evict_slot();
-    if (!slot) {
-        set_tile_status("load:no slot");
-        return false;
-    }
+    CachedTile* slot = tile_cache_evict_slot(tile_cache, TILE_CACHE_SIZE);
+    if (slot->pixels) { map_free(slot->pixels); slot->pixels = nullptr; }
 
     slot->pixels = (uint16_t*)map_alloc(TILE_SIZE * TILE_SIZE * 2);
     if (!slot->pixels) {
@@ -860,7 +829,7 @@ void slopos_map_render() {
 
             // Try to load and render the tile (cache-aware, PNG)
             if (slopos_sdcard_mounted() && load_tile(zoom_level, tile_x, tile_y)) {
-                CachedTile* ct = cache_lookup(zoom_level, tile_x, tile_y);
+                CachedTile* ct = tile_cache_lookup(tile_cache, TILE_CACHE_SIZE, zoom_level, tile_x, tile_y, &cache_clock);
                 if (ct) {
                     draw_tile_from_cache(ct, screen_x, screen_y);
                     any_tile_loaded = true;

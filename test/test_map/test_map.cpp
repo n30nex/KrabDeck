@@ -25,6 +25,7 @@
 #include <gtest/gtest.h>
 #include <cmath>
 #include <cstdint>
+#include "tile_cache.h"
 
 namespace {
 
@@ -220,4 +221,184 @@ TEST_F(MapTest, ScreenCornerMapsToValidCoord) {
     EXPECT_LE(lon, 180.0);
 }
 
+// ════════════════════════════════════════════════════════
+// Tile cache LRU eviction
+// ════════════════════════════════════════════════════════
+
+class TileCacheTest : public ::testing::Test {
+protected:
+    CachedTile cache[TILE_CACHE_SIZE];
+    uint64_t clock = 0;
+
+    void SetUp() override {
+        tile_cache_init(cache, TILE_CACHE_SIZE);
+        clock = 0;
+    }
+};
+
+TEST_F(TileCacheTest, InitClearsAllSlots) {
+    for (int i = 0; i < TILE_CACHE_SIZE; i++) {
+        EXPECT_EQ(cache[i].pixels, nullptr);
+        EXPECT_EQ(cache[i].last_used, 0U);
+    }
+}
+
+TEST_F(TileCacheTest, LookupEmptyCacheReturnsNull) {
+    EXPECT_EQ(tile_cache_lookup(cache, TILE_CACHE_SIZE, 10, 512, 340, &clock), nullptr);
+    EXPECT_EQ(clock, 0U); // clock not incremented on miss
+}
+
+TEST_F(TileCacheTest, LookupReturnsEntryOnHit) {
+    cache[0].pixels = (uint16_t*)1; // non-null magic pointer
+    cache[0].zoom = 10;
+    cache[0].tx = 512;
+    cache[0].ty = 340;
+
+    CachedTile* result = tile_cache_lookup(cache, TILE_CACHE_SIZE, 10, 512, 340, &clock);
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result, &cache[0]);
+    EXPECT_EQ(clock, 1U); // clock incremented
+}
+
+TEST_F(TileCacheTest, LookupUpdatesLastUsed) {
+    cache[1].pixels = (uint16_t*)1;
+    cache[1].zoom = 10;
+    cache[1].tx = 512;
+    cache[1].ty = 340;
+
+    tile_cache_lookup(cache, TILE_CACHE_SIZE, 10, 512, 340, &clock);
+    EXPECT_EQ(cache[1].last_used, clock);
+}
+
+TEST_F(TileCacheTest, LookupNoMatchReturnsNull) {
+    cache[0].pixels = (uint16_t*)1;
+    cache[0].zoom = 10;
+    cache[0].tx = 512;
+    cache[0].ty = 340;
+
+    // Different coordinates
+    EXPECT_EQ(tile_cache_lookup(cache, TILE_CACHE_SIZE, 10, 511, 340, &clock), nullptr);
+    EXPECT_EQ(clock, 0U);
+}
+
+TEST_F(TileCacheTest, EvictReturnsEmptySlotFirst) {
+    cache[2].pixels = (uint16_t*)1;
+    cache[2].zoom = 10;
+    cache[2].tx = 512;
+    cache[2].ty = 340;
+
+    // Slot 2 is occupied, but slot 0 is empty — should return slot 0
+    CachedTile* slot = tile_cache_evict_slot(cache, TILE_CACHE_SIZE);
+    ASSERT_NE(slot, nullptr);
+    EXPECT_EQ(slot, &cache[0]);
+    EXPECT_EQ(slot->pixels, nullptr);
+}
+
+TEST_F(TileCacheTest, EvictReturnsFirstNullAmongOccupied) {
+    for (int i = 0; i < TILE_CACHE_SIZE; i++) {
+        cache[i].pixels = (uint16_t*)1;
+    }
+    cache[1].pixels = nullptr; // second slot empty
+    cache[3].pixels = nullptr; // fourth slot empty
+
+    CachedTile* slot = tile_cache_evict_slot(cache, TILE_CACHE_SIZE);
+    // Should return slot 1 (first null), not 3
+    EXPECT_EQ(slot, &cache[1]);
+}
+
+TEST_F(TileCacheTest, EvictFullCacheReturnsLRU) {
+    // Fill all slots with ascending last_used
+    for (int i = 0; i < TILE_CACHE_SIZE; i++) {
+        cache[i].pixels = (uint16_t*)(intptr_t)(i + 1);
+        cache[i].zoom = 10;
+        cache[i].tx = i;
+        cache[i].ty = 0;
+        cache[i].last_used = (uint64_t)(i * 10); // 0, 10, 20, 30
+    }
+
+    CachedTile* slot = tile_cache_evict_slot(cache, TILE_CACHE_SIZE);
+    ASSERT_NE(slot, nullptr);
+    // LRU is slot 0 with last_used = 0
+    EXPECT_EQ(slot, &cache[0]);
+    EXPECT_EQ(slot->last_used, 0U);
+}
+
+TEST_F(TileCacheTest, EvictFullCacheReturnsLRUAfterLookups) {
+    // Populate all slots
+    for (int i = 0; i < TILE_CACHE_SIZE; i++) {
+        cache[i].pixels = (uint16_t*)(intptr_t)(i + 1);
+        cache[i].zoom = 10;
+        cache[i].tx = i;
+        cache[i].ty = 0;
+    }
+    // Establish initial LRU order via lookups: 1, 2, 3, 4
+    for (int i = 0; i < TILE_CACHE_SIZE; i++) {
+        tile_cache_lookup(cache, TILE_CACHE_SIZE, 10, i, 0, &clock);
+    }
+    // Now: cache[0].last_used=1, [1]=2, [2]=3, [3]=4
+
+    // Look up slot 0 again — makes it MRU (clock=5)
+    tile_cache_lookup(cache, TILE_CACHE_SIZE, 10, 0, 0, &clock);
+    // Now: cache[0].last_used=5, [1]=2, [2]=3, [3]=4
+
+    // LRU is slot 1 (last_used=2)
+    CachedTile* slot = tile_cache_evict_slot(cache, TILE_CACHE_SIZE);
+    ASSERT_NE(slot, nullptr);
+    EXPECT_EQ(slot, &cache[1]);
+    EXPECT_EQ(slot->last_used, 2U);
+}
+
+TEST_F(TileCacheTest, EvictDoesNotFreeMemory) {
+    // Fill all slots
+    for (int i = 0; i < TILE_CACHE_SIZE; i++) {
+        cache[i].pixels = (uint16_t*)(intptr_t)(i + 1);
+        cache[i].last_used = (uint64_t)i;
+    }
+
+    CachedTile* slot = tile_cache_evict_slot(cache, TILE_CACHE_SIZE);
+    ASSERT_NE(slot, nullptr);
+    // Evict should NOT have freed the pixels or set them to nullptr
+    // That's the caller's responsibility
+    EXPECT_NE(slot->pixels, nullptr);
+}
+
+TEST_F(TileCacheTest, SearchSmallerCache) {
+    // Test with a smaller cache size
+    CachedTile small_cache[2];
+    tile_cache_init(small_cache, 2);
+    uint64_t small_clock = 0;
+
+    small_cache[0].pixels = (uint16_t*)1;
+    small_cache[0].zoom = 5;
+    small_cache[0].tx = 10;
+    small_cache[0].ty = 20;
+
+    small_cache[1].pixels = (uint16_t*)2;
+    small_cache[1].zoom = 5;
+    small_cache[1].tx = 11;
+    small_cache[1].ty = 20;
+
+    // Establish LRU order via lookups: slot 0 (1), slot 1 (2)
+    tile_cache_lookup(small_cache, 2, 5, 10, 20, &small_clock);
+    tile_cache_lookup(small_cache, 2, 5, 11, 20, &small_clock);
+    // Now: cache[0].last_used=1, cache[1].last_used=2
+
+    // Lookup miss — no clock increment
+    EXPECT_EQ(tile_cache_lookup(small_cache, 2, 5, 10, 21, &small_clock), nullptr);
+    EXPECT_EQ(small_clock, 2U);
+
+    // Lookup hit on slot 0 — makes it MRU (clock=3)
+    CachedTile* hit = tile_cache_lookup(small_cache, 2, 5, 10, 20, &small_clock);
+    ASSERT_NE(hit, nullptr);
+    EXPECT_EQ(hit, &small_cache[0]);
+    EXPECT_EQ(small_clock, 3U);
+    EXPECT_EQ(small_cache[0].last_used, 3U);
+
+    // Now: slot 0 last_used=3 (MRU), slot 1 last_used=2 (LRU)
+    // Evict → should pick slot 1
+    CachedTile* evicted = tile_cache_evict_slot(small_cache, 2);
+    EXPECT_EQ(evicted, &small_cache[1]);
+}
+
 } // anonymous namespace
+

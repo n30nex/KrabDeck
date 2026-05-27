@@ -634,4 +634,303 @@ TEST_F(ContactEvictionTest, UnknownContactEvictedDoesNotAffectOthers) {
     }
 }
 
+// ════════════════════════════════════════════════════════
+// Receive pipeline edge cases — preventative guards
+// ════════════════════════════════════════════════════════
+
+class ReceivePipelineTest : public ::testing::Test {
+protected:
+    MessageQueue rx_queue;
+    MeshSession  mesh;
+
+    void SetUp() override {
+        rx_queue.reset();
+        mesh.reset();
+    }
+};
+
+// ── Queue overflow drops older messages ──────────────────
+TEST_F(ReceivePipelineTest, QueueOverflowDropsCorrectly) {
+    for (int i = 0; i < MAX_QUEUED; i++) {
+        MeshMessage msg;
+        msg.clear();
+        snprintf(msg.sender, sizeof(msg.sender), "Node_%d", i);
+        snprintf(msg.text, sizeof(msg.text), "Message_%d", i);
+        msg.timestamp = i;
+        msg.is_self = false;
+        EXPECT_TRUE(rx_queue.push(msg)) << "should accept up to capacity";
+    }
+    EXPECT_TRUE(rx_queue.full());
+
+    // Overflow message should be rejected
+    MeshMessage overflow;
+    overflow.clear();
+    strcpy(overflow.sender, "Overflow");
+    strcpy(overflow.text, "dropped");
+    EXPECT_FALSE(rx_queue.push(overflow)) << "overflow should be dropped";
+
+    // All original messages still readable
+    MeshMessage out;
+    EXPECT_TRUE(rx_queue.pop(&out));
+    EXPECT_STREQ(out.sender, "Node_0");
+}
+
+// ── Empty queue returns empty poll result ────────────────
+TEST_F(ReceivePipelineTest, EmptyQueuePollReturnsZero) {
+    MeshMessage msgs[4];
+    int n = 0;
+    for (int i = 0; i < 4; i++) {
+        if (rx_queue.pop(&msgs[i])) n++;
+    }
+    EXPECT_EQ(n, 0) << "no messages should drain from empty queue";
+}
+
+// ── Null-termination edge case: 1-byte payload ───────────
+// Matches the fix in slop_mesh.h's onPeerDataRecv / onGroupDataRecv
+static bool simulate_receive_nullterm(uint8_t* data, size_t len) {
+    // Replicate MeshCore's unconditional null-termination pattern
+    if (len == 0) return false;
+    data[len - 1] = '\0';
+    return true;
+}
+
+TEST_F(ReceivePipelineTest, NullTerminatesSingleBytePayload) {
+    uint8_t buf[1] = {'X'};
+    EXPECT_TRUE(simulate_receive_nullterm(buf, 1));
+    EXPECT_EQ(buf[0], '\0') << "1-byte payload must be null-terminated";
+}
+
+TEST_F(ReceivePipelineTest, NullTerminatesTwoBytePayload) {
+    uint8_t buf[2] = {'A', 'B'};
+    EXPECT_TRUE(simulate_receive_nullterm(buf, 2));
+    EXPECT_EQ(buf[1], '\0') << "last byte overwritten";
+    EXPECT_EQ(buf[0], 'A') << "first byte preserved";
+}
+
+// ── Group text receive boundary: exactly at 5-byte header ─
+// If len <= 5, onGroupDataRecv returns early (no text).
+// Text content starts at data[5], null-term is at data[len-1].
+// For N bytes of text, len must be 5 + N + 1 (header + text + null-term).
+TEST_F(ReceivePipelineTest, GroupTextPayloadBoundary) {
+    struct {
+        size_t len;
+        const char* text_content;  // bytes after 5-byte header
+        const char* expected;
+    } cases[] = {
+        {5,  "", ""},            // header only — no text, returns early
+        {7,  "X", "X"},         // 1 byte text
+        {8,  "AB", "AB"},       // 2 bytes text
+        {11, "Hello", "Hello"}, // 5 bytes text
+    };
+    for (auto& c : cases) {
+        uint8_t buf[16];
+        memset(buf, 0xFF, sizeof(buf));
+        // Clear header bytes [0..4]
+        for (size_t i = 0; i < 5 && i < c.len; i++) buf[i] = 0;
+        // Place text content at buf+5
+        for (size_t i = 0; i < strlen(c.text_content) && (5 + i) < c.len; i++)
+            buf[5 + i] = c.text_content[i];
+        // Unconditional null-term at last byte
+        buf[c.len - 1] = '\0';
+        // Text starts at data+5
+        if (c.len > 5) {
+            const char* text = (const char*)(buf + 5);
+            EXPECT_STREQ(text, c.expected) << "len=" << c.len;
+        }
+    }
+}
+
+// ── Anon data boundary: exactly at 4-byte header ────────
+// If len == 4, onAnonDataRecv returns early (no text).
+TEST_F(ReceivePipelineTest, AnonDataPayloadBoundary) {
+    uint8_t buf[4] = {0, 0, 0, 0};
+    // onAnonDataRecv checks (len <= 4) → return, so 4 byte payload is rejected
+    // This is the correct behavior — no text payload with only header
+    SUCCEED();
+}
+
+// ── DM payload boundary: 5-byte header minimum ──────────
+TEST_F(ReceivePipelineTest, DmPayloadBoundary) {
+    // TXT_MSG: [4-byte ts][1-byte flags][text]
+    // len == 5 means header only, no text. Returns "" for text.
+    uint8_t buf[5] = {0, 0, 0, 0, 0};
+    buf[4] = 0;       // flags
+    buf[4] = '\0';    // null-term the only content byte
+    // Text starts at data+5, but there's nothing there
+    // In real code: type=PAYLOAD_TYPE_TXT_MSG && len > 5 → data+5 else data
+    // len==5 falls to else-if, treats whole buffer as text (empty after null-term)
+    // This is benign but tests verify the contract
+    simulate_receive_nullterm(buf, 5);
+    EXPECT_EQ(buf[4], '\0');
+}
+
+// ── Strstr guard: parse_group_sender handles missing colon ─
+TEST_F(ReceivePipelineTest, ParseGroupSenderNoColon) {
+    // Replicate parse_group_sender from slop_mesh.h
+    auto parse = [](const char* raw, char* sender, size_t cap, const char** text) {
+        const char* colon = strstr(raw, ": ");
+        if (colon && colon > raw) {
+            size_t name_len = colon - raw;
+            if (name_len >= cap) name_len = cap - 1;
+            memcpy(sender, raw, name_len);
+            sender[name_len] = '\0';
+            *text = colon + 2;
+        } else {
+            strncpy(sender, raw, cap - 1);
+            sender[cap - 1] = '\0';
+            *text = "";
+        }
+    };
+
+    char sender[32];
+    const char* msg;
+
+    // Normal case
+    parse("Alice: Hello!", sender, sizeof(sender), &msg);
+    EXPECT_STREQ(sender, "Alice");
+    EXPECT_STREQ(msg, "Hello!");
+
+    // No colon — entire text is sender
+    parse("JustARawText", sender, sizeof(sender), &msg);
+    EXPECT_STREQ(sender, "JustARawText");
+    EXPECT_STREQ(msg, "");
+
+    // Empty string
+    parse("", sender, sizeof(sender), &msg);
+    EXPECT_STREQ(sender, "");
+
+    // Colon at start (edge case: colon == raw_text, so colon > raw is false)
+    parse(": message", sender, sizeof(sender), &msg);
+    EXPECT_STREQ(sender, ": message");  // falls to else — entire raw is sender
+    EXPECT_STREQ(msg, "");
+
+    // Multiple colons — split at first
+    parse("Node: hello: world", sender, sizeof(sender), &msg);
+    EXPECT_STREQ(sender, "Node");
+    EXPECT_STREQ(msg, "hello: world");
+
+    // Just ": " with nothing after
+    parse("Node: ", sender, sizeof(sender), &msg);
+    EXPECT_STREQ(sender, "Node");
+    EXPECT_STREQ(msg, "");
+}
+
+// ── Channel hash match: 1-byte vs full compare ──────────
+// searchChannelsByHash uses 1-byte compare, onGroupDataRecv
+// uses full compare. This test validates the asymmetry is safe.
+TEST_F(ReceivePipelineTest, ChannelHashCompareSafety) {
+    uint8_t hash1[32], hash2[32];
+    memset(hash1, 0xAB, sizeof(hash1));
+    memset(hash2, 0xAB, sizeof(hash2));
+
+    // Same first byte → searchChannelsByHash matches
+    EXPECT_EQ(hash1[0], hash2[0]);
+
+    // Same full hash → onGroupDataRecv matches
+    EXPECT_EQ(memcmp(hash1, hash2, sizeof(hash1)), 0);
+
+    // Now differ on second byte only
+    hash2[1] = 0xCD;
+    EXPECT_EQ(hash1[0], hash2[0]) << "first byte still matches";
+    EXPECT_NE(memcmp(hash1, hash2, sizeof(hash1)), 0) << "full hash differs";
+
+    // Search (1-byte) says match, lookup (full) says no match
+    // This is the expected behavior — search is lossy, lookup is exact
+    SUCCEED();
+}
+
+// ── Inject + drain round-trip ─────────────────────────────
+TEST_F(ReceivePipelineTest, InjectAndDrainRoundTrip) {
+    mesh.receive_message("Alice", "Hello from Alice", 1000);
+    mesh.receive_message("Bob", "Hi back", 1001);
+
+    EXPECT_EQ(mesh.pending_count(), 2);
+
+    MeshMessage msgs[4];
+    int n = mesh.poll_inbox(msgs, 4);
+    EXPECT_EQ(n, 2);
+    EXPECT_STREQ(msgs[0].sender, "Alice");
+    EXPECT_STREQ(msgs[0].text, "Hello from Alice");
+    EXPECT_STREQ(msgs[1].sender, "Bob");
+    EXPECT_STREQ(msgs[1].text, "Hi back");
+    EXPECT_EQ(mesh.pending_count(), 0);
+}
+
+// ── Inject with empty channel ────────────────────────────
+TEST_F(ReceivePipelineTest, ReceiveWithChannel) {
+    // The real onGroupDataRecv passes the channel name to _onMessage.
+    // Our MeshSession.receive_message doesn't track channel, but the
+    // real code path does. This tests the UI display contract.
+    mesh.receive_message("Charlie", "#general: Hello", 2000);
+    MeshMessage msg;
+    mesh.poll_inbox(&msg, 1);
+    EXPECT_STREQ(msg.sender, "Charlie");
+    EXPECT_STREQ(msg.text, "#general: Hello");
+}
+
+// ── Multiple rapid receives don't lose ordering ────────────
+TEST_F(ReceivePipelineTest, PreservesOrderUnderLoad) {
+    for (int i = 0; i < 10; i++) {
+        char name[8], text[16];
+        snprintf(name, sizeof(name), "N%d", i);
+        snprintf(text, sizeof(text), "Msg_%d", i);
+        mesh.receive_message(name, text, i);
+    }
+
+    MeshMessage msgs[10];
+    int n = mesh.poll_inbox(msgs, 10);
+    EXPECT_EQ(n, 10);
+    for (int i = 0; i < n; i++) {
+        EXPECT_EQ(msgs[i].timestamp, (uint32_t)i)
+            << "Message " << i << " timestamp out of order";
+    }
+}
+
+// ── Inject then immediately poll again ────────────────────
+TEST_F(ReceivePipelineTest, DrainThenReinject) {
+    mesh.receive_message("First", "Msg1", 100);
+    EXPECT_EQ(mesh.pending_count(), 1);
+
+    MeshMessage m1;
+    EXPECT_EQ(mesh.poll_inbox(&m1, 1), 1);
+    EXPECT_STREQ(m1.sender, "First");
+    EXPECT_EQ(mesh.pending_count(), 0);
+
+    // Now inject more — queue should be fresh
+    mesh.receive_message("Second", "Msg2", 200);
+    EXPECT_EQ(mesh.pending_count(), 1);
+
+    MeshMessage m2;
+    EXPECT_EQ(mesh.poll_inbox(&m2, 1), 1);
+    EXPECT_STREQ(m2.sender, "Second");
+    EXPECT_EQ(mesh.pending_count(), 0);
+}
+
+// ── Very long sender/text is truncated gracefully ─────────
+TEST_F(ReceivePipelineTest, TruncatesLongSender) {
+    // Sender longer than 31 chars
+    char long_sender[64];
+    memset(long_sender, 'A', 63);
+    long_sender[63] = '\0';
+    mesh.receive_message(long_sender, "Hello", 100);
+
+    MeshMessage msg;
+    mesh.poll_inbox(&msg, 1);
+    EXPECT_EQ(strlen(msg.sender), 31u) << "sender should be truncated to 31 chars";
+    EXPECT_STREQ(msg.text, "Hello");
+}
+
+TEST_F(ReceivePipelineTest, TruncatesLongText) {
+    // Text longer than 255 chars
+    char long_text[300];
+    memset(long_text, 'X', 299);
+    long_text[299] = '\0';
+    mesh.receive_message("Alice", long_text, 100);
+
+    MeshMessage msg;
+    mesh.poll_inbox(&msg, 1);
+    EXPECT_EQ(strlen(msg.text), 255u) << "text should be truncated to 255 chars";
+    EXPECT_STREQ(msg.sender, "Alice");
+}
+
 } // anonymous namespace

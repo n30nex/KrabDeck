@@ -57,8 +57,21 @@ static constexpr int MAX_QUEUED = 64;
 static MeshMessage   msg_buf[MAX_QUEUED];
 static int           msg_head = 0, msg_tail = 0, msg_count = 0;
 
+// Drop counter — incremented when the queue is full and a message is lost.
+// Check this to detect silent packet loss (the worst kind of regression).
+static uint32_t      msg_drop_count = 0;
+
 static void queue_push(const char* sender, const char* channel, const char* text) {
-    if (msg_count >= MAX_QUEUED) return;
+    if (msg_count >= MAX_QUEUED) {
+        msg_drop_count++;
+#if SLOPOS_DEBUG_MESH
+        SLOPOS_RUNTIME_FEAT(mesh) {
+        Serial.printf("[mesh] WARN: message queue full — dropping msg from %s (%lu dropped so far)\n",
+                      sender ? sender : "?", (unsigned long)msg_drop_count);
+        }
+#endif
+        return;
+    }
     MeshMessage& m = msg_buf[msg_head];
     strncpy(m.sender, sender, sizeof(m.sender) - 1);
     m.sender[sizeof(m.sender) - 1] = '\0';
@@ -304,12 +317,23 @@ bool init(bool spiffs_ok)
         saveChannels();
     }
 
+    // Debug builds: auto-join the #testingslopos test channel for RF testing on
+    // 869.525/SF10/BW250/CR5. addChannel() is a no-op if already present.
+#if SLOPOS_DEBUG
+    g_mesh->addChannel("testingslopos", "Si/tjXzmnwmPBA43Fw4b3Q==");
+    saveChannels();
+#endif
+
     // Only broadcast advert if user has explicitly configured radio params.
     // Compile-time defaults may be illegal in some regions — transmit gating
     // prevents first-boot broadcasts until user opens Settings → Radio Setup.
+#if SLOPOS_DEBUG
+    g_mesh->broadcastAdvert(own_name);
+#else
     if (p.configured) {
         g_mesh->broadcastAdvert(own_name);
     }
+#endif
 
     initialized = true;
 #if SLOPOS_DEBUG_MESH
@@ -367,12 +391,14 @@ bool sendChannelMessage(const char* channel_name, const char* text) {
 // ── Message queue ───────────────────────────────
 
 int pollMessages(MeshMessage* out, int max) {
+    if (!out || max <= 0) return 0;
     int n = 0;
     while (n < max && queue_pop(&out[n])) n++;
     return n;
 }
 
 int pendingMessageCount() { return msg_count; }
+uint32_t getQueueDropCount() { return msg_drop_count; }
 
 // ── Contacts ────────────────────────────────────
 

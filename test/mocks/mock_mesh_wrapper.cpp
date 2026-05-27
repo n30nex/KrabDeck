@@ -8,6 +8,7 @@ namespace slopos::mesh {
 
 static MeshMessage     mock_msgs[8];
 static int             mock_msg_count = 0;
+static uint32_t        mock_drop_count = 0;
 static char            mock_own_name[32] = "MockNode";
 static int             mock_noise = -120;
 static int             mock_rssi  = -80;
@@ -38,6 +39,7 @@ int pollMessages(MeshMessage* out, int max) {
 }
 
 int pendingMessageCount() { return mock_msg_count; }
+uint32_t getQueueDropCount() { return mock_drop_count; }
 
 // ── Identity ─────────────────────────────────────
 
@@ -110,5 +112,6 @@ void mock_push_message(const char* sender, const char* text) {
 void mock_set_noise(int v)  { mock_noise = v; }
 void mock_set_rssi(int v)   { mock_rssi = v; }
 void mock_set_snr(float v)  { mock_snr = v; }
+void mock_set_drop_count(uint32_t v) { mock_drop_count = v; }
 
 } // namespace slopos::mesh

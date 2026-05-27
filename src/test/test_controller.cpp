@@ -113,6 +113,7 @@ static void print_help() {
     Serial.println(F("║  press <key> Press Enter/Bksp/Esc    ║"));
     Serial.println(F("║  inject <from> [channel=<ch>] <msg>  ║"));
     Serial.println(F("║  sendchannel <ch> <text>          Send on a channel        ║"));
+    Serial.println(F("║  addchannel <name> [psk]          Add channel              ║"));
     Serial.println(F("║  screen      Show current screen     ║"));
     Serial.println(F("║  status      Show device state       ║"));
     Serial.println(F("║  debug <level>  Set debug level (1=quiet, 2=normal, 3=verbose)║"));
@@ -654,6 +655,69 @@ static void cmd_backlight(const char* arg) {
     Serial.printf("[test] backlight %d\n", val);
 }
 
+// ── Send channel message ───────────────────────────
+static void cmd_sendchannel(const char* arg) {
+    if (!arg || arg[0] == '\0') {
+        Serial.println("[test] sendchannel: usage: sendchannel <channel_name> <text>");
+        return;
+    }
+    // Find first space to split channel name from text
+    const char* space = strchr(arg, ' ');
+    if (!space) {
+        Serial.println("[test] sendchannel: missing text after channel name");
+        return;
+    }
+    // Extract channel name
+    char channel[64];
+    size_t name_len = space - arg;
+    if (name_len > 63) name_len = 63;
+    memcpy(channel, arg, name_len);
+    channel[name_len] = '\0';
+
+    // Skip past the space to get text
+    const char* text = space + 1;
+    while (*text == ' ') text++;
+
+    if (text[0] == '\0') {
+        Serial.println("[test] sendchannel: missing text after channel name");
+        return;
+    }
+
+    // Validate channel exists by trying to send
+    bool ok = slopos::mesh::sendChannelMessage(channel, text);
+    if (ok) {
+        Serial.printf("[test] sendchannel OK: #%s sent %d chars\n", channel, (int)strlen(text));
+    } else {
+        Serial.printf("[test] sendchannel FAILED: channel \"%s\" not found or send error\n", channel);
+    }
+}
+
+// ── Add channel ───────────────────────────────────
+static void cmd_addchannel(const char* arg) {
+    if (!arg || arg[0] == '\0') {
+        Serial.println("[test] addchannel: usage: addchannel <name> [psk_b64]");
+        return;
+    }
+    const char* space = strchr(arg, ' ');
+    if (space) {
+        char name[64];
+        size_t name_len = space - arg;
+        if (name_len > 63) name_len = 63;
+        memcpy(name, arg, name_len);
+        name[name_len] = '\0';
+        const char* psk = space + 1;
+        while (*psk == ' ') psk++;
+        bool ok = slopos::mesh::addChannel(name, psk);
+        if (ok) Serial.printf("[test] addchannel OK: #%s with PSK\n", name);
+        else Serial.printf("[test] addchannel FAILED: #%s\n", name);
+    } else {
+        // No PSK — try as hashtag channel
+        bool ok = slopos::mesh::addHashtagChannel(arg);
+        if (ok) Serial.printf("[test] addchannel OK: hashtag #%s\n", arg);
+        else Serial.printf("[test] addchannel FAILED: hashtag #%s\n", arg);
+    }
+}
+
 static void dump_focused_widget() {
     lv_group_t* g = lv_group_get_default();
     if (!g) { Serial.println("[test] focus: no default group"); return; }
@@ -725,16 +789,10 @@ static bool dispatch(const char* line) {
         cmd_inject(arg);
     } else if (strcmp(cmd, "sendchannel") == 0) {
         if (!arg) { Serial.println("[test] sendchannel: missing args — use: sendchannel <channel_name> <text>"); return true; }
-        const char* space = strchr(arg, ' ');
-        if (!space || !space[1]) { Serial.println("[test] sendchannel: missing text — use: sendchannel <channel_name> <text>"); return true; }
-        char ch_name[32];
-        size_t ch_len = (size_t)(space - arg);
-        if (ch_len > 31) ch_len = 31;
-        memcpy(ch_name, arg, ch_len);
-        ch_name[ch_len] = '\0';
-        const char* text = space + 1;
-        bool ok = slopos::mesh::sendChannelMessage(ch_name, text);
-        Serial.printf("[test] sendchannel ch=%s -> %s\n", ch_name, ok ? "OK" : "FAILED");
+        cmd_sendchannel(arg);
+    } else if (strcmp(cmd, "addchannel") == 0 || strcmp(cmd, "addchan") == 0) {
+        if (!arg) { Serial.println("[test] addchannel: missing args"); return true; }
+        cmd_addchannel(arg);
     } else if (strcmp(cmd, "screen") == 0) {
         cmd_screen();
     } else if (strcmp(cmd, "status") == 0) {

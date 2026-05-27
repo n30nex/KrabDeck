@@ -345,6 +345,22 @@ bool init(bool spiffs_ok)
 #if SLOPOS_DEBUG
     g_mesh->addChannel("testingslopos", "Si/tjXzmnwmPBA43Fw4b3Q==");
     saveChannels();
+
+    // Force-configured in debug builds so adverts broadcast and the mesh
+    // is fully operational without requiring Settings → Radio Setup.
+    {
+        slopos::NodePrefs dp = slopos::prefs_get();
+        if (!dp.configured) {
+            dp.configured = true;
+            dp.freq = LORA_FREQ;
+            dp.bw = LORA_BW;
+            dp.sf = LORA_SF;
+            dp.cr = LORA_CR;
+            dp.tx_power_dbm = LORA_TX_PWR;
+            slopos::prefs_set(dp);
+            Serial.println("[mesh] DEBUG: forced configured=true for testing");
+        }
+    }
 #endif
 
     // Only broadcast advert if user has explicitly configured radio params.

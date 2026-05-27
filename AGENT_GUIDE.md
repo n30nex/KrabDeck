@@ -58,6 +58,7 @@ src/
 │   └── ui.cpp/h           # Splash→Home transition, main loop updates
 ├── app/
 │   ├── map_renderer.cpp/h # Offline map (PNG tiles via lodepng, PSRAM cache)
+│   ├── tile_cache.cpp/h   # Tile cache — LRU eviction (4 entries, uint64_t monotonic clock)
 │   └── lodepng_alloc.cpp  # lodepng allocator → PSRAM with DRAM fallback
 ├── diagnostics/
 │   ├── debug_cfg.h        # Per-feature debug flag selection (runtime toggle)
@@ -160,18 +161,19 @@ Use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 | 0 | Splash | `ui.cpp` | ✅ |
 | 1 | Home (4x3 grid, 12 tiles) | `home_screen.cpp` | ✅ |
 | 2 | Chat (channels + DM) | `chat_screen.cpp` | ✅ |
-| 3 | Contacts (alphabetical, tap→DM) | `screens.cpp` | ✅ |
+| 3 | Contacts (alphabetical, tap→DM, filtered to CHAT/ROOM types) | `screens.cpp` | ✅ |
 | 4 | Channels (list + create #hashtag/PSK) | `screens.cpp` | ✅ |
-| 5 | Finder / Network (nearby nodes) | `screens.cpp` | ✅ |
-| 6 | Packets / Heard (packet log, 50 entries) | `screens.cpp` | ⚠️ Both REPEATERS and PACKETS home tiles map here (see docs/KNOWN_ISSUES.md) |
-| 7 | Map (touch pan, auto-center) | `screens.cpp` | ✅ |
-| 8 | Advertise (broadcast presence, status timer) | `screens.cpp` | ✅ |
+| 5 | Finder / Network (Ping Nearby, nearby nodes list) | `screens.cpp` | ✅ |
+| 6 | Packets / Heard (packet log, 50 entries, column headers) | `screens.cpp` | ✅ |
+| 7 | Map (touch pan, auto-center, PSRAM tile cache) | `screens.cpp` | ✅ |
+| 8 | Advertise (broadcast presence, status timer, send button) | `screens.cpp` | ✅ |
 | 9 | Settings (radio, keyboard BL, date/time) | `screens.cpp` | ✅ |
-| 10 | Trace (path discovery per contact) | `screens.cpp` | ⚠️ see docs/KNOWN_ISSUES.md |
-| 11 | Terminal (colored log + commands) | `screens.cpp` | ⚠️ see docs/KNOWN_ISSUES.md |
+| 10 | Trace (path discovery per contact) | `screens.cpp` | ✅ |
+| 11 | Terminal (colored log + commands, 64 line cap) | `screens.cpp` | ✅ |
 | 12 | Signal (live RSSI, SNR, noise floor, radio params from prefs) | `screens.cpp` | ✅ |
 | 13 | Radio Setup (freq presets, SF/BW/CR/Pwr controls, save & reboot) | `screens.cpp` | ✅ |
 | 14 | Onboarding (wizard) | `onboarding_screen.cpp` | ✅ |
+| 15 | Repeaters (infrastructure relay nodes only, filtered from contacts) | `screens.cpp` | ✅ |
 | — | Custom RF (sub-screen of Radio Setup — Freq, SF, BW, CR, Pwr text inputs with Apply) | `screens.cpp` | ✅ |
 
 ---
@@ -223,6 +225,12 @@ slopos::mesh::getTracePathLen()            // SNR/hop count in trace
 slopos::mesh::getTracePath(snrs, hashes)   // Get trace path data
 slopos::mesh::clearTraceResult()           // Reset trace state
 slopos::mesh::contactHasPath(idx)          // Does contact have a known path?
+slopos::mesh::sendPingNearby()              // Zero-hop ping for node discovery
+slopos::mesh::pingIsActive()                // Ping in progress?
+slopos::mesh::pingOnCooldown()              // Ping on cooldown?
+slopos::mesh::pingCooldownRemaining()       // Milliseconds until next ping allowed
+slopos::mesh::getPingResultCount()          // Number of ping responses received
+slopos::mesh::getPingResult(i)             // Read one ping response (name, RSSI)
 ```
 
 **Messages arrive** via `chat_screen_add_msg(channel, sender, text, is_self)`. The chat screen maintains per-channel message caches (8 messages each, 16 channels max).
@@ -236,7 +244,7 @@ slopos::mesh::contactHasPath(idx)          // Does contact have a known path?
 
 ## Testing
 
-**Current test count: 213** (212 passed, 1 skipped for native_test).
+**Current test count: 276** (275 passed, 1 skipped for native_test).
 
 ```bash
 pio test -e native_test -v       # All tests (no hardware)
@@ -261,6 +269,8 @@ Test modules:
 | `test_map` | Map renderer PSRAM allocators |
 | `test_emoji` | Emoji font data, glyph coverage, fallback registration, Discord-style autocomplete |
 | `test_chat_truncation` | UTF-8 safe message truncation (emoji-aware byte cutting) |
+| `test_home_screen` | Home screen 4x3 grid layout, icon grid, top/bottom bar rendering |
+| `test_terminal` | Terminal screen capped line output, command dispatch |
 
 **Critical rules:**
 - Tests use `test/test_<name>/` dirs with `main.cpp` entry points. Wrong naming = not discovered.
@@ -441,33 +451,23 @@ On "Apply", validated values are written to the shared state and `go_back()` is 
 | Custom RF error label lookup | Uses `lv_obj_get_child(scr, lv_obj_get_child_cnt(scr) - 2)` to find the error label — fragile, assumes exact child ordering relative to the Apply button |
 | Radio Setup static state | Shared `s_rf_*` statics persist across screen navigate/show cycles — if the screen is shown twice, the second view preserves the first session's unsaved edits |
 | Unsaved changes on go_back() | Navigating away from Radio Setup or Custom RF without pressing "Save & Reboot" discards all edits — state resets to defaults on next `radio_setup_screen_show()` |
-| Terminal `term_add_line` unbounded | Each line creates a new `lv_label_create(log)` — no model-level cap. The docs/KNOWN_ISSUES.md entry about unbounded label accumulation has NOT been fixed. |
-| Radio Setup Save & Reboot no delay | Calls `ESP.restart()` immediately after `prefs_set()`, `saveChannels()`, and `chat_save_messages()` — no delay for flash writes to complete (see docs/KNOWN_ISSUES.md) |
 | SF label via `user_data` | The SF −/+ buttons use `(void*)sf_lbl` as event user_data, but `sf_lbl` is a stack-local variable in `radio_setup_screen_show`. While `sf_lbl` is alive for the screen's lifetime, the pointer is only valid as long as the widget exists — fragile if screen is recreated |
 | BW discrete stepping | BW uses a hardcoded float array and cycles through values via a loop with `x + 0.01f` tolerance — values near boundaries may not snap correctly due to float comparison |
 | `src/utils/` no longer empty | Now contains `utf8_util.h` — the empty placeholder was replaced by a real utility module for UTF-8 safe truncation |
 | `SLOPOS_RUNTIME_FEAT()` macro scope | The `debug_cfg.h` `SLOPOS_RUNTIME_FEAT()` macro only works under full `SLOPOS_DEBUG=1` build. In per-feature builds (e.g. `SLOPOS_DEBUG_MESH=1` alone), the macro expands to nothing — runtime `debug feat 0/1` toggle has no effect. Only compile-time `#if SLOPOS_DEBUG_MESH` guards control output. |
 | Emoji font pointer init ordering | `emoji_font.h` declares mutable globals `emoji_wrapped_montserrat_*` that are initialized to raw Montserrat before `emoji_font_setup()` runs. Any code accessing these font pointers during boot (before the setup function runs) gets un-wrapped fonts without emoji fallback glyphs. |
 | Navigation back-swipe state reset | `back_swipe_commit` is reset to 0 at the start of both `navigate_to()` and `go_back()`. If a screen transition is triggered mid-back-swipe (e.g. by a screen's constructor calling navigate internally), the two-swipe sequence is broken — the user must start over from zero Left events. |
-| `debug_cfg.h` unconditional declarations | All `feat_set_*()` / `feat_get_*()` declarations in `debug_cfg.h` compile unconditionally, but their implementations in `debug.cpp` are wrapped in `#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG`. In non-debug builds, the declarations exist but implementations are stubs — linking succeeds because the stubs in `debug.h` provide the actual bodies. This is fragile: if `debug.cpp` is ever excluded from build, link errors will surface. |
 
 ---
 
 ## Known Issues Reference
 
-All known issues are documented in `docs/KNOWN_ISSUES.md`. Key categories:
-- **Finder:** Zero-hop ping for nearby discovery not implemented
-- **Launcher Compatibility:** SlopOS doesn't work under bmorcelli/Launcher
-- **UI Performance:** LVGL tick starvation during LoRa TX
-- **Mesh Networking:** Channel hash only checks first byte, no contact expiry/eviction, advert rate limiting only at UI layer, missing null-termination on short payloads
-- **Map Screen:** LRU cache clock uint32_t wrap after ~50 days of continuous use
-- **Touch/Input:** I2C bus speed race (touch runs at 100kHz instead of 400kHz), trackball LEFT fires on both edges
-- **Screen Navigation:** Navigation history stack broken (circular buffer wrap bug)
-- **Chat Screen:** REPEATERS tile navigates to Packets screen instead of nodes/repeaters view
-- **Onboarding:** ESP.restart() without flash write completion
-- **GPS:** No NMEA checksum validation
-- **Terminal:** Unbounded label accumulation
-- **SPI/Display:** Display and SD card share the same SPI host
+All known issues are documented in `docs/KNOWN_ISSUES.md`. Most previously tracked issues have been **FIXED** (see git log for PR references). The remaining actionable item:
+
+- **Launcher Compatibility:** SlopOS doesn't work under bmorcelli/Launcher — would need a compatibility layer for peripheral re-init after handoff from the launcher
+
+**Recently fixed (see `docs/KNOWN_ISSUES.md` for PR details):**
+- GPS NMEA checksum validation, Navigation history stack, Channel hash full compare, Contact expiry/eviction with LRU, Advert rate limiting at mesh layer, Null-termination on short payloads, LVGL tick starvation during TX, `lv_obj_del` in event handlers, Map screen static persistence, I2C bus speed race (400kHz touch), Trackball LEFT double-fire, `keyboard_consume_event` side effects, GT911 INT-pin-HIGH buffered event drop, TDeckBoard duplicate instances, Module static-init allocation ordering, Terminal unbounded labels, REPEATERS/PACKETS screen separation, GPS NMEA checksum, makeEpoch thread-safety, debug.h non-debug stubs, onboard restart flash write delay, screen dispatch code deduplication, SPI host pin contention, sendTrace indentation
 
 ---
 

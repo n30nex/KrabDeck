@@ -31,7 +31,7 @@ using slopos::mesh::MeshMessage;
 // ════════════════════════════════════════════════════
 
 static slopos::TDeckBoard        board;
-static SPIClass                  lora_spi;
+static SPIClass                  lora_spi(FSPI);
 static Module*                   lora_mod = nullptr;
 static CustomSX1262*             radio_module = nullptr;
 static CustomSX1262Wrapper*      radio_driver = nullptr;

@@ -22,6 +22,7 @@ struct NodePrefs {
     bool    configured;     // false until user explicitly saves settings
     uint8_t kbd_backlight;      // 0-255, keyboard backlight brightness
     uint8_t display_brightness; // 0-255, display backlight brightness
+    uint16_t auto_off_timeout;  // seconds, auto-off timeout (0=off, default 30)
     uint16_t chat_msg_cap;      // Per-channel in-memory message history cap
 
     // Sentinel defaults — radio will NOT transmit until user configures
@@ -36,6 +37,7 @@ struct NodePrefs {
         configured = false;
         kbd_backlight = 127;
         display_brightness = 200;
+        auto_off_timeout = 30;
         chat_msg_cap = 200;
     }
 };

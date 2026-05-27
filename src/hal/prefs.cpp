@@ -24,6 +24,7 @@ bool prefs_load(NodePrefs& p) {
     p.configured    = nvs.getBool("cfg", false);
     p.kbd_backlight = nvs.getUChar("kbd_bl", 127);
     p.display_brightness = nvs.getUChar("disp_bl", 200);
+    p.auto_off_timeout = nvs.getUShort("auto_off", 30);
     p.chat_msg_cap  = nvs.getUShort("chat_cap", 200);
 
     nvs.end();
@@ -43,6 +44,7 @@ bool prefs_save(const NodePrefs& p) {
     nvs.putBool("cfg", p.configured);
     nvs.putUChar("kbd_bl", p.kbd_backlight);
     nvs.putUChar("disp_bl", p.display_brightness);
+    nvs.putUShort("auto_off", p.auto_off_timeout);
     nvs.putUShort("chat_cap", p.chat_msg_cap);
 
     nvs.end();

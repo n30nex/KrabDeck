@@ -626,32 +626,6 @@ Everything else is independent and can be implemented in any sequence.
 
 ---
 
-### Phase 0 — Quick Wins (S-effort, all independent)
-
-Self-contained changes that deliver immediate value and build codebase familiarity. No new screens or protocol work required — mostly Settings rows, toggles, and minor UI additions.
-
-| # | Feature | Why here |
-|---|---------|----------|
-| 1 | Keyboard backlight control | Settings slider, wires existing API |
-| 2 | Message history cap control | Settings dialog, already partially built |
-| 3 | Display brightness control | Settings slider, new `NodePrefs` field |
-| 4 | Auto-backlight timeout control | Settings dropdown, replaces hardcoded 30s |
-| 5 | Graceful shutdown from UI | Settings button, saves state then deep sleep |
-| 6 | Flood max hops | Settings spinner, `Mesh::setFloodMax()` |
-| 7 | TX/RX delay tuning | Settings numbers, only affects timing |
-| 8 | TX/RX airtime display | Signal screen addition, read-only metrics |
-| 9 | Packet statistics | Signal screen counters, read-only |
-| 10 | Contact SNR display | Add field to `SlopContact`, display in Contacts |
-| 11 | Message timestamps | Chat bubble footer, data already in `MeshMessage` |
-| 12 | Unread message badges | Home screen badge counter, incremented per new msg |
-| 13 | PSK channel import via UI | Channel dialog variant, mesh layer already supports it |
-| 14 | GPS clock sync | GPS NMEA parser auto-syncs RTC on first fix |
-| 15 | GPS location sharing policy | `NodePrefs` enum, gates advert GPS inclusion |
-
-**Estimated total:** 15 small PRs, each testable in native tests + quick HW smoke test.
-
----
-
 ### Phase 1 — Advert Parsing
 
 Extract richer data from incoming adverts. Foundation for contact details, map markers, and location-aware UI.
@@ -729,16 +703,14 @@ Self-contained larger features for the companion experience.
 ### Suggested Sequence
 
 ```
-Phase 0  →  Phase 1  →  Phase 2  →  Phase 3  →  Phase 4  →  Phase 5
-(quick      (advert     (radio      (messaging  (advanced   (hard/
- wins)       parsing)    config)      polish)     protocol)   infra)
+Phase 1  →  Phase 2  →  Phase 3  →  Phase 4  →  Phase 5
+(advert     (radio      (messaging  (advanced   (hard/
+ parsing)    config)      polish)     protocol)   infra)
 ```
 
 Within each phase, items are in rough priority order. Start with the first ones as they unblock or inform the rest.
 
 ### Implementation Tips
-
-- **Phase 0** items are ideal for quick sessions. Each is a 1–2 hour change.
 - **After Phase 1**, update `docs/CONTACTS_SCREEN.md` and `docs/MESH_NETWORKING.md` to reflect new advert fields.
 - **After Phase 3**, add ACK status to `docs/CHAT_SCREEN.md`.
 - **Any PR adding a `NodePrefs` field** must validate NVS migration — old firmware's saved prefs won't have the new field. `prefs_get()` uses `Preferences::getBytes()` which zero-fills missing keys; use the default-value pattern already in `prefs_get()`.

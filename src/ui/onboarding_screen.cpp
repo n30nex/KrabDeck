@@ -398,6 +398,10 @@ static void build_step3()
         np.configured = true;
         slopos::mesh::setOwnName(s_name);
         slopos::prefs_set(np);
+        // Auto-join the Public channel so new devices can receive group messages
+        // immediately. Without this, a freshly-flashed device has zero channels
+        // and cannot decrypt any group traffic after restart.
+        slopos::mesh::joinPublicChannel();
         slopos::mesh::saveChannels();
         chat_save_messages();
         delay(100); // allow SPIFFS writes to complete before restart

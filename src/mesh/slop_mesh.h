@@ -202,7 +202,10 @@ protected:
     int searchChannelsByHash(const uint8_t* hash, ::mesh::GroupChannel out[], int max) override {
         int n = 0;
         for (int i = 0; i < _nChannels && n < max; i++) {
-            if (memcmp(_channels[i].channel.hash, hash, 32) == 0) {
+            // MeshCore sends only PATH_HASH_SIZE (1) byte of the channel hash
+            // in the packet header — compare just the first byte, matching
+            // BaseChatMesh's implementation.
+            if (_channels[i].channel.hash[0] == hash[0]) {
                 out[n++] = _channels[i].channel;
             }
         }

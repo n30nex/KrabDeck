@@ -291,6 +291,19 @@ bool init(bool spiffs_ok)
     // Restore persisted channels from NVS
     loadChannels();
 
+    // Safety net: if no channels are loaded, auto-join the Public channel.
+    // This handles fresh flashes where NVS was erased, ensuring the device
+    // can at least receive Public channel messages even without completing
+    // the onboarding wizard's channel setup.
+    if (g_mesh->getChannelCount() == 0) {
+        Serial.println("[mesh] No channels found — auto-joining Public channel");
+        g_mesh->addChannel("Public", "izOH6cXN6mrJ5e26oRXNcg==");
+        // Also auto-join chat channels discovered via incoming messages so
+        // the device can reply on the same channel it received from.
+        // Persist immediately so the channel survives reboot.
+        saveChannels();
+    }
+
     // Only broadcast advert if user has explicitly configured radio params.
     // Compile-time defaults may be illegal in some regions — transmit gating
     // prevents first-boot broadcasts until user opens Settings → Radio Setup.

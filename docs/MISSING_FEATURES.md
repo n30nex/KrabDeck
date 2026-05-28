@@ -200,6 +200,28 @@ The inverse of the above: a user on another device shows a `meshcore://` URI. Sl
 
 ---
 
+### Auto-add contact configuration — M
+
+The companion protocol defines `CMD_SET_AUTOADD_CONFIG` (58) / `CMD_GET_AUTOADD_CONFIG` (59) which let the host configure which contact types are automatically added from received adverts. SlopOS currently auto-adds ALL discovered contacts unconditionally. In dense networks this fills the contact list with nodes the user never interacts with.
+
+The companion protocol defines a per-type auto-add config bitmask:
+- `AUTO_ADD_CHAT` (0x02) — auto-add chat/companion nodes
+- `AUTO_ADD_REPEATER` (0x04) — auto-add repeaters
+- `AUTO_ADD_ROOM_SERVER` (0x08) — auto-add room servers
+- `AUTO_ADD_SENSOR` (0x10) — auto-add sensors
+- `AUTO_ADD_OVERWRITE_OLDEST` (0x01) — overwrite oldest non-favourite contact when full
+
+Additionally, a `max_hops` filter limits auto-add to contacts within N hops, and `manual_add_contacts` can disable auto-add entirely.
+
+**What’s needed:** Add `autoadd_config` and `autoadd_max_hops` fields to `NodePrefs`. Implement auto-add gating in `onAdvertRecv` or `onDiscoveredContact`. Expose configuration in Settings (contact type checklist, max hops slider, manual/auto toggle).
+
+**MeshCore reference:**
+- `examples/companion_radio/MyMesh.h` — `isAutoAddEnabled()`, `shouldAutoAddContactType(uint8_t)`, `shouldOverwriteWhenFull()`, `getAutoAddMaxHops()`, `AUTO_ADD_*` constants
+- `examples/companion_radio/MyMesh.cpp` — `CMD_SET_AUTOADD_CONFIG` + `CMD_GET_AUTOADD_CONFIG` handlers; `onDiscoveredContact()` filters by type; `onContactOverwrite()` implements oldest-overwrite
+
+---
+
+
 
 ## Messaging
 
@@ -207,13 +229,14 @@ The inverse of the above: a user on another device shows a `meshcore://` URI. Sl
 
 `onAckRecv` in `src/mesh/slop_mesh.h:285` is a stub. When a DM is sent, MeshCore may receive an ACK back from the destination. The chat screen has no sent/pending/delivered/failed state — all sent messages look the same regardless of acknowledgement.
 
-**What's needed:** Track outgoing DM state (pending / acked / failed) in the message store. Display a status indicator in chat bubbles (single tick for sent, double tick for acked). Hook `onAckRecv` to update state by matching the ACK CRC to the pending message.
+**What’s needed:** Track outgoing DM state (pending / acked / failed) in the message store. Display a status indicator in chat bubbles (single tick for sent, double tick for acked). Hook `onAckRecv` to update state by matching the 4-byte ACK hash to the pending message.
 
 **MeshCore reference:**
-- `src/Mesh.h` — `virtual void onAckRecv(Packet*, uint32_t ack_crc)` — the callback to override
+- `src/Mesh.h` — `virtual void onAckRecv(Packet*, uint32_t ack_crc)` — the callback to override (parameter named `ack_crc` for legacy reasons; the value is actually the first 4 bytes of SHA-256 over a message-type-dependent buffer including the recipient’s public key — not a CRC)
 - `src/Mesh.cpp` — `case PAYLOAD_TYPE_ACK:` dispatch
-- `src/helpers/BaseChatMesh.h` / `src/helpers/BaseChatMesh.cpp` — `BaseChatMesh::onAckRecv()` → `processAck()`: the reference implementation that matches `ack_crc` to a pending-message table, clears `txt_send_timeout`, and calls `packet->markDoNotRetransmit()`
-
+- `src/helpers/BaseChatMesh.h` / `src/helpers/BaseChatMesh.cpp` — `BaseChatMesh::onAckRecv()` → `processAck()`: the reference implementation that matches the 4-byte hash to a pending-message table, clears `txt_send_timeout`, and calls `packet->markDoNotRetransmit()`
+- `examples/companion_radio/MyMesh.cpp` — `processAck()`: uses circular `expected_ack_table[8]`, matches 4-byte hash, pushes `PUSH_CODE_SEND_CONFIRMED` with trip time
+- **Core Protocol Spec Part 1 §C.5** — The ACK field is not a CRC-32; it is the first 4 bytes of SHA-256. Implementing CRC-32 will never produce a matching ACK.
 ---
 
 ### Room server message fetch — L
@@ -286,6 +309,22 @@ Note: selecting a non-CHAT advert type changes packet forwarding behaviour — c
 - `src/helpers/CommonCLI.h` — `NodePrefs::advert_type` (uint8_t) — persisted node type; `CommonCLICallbacks` virtual methods for enabling/disabling repeat mode
 
 ---
+### Custom variables (key-value store) — S
+
+The companion protocol defines `CMD_GET_CUSTOM_VARS` (40) / `CMD_SET_CUSTOM_VAR` (41) for a named key-value store on the node. These are used for vendor-specific configuration: GPS tuning parameters (`gps_enabled`, `gps_interval`), sensor calibration, and experimental features. The companion radio uses the sensor settings system as its custom variable backend.
+
+SlopOS has no equivalent mechanism. All node configuration requires firmware changes to add new `NodePrefs` fields. A custom variables store would allow setting new parameters without code changes.
+
+**Companion radio pattern:** `CMD_GET_CUSTOM_VARS` enumerates all settings as comma-separated `name:value` pairs. `CMD_SET_CUSTOM_VAR` accepts a `name:value` string and applies it via `sensors.setSettingValue()`.
+
+**What’s needed:** Add a key-value store backed by NVS. Expose read/write via Terminal command.
+
+**MeshCore reference:**
+- `examples/companion_radio/MyMesh.cpp` — `CMD_GET_CUSTOM_VARS`: formats as comma-separated `name:value` pairs; `CMD_SET_CUSTOM_VAR`: parses `name:value`, calls `sensors.setSettingValue(name, value)`, syncs GPS prefs
+- `Core Protocol Spec Part 2 §2.5.9` — Defines the CMD_GET_CUSTOM_VARS / CMD_SET_CUSTOM_VAR wire format
+
+---
+
 
 ## Diagnostics and Statistics
 
@@ -454,7 +493,7 @@ SlopOS has no region concept. In a multi-region deployment, a T-Deck may not rec
 
 ---
 
-*Last updated: 2026-05-28. Phase 1 complete (advert parsing + contact details). 15 stale entries removed (all implemented by merged PRs #150-#187). Entries with incomplete understanding fixed (control packets, group datagrams, zero-hop ping). Cross-reference with `KNOWN_ISSUES.md` for bugs and workarounds in implemented features.*
+*Last updated: 2026-05-28. Phase 1 complete (advert parsing + contact details). 15 stale entries removed (all implemented by merged PRs #150-#187). Entries with incomplete understanding fixed (control packets, group datagrams, zero-hop ping). Cross-reference with `KNOWN_ISSUES.md` for bugs and workarounds in implemented features. Companion-specific cross-references verified against `examples/companion_radio/` (companion radio implementation), `Core Protocol Specification Part 2: The Companion Protocol` (Host Layer spec), and `Core Protocol Specification Part 1: The Protocol` (RF Network Layer spec, including Appendix C discrepancies).*
 
 ---
 
@@ -486,6 +525,8 @@ Medium-effort radio features that enhance configurability for the companion user
 | 1 | RX gain boost toggle | S | `NodePrefs` flag, `RadioLibWrapper::setRxBoostedGainMode()` |
 | 2 | Temporary radio config | M | Live-apply without NVS write, with revert timer |
 | 3 | Duty cycle enforcement | M | Surface MeshCore budget, add configurable limit |
+| 4 | Auto-add contact configuration | M | Configurable type/range filtering for contact auto-add |
+| 5 | Custom variables (key-value store) | S | Named key-value store for vendor-specific config (GPS tuning, sensors) |
 
 ---
 

@@ -64,7 +64,7 @@ src/
 │   ├── debug_cfg.h        # Per-feature debug flag selection (runtime toggle)
 │   └── debug.cpp/h        # Debug dumps (SLOPOS_DEBUG=1 build)
 ├── fonts/
-│   ├── emoji_font_setup.cpp/h  # Emoji font fallback registration for LVGL
+│   ├── emoji_font_setup.cpp    # Emoji font fallback registration for LVGL (header: emoji_font.h)
 │   ├── emoji_font.c/h          # Compiled emoji font bitmap data (16px, Noto Emoji derivative)
 │   ├── emoji_data.cpp/h        # Discord-style emoji short name ↔ UTF-8 lookup (343 entries)
 │   └── emoji_images/           # Emoji picker image assets (generated)
@@ -159,21 +159,21 @@ Use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 | # | Screen | Source | Status |
 |---|--------|--------|--------|
 | 0 | Splash | `ui.cpp` | ✅ |
-| 1 | Home (4x3 grid, 12 tiles) | `home_screen.cpp` | ✅ |
+| 1 | Home (4x3 grid, 12 tiles, unread badge on CHATS) | `home_screen.cpp` | ✅ |
 | 2 | Chat (channels + DM) | `chat_screen.cpp` | ✅ |
-| 3 | Contacts (alphabetical, tap→DM, filtered to CHAT/ROOM types) | `screens.cpp` | ✅ |
+| 3 | Contacts (alphabetical, tap→DM, filtered to CHAT/ROOM types, RSSI+SNR per contact) | `screens.cpp` | ✅ |
 | 4 | Channels (list + create #hashtag/PSK) | `screens.cpp` | ✅ |
 | 5 | Finder / Network (Ping Nearby, nearby nodes list) | `screens.cpp` | ✅ |
-| 6 | Packets / Heard (packet log, 50 entries, column headers) | `screens.cpp` | ✅ |
+| 6 | Packets / Heard (packet log, 50 entries, 5-column TIME/SOURCE/RSSI/SNR/TYPE headers) | `screens.cpp` | ✅ |
 | 7 | Map (touch pan, auto-center, PSRAM tile cache) | `screens.cpp` | ✅ |
 | 8 | Advertise (broadcast presence, status timer, send button) | `screens.cpp` | ✅ |
-| 9 | Settings (radio, keyboard BL, date/time) | `screens.cpp` | ✅ |
+| 9 | Settings (radio, keyboard BL, display brightness, auto-off timeout, chat history cap, share location, flood max hops, RX/TX delay tuning, date/time, shut down) | `screens.cpp` | ✅ |
 | 10 | Trace (path discovery per contact) | `screens.cpp` | ✅ |
 | 11 | Terminal (colored log + commands, 64 line cap) | `screens.cpp` | ✅ |
-| 12 | Signal (live RSSI, SNR, noise floor, radio params from prefs) | `screens.cpp` | ✅ |
+| 12 | Signal (live RSSI, SNR, noise floor, radio params from prefs, TX/RX airtime, packet statistics) | `screens.cpp` | ✅ |
 | 13 | Radio Setup (freq presets, SF/BW/CR/Pwr controls, save & reboot) | `screens.cpp` | ✅ |
 | 14 | Onboarding (wizard) | `onboarding_screen.cpp` | ✅ |
-| 15 | Repeaters (infrastructure relay nodes only, filtered from contacts) | `screens.cpp` | ✅ |
+| 15 | Repeaters (infrastructure relay nodes only, filtered from contacts, RSSI+SNR per relay) | `screens.cpp` | ✅ |
 | — | Custom RF (sub-screen of Radio Setup — Freq, SF, BW, CR, Pwr text inputs with Apply) | `screens.cpp` | ✅ |
 
 ---
@@ -197,11 +197,21 @@ slopos::mesh::exportContactsFull(out, max) // Name + RSSI + last_seen
 slopos::mesh::exportChannels(out, max)     // Channel name list
 slopos::mesh::pollMessages(out, max)       // Non-blocking message fetch
 slopos::mesh::pendingMessageCount()        // Messages waiting in queue
+slopos::mesh::getQueueDropCount()           // Queue overflow drops since boot
+slopos::mesh::getUnreadMessageCount()       // Unread messages across all channels
+slopos::mesh::resetUnreadMessageCount()     // Reset unread counter
 slopos::mesh::setOwnName(name)             // Set this node's display name
 slopos::mesh::getOwnName()                 // Get this node's display name
 slopos::mesh::getNoiseFloor()              // Current noise floor dBm
 slopos::mesh::getLastRSSI()                // Last received message RSSI
 slopos::mesh::getLastSNR()                 // Last received message SNR
+slopos::mesh::getTotalTxAirtimeMs()         // Cumulative TX airtime in ms
+slopos::mesh::getTotalRxAirtimeMs()         // Cumulative RX airtime in ms
+slopos::mesh::getNumSentFlood()             // Flood messages sent
+slopos::mesh::getNumSentDirect()            // Direct messages sent
+slopos::mesh::getNumRecvFlood()             // Flood messages received
+slopos::mesh::getNumRecvDirect()            // Direct messages received
+slopos::mesh::resetPacketStats()            // Reset all packet counters
 slopos::mesh::getContactCount()            // Number of known contacts
 slopos::mesh::getChannelCount()            // Number of joined channels
 slopos::mesh::sendAdvert()                 // Broadcast advert
@@ -211,6 +221,7 @@ slopos::mesh::getLastAdvertUsedGps()       // Whether GPS data was included
 slopos::mesh::saveState()                  // Save contacts to NVS
 slopos::mesh::saveChannels()               // Save channels to NVS
 slopos::mesh::loadChannels()               // Restore channels from NVS
+slopos::mesh::shutdown()                   // Graceful radio + power off
 slopos::mesh::injectMessage(sender, ch, text)  // Simulate incoming (test only)
 slopos::mesh::getCurrentTime()             // RTC epoch seconds
 slopos::mesh::setSystemTime(epoch)         // Set RTC from UI
@@ -244,7 +255,7 @@ slopos::mesh::getPingResult(i)             // Read one ping response (name, RSSI
 
 ## Testing
 
-**Current test count: 276** (275 passed, 1 skipped for native_test).
+**Current test count: 294** (293 passed, 1 skipped for native_test).
 
 ```bash
 pio test -e native_test -v       # All tests (no hardware)
@@ -303,6 +314,9 @@ pio run -e SlopOS_TDeck_debug_mesh     # Mesh message rx/tx, radio init
 pio run -e SlopOS_TDeck_debug_ui       # UI boot steps, screen transitions
 pio run -e SlopOS_TDeck_debug_map      # Map tile loading, rendering
 pio run -e SlopOS_TDeck_debug_diag     # Periodic stats & system dumps
+
+# Debug build at prescribed frequency (e.g. 869.525 MHz / SF10 / 250 kHz)
+pio run -e SlopOS_TDeck_debug_869
 
 # Run native tests (no hardware)
 pio test -e native_test -v
@@ -411,7 +425,7 @@ If the issue involves physical input hardware (trackball, keyboard, touch, butto
 Main + dev branch model:
 - `dev` — integration branch. All PRs merge here.
 - `main` — stable releases only.
-- Tags: `beta-0.1.XX` (zero-padded for correct sort: `beta-0.1.09` not `beta-0.1.9`). Current: `beta-0.1.32`
+- Tags: `beta-0.1.XX` (zero-padded for correct sort: `beta-0.1.09` not `beta-0.1.9`). Current: `beta-0.1.33`
 
 **Release flow (maintainer only):**
 1. Update `SLOPOS_VERSION` in `tdeck_pins.h`
@@ -423,12 +437,12 @@ Main + dev branch model:
 
 ## Radio Setup
 
-The Radio Setup screen (`screens.cpp:1824`) provides a two-column layout:
+The Radio Setup screen (`screens.cpp:2529`) provides a two-column layout:
 - **Left column:** Frequency presets (868.000 EU, 869.525 UK, 869.618 UK, 915.000 US, 433.500 EU)
 - **Right column:** "Custom RF..." button → opens Custom RF sub-screen, SF −/+ controls (7-12), BW −/+ controls (steps through 500/250/125/62.5/41.7/31.25/20.8/15.6/10.4/7.8 kHz), TX power −/+ controls (2-22 dBm)
 - **Bottom:** Save & Reboot button (writes prefs, saves channels and messages, then `ESP.restart()`)
 
-Radio params are stored in module-level `static` vars (`s_rf_freq`, `s_rf_sf`, `s_rf_bw`, `s_rf_cr`, `s_rf_pwr`) in `screens.cpp:1686-1690`, shared between `radio_setup_screen_show` and `custom_rf_screen_show`. These defaults to 869.618 MHz / SF8 / 62.5 kHz / CR 4/5 / 22 dBm.
+Radio params are stored in module-level `static` vars (`s_rf_freq`, `s_rf_sf`, `s_rf_bw`, `s_rf_cr`, `s_rf_pwr`) in `screens.cpp:2389-2393`, shared between `radio_setup_screen_show` and `custom_rf_screen_show`. These defaults to 869.618 MHz / SF8 / 62.5 kHz / CR 4/5 / 22 dBm.
 
 ### Custom RF Sub-Screen
 
@@ -456,7 +470,8 @@ On "Apply", validated values are written to the shared state and `go_back()` is 
 | `src/utils/` no longer empty | Now contains `utf8_util.h` — the empty placeholder was replaced by a real utility module for UTF-8 safe truncation |
 | `SLOPOS_RUNTIME_FEAT()` macro scope | The `debug_cfg.h` `SLOPOS_RUNTIME_FEAT()` macro only works under full `SLOPOS_DEBUG=1` build. In per-feature builds (e.g. `SLOPOS_DEBUG_MESH=1` alone), the macro expands to nothing — runtime `debug feat 0/1` toggle has no effect. Only compile-time `#if SLOPOS_DEBUG_MESH` guards control output. |
 | Emoji font pointer init ordering | `emoji_font.h` declares mutable globals `emoji_wrapped_montserrat_*` that are initialized to raw Montserrat before `emoji_font_setup()` runs. Any code accessing these font pointers during boot (before the setup function runs) gets un-wrapped fonts without emoji fallback glyphs. |
-| Navigation back-swipe state reset | `back_swipe_commit` is reset to 0 at the start of both `navigate_to()` and `go_back()`. If a screen transition is triggered mid-back-swipe (e.g. by a screen's constructor calling navigate internally), the two-swipe sequence is broken — the user must start over from zero Left events. |
+|| Navigation back-swipe state reset | `back_swipe_commit` is reset to 0 at the start of both `navigate_to()` and `go_back()`. If a screen transition is triggered mid-back-swipe (e.g. by a screen's constructor calling navigate internally), the two-swipe sequence is broken — the user must start over from zero Left events. |
+|| Contacts screen strdup user_data | Contacts and Repeaters screens store `strdup(c.name)` as `lv_obj_set_user_data()` for click handlers. The heap copy is freed on `LV_EVENT_DELETE`. If a row is added or manually deleted without firing the delete event, the pointer leaks. |
 
 ---
 
@@ -468,6 +483,7 @@ All known issues are documented in `docs/KNOWN_ISSUES.md`. Most previously track
 
 **Recently fixed (see `docs/KNOWN_ISSUES.md` for PR details):**
 - GPS NMEA checksum validation, Navigation history stack, Channel hash full compare, Contact expiry/eviction with LRU, Advert rate limiting at mesh layer, Null-termination on short payloads, LVGL tick starvation during TX, `lv_obj_del` in event handlers, Map screen static persistence, I2C bus speed race (400kHz touch), Trackball LEFT double-fire, `keyboard_consume_event` side effects, GT911 INT-pin-HIGH buffered event drop, TDeckBoard duplicate instances, Module static-init allocation ordering, Terminal unbounded labels, REPEATERS/PACKETS screen separation, GPS NMEA checksum, makeEpoch thread-safety, debug.h non-debug stubs, onboard restart flash write delay, screen dispatch code deduplication, SPI host pin contention, sendTrace indentation
+- **New in this sync:** Radio reception fix (SPI host moved to SPI2_HOST, channel hash full compare, auto-join Public), graceful shutdown from Settings, unread message badges on home screen, display brightness control, auto-backlight timeout, flood max hops setting, contact SNR display, TX/RX delay tuning in Settings, TX/RX airtime and packet statistics on Signal screen, GPS clock sync on first valid fix
 
 ---
 

@@ -136,5 +136,8 @@ bool revertRadioParams();
 unsigned long getRemainingTxBudget();
 void setDutyCycle(uint8_t percent);
 
+// ── Channel management extensions ────────────
+bool removeChannel(int idx);
+
 } // namespace mesh
 } // namespace slopos

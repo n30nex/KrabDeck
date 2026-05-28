@@ -860,5 +860,13 @@ void setDutyCycle(uint8_t percent) {
     g_mesh->setDutyCycle(percent);
 }
 
+// ── Channel management extensions ────────────
+bool removeChannel(int idx) {
+    if (!g_mesh) return false;
+    bool ok = g_mesh->removeChannel(idx);
+    if (ok) saveChannels();
+    return ok;
+}
+
 } // namespace mesh
 } // namespace slopos

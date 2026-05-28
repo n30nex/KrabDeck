@@ -626,20 +626,6 @@ Everything else is independent and can be implemented in any sequence.
 
 ---
 
-### Phase 1 — Advert Parsing
-
-Extract richer data from incoming adverts. Foundation for contact details, map markers, and location-aware UI.
-
-| # | Feature | Effort | Why here |
-|---|---------|--------|----------|
-| 1 | Contact locations from adverts | M | Read `parser.getIntLat/Lon()` in `onAdvertRecv`, stores in `SlopContact` |
-| 2 | Contact node type from adverts | S | Read `parser.getType()`, adds `node_type` to `SlopContact` |
-| 3 | Contact details screen | M | New screen showing all `SlopContact` fields + Send Trace |
-
-**Dependency:** Do #1 and #2 in either order. #3 uses data from both.
-
----
-
 ### Phase 2 — Radio Configuration
 
 Medium-effort radio features that enhance configurability for the companion user.
@@ -649,8 +635,6 @@ Medium-effort radio features that enhance configurability for the companion user
 | 1 | RX gain boost toggle | S | `NodePrefs` flag, `RadioLibWrapper::setRxBoostedGainMode()` |
 | 2 | Temporary radio config | M | Live-apply without NVS write, with revert timer |
 | 3 | Duty cycle enforcement | M | Surface MeshCore budget, add configurable limit |
-| 4 | Periodic auto-advert | S | Configurable advert interval, toggle in Settings |
-| 5 | Node type selection | M | Settings dropdown for ADV_TYPE, changes forwarding behaviour |
 
 ---
 
@@ -666,7 +650,7 @@ UI and protocol improvements to the chat experience.
 | 4 | Signal bars widget | S | 1–5 bar `lv_draw` helper, apply to Contacts/Heard/Finder |
 | 5 | Per-contact RSSI/SNR history | L | `lv_chart` sparkline in Contact Detail or Signal |
 
-**Depends on Phase 1** if you want contact details to show history.
+**Phase 1 is complete** — contact details screen includes location, node type, and trace history.
 
 ---
 
@@ -692,8 +676,8 @@ Self-contained larger features for the companion experience.
 |---|---------|--------|----------|
 | 1 | QR code generation | L | QR library (2KB), LVGL canvas rendering, Share buttons |
 | 2 | QR code / URI import | M | URI parser, Terminal command, Add Contact dialog |
-| 3 | Contact locations on Map | M | **Depends on:** Phase 1 #1 (contact location data) |
-| 4 | Room server message fetch | M | **Depends on:** Phase 1 #2 (contact type parsing), Phase 4 #2 (REQ/RESPONSE). UI action to fetch messages from ADV_TYPE_ROOM contacts. |
+| 3 | Contact locations on Map | M | **Depends on:** advert location parsing (Phase 1 ✅ complete — data available in `SlopContact`) |
+| 4 | Room server message fetch | M | **Phase 1 ✅ complete** (contact type parsed in `SlopContact`). Still needs Phase 4 #2 (REQ/RESPONSE) for the actual fetch. UI action to fetch messages from ADV_TYPE_ROOM contacts. |
 | 5 | OTA firmware update | L | WiFi/BLE init, partition layout, download + flash progress |
 | 6 | ACL / contact permissions | L | Permission field on contacts, UI for promotion, action gating |
 | 7 | Device admin password | M | Optional PIN hashed in NVS, prompt on Settings/Terminal entry |
@@ -703,15 +687,15 @@ Self-contained larger features for the companion experience.
 ### Suggested Sequence
 
 ```
-Phase 1  →  Phase 2  →  Phase 3  →  Phase 4  →  Phase 5
-(advert     (radio      (messaging  (advanced   (hard/
- parsing)    config)      polish)     protocol)   infra)
+Phase 2  →  Phase 3  →  Phase 4  →  Phase 5
+(radio      (messaging  (advanced   (hard/
+ config)     polish)     protocol)   infra)
 ```
 
 Within each phase, items are in rough priority order. Start with the first ones as they unblock or inform the rest.
 
 ### Implementation Tips
-- **After Phase 1**, update `docs/CONTACTS_SCREEN.md` and `docs/MESH_NETWORKING.md` to reflect new advert fields.
+- **Phase 1 is complete** — contact locations, node type, and details screen implemented. `docs/CONTACTS_SCREEN.md` and `docs/MESH_NETWORKING.md` should be updated to reflect the new advert fields.
 - **After Phase 3**, add ACK status to `docs/CHAT_SCREEN.md`.
 - **Any PR adding a `NodePrefs` field** must validate NVS migration — old firmware's saved prefs won't have the new field. `prefs_get()` uses `Preferences::getBytes()` which zero-fills missing keys; use the default-value pattern already in `prefs_get()`.
 - **Protocol payload type features** (Phase 4) should include native-test mock coverage for new parse/dispatch paths in `test/slop_mesh_test.cpp`.

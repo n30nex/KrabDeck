@@ -6,6 +6,8 @@ SlopOS-TDeck is a standalone **companion-radio firmware** for the LilyGo T-Deck.
 
 Features in this document are tagged to distinguish companion-relevant from infrastructure-only items. The implementation plan (§ below) only covers **companion features**. Truly infrastructure-only items (BLE modem mode, region management, launcher compatibility) are documented for reference but are not planned.
 
+**May 2026 update:** This document has been reviewed against the MeshCore companion protocol (`lib/meshcore/examples/companion_radio/MyMesh.cpp`, 58 CMD_* / 29 RESP_* codes). Most Protocol/Packet Type items below are library-level features that the companion protocol has already solved at the CMD level — if SlopOS were to implement them, the companion source is the reference, not the raw MeshCore library. Items marked *(companion CMD exists)* have a direct companion protocol implementation to use as a reference pattern.
+
 All MeshCore file paths below are relative to the root of `https://github.com/meshcore-dev/MeshCore` (main branch). The submodule in this repo is pinned to a specific commit — if a symbol can't be found, check `lib/meshcore/` directly.
 
 ---
@@ -24,7 +26,7 @@ Each entry describes what the feature is, what MeshCore provides, and what would
 
 ### Multipart messages (PAYLOAD_TYPE_MULTIPART 0x0A) — L
 
-MeshCore defines a multipart packet type for segmenting large payloads across multiple LoRa frames. SlopOS currently caps all outgoing messages at 150 bytes of text (enforced in `src/mesh/slop_mesh.h:357`). Messages longer than 150 characters are silently truncated before transmission.
+MeshCore defines a multipart packet type for segmenting large payloads across multiple LoRa frames. SlopOS currently caps all outgoing messages at 150 bytes of text. Messages longer than 150 characters are silently truncated before transmission.
 
 The library only implements one multipart subtype today — multi-ACK. There is no general reassembly buffer for arbitrary payload types. That work would need to live in SlopOS on top of `onGroupDataRecv` or `onRawDataRecv`.
 
@@ -39,7 +41,7 @@ The library only implements one multipart subtype today — multi-ACK. There is 
 
 ### Group data datagrams (PAYLOAD_TYPE_GRP_DATA 0x06) — M
 
-MeshCore defines typed binary group datagrams with a 16-bit type namespace for application use. `onGroupDataRecv` in `src/mesh/slop_mesh.h:176` receives `GRP_DATA` packets but only processes `GRP_TXT` — binary datagrams are silently ignored. There is no API in `mesh_wrapper.h` for sending a binary datagram.
+MeshCore defines typed binary group datagrams with a 16-bit type namespace for application use. `onGroupDataRecv` in `src/mesh/slop_mesh.h` receives both `GRP_TXT` and `GRP_DATA` packets — binary datagrams are rendered as hex in the chat view. There is no API in `mesh_wrapper.h` for **sending** a binary datagram, and received binary data has no type-code dispatch (all `GRP_DATA` packets are treated as generic hex strings rather than routed to app-specific handlers).
 
 This opens up extensible group-channel applications: shared state sync, map tile requests, sensor broadcasts, etc.
 
@@ -52,7 +54,7 @@ This opens up extensible group-channel applications: shared state sync, map tile
 
 ---
 
-### Anonymous requests (PAYLOAD_TYPE_ANON_REQ 0x07) — M
+### Anonymous requests (PAYLOAD_TYPE_ANON_REQ 0x07) — M *(companion CMD exists)*
 
 SlopOS handles incoming anonymous requests in `onAnonDataRecv` (displays as `anon_XX` sender) but has no way to send one. Anonymous requests allow a node to initiate contact with another node without a prior advert exchange — the sender's public key is embedded in the packet rather than looked up from a contact.
 
@@ -65,7 +67,7 @@ SlopOS handles incoming anonymous requests in `onAnonDataRecv` (displays as `ano
 
 ---
 
-### Direct request/response (PAYLOAD_TYPE_REQ 0x00 / PAYLOAD_TYPE_RESPONSE 0x01) — M
+### Direct request/response (PAYLOAD_TYPE_REQ 0x00 / PAYLOAD_TYPE_RESPONSE 0x01) — M *(companion CMD exists)*
 
 The Core Protocol defines direct-encrypted REQ and RESPONSE payloads for request/response exchanges between any two nodes. These are not yet used in SlopOS. They enable several companion features:
 - **Room server message fetch**: send a REQ to a room server to retrieve stored messages, parse the RESPONSE
@@ -85,7 +87,7 @@ The Core Protocol defines direct-encrypted REQ and RESPONSE payloads for request
 
 ### Control packets (PAYLOAD_TYPE_CONTROL 0x0B) — L
 
-`onControlDataRecv` in `src/mesh/slop_mesh.h:291` is a stub with a `// Future` comment. MeshCore uses control packets for zero-hop neighbor discovery, capability queries, and sub-mesh management. Currently no control packets are sent or acted on.
+`onControlDataRecv` in `src/mesh/slop_mesh.h` implements PING/PONG — when a zero-hop control ping is received, SlopOS responds with a PONG advert. The Finder screen's \"Ping Nearby\" button (`sendPingNearby()` in `mesh_wrapper.h`) sends a zero-hop control ping and collects responses. However, no other control packet sub-types are handled (capability queries, sub-mesh management).
 
 The library dispatches control packets only for direct-routed, previously-unseen packets where the first payload byte has bit 7 set (`payload[0] & 0x80`) and the hop count is zero. No named subtype constants are defined — the application layer defines its own.
 
@@ -98,9 +100,9 @@ The library dispatches control packets only for direct-routed, previously-unseen
 
 ---
 
-### Raw custom payloads (PAYLOAD_TYPE_RAW_CUSTOM 0x0F) — L
+### Raw custom payloads (PAYLOAD_TYPE_RAW_CUSTOM 0x0F) — L *(companion CMD exists)*
 
-`onRawDataRecv` in `src/mesh/slop_mesh.h:296` is a stub. This payload type allows unstructured encrypted byte strings over the mesh — the building block for custom apps on top of MeshCore without needing to fit the group or peer message formats.
+`onRawDataRecv` in `src/mesh/slop_mesh.h` is a stub. This payload type allows unstructured encrypted byte strings over the mesh — the building block for custom apps on top of MeshCore without needing to fit the group or peer message formats.
 
 **What's needed:** Define an application dispatch interface. Expose a registration API for future SlopOS app extensions.
 
@@ -153,70 +155,12 @@ EU ISM 868 MHz regulations limit airtime to 1% per hour on most sub-bands. MeshC
 
 ---
 
-### Flood max hops — S
 
-MeshCore allows configuring the maximum hop count for flood packets. SlopOS uses the default. Dense networks benefit from a lower limit; sparse networks need a higher one.
-
-**What's needed:** Add `flood_max_hops` to `NodePrefs`. Wire it to the MeshCore flood limit setting. Expose a dropdown in Radio Setup.
-
-**MeshCore reference:**
-- `src/helpers/CommonCLI.h` — `NodePrefs::flood_max` (uint8_t) — feeds `Mesh::setFloodMax()`
-- `src/Mesh.h` — `Mesh::setFloodMax(uint8_t max)` — the setter; `Mesh::getFloodMax()` — the getter
-
----
-
-### TX/RX delay tuning — S
-
-MeshCore exposes `txdelay`, `direct.txdelay`, and `rxdelay` parameters that stagger transmissions to reduce collision probability on busy channels. These are not configurable or visible in SlopOS.
-
-**What's needed:** Add to `NodePrefs`, expose in an advanced radio settings section.
-
-**MeshCore reference:**
-- `src/helpers/CommonCLI.h` — `NodePrefs::tx_delay_msecs`, `NodePrefs::direct_tx_delay_msecs`, `NodePrefs::rx_delay_msecs`
-- `src/Dispatcher.h` — `Dispatcher::setTxDelay()`, `setDirectTxDelay()`, `setRxDelay()` — the setters consumed by the dispatcher's send scheduling
-
----
 
 ## GPS and Location
 
-### Contact locations not parsed from adverts — M
 
-When a remote node broadcasts an advert that includes GPS coordinates, `onAdvertRecv` in `src/mesh/slop_mesh.h:108` calls `parser.getName()` but never calls `parser.getLat()` or `parser.getLon()`. The location data is silently discarded.
 
-As a result, the offline map can only show your own position — other nodes' locations are unknown to the firmware even when they are broadcasting them.
-
-**What's needed:** Extend `SlopContact` with `float lat`, `float lon`, `bool has_location`. Read location from `AdvertDataParser` in `onAdvertRecv`. Show contact markers on the Map screen. Optionally display location in the contact detail view.
-
-**MeshCore reference:**
-- `src/helpers/AdvertDataHelpers.h` — `AdvertDataParser::hasLatLon()` (checks `flags & 0x10`), `getLat()` (returns `int32_lat / 1e6`), `getLon()` (returns `int32_lon / 1e6`)
-- `src/helpers/ContactInfo.h` — `ContactInfo` struct (used in MeshCore reference implementations): shows the pattern of storing lat/lon alongside contact identity
-
----
-
-### Contact node type not parsed from adverts — S
-
-`AdvertDataParser` exposes the advertising node's type (chat node, repeater, room server, sensor). `onAdvertRecv` never reads `parser.getType()`. `SlopContact` has no `node_type` field.
-
-This means the Contacts screen cannot distinguish repeaters from chat nodes, or show which nodes are room servers.
-
-**What's needed:** Add `uint8_t node_type` to `SlopContact`. Read `ADV_TYPE_*` from the parser. Show a node type indicator in the Contacts list (e.g. a relay icon for repeaters, a server icon for room servers).
-
-**MeshCore reference:**
-- `src/helpers/AdvertDataHelpers.h` — `ADV_TYPE_NONE` (0), `ADV_TYPE_CHAT` (1), `ADV_TYPE_REPEATER` (2), `ADV_TYPE_ROOM` (3), `ADV_TYPE_SENSOR` (4); `AdvertDataParser::getType()` returns `flags & 0x0F`
-- `src/helpers/ContactInfo.h` — `ContactInfo::type` (uint8_t) — the pattern for storing node type alongside identity in MeshCore reference implementations
-
----
-
-### GPS location sharing policy — S
-
-SlopOS currently includes GPS coordinates in the Advertise screen when a fix is available, with no user-configurable policy. Users in sensitive contexts may not want to broadcast location data at all.
-
-**What's needed:** Add a `gps_advert_policy` enum to `NodePrefs` (none / on-fix / always-include). Expose a toggle in Settings. Gate the `broadcastAdvert(name, lat, lon)` variant behind this policy.
-
-**MeshCore reference:**
-- `src/helpers/CommonCLI.h` — `NodePrefs::gps_advert` (uint8_t); CLI values are `"none"`, `"share"`, `"prefs"` parsed in `handleCommand()` under `"gps"` subcommand
-
----
 
 ### Periodic auto-advert — S
 
@@ -228,29 +172,9 @@ Companion nodes can broadcast periodic adverts so they are discoverable without 
 
 ---
 
-### GPS clock sync — S
-
-MeshCore firmware supports `gps sync` to set the RTC from a GPS fix. SlopOS receives GPS NMEA sentences including UTC time, and `setSystemTime()` exists in `src/mesh/mesh_wrapper.h`, but the GPS parser (`src/hal/gps.cpp`) does not automatically sync the RTC when a valid fix arrives.
-
-**What's needed:** In the GPS update loop, when a valid fix is received and the RTC has not been synced since boot, call `slopos::mesh::setSystemTime()` with the GPS UTC epoch. Add a `gps_time_synced` status flag visible in the GPS section of Settings.
-
-**MeshCore reference:**
-- `src/helpers/CommonCLI.h` — `handleCommand()` under the `"gps"` / `"sync"` subcommand: the pattern for reading GPS time and writing it to `RTCClock::setCurrentTime()`
-- `src/helpers/ArduinoHelpers.h` — `ArduinoRTCClock::setCurrentTime(uint32_t epoch)` — the setter used in reference implementations
-
----
 
 ## Contacts and Discovery
 
-### Contact details screen — M
-
-There is no per-contact detail view. Tapping a contact in the Contacts screen navigates directly to a DM. Users cannot see a contact's: public key hash, node type, last seen time, RSSI, known path (direct vs. flood), GPS location, or whether a direct path exists.
-
-**What's needed:** A Contact Detail screen (reachable via long-press or info icon) showing all `SlopContact` fields. Include a "Send Trace" button wired to the existing `sendTrace()` API.
-
-*(No MeshCore source reference — purely local UI work.)*
-
----
 
 ### QR code generation for contact sharing — L
 
@@ -276,15 +200,6 @@ The inverse of the above: a user on another device shows a `meshcore://` URI. Sl
 
 ---
 
-### PSK channel import via UI — S
-
-`slopos::mesh::addChannel(name, psk_base64)` exists in `src/mesh/mesh_wrapper.h:50` and is fully implemented in `src/mesh/slop_mesh.h`. However, the Channels screen only exposes hashtag channel creation — there is no UI path to add a PSK channel. The code comment in the Channels screen explicitly marks this as `// TODO`.
-
-**What's needed:** A second option in the Channels screen: "Add PSK Channel" that prompts for name and base64 PSK. Self-contained S-effort change.
-
-*(No MeshCore source reference — the mesh layer already supports it; this is UI-only work.)*
-
----
 
 ## Messaging
 
@@ -313,15 +228,6 @@ A companion node can request stored messages from a room server over the mesh us
 
 ---
 
-### Unread message badges on home screen — S
-
-The home screen 4×3 grid shows the CHAT icon with no indication of unread messages. A user returning to the home screen has no way to know there are new messages without navigating to Chat.
-
-**What's needed:** A badge counter overlaid on the CHAT icon (and optionally on channel items in the chat tab bar) that increments on new messages and clears when the channel is viewed.
-
-*(No MeshCore source reference — purely local UI work.)*
-
----
 
 ### Message timestamps in chat bubbles — S
 
@@ -365,25 +271,7 @@ Once a channel is added, there is no way to remove it. The channel list fills up
 
 ---
 
-### Display brightness control — S
 
-Backlight brightness (0–255 via LovyanGFX PWM) is not exposed as a user setting. The display runs at full brightness regardless of conditions or user preference.
-
-**What's needed:** Add a `display_brightness` byte to `NodePrefs`. Add a slider in Settings → Display. Apply on boot and on change via `display_set_brightness()`.
-
-*(No MeshCore source reference — T-Deck HAL feature.)*
-
----
-
-### Auto-backlight timeout control — S
-
-The 30-second auto-off timeout is hardcoded in `src/hal/display.cpp`. Users in bright sunlight or during active use may want longer; users concerned about battery may want shorter.
-
-**What's needed:** Add a `backlight_timeout_s` value to `NodePrefs` (0 = always on). Expose a dropdown in Settings → Display (off / 15s / 30s / 60s / 5min / always on).
-
-*(No MeshCore source reference — T-Deck HAL feature.)*
-
----
 
 ### Node type selection — M
 
@@ -401,38 +289,8 @@ Note: selecting a non-CHAT advert type changes packet forwarding behaviour — c
 
 ## Diagnostics and Statistics
 
-### TX/RX airtime display — S
 
-MeshCore's dispatcher tracks total TX and RX airtime in milliseconds. This data is not surfaced anywhere in SlopOS. It is important for monitoring regulatory compliance (EU duty cycle) and for understanding channel utilization.
 
-**What's needed:** Add `getTxAirtimeMs()` and `getRxAirtimeMs()` accessors to `src/mesh/mesh_wrapper.h`. Display on the Signal screen or a new Stats screen.
-
-**MeshCore reference:**
-- `src/Dispatcher.h` — `Dispatcher::getTotalAirTime()` → `total_air_time` (cumulative TX ms), `Dispatcher::getReceiveAirTime()` → `rx_air_time` (cumulative RX ms), `Dispatcher::getRemainingTxBudget()` → remaining duty-cycle budget
-
----
-
-### Packet statistics (flood vs. direct counts) — S
-
-MeshCore tracks how many packets were sent and received via flood vs. direct routing, and counts CRC errors. This is useful for diagnosing mesh health but is not visible in SlopOS.
-
-**What's needed:** Add accessors to `src/mesh/mesh_wrapper.h`. Display on a Stats or Signal screen.
-
-**MeshCore reference:**
-- `src/Dispatcher.h` — `Dispatcher::getNumSentFlood()`, `getNumSentDirect()`, `getNumRecvFlood()`, `getNumRecvDirect()` — public counters; `resetStats()` — zeroes all counters and `_err_flags`
-- `src/Radio.h` — `Radio::getEstAirtimeFor(int len_bytes)` — pure virtual; per-radio airtime estimate used by the dispatcher's budget accounting
-
----
-
-### Contact SNR display — S
-
-The `PacketLogEntry` struct stores SNR per packet. `SlopContact` stores `last_rssi` but not `last_snr`. The Contacts and Finder screens show RSSI but not SNR.
-
-**What's needed:** Add `float last_snr` to `SlopContact`. Update in `onAdvertRecv` and `logRx`. Display alongside RSSI in Contacts and Heard screens.
-
-*(No MeshCore source reference — local SlopOS struct extension; SNR is already available via `Packet::getSNR()`.)*
-
----
 
 ### Terminal command documentation (help system) — S
 
@@ -458,21 +316,14 @@ Depends on first implementing "Contact locations not parsed from adverts" above.
 
 ---
 
-### Signal bars widget — S
-
-Also tracked in `KNOWN_ISSUES.md`. The Contacts and Heard screens show raw RSSI dBm numbers. A 1–5 bar widget would give users an immediate sense of link quality without reading numbers.
-
-**What's needed:** A `lv_draw_signal_bars(obj, rssi_dbm)` helper in `src/ui/theme.h`. Apply to Contacts list items, the chat screen header, and Finder results.
-
-*(No MeshCore source reference — purely local UI work.)*
-
----
 
 ### Zero-hop ping in Finder screen — M
 
-Also tracked in `KNOWN_ISSUES.md`. The Finder screen lists contacts by RSSI but there is no active probe. Nodes that have not recently advertised are invisible even if they are in range.
+Also tracked in KNOWN_ISSUES.md. The Finder screen lists contacts by RSSI but there is no active probe. Nodes that have not recently advertised are invisible even if they are in range.
 
-**What's needed:** A "Ping Nearby" button that sends a control packet with TTL=1. A 2–3 second collection window. Display responses sorted by RSSI. 30-second cooldown. Depends on control packet implementation (see Protocol section above).
+What's needed: A Ping Nearby button that sends a control packet with TTL=1. A 2-3 second collection window. Display responses sorted by RSSI. 30-second cooldown.
+
+Note: the underlying control packet PING/PONG is already implemented in the mesh layer and sendPingNearby() exists in mesh_wrapper.h. What's missing is the Finder screen UI - a button to trigger the ping and a results list to display responses.
 
 **MeshCore reference:**
 - `src/Mesh.h` — `Mesh::createControlData()` — the send path for a zero-hop control ping
@@ -603,7 +454,7 @@ SlopOS has no region concept. In a multi-region deployment, a T-Deck may not rec
 
 ---
 
-*Last updated: 2026-05-26. Truly infrastructure-only features (BLE modem mode, region management, launcher compatibility) are documented for reference but excluded from the companion implementation plan. Cross-reference with `KNOWN_ISSUES.md` for bugs and workarounds in implemented features.*
+*Last updated: 2026-05-28. Phase 1 complete (advert parsing + contact details). 15 stale entries removed (all implemented by merged PRs #150-#187). Entries with incomplete understanding fixed (control packets, group datagrams, zero-hop ping). Cross-reference with `KNOWN_ISSUES.md` for bugs and workarounds in implemented features.*
 
 ---
 
@@ -647,8 +498,7 @@ UI and protocol improvements to the chat experience.
 | 1 | Channel removal | S | Swipe-to-delete gesture, channel array management |
 | 2 | Message delivery status (ACK) | M | Pending/acked/failed state in chat, `onAckRecv` hook |
 | 3 | Message search | M | Chat screen search mode, substring filter |
-| 4 | Signal bars widget | S | 1–5 bar `lv_draw` helper, apply to Contacts/Heard/Finder |
-| 5 | Per-contact RSSI/SNR history | L | `lv_chart` sparkline in Contact Detail or Signal |
+| 4 | Per-contact RSSI/SNR history | L | `lv_chart` sparkline in Contact Detail or Signal |
 
 **Phase 1 is complete** — contact details screen includes location, node type, and trace history.
 

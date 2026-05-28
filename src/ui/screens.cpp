@@ -750,9 +750,10 @@ void contact_detail_screen_show(const char* contact_name)
         lv_obj_set_style_text_color(trace_lbl, lv_color_hex(TEXT_PRIMARY), 0);
         // Store contact_idx in user_data
         int* idx_ptr = (int*)malloc(sizeof(int));
-        *idx_ptr = trace_idx;
-        lv_obj_set_user_data(trace_btn, idx_ptr);
-        lv_obj_add_event_cb(trace_btn, [](lv_event_t* e) {
+        if (idx_ptr) {
+            *idx_ptr = trace_idx;
+            lv_obj_set_user_data(trace_btn, idx_ptr);
+            lv_obj_add_event_cb(trace_btn, [](lv_event_t* e) {
             lv_obj_t* btn = (lv_obj_t*)lv_event_get_target(e);
             int* idx = (int*)lv_obj_get_user_data(btn);
             if (idx && *idx >= 0) {
@@ -763,9 +764,10 @@ void contact_detail_screen_show(const char* contact_name)
                 slopos::ui::navigate_to(slopos::ui::Screen::Trace);
             }
         }, LV_EVENT_CLICKED, nullptr);
-        lv_obj_add_event_cb(trace_btn, [](lv_event_t* e) {
-            free(lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(e)));
-        }, LV_EVENT_DELETE, nullptr);
+            lv_obj_add_event_cb(trace_btn, [](lv_event_t* e) {
+                free(lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(e)));
+            }, LV_EVENT_DELETE, nullptr);
+        }
     }
 
     show_screen(scr);

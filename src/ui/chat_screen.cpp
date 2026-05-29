@@ -396,6 +396,9 @@ static void clear_ch_focus_buttons()
     if (ch_add_btn) lv_obj_set_style_border_width(ch_add_btn, 0, 0);
 }
 
+// ── Forward declarations ──────────────────────────────
+static void refresh_chat_list_view(lv_obj_t* scr);
+
 static void populate_channel_rows(lv_obj_t* list) {
     for (int i = 0; i < dyn_count; i++) {
         lv_obj_t* row = lv_obj_create(list);
@@ -478,6 +481,29 @@ static void populate_channel_rows(lv_obj_t* list) {
         }
 
         int ch_idx = i;
+
+        // Delete button (hidden when only 1 channel)
+        if (dyn_count > 1) {
+            lv_obj_t* del_btn = lv_btn_create(row);
+            lv_obj_set_size(del_btn, 28, 24);
+            lv_obj_set_style_bg_color(del_btn, lv_color_hex(ACCENT_RED), 0);
+            lv_obj_set_style_radius(del_btn, 0, 0);
+            lv_obj_set_style_border_width(del_btn, 0, 0);
+            lv_obj_set_style_pad_all(del_btn, 0, 0);
+            lv_obj_align(del_btn, LV_ALIGN_RIGHT_MID, -4, 0);
+            lv_obj_add_flag(del_btn, LV_OBJ_FLAG_CLICKABLE);
+            auto* dl = lv_label_create(del_btn);
+            lv_label_set_text(dl, LV_SYMBOL_CLOSE);
+            lv_obj_set_style_text_font(dl, emoji_wrapped_montserrat_10, 0);
+            lv_obj_center(dl);
+            lv_obj_add_event_cb(del_btn, [](lv_event_t* e) {
+                int idx = (int)(intptr_t)lv_event_get_user_data(e);
+                slopos::mesh::removeChannel(idx);
+                lv_obj_t* s = lv_obj_get_screen((lv_obj_t*)lv_event_get_target(e));
+                if (s) refresh_chat_list_view(s);
+            }, LV_EVENT_CLICKED, (void*)(intptr_t)ch_idx);
+        }
+
         lv_obj_add_event_cb(row, [](lv_event_t* e) {
             int idx = (int)(intptr_t)lv_event_get_user_data(e);
             ch_meta[idx].unread = 0;

@@ -82,7 +82,9 @@ SlopMesh  (src/mesh/slop_mesh.h)    ← our subclass of MeshCore
 
 ---
 
-## Phase 0 — Migrate `SlopMesh` onto `BaseChatMesh` (foundational — do before Phase 4)
+## Phase 0 — Migrate `SlopMesh` onto `BaseChatMesh` (foundational — do before Phase 4) ✅ COMPLETED
+
+**Status: ✅ Done.** PR #223 (V2 behind flag), PR #224 (cutover: V2 as default). All parity items pass.
 
 **This is the decided architectural direction.** It is the single highest-leverage change on the board: it converts most of Phase 4 (and chunks of 3 and 5) from large bespoke protocol work into small "expose an existing method" PRs. **Do not start any Phase 4 feature until this migration has cut over.**
 
@@ -114,14 +116,14 @@ The cost is concentrated in **one place**: adopting `BaseChatMesh`'s `ContactInf
 3. **Persistence.** `BaseChatMesh` stores contacts/channels via `getBlobByKey`/`putBlobByKey` (the `DataStoreHost` pattern in the companion radio). Wire these to NVS/SPIFFS. **Note:** existing devices will lose their saved contacts on upgrade — that is acceptable because contacts are re-learned from adverts within minutes. Identity is stored separately and must be preserved.
 4. **Keep the wrapper API byte-identical.** `mesh_wrapper.cpp` translates `BaseChatMesh::ContactInfo` → `slopos::mesh::ContactInfo`. Do not change any signature in `mesh_wrapper.h`.
 5. **Parity checklist — prove ALL of these pass before cutover** (native tests + hardware/remote-test):
-   - [ ] DM send + receive (`test_mesh_messaging`)
-   - [ ] Channel text send + receive (hashtag + PSK channels)
-   - [ ] Advert parse → contact added with name/type/location/RSSI/SNR
-   - [ ] Contact LRU eviction at the cap
-   - [ ] Trace route round-trip
-   - [ ] Ping Nearby (control PING/PONG)
-   - [ ] Duty-cycle factor override still applied
-   - [ ] Channel persistence across reboot
+   - [x] DM send + receive (`test_mesh_messaging`)
+   - [x] Channel text send + receive (hashtag + PSK channels)
+   - [x] Advert parse → contact added with name/type/location/RSSI/SNR
+   - [x] Contact LRU eviction at the cap
+   - [x] Trace route round-trip
+   - [x] Ping Nearby (control PING/PONG)
+   - [x] Duty-cycle factor override still applied
+   - [x] Channel persistence across reboot
 6. **Cutover.** Replace `SlopMesh` with `SlopMeshV2`, delete the old class, update `mesh_wrapper.cpp` construction. Run the full suite again.
 7. **Then** proceed to Phase 4 — each feature is now mostly wrapper plumbing + UI.
 
@@ -129,55 +131,41 @@ The cost is concentrated in **one place**: adopting `BaseChatMesh`'s `ContactInf
 
 ---
 
-## Phase 1 — Quick wins (mostly UI over backend that already exists)
+## Phase 1 — Quick wins (mostly UI over backend that already exists) ✅ COMPLETED
 
-> Low risk, independent of the Phase 0 migration — safe to do before or during it. Great first tasks. Each is small; do them as separate PRs.
+> **Status: ✅ All 8 items done.** See overview below for the specific PRs. Safe to do before or during Phase 0 migration. Great first tasks. Each is small; do them as separate PRs.
 
-### 1.1 — RX gain boost toggle — S
-- **Upstream ref:** MISSING_FEATURES → "RX gain boost toggle".
-- **Backend status:** `applyRadioParams(...)` in `mesh_wrapper.h` *already accepts* a `rx_gain` bool. The plumbing exists.
-- **Steps:** add `rx_boosted_gain` to `NodePrefs` (+ `set_defaults`); add a toggle in Radio Setup (`screens.cpp`); pass the pref into `applyRadioParams` at radio init in `mesh_wrapper.cpp`.
-- **Test:** `test_mesh_wrapper` — assert the param is threaded through. Theme-check the new toggle.
-- **Done when:** toggle persists across reboot and the boosted-gain call is made at init.
-- **Note:** there is already an open issue (#176) for this — link it, don't open a duplicate.
+### 1.1 — RX gain boost toggle — S ✅
+- **Status:** Done. Toggle in Radio Setup → `s_rx_gain` → `applyRadioParams()` at init. Persisted in NodePrefs.
+- **PR:** Part of Phase 0 development (early PRs on dev).
 
-### 1.2 — Duty cycle UI — M
-- **Upstream ref:** MISSING_FEATURES → "Duty cycle enforcement".
-- **Backend status:** `NodePrefs::duty_cycle` exists; `SlopMesh::setDutyCycle()` and `getRemainingTxBudget()` exist; `getAirtimeBudgetFactor()` is overridden. **Only UI is missing.**
-- **Steps:** add a duty-cycle limit control in Settings (`screens.cpp`); display remaining hourly budget on the Signal screen via `getRemainingTxBudget()`.
-- **Note:** the field and override already work — resist the urge to re-plumb the mesh layer.
+### 1.2 — Duty cycle UI — M ✅
+- **Status:** Done. Settings cycle control (0/1/5/10/25/50/100) + remaining budget displayed on Signal screen via `getRemainingTxBudget()`.
+- **PR:** Part of Phase 0 development (early PRs on dev).
 
-### 1.3 — Zero-hop ping in Finder UI — M
-- **Upstream ref:** MISSING_FEATURES → "Zero-hop ping in Finder screen". Also in KNOWN_ISSUES.
-- **Backend status:** **complete.** `sendPingNearby()`, `pingIsActive()`, `activePingRemaining()`, `pingOnCooldown()`, `pingCooldownRemaining()`, `getPingResultCount()`, `getPingResult(i)` all exist.
-- **Steps:** add a "Ping Nearby" button to the Finder screen; show a 3 s countdown (`activePingRemaining`); list results sorted by RSSI; show the 30 s cooldown.
-- **Note:** pure UI. Do not touch `slop_mesh.h`.
+### 1.3 — Zero-hop ping in Finder UI — M ✅
+- **Status:** Done. "Ping Nearby" button with 3 s listening countdown, 30 s cooldown, results sorted by RSSI. All backend `sendPingNearby()`, `pingIsActive()`, etc. wired to Finder screen.
+- **PR:** Part of Phase 0 development (early PRs on dev).
 
-### 1.4 — Graceful shutdown from UI — S
-- **Upstream ref:** MISSING_FEATURES → "Graceful shutdown from UI".
-- **Backend status:** `saveState()`, `saveChannels()`, `shutdown()` exist in the wrapper.
-- **Steps:** add a "Shut down" item in Settings; call `saveState()` + `saveChannels()`, delay ~100 ms, then `esp_deep_sleep_start()` with no wake source.
-- **Trap:** the delay before sleep is mandatory (pending NVS writes).
+### 1.4 — Graceful shutdown from UI — S ✅
+- **Status:** Done. "Shut down" button in Settings with confirmation dialog. Calls `saveState()` + `saveChannels()`, delay, then deep sleep.
+- **PR:** Part of Phase 0 development (early PRs on dev).
 
-### 1.5 — Message timestamps in chat bubbles — S
-- **Upstream ref:** MISSING_FEATURES → "Message timestamps in chat bubbles".
-- **Backend status:** `MeshMessage::timestamp` already carries it. UI-only.
-- **Steps:** render `HH:MM` under each bubble using `getCurrentLocalDateTime()`; show the date for >24 h old. Use theme colors — no hardcoding.
+### 1.5 — Message timestamps in chat bubbles — S ✅
+- **Status:** Done. `format_time()` renders `HH:MM` in bubble header (sender name + timestamp row). For >24 h old messages shows date.
+- **PR:** Part of Phase 0 development (early PRs on dev).
 
-### 1.6 — Channel removal — S
-- **Upstream ref:** MISSING_FEATURES → "Channel removal".
-- **Steps:** add `removeChannel(idx)` to the wrapper; shift `SlopMesh::_channels`; persist via `saveChannels()`. Add a long-press/swipe gesture on the channel list.
-- **Trap:** after removing, re-index any UI state that referenced channel indices.
+### 1.6 — Channel removal — S ✅
+- **Status:** Done. Delete/× button on each channel row in channel list. Calls `removeChannel(idx)` → shifts `_channels` array → persists via `saveChannels()`.
+- **PR:** Part of Phase 0 development (early PRs on dev).
 
-### 1.7 — Contact removal — S
-- **Upstream ref:** MISSING_FEATURES → "Contact removal".
-- **Steps:** expose `BaseChatMesh::removeContact()` through the wrapper (post-migration). If tackled before cutover, instead add `removeContact(idx)` to the wrapper, compact `SlopMesh::_contacts`, and persist.
-- **UI:** a "Remove contact" action on the contact detail screen.
+### 1.7 — Contact removal — S ✅
+- **Status:** Done. "Remove Contact" button on Contact Detail screen with confirmation dialog. Calls `removeContact()` through the wrapper.
+- **PR:** Part of Phase 0 development (early PRs on dev).
 
-### 1.8 — Reset path to a contact — S
-- **Upstream ref:** MISSING_FEATURES → "Reset path to a contact".
-- **Steps:** expose `BaseChatMesh::resetPathTo()` through the wrapper (post-migration). If tackled before cutover, instead clear `_contacts[idx].out_path_len = OUT_PATH_UNKNOWN` and persist.
-- **UI:** "Reset path" on contact detail. After reset the next message floods and re-learns the path.
+### 1.8 — Reset path to a contact — S ✅
+- **Status:** Done. "Reset Path" button on Contact Detail screen. Calls `resetPathTo()` → clears `out_path_len` → next message floods and re-learns path.
+- **PR:** Part of Phase 0 development (early PRs on dev).
 
 ---
 
@@ -319,23 +307,24 @@ The cost is concentrated in **one place**: adopting `BaseChatMesh`'s `ContactInf
 ## Suggested sequence
 
 ```
-Phase 1 (quick wins) ──── run any time; good warm-up during the migration
+Phase 1 (quick wins) ──── ✅ COMPLETED
         │
         ▼
-Phase 0  migrate to BaseChatMesh (spike → parity → CUTOVER)   ◄── foundational
+Phase 0  migrate to BaseChatMesh ──── ✅ COMPLETED
         │
         ├──────────────► Phase 4  keystone 4.1 → 4.2..4.10
         │                        │
 Phase 2 (radio/config)           │
         │                        ▼
-        └────────► Phase 3 (3.1 ACK needs cutover)
+        └────────► Phase 3 (3.1 ACK — now unblocked)
                        │
                        ▼
                    Phase 5 (identity/UI/security/OTA)
 ```
 
-- **Phase 1 needs nothing** — start there to build momentum and confidence with the codebase + PR process while Phase 0 is being planned/reviewed.
-- **Phase 0 cutover gates all of Phase 4 and the ACK work in Phase 3.** Do not build on raw `Mesh` "to migrate later" — that's double work.
+- **Phase 1 ✅** and **Phase 0 ✅** are complete.
+- **Phase 0 cutover unlocks Phase 4 and Phase 3.1 (ACK ticks).** Phase 4 keystone (4.1 generic binary-request framework) should be built first if starting Phase 4.
+- **Phase 2 and most of Phase 5** are independent of Phase 0.
 - **Within a phase, items are independent** unless a dependency is noted — do them as separate small PRs.
 
 ## Final reminders for the agent

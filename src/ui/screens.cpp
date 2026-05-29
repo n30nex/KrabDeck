@@ -302,6 +302,7 @@ static void packets_rebuild_list()
         lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
         lv_obj_set_style_border_width(row, 0, 0);
         lv_obj_set_style_pad_all(row, 0, 0);
+        lv_obj_set_scrollbar_mode(row, LV_SCROLLBAR_MODE_OFF);
 
         // Time
         char tbuf[8];
@@ -365,6 +366,8 @@ static void packets_rebuild_list()
         lv_label_set_text(type_l, e.type);
         lv_obj_set_style_text_color(type_l, lv_color_hex(type_color), 0);
         lv_obj_set_style_text_font(type_l, &lv_font_montserrat_10, 0);
+        lv_label_set_long_mode(type_l, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(type_l, DISPLAY_W - PKT_COL_TYPE - PKT_COL_MARGIN);
         lv_obj_align(type_l, LV_ALIGN_LEFT_MID, PKT_COL_TYPE, 0);
     }
 }
@@ -508,6 +511,7 @@ void contacts_screen_show()
         lv_obj_set_style_bg_opa(row, LV_OPA_20, LV_STATE_PRESSED);
         lv_obj_set_style_border_width(row, 0, 0);
         lv_obj_set_style_pad_all(row, 0, 0);
+        lv_obj_set_scrollbar_mode(row, LV_SCROLLBAR_MODE_OFF);
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
 
         // Icon
@@ -548,23 +552,6 @@ void contacts_screen_show()
         lv_obj_set_style_text_color(snr_l, lv_color_hex(TEXT_SECONDARY), 0);
         lv_obj_set_style_text_font(snr_l, &lv_font_montserrat_10, 0);
         lv_obj_align(snr_l, LV_ALIGN_RIGHT_MID, -56, 0);
-
-        // Detail icon — navigates to Contact Detail screen
-        lv_obj_t* detail_btn = lv_label_create(row);
-        lv_label_set_text(detail_btn, LV_SYMBOL_EYE_OPEN);
-        lv_obj_set_style_text_color(detail_btn, lv_color_hex(TEXT_SECONDARY), 0);
-        lv_obj_set_style_text_font(detail_btn, &lv_font_montserrat_12, 0);
-        lv_obj_align(detail_btn, LV_ALIGN_RIGHT_MID, -82, 0);
-        lv_obj_add_flag(detail_btn, LV_OBJ_FLAG_CLICKABLE);
-        char* detail_name = strdup(c.name);
-        lv_obj_set_user_data(detail_btn, detail_name);
-        lv_obj_add_event_cb(detail_btn, [](lv_event_t* e) {
-            const char* name = (const char*)lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(e));
-            if (name) contact_detail_screen_show(name);
-        }, LV_EVENT_CLICKED, nullptr);
-        lv_obj_add_event_cb(detail_btn, [](lv_event_t* e) {
-            free(lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(e)));
-        }, LV_EVENT_DELETE, nullptr);
 
         lv_obj_add_event_cb(row, [](lv_event_t* e) {
             lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
@@ -616,12 +603,14 @@ void contact_detail_screen_show(const char* contact_name)
 
     // Content area — scrollable vertical column for all fields
     lv_obj_t* list = lv_obj_create(scr);
-    lv_obj_set_size(list, LV_PCT(100), CONTENT_H - 66); // leave room for 2 action rows
+    lv_obj_set_size(list, LV_PCT(100), CONTENT_H - 66);
     lv_obj_align(list, LV_ALIGN_TOP_MID, 0, CONTENT_Y);
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list, 0, 0);
     lv_obj_set_style_pad_all(list, 4, 0);
     lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scroll_dir(list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
 
     // Helper: add a labeled info row
     auto add_row = [&](const char* label, const char* value, uint32_t color) {
@@ -944,6 +933,7 @@ void finder_screen_show()
     lv_obj_align(list, LV_ALIGN_TOP_MID, 0, CONTENT_Y + 28);
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list, 0, 0);
+    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
 
     char buf[80];
     int row_n = 0;
@@ -1100,6 +1090,7 @@ void repeaters_screen_show()
             lv_color_hex(i % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
         lv_obj_set_style_border_width(row, 0, 0);
         lv_obj_set_style_pad_all(row, 0, 0);
+        lv_obj_set_scrollbar_mode(row, LV_SCROLLBAR_MODE_OFF);
 
         // Icon
         lv_obj_t* icon = lv_label_create(row);
@@ -1910,6 +1901,7 @@ void settings_screen_show()
     lv_obj_align(list, LV_ALIGN_TOP_MID, 0, CONTENT_Y);
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list, 0, 0);
+    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
 
     const slopos::NodePrefs& p = slopos::prefs_get();
     char buf[128];
@@ -2507,6 +2499,7 @@ void trace_screen_show()
         lv_obj_set_style_bg_opa(row, LV_OPA_20, LV_STATE_PRESSED);
         lv_obj_set_style_border_width(row, 0, 0);
         lv_obj_set_style_pad_all(row, 0, 0);
+        lv_obj_set_scrollbar_mode(row, LV_SCROLLBAR_MODE_OFF);
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
 
         // Icon
@@ -2679,6 +2672,8 @@ void channels_screen_show()
     lv_obj_set_style_border_width(list, 0, 0);
     lv_obj_set_style_pad_all(list, 0, 0);
     lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scroll_dir(list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
 
     std::function<void()> rebuild = [list, &rebuild]() {
         lv_obj_clean(list);
@@ -2695,6 +2690,7 @@ void channels_screen_show()
                     lv_color_hex(i % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
                 lv_obj_set_style_border_width(row, 0, 0);
                 lv_obj_set_style_pad_all(row, 0, 0);
+                lv_obj_set_scrollbar_mode(row, LV_SCROLLBAR_MODE_OFF);
                 lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
                 lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER,
                                       LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);

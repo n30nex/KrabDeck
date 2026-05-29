@@ -47,7 +47,9 @@ void setup()
         Serial.println("[boot] step 3: SPIFFS mounted");
 #endif
 
-    slopos_gps_init();
+    if (slopos::prefs_get().gps_enabled) {
+        slopos_gps_init();
+    }
 #if SLOPOS_DEBUG_UI
     Serial.println("[boot] step 4: GPS init done");
 #endif
@@ -126,7 +128,18 @@ void loop()
 
     // Process display/LVGL first so UI stays responsive during mesh ops
     slopos_display_loop();
-    slopos_gps_loop();
+    {   // GPS enabled + interval gate
+        static uint32_t last_gps_poll = 0;
+        const slopos::NodePrefs& gp = slopos::prefs_get();
+        if (gp.gps_enabled) {
+            uint32_t now = millis();
+            uint32_t interval_ms = (uint32_t)gp.gps_interval * 1000;
+            if (interval_ms == 0 || (now - last_gps_poll >= interval_ms)) {
+                last_gps_poll = now;
+                slopos_gps_loop();
+            }
+        }
+    }
 #if defined(SLOPOS_REMOTE_TEST) && SLOPOS_REMOTE_TEST
     slopos::mesh::loop();
     slopos_test_controller_loop();

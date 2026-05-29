@@ -1947,6 +1947,56 @@ void settings_screen_show()
              slopos_gps_has_fix() ? "Fix acquired" : "No fix");
     add_row(LV_SYMBOL_GPS, buf);
 
+    // GPS enable toggle (tappable)
+    snprintf(buf, sizeof(buf), "  GPS: %s",
+             p.gps_enabled ? "ON" : "OFF");
+    {
+        lv_obj_t* btn_gps_en = add_row(LV_SYMBOL_GPS, buf);
+        lv_obj_add_event_cb(btn_gps_en, [](lv_event_t* e) {
+            lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
+            slopos::NodePrefs np = slopos::prefs_get();
+            np.gps_enabled = !np.gps_enabled;
+            slopos::prefs_set(np);
+            char row_buf[64];
+            snprintf(row_buf, sizeof(row_buf), "  GPS: %s",
+                     np.gps_enabled ? "ON" : "OFF");
+            lv_obj_t* lbl = lv_obj_get_child(target, 1);
+            if (lbl && lv_obj_check_type(lbl, &lv_label_class)) {
+                lv_label_set_text(lbl, row_buf);
+            }
+        }, LV_EVENT_CLICKED, nullptr);
+    }
+
+    // GPS interval cycle (tappable)
+    {
+        static constexpr uint16_t GPS_INT_VALUES[] = {0, 1, 5, 10, 30, 60};
+        static constexpr const char* GPS_INT_LABELS[] = {"Every loop", "1s", "5s", "10s", "30s", "60s"};
+        static constexpr int NUM_GPS_INT = 6;
+        int cur_gps = 0;
+        for (int i = 0; i < NUM_GPS_INT; i++) {
+            if (p.gps_interval == GPS_INT_VALUES[i]) { cur_gps = i; break; }
+        }
+        snprintf(buf, sizeof(buf), "  GPS interval: %s", GPS_INT_LABELS[cur_gps]);
+        lv_obj_t* btn_gps_int = add_row(LV_SYMBOL_GPS, buf);
+        lv_obj_add_event_cb(btn_gps_int, [](lv_event_t* e) {
+            lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
+            slopos::NodePrefs np = slopos::prefs_get();
+            int idx = 0;
+            for (int i = 0; i < NUM_GPS_INT; i++) {
+                if (np.gps_interval == GPS_INT_VALUES[i]) { idx = i; break; }
+            }
+            idx = (idx + 1) % NUM_GPS_INT;
+            np.gps_interval = GPS_INT_VALUES[idx];
+            slopos::prefs_set(np);
+            char row_buf[64];
+            snprintf(row_buf, sizeof(row_buf), "  GPS interval: %s", GPS_INT_LABELS[idx]);
+            lv_obj_t* lbl = lv_obj_get_child(target, 1);
+            if (lbl && lv_obj_check_type(lbl, &lv_label_class)) {
+                lv_label_set_text(lbl, row_buf);
+            }
+        }, LV_EVENT_CLICKED, nullptr);
+    }
+
     // Share location (tappable toggle)
     snprintf(buf, sizeof(buf), "  Share location: %s",
              p.share_location ? "ON" : "OFF");

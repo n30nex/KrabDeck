@@ -33,6 +33,10 @@ struct NodePrefs {
     uint8_t  duty_cycle;             // 0-100, duty cycle budget percent (0 = disabled)
     uint8_t  advert_interval;        // 0=disabled, 1-255=interval in half-minutes (e.g. 10=5min)
     uint8_t  advert_type;            // ADV_TYPE_CHAT(1)/REPEATER(2)/ROOM(3)/SENSOR(4)
+    bool     gps_enabled;            // GPS polling enabled
+    uint16_t gps_interval;           // GPS read interval in seconds (0 = every loop)
+    uint8_t  autoadd_config;         // bitmask: bit1=chat, bit2=repeater, bit3=room, bit4=sensor
+    uint8_t  autoadd_max_hops;       // 0=no limit, max flood hops for auto-add
 
     // Sentinel defaults — radio will NOT transmit until user configures
     void set_defaults() {
@@ -57,6 +61,10 @@ struct NodePrefs {
         duty_cycle = 0;               // 0 = disabled
         advert_interval = 0;          // 0 = disabled
         advert_type = 1;              // 1 = ADV_TYPE_CHAT (default: chat companion)
+        gps_enabled = true;           // GPS on by default
+        gps_interval = 0;             // 0 = poll every loop
+        autoadd_config = 0x1E;        // auto-add: chat|repeater|room|sensor (bits 1-4), no overwrite (bit 0)
+        autoadd_max_hops = 0;         // 0 = no limit
     }
 };
 

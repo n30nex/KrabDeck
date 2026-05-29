@@ -172,9 +172,26 @@ protected:
 
         // Flood max hops check: skip auto-adding contacts beyond the configured limit
         {
-            uint8_t max_hops = slopos::prefs_get().flood_max_hops;
+            uint8_t max_hops = slopos::prefs_get().autoadd_max_hops;
             if (max_hops > 0 && pkt->getPathHashCount() >= max_hops) {
                 pushPacketLog(name, (int)_radio->getLastRSSI(), pkt->getSNR(), "ADVERT(SKIPPED)");
+                return;
+            }
+        }
+
+        // Per-type auto-add config check
+        {
+            uint8_t config = slopos::prefs_get().autoadd_config;
+            uint8_t ctype = parser.getType();
+            bool allow = false;
+            if      (ctype == 1 && (config & 0x02)) allow = true; // chat
+            else if (ctype == 2 && (config & 0x04)) allow = true; // repeater
+            else if (ctype == 3 && (config & 0x08)) allow = true; // room
+            else if (ctype == 4 && (config & 0x10)) allow = true; // sensor
+            // Unknown types (ctype 0 or >4) are always allowed
+            if (ctype == 0 || ctype > 4) allow = true;
+            if (!allow) {
+                pushPacketLog(name, (int)_radio->getLastRSSI(), pkt->getSNR(), "ADVERT(IGNORED)");
                 return;
             }
         }

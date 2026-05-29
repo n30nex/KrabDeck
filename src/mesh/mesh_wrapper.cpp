@@ -860,11 +860,22 @@ void setDutyCycle(uint8_t percent) {
     g_mesh->setDutyCycle(percent);
 }
 
+// ── Contact management extensions ────────────
+bool removeContact(const char* name) {
+    if (!g_mesh || !name) return false;
+    for (int i = 0; i < g_mesh->getContactCount(); i++) {
+        auto* c = g_mesh->getContact(i);
+        if (c && strcmp(c->name, name) == 0) {
+            return g_mesh->removeContact(i);
+        }
+    }
+    return false;
+}
+
 // ── Channel management extensions ────────────
 bool removeChannel(int idx) {
     if (!g_mesh) return false;
     bool ok = g_mesh->removeChannel(idx);
-    if (ok) saveChannels();
     return ok;
 }
 

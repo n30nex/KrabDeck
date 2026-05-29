@@ -40,6 +40,7 @@
 #include <cstring>
 #include <math.h>
 #include <functional>
+#include <SPIFFS.h>
 
 namespace slopos::ui {
 
@@ -2513,7 +2514,110 @@ void terminal_screen_show()
 
         static char result[256];
         if (strcmp(cmd, "help") == 0) {
-            snprintf(result, sizeof(result), "Commands: help status advert ping emoji-list");
+            snprintf(result, sizeof(result), "Commands: help status advert ping emoji-list getvar setvar delvar listvars");
+        } else if (strncmp(cmd, "getvar ", 7) == 0) {
+            const char* key = cmd + 7;
+            if (!key[0]) {
+                snprintf(result, sizeof(result), "Usage: getvar <key>");
+            } else {
+                File f = SPIFFS.open("/custom_vars.txt", "r");
+                bool found = false;
+                if (f) {
+                    while (f.available()) {
+                        String line = f.readStringUntil('\n');
+                        line.trim();
+                        if (line.startsWith(key) && line.charAt(strlen(key)) == '=') {
+                            const char* val = line.c_str() + strlen(key) + 1;
+                            snprintf(result, sizeof(result), "%s = %s", key, val);
+                            found = true;
+                            break;
+                        }
+                    }
+                    f.close();
+                }
+                if (!found) {
+                    snprintf(result, sizeof(result), "Key '%s' not found", key);
+                }
+            }
+        } else if (strncmp(cmd, "setvar ", 7) == 0) {
+            const char* arg = cmd + 7;
+            const char* sep = strchr(arg, ' ');
+            if (!sep || sep == arg) {
+                snprintf(result, sizeof(result), "Usage: setvar <key> <value>");
+            } else {
+                char key[48]; size_t klen = (size_t)(sep - arg);
+                if (klen > 47) klen = 47;
+                memcpy(key, arg, klen); key[klen] = '\0';
+                const char* value = sep + 1;
+                // Read existing vars, update or append
+                String all;
+                File f = SPIFFS.open("/custom_vars.txt", "r");
+                if (f) {
+                    while (f.available()) {
+                        String line = f.readStringUntil('\n');
+                        line.trim();
+                        if (line.length() > 0) {
+                            if (!line.startsWith(key) || line.charAt(strlen(key)) != '=') {
+                                all += line + "\n";
+                            }
+                        }
+                    }
+                    f.close();
+                }
+                all += String(key) + "=" + value + "\n";
+                File wf = SPIFFS.open("/custom_vars.txt", "w");
+                if (wf) { wf.print(all); wf.close(); }
+                snprintf(result, sizeof(result), "Set: %s = %s", key, value);
+            }
+        } else if (strncmp(cmd, "delvar ", 7) == 0) {
+            const char* key = cmd + 7;
+            if (!key[0]) {
+                snprintf(result, sizeof(result), "Usage: delvar <key>");
+            } else {
+                String all;
+                bool found = false;
+                File f = SPIFFS.open("/custom_vars.txt", "r");
+                if (f) {
+                    while (f.available()) {
+                        String line = f.readStringUntil('\n');
+                        line.trim();
+                        if (line.length() > 0) {
+                            if (line.startsWith(key) && line.charAt(strlen(key)) == '=') {
+                                found = true;
+                            } else {
+                                all += line + "\n";
+                            }
+                        }
+                    }
+                    f.close();
+                }
+                if (found) {
+                    File wf = SPIFFS.open("/custom_vars.txt", "w");
+                    if (wf) { wf.print(all); wf.close(); }
+                    snprintf(result, sizeof(result), "Deleted: %s", key);
+                } else {
+                    snprintf(result, sizeof(result), "Key '%s' not found", key);
+                }
+            }
+        } else if (strcmp(cmd, "listvars") == 0) {
+            File f = SPIFFS.open("/custom_vars.txt", "r");
+            if (!f) {
+                snprintf(result, sizeof(result), "No custom variables set");
+            } else {
+                int count = 0;
+                char lb[128];
+                while (f.available()) {
+                    String line = f.readStringUntil('\n');
+                    line.trim();
+                    if (line.length() > 0 && line.indexOf('=') > 0) {
+                        snprintf(lb, sizeof(lb), "  %s", line.c_str());
+                        term_add_line(log_cont, lb);
+                        count++;
+                    }
+                }
+                f.close();
+                snprintf(result, sizeof(result), "%d variable%s", count, count == 1 ? "" : "s");
+            }
         } else if (strcmp(cmd, "status") == 0) {
             int rssi  = slopos::mesh::getLastRSSI();
             float snr = slopos::mesh::getLastSNR();

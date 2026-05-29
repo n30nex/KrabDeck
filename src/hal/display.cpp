@@ -333,6 +333,13 @@ bool slopos_display_init()
             lv_display_set_buffers(lv_disp, fallback_buf, nullptr,
                                    TFT_WIDTH * 80 * sizeof(lv_color_t),
                                    LV_DISPLAY_RENDER_MODE_PARTIAL);
+        } else {
+            // Emergency fallback: tiny DRAM buffer — at least LVGL can render
+            static lv_color_t emergency_buf[TFT_WIDTH * 20];
+            lv_display_set_buffers(lv_disp, emergency_buf, nullptr,
+                                   TFT_WIDTH * 20 * sizeof(lv_color_t),
+                                   LV_DISPLAY_RENDER_MODE_PARTIAL);
+            Serial.printf("[disp] WARNING: using emergency draw buffer\n");
         }
     }
 

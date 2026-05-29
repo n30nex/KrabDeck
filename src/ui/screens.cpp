@@ -2397,11 +2397,11 @@ void terminal_screen_show()
         lv_obj_t* log_cont = (lv_obj_t*)lv_event_get_user_data(e);
 
         // Echo the command
-        char echo[280];
+        static char echo[280];
         snprintf(echo, sizeof(echo), "> %s", cmd);
         term_add_line(log_cont, echo);
 
-        char result[256] = "";
+        static char result[256];
         if (strcmp(cmd, "help") == 0) {
             snprintf(result, sizeof(result), "Commands: help status advert ping emoji-list");
         } else if (strcmp(cmd, "status") == 0) {

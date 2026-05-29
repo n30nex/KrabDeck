@@ -248,12 +248,13 @@ static lv_obj_t* create_channel_pill(lv_obj_t* parent, int idx)
 // ════════════════════════════════════════════════════
 static void refresh_channels()
 {
-    // ── Snapshot old state for name-based remapping ──────
-    char old_names[MAX_CHANNELS][32];
-    ChannelMeta old_meta[MAX_CHANNELS];
-    uint16_t old_counts[MAX_CHANNELS];
-    ChannelMessage* old_msgs[MAX_CHANNELS] = {nullptr};
-    uint16_t old_caps[MAX_CHANNELS] = {0};
+    // Cache old channel state so we can clean up + rebuild without flicker
+    // NOTE: static to avoid ~1.9KB stack allocation in LVGL event handler context
+    static char old_names[MAX_CHANNELS][32] = {{0}};
+    static ChannelMeta old_meta[MAX_CHANNELS] = {{0}};
+    static uint16_t old_counts[MAX_CHANNELS] = {0};
+    static ChannelMessage* old_msgs[MAX_CHANNELS] = {nullptr};
+    static uint16_t old_caps[MAX_CHANNELS] = {0};
     int old_count = dyn_count;
     char active_name[32] = "";
 

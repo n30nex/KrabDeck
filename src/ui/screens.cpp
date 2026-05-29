@@ -2084,6 +2084,74 @@ void settings_screen_show()
         }
     }, LV_EVENT_CLICKED, nullptr);
 
+    // Auto-add contact types (tappable — cycles through presets)
+    {
+        static constexpr uint8_t AA_CONFIG_VALUES[] = {0x1E, 0x06, 0x0A, 0x02};
+        static constexpr const char* AA_CONFIG_LABELS[] = {
+            "All types", "Chat+Repeater", "Chat+Room", "Chat only"};
+        static constexpr int NUM_AA_CONFIG = 4;
+        int cur_aa = 0;
+        for (int i = 0; i < NUM_AA_CONFIG; i++) {
+            if (p.autoadd_config == AA_CONFIG_VALUES[i]) { cur_aa = i; break; }
+        }
+        snprintf(buf, sizeof(buf), "  Auto-add: %s", AA_CONFIG_LABELS[cur_aa]);
+        lv_obj_t* btn_aa = add_row(LV_SYMBOL_WIFI, buf);
+        lv_obj_add_event_cb(btn_aa, [](lv_event_t* e) {
+            lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
+            slopos::NodePrefs np = slopos::prefs_get();
+            static constexpr uint8_t VALS[] = {0x1E, 0x06, 0x0A, 0x02};
+            static constexpr const char* LABELS[] = {
+                "All types", "Chat+Repeater", "Chat+Room", "Chat only"};
+            static constexpr int N = 4;
+            int idx = 0;
+            for (int i = 0; i < N; i++) {
+                if (np.autoadd_config == VALS[i]) { idx = i; break; }
+            }
+            idx = (idx + 1) % N;
+            np.autoadd_config = VALS[idx];
+            slopos::prefs_set(np);
+            char row_buf[64];
+            snprintf(row_buf, sizeof(row_buf), "  Auto-add: %s", LABELS[idx]);
+            lv_obj_t* lbl = lv_obj_get_child(target, 1);
+            if (lbl && lv_obj_check_type(lbl, &lv_label_class)) {
+                lv_label_set_text(lbl, row_buf);
+            }
+        }, LV_EVENT_CLICKED, nullptr);
+    }
+
+    // Auto-add max hops (tappable — cycles through values)
+    {
+        static constexpr uint8_t AA_HOPS_VALUES[] = {0, 3, 5, 10, 20, 50};
+        static constexpr const char* AA_HOPS_LABELS[] = {"No limit", "3", "5", "10", "20", "50"};
+        static constexpr int NUM_AA_HOPS = 6;
+        int cur_ah = 0;
+        for (int i = 0; i < NUM_AA_HOPS; i++) {
+            if (p.autoadd_max_hops == AA_HOPS_VALUES[i]) { cur_ah = i; break; }
+        }
+        snprintf(buf, sizeof(buf), "  Add max hops: %s", AA_HOPS_LABELS[cur_ah]);
+        lv_obj_t* btn_ah = add_row(LV_SYMBOL_WIFI, buf);
+        lv_obj_add_event_cb(btn_ah, [](lv_event_t* e) {
+            lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
+            slopos::NodePrefs np = slopos::prefs_get();
+            static constexpr uint8_t VALS[] = {0, 3, 5, 10, 20, 50};
+            static constexpr const char* LABELS[] = {"No limit", "3", "5", "10", "20", "50"};
+            static constexpr int N = 6;
+            int idx = 0;
+            for (int i = 0; i < N; i++) {
+                if (np.autoadd_max_hops == VALS[i]) { idx = i; break; }
+            }
+            idx = (idx + 1) % N;
+            np.autoadd_max_hops = VALS[idx];
+            slopos::prefs_set(np);
+            char row_buf[64];
+            snprintf(row_buf, sizeof(row_buf), "  Add max hops: %s", LABELS[idx]);
+            lv_obj_t* lbl = lv_obj_get_child(target, 1);
+            if (lbl && lv_obj_check_type(lbl, &lv_label_class)) {
+                lv_label_set_text(lbl, row_buf);
+            }
+        }, LV_EVENT_CLICKED, nullptr);
+    }
+
     // TX/RX delay tuning
     // RX delay base (tappable — cycles through values)
     static constexpr float RX_DELAY_VALUES[] = {0.0f, 5.0f, 10.0f, 15.0f, 20.0f};

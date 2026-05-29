@@ -173,39 +173,29 @@ The cost is concentrated in **one place**: adopting `BaseChatMesh`'s `ContactInf
 
 > Some `NodePrefs` fields already exist (`advert_interval`, `advert_type`, `flood_max_hops`) — check `src/hal/prefs.h` before adding new ones.
 
-### 2.1 — Periodic auto-advert — S
-- **Upstream ref:** MISSING_FEATURES → "Periodic auto-advert".
-- **Backend status:** `NodePrefs::advert_interval` **already exists** (half-minute units). What's missing is the loop timer + Settings toggle.
-- **Steps:** in the wrapper `loop()`, re-advert when `advert_interval > 0` and the interval elapsed since `getLastAdvertTime()`. Add a Settings toggle/interval control.
-- **Trap:** respect duty cycle; don't advert if the budget is exhausted.
+### 2.1 — Periodic auto-advert — ❌ NOT NEEDED
+> User declined — not implementing.
 
-### 2.2 — Temporary radio config (no NVS write) — M
-- **Upstream ref:** MISSING_FEATURES → "Temporary radio config".
-- **Backend status:** `applyRadioParams()` (live, no NVS) and `revertRadioParams()` exist.
-- **Steps:** add a "Try (no save)" button in Radio Setup wired to `applyRadioParams()`; start a revert timer that calls `revertRadioParams()`; a "Keep" button persists via `prefs_save()`.
+### 2.2 — Temporary radio config (no NVS write) — ❌ NOT NEEDED
+> User declined — not implementing.
 
-### 2.3 — Auto-add contact configuration — M
-- **Upstream ref:** MISSING_FEATURES → "Auto-add contact configuration".
-- **Backend status:** `onAdvertRecv` already gates by `flood_max_hops`. Extend with a per-type bitmask.
-- **Steps:** add `autoadd_config` (bitmask) + `autoadd_max_hops` to `NodePrefs`; gate auto-add by `parser.getType()` in `onAdvertRecv`; Settings checklist (chat/repeater/room/sensor) + max-hops slider.
-- **Ref constants:** `AUTO_ADD_*` in [`examples/companion_radio/MyMesh.h`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.h).
+### 2.3 — Auto-add contact configuration — M ✅
+- **Status:** Done. Per-type bitmask (`autoadd_config`) in NodePrefs gates auto-add by contact type (chat/repeater/room/sensor via bits 1-4). Separate `autoadd_max_hops` for range limiting. Settings: "Auto-add: All types" cycle + "Add max hops" cycle.
+- **PR:** #228.
 
-### 2.4 — Advert location-share policy (privacy) — S
-- **Upstream ref:** MISSING_FEATURES → "Advert location-share policy".
-- **Steps:** add `advert_loc_policy` to `NodePrefs` (0 = none, 1 = share); gate the lat/lon `broadcastAdvert` overload on it; Settings toggle "Share my location in adverts".
+### 2.4 — Advert location-share policy (privacy) — S ✅
+- **Status:** Already done. `share_location` toggle in Settings (set_defaults: true). Wireframe already in prefs for lat/lon gating.
 
-### 2.5 — GPS enable / read-interval — S
-- **Upstream ref:** MISSING_FEATURES → "GPS enable / read-interval control".
-- **Steps:** add `gps_enabled` + `gps_interval` to `NodePrefs`; gate `gps.cpp` polling; Settings controls. Helps battery life.
+### 2.5 — GPS enable / read-interval — S ✅
+- **Status:** Done. `gps_enabled` (bool) + `gps_interval` (uint16_t seconds) in NodePrefs. `slopos_gps_init()`/`slopos_gps_loop()` gated on the pref. Settings: GPS ON/OFF toggle + interval cycle (0/1/5/10/30/60s).
+- **PR:** #227.
 
-### 2.6 — Custom variables (key-value store) — S
-- **Upstream ref:** MISSING_FEATURES → "Custom variables".
-- **Steps:** small NVS-backed `name:value` store; Terminal `getvar`/`setvar` commands. Lower priority — only do if a concrete need appears.
+### 2.6 — Custom variables (key-value store) — S ✅
+- **Status:** Done. SPIFFS-backed `key=value` store. Terminal commands: `setvar`, `getvar`, `delvar`, `listvars`.
+- **PR:** #229.
 
-### 2.7 — Keyboard backlight & message-cap controls — S each
-- **Upstream ref:** MISSING_FEATURES → "Keyboard backlight control", "Message history cap control".
-- **Backend status:** `NodePrefs::kbd_backlight` exists; a msg-cap field may need adding.
-- **Steps:** Settings sliders wired to `keyboard_set_backlight()` and the message store cap.
+### 2.7 — Keyboard backlight & message-cap controls — S each ✅
+- **Status:** Already done. Backlight dialog (+/- slider) and chat history cap dialog in Settings, both fully wired.
 
 ---
 
@@ -314,7 +304,7 @@ Phase 0  migrate to BaseChatMesh ──── ✅ COMPLETED
         │
         ├──────────────► Phase 4  keystone 4.1 → 4.2..4.10
         │                        │
-Phase 2 (radio/config)           │
+Phase 2 (radio/config) ── ✅ COMPLETED
         │                        ▼
         └────────► Phase 3 (3.1 ACK — now unblocked)
                        │
@@ -322,9 +312,8 @@ Phase 2 (radio/config)           │
                    Phase 5 (identity/UI/security/OTA)
 ```
 
-- **Phase 1 ✅** and **Phase 0 ✅** are complete.
+- **Phase 0 ✅**, **Phase 1 ✅**, and **Phase 2 ✅** are complete.
 - **Phase 0 cutover unlocks Phase 4 and Phase 3.1 (ACK ticks).** Phase 4 keystone (4.1 generic binary-request framework) should be built first if starting Phase 4.
-- **Phase 2 and most of Phase 5** are independent of Phase 0.
 - **Within a phase, items are independent** unless a dependency is noted — do them as separate small PRs.
 
 ## Final reminders for the agent

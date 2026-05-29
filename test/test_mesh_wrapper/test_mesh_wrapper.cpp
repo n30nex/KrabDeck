@@ -180,4 +180,11 @@ TEST_F(MeshWrapperTest, RemoveContactSignature) {
     SUCCEED();
 }
 
+// ── resetPathTo signature exists ────────────────────────
+TEST_F(MeshWrapperTest, ResetPathToSignature) {
+    using fn = bool (*)(const char*);
+    (void)static_cast<fn>(slopos::mesh::resetPathTo);
+    SUCCEED();
+}
+
 } // anonymous namespace

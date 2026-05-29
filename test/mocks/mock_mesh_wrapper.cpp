@@ -60,9 +60,9 @@ int exportContactsFull(ContactInfo* out, int max) { (void)out; return 0; }
 int getChannelCount() { return 0; }
 int exportChannels(char names[][32], int max) { return 0; }
 bool addChannel(const char* name, const char* psk) { return false; }
-bool addHashtagChannel(const char* name) { (void)name; return false; }
+
 bool removeContact(const char* name) { (void)name; return false; }
-bool removeChannel(int idx) { (void)idx; return false; }
+bool resetPathTo(const char* name) { (void)name; return false; }
 
 // ── Radio stats ──────────────────────────────────
 

@@ -10,6 +10,9 @@
 #include "hal/gps.h"
 #include "hal/prefs.h"
 #include "slop_mesh.h"
+#ifdef SLOPOS_MESH_V2
+#include "slop_mesh_v2.h"
+#endif
 #include "../diagnostics/debug_cfg.h"
 
 #include <SPIFFS.h>
@@ -42,7 +45,13 @@ static StdRNG                    fast_rng;
 static SimpleMeshTables          tables;
 static ArduinoMillis             millis_clock;
 static StaticPoolPacketManager   pkt_mgr(16);
-static slopos::mesh::SlopMesh*   g_mesh = nullptr;
+#ifdef SLOPOS_MESH_V2
+using slopos::mesh::SlopMeshV2;
+using mesh_impl_t = slopos::mesh::SlopMeshV2;
+#else
+using mesh_impl_t = slopos::mesh::SlopMesh;
+#endif
+static mesh_impl_t*   g_mesh = nullptr;
 
 static bool initialized = false;
 static char own_name[32] = "SlopOS";
@@ -64,6 +73,47 @@ static uint32_t      msg_drop_count = 0;
 // Unread message count — incremented on every incoming (non-self) message,
 // reset to 0 when the chat screen is opened. Used by the home screen badge.
 static int           unread_count = 0;
+
+// Non-static overload for SlopMeshV2 — takes RSSI/SNR from caller context
+// (SlopMeshV2 has packet context when calling, while the static queue_push
+//  reads from radio_driver which may not reflect the correct packet.)
+// Defined with its qualified name to match the declaration in mesh_wrapper.h
+// (slopos::mesh) — SlopMeshV2 calls it as slopos::mesh::mesh_v2_queue_push().
+void slopos::mesh::mesh_v2_queue_push(const char* sender, const char* channel,
+                         const char* text, int rssi, float snr) {
+    if (!sender || !text) return;
+    if (msg_count >= MAX_QUEUED) {
+        msg_drop_count++;
+#if SLOPOS_DEBUG_MESH
+        SLOPOS_RUNTIME_FEAT(mesh) {
+        Serial.printf("[mesh] WARN: message queue full — dropping msg from %s (%lu dropped so far)\n",
+                      sender, (unsigned long)msg_drop_count);
+        }
+#endif
+        return;
+    }
+    MeshMessage& m = msg_buf[msg_head];
+    strncpy(m.sender, sender, sizeof(m.sender) - 1);
+    m.sender[sizeof(m.sender) - 1] = '\0';
+    strncpy(m.channel, channel ? channel : "", sizeof(m.channel) - 1);
+    m.channel[sizeof(m.channel) - 1] = '\0';
+    strncpy(m.text, text, sizeof(m.text) - 1);
+    m.text[sizeof(m.text) - 1] = '\0';
+    m.timestamp = rtc_clock.getCurrentTime();
+    m.is_self = false;
+    if (strcmp(sender, own_name) != 0) unread_count++;
+    msg_head = (msg_head + 1) % MAX_QUEUED;
+    msg_count++;
+    const char* ptype = (channel && channel[0]) ? "CHANNEL" : "DM";
+    slopos::mesh::pushPacketLog(sender, rssi, snr, ptype);
+#if SLOPOS_DEBUG_MESH
+    SLOPOS_RUNTIME_FEAT(mesh) {
+    Serial.printf("[mesh] MSG from %s%s%s: %s  (RSSI:%ddBm SNR:%.1fdB)\n",
+                  sender, channel && channel[0] ? " in " : "",
+                  channel && channel[0] ? channel : "", text, rssi, snr);
+    }
+#endif
+}
 
 static void queue_push(const char* sender, const char* channel, const char* text) {
     if (msg_count >= MAX_QUEUED) {
@@ -339,7 +389,7 @@ bool init(bool spiffs_ok)
 
     fast_rng.begin(radio_module->random(0x7FFFFFFF));
 
-    g_mesh = new SlopMesh(*radio_driver, millis_clock, fast_rng, rtc_clock, pkt_mgr, tables);
+    g_mesh = new mesh_impl_t(*radio_driver, millis_clock, fast_rng, rtc_clock, pkt_mgr, tables);
     if (!g_mesh) {
         Serial.println("[mesh] ERROR: SlopMesh allocation failed");
         return false;
@@ -371,7 +421,11 @@ bool init(bool spiffs_ok)
     // the onboarding wizard's channel setup.
     if (g_mesh->getChannelCount() == 0) {
         Serial.println("[mesh] No channels found — auto-joining Public channel");
+#ifdef SLOPOS_MESH_V2
+        g_mesh->addChannelBool("Public", "izOH6cXN6mrJ5e26oRXNcg==");
+#else
         g_mesh->addChannel("Public", "izOH6cXN6mrJ5e26oRXNcg==");
+#endif
         // Also auto-join chat channels discovered via incoming messages so
         // the device can reply on the same channel it received from.
         // Persist immediately so the channel survives reboot.
@@ -381,7 +435,11 @@ bool init(bool spiffs_ok)
     // Debug builds: auto-join the #testingslopos test channel for RF testing on
     // 869.525/SF10/BW250/CR5. addChannel() is a no-op if already present.
 #if SLOPOS_DEBUG
+#ifdef SLOPOS_MESH_V2
+    g_mesh->addChannelBool("testingslopos", "Si/tjXzmnwmPBA43Fw4b3Q==");
+#else
     g_mesh->addChannel("testingslopos", "Si/tjXzmnwmPBA43Fw4b3Q==");
+#endif
     saveChannels();
 
     // Force-configured in debug builds so adverts broadcast and the mesh
@@ -527,12 +585,23 @@ int exportContactsFull(ContactInfo* out, int max) {
             strncpy(out[n].name, c->name, 31);
             out[n].name[31] = '\0';
             out[n].type = c->type;
+#ifdef SLOPOS_MESH_V2
+            // MeshCore's ContactInfo stores GPS as int32 (1e6 fixed-point) and
+            // carries no per-contact RSSI/SNR — pull signal from the side-channel.
+            out[n].has_location = (c->gps_lat != 0 || c->gps_lon != 0);
+            out[n].latitude  = (float)c->gps_lat / 1000000.0f;
+            out[n].longitude = (float)c->gps_lon / 1000000.0f;
+            out[n].rssi = g_mesh->getContactRSSI(c->id.pub_key);
+            out[n].snr  = g_mesh->getContactSNR(c->id.pub_key);
+            out[n].last_seen = c->last_advert_timestamp;
+#else
             out[n].has_location = c->has_location;
             out[n].latitude = c->latitude;
             out[n].longitude = c->longitude;
             out[n].rssi = c->last_rssi;
             out[n].snr = c->last_snr;
             out[n].last_seen = c->last_seen;
+#endif
             n++;
         }
     }
@@ -554,7 +623,12 @@ int exportChannels(char names[][32], int max) {
 }
 
 bool addChannel(const char* name, const char* psk) {
+#ifdef SLOPOS_MESH_V2
+    // BaseChatMesh::addChannel returns ChannelDetails* — use the bool wrapper.
+    return g_mesh ? g_mesh->addChannelBool(name, psk) : false;
+#else
     return g_mesh ? g_mesh->addChannel(name, psk) : false;
+#endif
 }
 
 bool addHashtagChannel(const char* name) {

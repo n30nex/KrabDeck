@@ -199,22 +199,21 @@ The cost is concentrated in **one place**: adopting `BaseChatMesh`'s `ContactInf
 
 ---
 
-## Phase 3 — Messaging polish
+## Phase 3 — Messaging polish ✅ COMPLETED
 
-### 3.1 — Message delivery status (ACK ticks) — M
-- **Upstream ref:** MISSING_FEATURES → "Message delivery status (ACK display)".
-- **Depends on Phase 0 cutover:** `BaseChatMesh` already provides correct `onAckRecv`/`processAck` with the `expected_ack_table[8]` — you only surface the state in the UI. (Pre-migration, `onAckRecv` is a no-op in `slop_mesh.h`, so do not attempt ACK ticks before cutover.)
-- **Steps:** track per-DM state (pending/acked/failed) in the message store; match the 4-byte SHA-256 ACK to the pending message; show a tick in the bubble.
-- **TRAP:** the ACK is SHA-256-derived, not CRC. See the trap list at the top.
+> **Status: ✅ All 3 items done.** See overview below for the specific PRs.
 
-### 3.2 — Message search — M
-- **Upstream ref:** MISSING_FEATURES → "Message search". Pure UI.
-- **Steps:** search icon in the chat top bar; substring filter over the per-channel cache; trackball navigation between matches.
+### 3.1 — Message delivery status (ACK ticks) — M ✅
+- **Status:** Done. PendingAck ring buffer in SlopMeshV2, `processAck()` matches 4-byte SHA-256 ACK against pending outgoing DMs. `isMessageAcked()` bridge to UI. ✓ indicator in self-sent chat bubbles.
+- **PR:** #232.
 
-### 3.3 — Per-contact RSSI/SNR history graph — L
-- **Upstream ref:** MISSING_FEATURES → "Per-contact RSSI/SNR history graph". Pure UI.
-- **Steps:** per-contact circular sample buffer; `lv_chart` sparkline on Signal/Contact Detail.
-- **Trap:** cap the buffer (memory) and beware widget accumulation (rejection trigger).
+### 3.2 — Message search — M ✅
+- **Status:** Done. 'S' button in top bar toggles inline search bar. Case-insensitive substring filter over message text and sender. Trackball Up/Down cycles through matches with auto-scroll and highlight. "No matching messages" when empty.
+- **PR:** #234.
+
+### 3.3 — Per-contact RSSI/SNR history graph — L ✅
+- **Status:** Done. 64-entry circular buffer per-contact in SlopMeshV2, `lv_chart` line sparkline on Signal screen showing RSSI trend.
+- **PR:** #236.
 
 ---
 
@@ -297,23 +296,23 @@ The cost is concentrated in **one place**: adopting `BaseChatMesh`'s `ContactInf
 ## Suggested sequence
 
 ```
-Phase 1 (quick wins) ──── ✅ COMPLETED
-        │
-        ▼
-Phase 0  migrate to BaseChatMesh ──── ✅ COMPLETED
-        │
-        ├──────────────► Phase 4  keystone 4.1 → 4.2..4.10
-        │                        │
-Phase 2 (radio/config) ── ✅ COMPLETED
-        │                        ▼
-        └────────► Phase 3 (3.1 ACK — now unblocked)
-                       │
-                       ▼
-                   Phase 5 (identity/UI/security/OTA)
+| Phase 1 (quick wins) ──── ✅ COMPLETED
+|        │
+|        ▼
+| Phase 0  migrate to BaseChatMesh ──── ✅ COMPLETED
+|        │
+|        ├──────────────► Phase 4  keystone 4.1 → 4.2..4.10
+|        │                        │
+| Phase 2 (radio/config) ── ✅ COMPLETED
+|        │                        │
+|        └────────► Phase 3 (messaging polish) ── ✅ COMPLETED
+|                               │
+|                               ▼
+|                           Phase 5 (identity/UI/security/OTA)
 ```
 
-- **Phase 0 ✅**, **Phase 1 ✅**, and **Phase 2 ✅** are complete.
-- **Phase 0 cutover unlocks Phase 4 and Phase 3.1 (ACK ticks).** Phase 4 keystone (4.1 generic binary-request framework) should be built first if starting Phase 4.
+- **Phase 0 ✅**, **Phase 1 ✅**, **Phase 2 ✅**, and **Phase 3 ✅** are complete.
+- **Phase 4 keystone (4.1 generic binary-request framework)** is the next logical step. It unblocks 4.2–4.5 and Phase 3 items that depend on request/response infrastructure.
 - **Within a phase, items are independent** unless a dependency is noted — do them as separate small PRs.
 
 ## Final reminders for the agent

@@ -46,6 +46,7 @@ src/
 │   └── sdcard.cpp/h       # SD card init, status, path helpers
 ├── mesh/
 │   ├── slop_mesh.h        # Mesh subclass — routing, channels, message handling
+│   ├── slop_mesh_v2.h     # MeshV2 (BaseChatMesh) — Phase 0 migration, RSSI/SNR history, ACK tracking
 │   └── mesh_wrapper.cpp/h # Public API for the UI layer
 ├── ui/
 │   ├── theme.h            # Colors, pixel helpers (apply_pixel_*)
@@ -160,21 +161,21 @@ Use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 |---|--------|--------|--------|
 | 0 | Splash | `ui.cpp` | ✅ |
 | 1 | Home (4x3 grid, 12 tiles, unread badge on CHATS) | `home_screen.cpp` | ✅ |
-| 2 | Chat (channels + DM) | `chat_screen.cpp` | ✅ |
+| 2 | Chat (channels + DM, message search bar, ACK delivery ticks) | `chat_screen.cpp` | ✅ |
 | 3 | Contacts (alphabetical, tap→DM, filtered to CHAT/ROOM types, RSSI+SNR per contact) | `screens.cpp` | ✅ |
 | 4 | Channels (list + create #hashtag/PSK) | `screens.cpp` | ✅ |
 | 5 | Finder / Network (Ping Nearby, nearby nodes list) | `screens.cpp` | ✅ |
 | 6 | Packets / Heard (packet log, 50 entries, 5-column TIME/SOURCE/RSSI/SNR/TYPE headers) | `screens.cpp` | ✅ |
 | 7 | Map (touch pan, auto-center, PSRAM tile cache) | `screens.cpp` | ✅ |
 | 8 | Advertise (broadcast presence, status timer, send button) | `screens.cpp` | ✅ |
-| 9 | Settings (radio, keyboard BL, display brightness, auto-off timeout, chat history cap, share location, flood max hops, RX/TX delay tuning, date/time, shut down) | `screens.cpp` | ✅ |
+| 9 | Settings (radio, keyboard BL, display brightness, auto-off timeout, chat history cap, share location, flood max hops, RX/TX delay tuning, GPS enable/interval, auto-add contact types/max hops, auto-advert interval, duty cycle, date/time, shut down) | `screens.cpp` | ✅ |
 | 10 | Trace (path discovery per contact) | `screens.cpp` | ✅ |
 | 11 | Terminal (colored log + commands, 64 line cap) | `screens.cpp` | ✅ |
-| 12 | Signal (live RSSI, SNR, noise floor, radio params from prefs, TX/RX airtime, packet statistics) | `screens.cpp` | ✅ |
+| 12 | Signal (live RSSI, SNR, noise floor, radio params from prefs, TX/RX airtime, packet statistics, RSSI sparkline chart) | `screens.cpp` | ✅ |
 | 13 | Radio Setup (freq presets, SF/BW/CR/Pwr controls, save & reboot) | `screens.cpp` | ✅ |
 | 14 | Onboarding (wizard) | `onboarding_screen.cpp` | ✅ |
 | 15 | Repeaters (infrastructure relay nodes only, filtered from contacts, RSSI+SNR per relay) | `screens.cpp` | ✅ |
-| 16 | Contact Detail (full contact info: type, RSSI, SNR, last seen, path, location, DM + Trace buttons) | `screens.cpp` | ✅ |
+| 16 | Contact Detail (full contact info: type, RSSI, SNR, last seen, path, location, RSSI sparkline, DM + Trace buttons) | `screens.cpp` | ✅ |
 | — | Custom RF (sub-screen of Radio Setup — Freq, SF, BW, CR, Pwr text inputs with Apply) | `screens.cpp` | ✅ |
 
 ---
@@ -251,6 +252,13 @@ slopos::mesh::revertRadioParams()          // Revert radio params to stored pref
 slopos::mesh::getRemainingTxBudget()       // Duty cycle: remaining TX airtime in ms
 slopos::mesh::setDutyCycle(percent)        // Set duty cycle limit (0 = disabled)
 slopos::mesh::removeChannel(idx)           // Remove a joined channel by index
+slopos::mesh::getSignalHistoryCount()      // Number of RSSI/SNR history samples for sparkline
+slopos::mesh::getSignalHistoryRSSI(idx)    // RSSI by logical index (0 = oldest) for sparkline
+slopos::mesh::getSignalHistorySNR(idx)     // SNR by logical index (0 = oldest) for sparkline
+slopos::mesh::registerAckedMessage(name, ts) // Register DM for ACK delivery tracking
+slopos::mesh::isMessageAcked(name, ts)     // Check if a DM was acknowledged
+slopos::mesh::removeContact(name)           // Remove a contact by name
+slopos::mesh::resetPathTo(name)             // Reset route path to a contact
 ```
 
 **Messages arrive** via `chat_screen_add_msg(channel, sender, text, is_self)`. The chat screen maintains per-channel message caches (8 messages each, 16 channels max).
@@ -264,7 +272,7 @@ slopos::mesh::removeChannel(idx)           // Remove a joined channel by index
 
 ## Testing
 
-**Current test count: 296** (295 passed, 1 skipped for native_test).
+**Current test count: 298** (297 passed, 1 skipped for native_test).
 
 ```bash
 pio test -e native_test -v       # All tests (no hardware)
@@ -335,6 +343,12 @@ pio run -e SlopOS_TDeck_remote_test
 
 # Remote test WITH RADIO — test controller + full LoRa mesh
 pio run -e SlopOS_TDeck_remote_test_radio
+
+# MeshV2 build (BaseChatMesh subclass — Phase 0 migration, compile-time `-D SLOPOS_MESH_V2=1`)
+pio run -e SlopOS_TDeck_meshv2
+
+# Remote test with MeshV2
+pio run -e SlopOS_TDeck_remote_test_radio_meshv2
 ```
 
 ### Serial Debugging
@@ -420,6 +434,7 @@ Once connected, the T-Deck shows a test controller banner. Type commands directl
 | `setrf <freq> <sf> <bw> <cr> <pwr>` | `setrf 869.525 10 250 5 22` | Set radio params in NVS |
 | `reboot` | `reboot` | Reboot the device |
 | `advert` | `advert` | Send self advert |
+| `sendmessage <name> <text>` | `sendmessage Bob Hello` | Send a direct message via mesh |
 
 Safety guarantees for `SlopOS_TDeck_remote_test`:
 - No LoRa radio initialised — `slopos::mesh::init()` is never called
@@ -445,7 +460,7 @@ If the issue involves physical input hardware (trackball, keyboard, touch, butto
 Main + dev branch model:
 - `dev` — integration branch. All PRs merge here.
 - `main` — stable releases only.
-- Tags: `beta-0.1.XX` (zero-padded for correct sort: `beta-0.1.09` not `beta-0.1.9`). Current: `beta-0.1.33`
+- Tags: `beta-0.1.XX` (zero-padded for correct sort: `beta-0.1.09` not `beta-0.1.9`). Current: `beta-0.1.36`
 
 **Release flow (maintainer only):**
 1. Update `SLOPOS_VERSION` in `tdeck_pins.h`
@@ -496,7 +511,10 @@ On "Apply", validated values are written to the shared state and `go_back()` is 
 ||| Channel delete button hidden at n=1 | The Channels screen delete button is hidden when `n <= 1` — prevents deleting the last remaining channel. But `removeChannel()` is always callable from the API, so a test or code path that calls it directly could leave zero channels. |
 ||| Custom RF child-scan walk order | Apply button walks `lv_obj_get_child_cnt(scr)` looking for the first 5 textareas. The sort order depends on widget creation sequence — if any non-textarea child is inserted before the textareas, the count resets and the wrong textarea is picked up. Now guarded by a `found != 5` check, but the error path still uses the fragile `lv_obj_get_child_cnt(scr) - 2` label lookup. |
 ||| New: RX Gain and Duty Cycle saved on reboot | `s_rx_gain` and `s_duty_cycle` are saved in NVS only on "Save & Reboot". Navigating away from Radio Setup without pressing save discards these settings silently, same as freq/SF/etc. |
-||| New: `SlopOS_TDeck_remote_test_radio` env | Full LoRa mesh + test controller. The `SLOPOS_REMOTE_TEST_RADIO=1` flag enables both the test controller serial commands AND the radio mesh. ⚠️ This env actually transmits — unlike `_remote_test` which never initializes the radio. |
+|||| New: `SlopOS_TDeck_remote_test_radio` env | Full LoRa mesh + test controller. The `SLOPOS_REMOTE_TEST_RADIO=1` flag enables both the test controller serial commands AND the radio mesh. ⚠️ This env actually transmits — unlike `_remote_test` which never initializes the radio. |
+|||| New: SlopMeshV2 compile-time selection | `-D SLOPOS_MESH_V2=1` selects `SlopMeshV2` (BaseChatMesh subclass) instead of the original `SlopMesh`. Both classes coexist but only one mesh instance runs per build. The `SlopOS_TDeck_meshv2` env sets this flag — use the correct env when testing meshv2 features. |
+|||| New: ACK tracking state is in-memory only | `registerAckedMessage`/`isMessageAcked` delivery state resets on every boot. No NVS persistence — ACK data is lost after power cycle. |
+|||| New: Custom vars SPIFFS no file locking | Custom variables at `/custom_vars.txt` (key=value lines) are read/written from terminal commands with no file locking. Concurrent `getvar`/`setvar`/`delvar` can intermix reads and writes, corrupting the file. Single-user terminal usage is safe but avoid concurrent access. |
 
 ---
 
@@ -508,8 +526,8 @@ All known issues are documented in `docs/KNOWN_ISSUES.md`. Most previously track
 
 **Recently fixed (see `docs/KNOWN_ISSUES.md` for PR details):**
 - GPS NMEA checksum validation, Navigation history stack, Channel hash full compare, Contact expiry/eviction with LRU, Advert rate limiting at mesh layer, Null-termination on short payloads, LVGL tick starvation during TX, `lv_obj_del` in event handlers, Map screen static persistence, I2C bus speed race (400kHz touch), Trackball LEFT double-fire, `keyboard_consume_event` side effects, GT911 INT-pin-HIGH buffered event drop, TDeckBoard duplicate instances, Module static-init allocation ordering, Terminal unbounded labels, REPEATERS/PACKETS screen separation, GPS NMEA checksum, makeEpoch thread-safety, debug.h non-debug stubs, onboard restart flash write delay, screen dispatch code deduplication, SPI host pin contention, sendTrace indentation
-- **New in this sync:** Radio reception fix (SPI host moved to SPI2_HOST, channel hash full compare, auto-join Public), graceful shutdown from Settings, unread message badges on home screen, display brightness control, auto-backlight timeout, flood max hops setting, contact SNR display, TX/RX delay tuning in Settings, TX/RX airtime and packet statistics on Signal screen, GPS clock sync on first valid fix
-- **Since last sync:** Contact Detail screen (#180), Signal screen two-column layout (#183), iOS-style signal dots (#187), `setrf`/`reboot`/`advert` serial test commands (#189), channel deletion (#168/#169), NAV serial command (#35a7638), map canvas PSRAM allocation fix (#4a464f6), `SlopOS_TDeck_remote_test_radio` env (#195), ROADMAP.md (#197)
+- **Previously synced:** Radio reception fix (SPI host moved to SPI2_HOST, channel hash full compare, auto-join Public), graceful shutdown from Settings, unread message badges on home screen, display brightness control, auto-backlight timeout, flood max hops setting, contact SNR display, TX/RX delay tuning in Settings, TX/RX airtime and packet statistics on Signal screen, GPS clock sync on first valid fix, Contact Detail screen (#180), Signal screen two-column layout (#183), iOS-style signal dots (#187), `setrf`/`reboot`/`advert` serial test commands (#189), channel deletion (#168/#169), NAV serial command (#35a7638), map canvas PSRAM allocation fix (#4a464f6), `SlopOS_TDeck_remote_test_radio` env (#195), ROADMAP.md (#197), beta-0.1.36 release
+- **Since last sync:** SlopMeshV2 migration (Phase 0, #223/#224), per-contact RSSI/SNR history with sparkline chart (#236), message search in chat (#234), message delivery status (ACK ticks) in chat bubbles (#232), custom variables key-value store via terminal commands (Phase 2.6), auto-add contact type config (Phase 2.3), GPS enable/read-interval controls (Phase 2.5), `sendmessage` test controller command, `SlopOS_TDeck_meshv2` and `SlopOS_TDeck_remote_test_radio_meshv2` build envs
 
 ---
 

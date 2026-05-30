@@ -780,6 +780,39 @@ void contact_detail_screen_show(const char* contact_name)
         }, LV_EVENT_DELETE, nullptr);
     }
 
+    // Request Telemetry button — second row below main buttons
+    {
+        lv_obj_t* tm_row = lv_obj_create(scr);
+        lv_obj_set_size(tm_row, CONTENT_W, 26);
+        lv_obj_align(tm_row, LV_ALIGN_BOTTOM_LEFT, 0, -(BOT_BAR_H + DIVIDER_H + 28));
+        lv_obj_set_style_bg_opa(tm_row, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(tm_row, 0, 0);
+        lv_obj_set_flex_flow(tm_row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(tm_row, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+        lv_obj_t* tm_btn = lv_btn_create(tm_row);
+        lv_obj_set_size(tm_btn, 180, 22);
+        lv_obj_set_style_bg_color(tm_btn, lv_color_hex(BG_TERTIARY), 0);
+        lv_obj_set_style_radius(tm_btn, 0, 0);
+        lv_obj_t* tm_lbl = lv_label_create(tm_btn);
+        lv_label_set_text(tm_lbl, LV_SYMBOL_WIFI " Telemetry");
+        lv_obj_center(tm_lbl);
+        lv_obj_set_style_text_color(tm_lbl, lv_color_hex(TEXT_PRIMARY), 0);
+        char* tm_name = strdup(contact_name);
+        lv_obj_set_user_data(tm_btn, tm_name);
+        lv_obj_add_event_cb(tm_btn, [](lv_event_t* e) {
+            lv_obj_t* btn = (lv_obj_t*)lv_event_get_target(e);
+            const char* name = (const char*)lv_obj_get_user_data(btn);
+            if (name) {
+                slopos::mesh::requestTelemetry(name);
+                slopos::ui::navigate_to(slopos::ui::Screen::Telemetry);
+            }
+        }, LV_EVENT_CLICKED, nullptr);
+        lv_obj_add_event_cb(tm_btn, [](lv_event_t* e) {
+            free(lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(e)));
+        }, LV_EVENT_DELETE, nullptr);
+    }
+
     // Remove Contact button
     {
         const char* remove_name = contact_name;
@@ -3741,6 +3774,77 @@ void radio_setup_screen_show()
         delay(100); // allow flash writes to complete before restart
         ESP.restart();
     }, LV_EVENT_CLICKED, nullptr);
+
+    show_screen(scr);
+}
+
+// ════════════════════════════════════════════════════════
+// Telemetry screen (Phase 4.3)
+// ════════════════════════════════════════════════════════
+void telemetry_screen_show()
+{
+    static constexpr int ROW_H = 20;
+    lv_obj_t* scr = make_screen_full("Telemetry");
+
+    lv_obj_t* list = lv_obj_create(scr);
+    lv_obj_set_size(list, LV_PCT(100), CONTENT_H - 24);
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, CONTENT_Y);
+    lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(list, 0, 0);
+    lv_obj_set_style_pad_all(list, 4, 0);
+    lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
+
+    auto add_row = [&](const char* label, const char* value, uint32_t color) {
+        lv_obj_t* row = lv_obj_create(list);
+        lv_obj_set_size(row, LV_PCT(100), ROW_H);
+        lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(row, 0, 0);
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_style_pad_left(row, 8, 0);
+        lv_obj_set_style_pad_right(row, 8, 0);
+
+        lv_obj_t* lbl = lv_label_create(row);
+        lv_label_set_text(lbl, label);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(TEXT_SECONDARY), 0);
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_10, 0);
+
+        lv_obj_t* val = lv_label_create(row);
+        lv_label_set_text(val, value);
+        lv_obj_set_style_text_color(val, lv_color_hex(color), 0);
+        lv_obj_set_style_text_font(val, &lv_font_montserrat_12, 0);
+        lv_obj_align(val, LV_ALIGN_RIGHT_MID, -8, 0);
+    };
+
+    if (slopos::mesh::hasTelemetryResponse()) {
+        slopos::mesh::TelemetryResult tr;
+        slopos::mesh::getTelemetryResult(&tr);
+
+        if (tr.n_items == 0) {
+            lv_obj_t* empty = lv_label_create(list);
+            lv_label_set_text(empty, "No telemetry data");
+            lv_obj_set_style_text_color(empty, lv_color_hex(TEXT_SECONDARY), 0);
+            lv_obj_align(empty, LV_ALIGN_CENTER, 0, 0);
+        } else {
+            for (int i = 0; i < tr.n_items; i++) {
+                auto& item = tr.items[i];
+                uint32_t color = item.type == 116  // LPP_VOLTAGE
+                    ? ACCENT_GREEN : item.type == 103 // LPP_TEMPERATURE
+                    ? ACCENT : TEXT_PRIMARY;
+                char label[32];
+                snprintf(label, sizeof(label), "Ch.%d", item.channel);
+                add_row(label, item.value_str, color);
+            }
+        }
+
+        slopos::mesh::clearResponses();
+    } else {
+        lv_obj_t* waiting = lv_label_create(list);
+        lv_label_set_text(waiting, "Requesting telemetry...\nWaiting for response...");
+        lv_obj_set_style_text_color(waiting, lv_color_hex(TEXT_SECONDARY), 0);
+        lv_obj_set_style_text_font(waiting, &lv_font_montserrat_12, 0);
+        lv_obj_align(waiting, LV_ALIGN_CENTER, 0, 0);
+    }
 
     show_screen(scr);
 }

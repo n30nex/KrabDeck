@@ -891,7 +891,7 @@ void contact_detail_screen_show(const char* contact_name)
         }, LV_EVENT_DELETE, nullptr);
     }
 
-    // Reset Path button (second action row)
+    // Reset Path + Discover Path buttons (second action row)
     {
         lv_obj_t* btn_row2 = lv_obj_create(scr);
         lv_obj_set_size(btn_row2, CONTENT_W, 30);
@@ -901,6 +901,7 @@ void contact_detail_screen_show(const char* contact_name)
         lv_obj_set_flex_flow(btn_row2, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(btn_row2, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
+        // Reset Path button
         char* rp_name = strdup(contact_name);
         lv_obj_t* rp_btn = lv_btn_create(btn_row2);
         lv_obj_set_size(rp_btn, 140, 24);
@@ -923,6 +924,28 @@ void contact_detail_screen_show(const char* contact_name)
             }, 800, nullptr);
         }, LV_EVENT_CLICKED, nullptr);
         lv_obj_add_event_cb(rp_btn, [](lv_event_t* e) {
+            free(lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(e)));
+        }, LV_EVENT_DELETE, nullptr);
+
+        // Discover Path button
+        char* dp_name = strdup(contact_name);
+        lv_obj_t* dp_btn = lv_btn_create(btn_row2);
+        lv_obj_set_size(dp_btn, 140, 24);
+        lv_obj_set_style_bg_color(dp_btn, lv_color_hex(0x0088cc), 0);
+        lv_obj_set_style_radius(dp_btn, 0, 0);
+        lv_obj_t* dp_lbl = lv_label_create(dp_btn);
+        lv_label_set_text(dp_lbl, LV_SYMBOL_DIRECTORY " Discover");
+        lv_obj_set_style_text_color(dp_lbl, lv_color_hex(0xffffff), 0);
+        lv_obj_center(dp_lbl);
+        lv_obj_set_user_data(dp_btn, dp_name);
+        lv_obj_add_event_cb(dp_btn, [](lv_event_t* e) {
+            lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
+            const char* name = (const char*)lv_obj_get_user_data(target);
+            if (name) {
+                slopos::mesh::discoverPath(name);
+            }
+        }, LV_EVENT_CLICKED, nullptr);
+        lv_obj_add_event_cb(dp_btn, [](lv_event_t* e) {
             free(lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(e)));
         }, LV_EVENT_DELETE, nullptr);
     }

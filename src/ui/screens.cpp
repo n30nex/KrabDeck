@@ -1746,18 +1746,286 @@ void repeaters_screen_show()
         lv_obj_set_style_text_font(snr_l, &lv_font_montserrat_10, 0);
         lv_obj_align(snr_l, LV_ALIGN_RIGHT_MID, -56, 0);
 
-        // Click handler — open contact detail (where Login/Admin Cmd buttons live)
+        // Click handler — open dedicated repeater detail with login flow
         lv_obj_add_event_cb(row, [](lv_event_t* e) {
             lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
             const char* name = (const char*)lv_obj_get_user_data(target);
             if (name) {
-                contact_detail_screen_show(name);
+                repeater_detail_screen_show(name);
             }
         }, LV_EVENT_CLICKED, nullptr);
 
         lv_obj_add_event_cb(row, [](lv_event_t* e) {
             free(lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(e)));
         }, LV_EVENT_DELETE, nullptr);
+    }
+
+    show_screen(scr);
+}
+
+// ════════════════════════════════════════════════════════
+// Repeater Detail — login-first, then settings-style sections
+// ════════════════════════════════════════════════════════
+void repeater_detail_screen_show(const char* contact_name)
+{
+    if (!contact_name || !contact_name[0]) return;
+
+    lv_obj_t* scr = make_screen_full("Repeater");
+
+    // Look up the contact
+    slopos::mesh::ContactInfo contacts[64];
+    int total = slopos::mesh::exportContactsFull(contacts, 64);
+    const slopos::mesh::ContactInfo* target = nullptr;
+    for (int i = 0; i < total; i++) {
+        if (strcmp(contacts[i].name, contact_name) == 0) {
+            target = &contacts[i];
+            break;
+        }
+    }
+    if (!target) {
+        lv_obj_t* err = lv_label_create(scr);
+        lv_label_set_text(err, "Repeater not found");
+        lv_obj_set_style_text_color(err, lv_color_hex(ACCENT_RED), 0);
+        lv_obj_set_style_text_font(err, &lv_font_montserrat_12, 0);
+        lv_obj_align(err, LV_ALIGN_CENTER, 0, 0);
+        show_screen(scr);
+        return;
+    }
+
+    uint8_t login_st = slopos::mesh::getLoginStatus(contact_name);
+    bool is_fav = slopos::mesh::isContactFavourite(contact_name);
+
+    // ── Content list ──────────────────────────────────
+    lv_obj_t* list = lv_list_create(scr);
+    lv_obj_set_size(list, LV_PCT(100), CONTENT_H);
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, CONTENT_Y);
+    lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(list, 0, 0);
+    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
+
+    int row = 0;
+
+    if (login_st != LOGIN_STATUS_OK) {
+        // ── Pre-login view ─────────────────────────────
+
+        // Repeater name + favourite star row
+        lv_obj_t* title_row = lv_list_add_btn(list, LV_SYMBOL_WIFI, "");
+        lv_obj_set_style_bg_color(title_row, lv_color_hex(BG_PRIMARY), 0);
+        lv_obj_set_style_bg_opa(title_row, LV_OPA_COVER, 0);
+        lv_obj_set_height(title_row, 32);
+        lv_obj_t* title_lbl = lv_label_create(title_row);
+        lv_label_set_text(title_lbl, contact_name);
+        lv_obj_set_style_text_color(title_lbl, lv_color_hex(TEXT_PRIMARY), 0);
+        lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_14, 0);
+        lv_obj_align(title_lbl, LV_ALIGN_LEFT_MID, 8, 0);
+        row++;
+
+        // Favourite star toggle
+        {
+            char* fav_name = strdup(contact_name);
+            lv_obj_t* fav_btn = lv_btn_create(title_row);
+            lv_obj_set_size(fav_btn, 32, 28);
+            lv_obj_align(fav_btn, LV_ALIGN_RIGHT_MID, -4, 0);
+            lv_obj_set_style_bg_color(fav_btn, lv_color_hex(BG_INPUT), 0);
+            lv_obj_set_style_radius(fav_btn, 0, 0);
+            lv_obj_t* fav_icon = lv_label_create(fav_btn);
+            lv_label_set_text(fav_icon, is_fav ? LV_SYMBOL_CLOSE : LV_SYMBOL_OK);
+            lv_obj_set_style_text_color(fav_icon,
+                lv_color_hex(is_fav ? ACCENT : TEXT_MUTED), 0);
+            lv_obj_center(fav_icon);
+            lv_obj_set_user_data(fav_btn, fav_name);
+            lv_obj_add_event_cb(fav_btn, [](lv_event_t* e) {
+                lv_obj_t* btn = (lv_obj_t*)lv_event_get_target(e);
+                const char* name = (const char*)lv_obj_get_user_data(btn);
+                if (name) {
+                    bool cur = slopos::mesh::isContactFavourite(name);
+                    slopos::mesh::setContactFavourite(name, !cur);
+                    // Rebuild screen to toggle star
+                    repeater_detail_screen_show(name);
+                }
+            }, LV_EVENT_CLICKED, nullptr);
+            lv_obj_add_event_cb(fav_btn, [](lv_event_t* e) {
+                free(lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(e)));
+            }, LV_EVENT_DELETE, nullptr);
+        }
+
+        // Status section header
+        lv_obj_t* sec = lv_list_add_btn(list, nullptr, "  Status");
+        lv_obj_set_style_bg_color(sec, lv_color_hex(BG_TERTIARY), 0);
+        lv_obj_set_style_bg_opa(sec, LV_OPA_COVER, 0);
+        lv_obj_set_style_text_color(sec, lv_color_hex(TEXT_MUTED), 0);
+        lv_obj_set_style_text_font(sec, &lv_font_montserrat_10, 0);
+        lv_obj_clear_flag(sec, LV_OBJ_FLAG_CLICKABLE);
+        row++;
+
+        char buf[128];
+        auto add_row = [&](const char* label, const char* val, uint32_t color) {
+            snprintf(buf, sizeof(buf), "  %s", label);
+            lv_obj_t* r = lv_list_add_btn(list, buf, val);
+            lv_obj_set_style_bg_color(r, lv_color_hex(row % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
+            lv_obj_set_style_bg_opa(r, LV_OPA_COVER, 0);
+            lv_obj_set_style_text_color(r, lv_color_hex(TEXT_PRIMARY), 0);
+            lv_obj_t* val_lbl = lv_obj_get_child(r, 1);
+            if (val_lbl && lv_obj_check_type(val_lbl, &lv_label_class)) {
+                lv_obj_set_style_text_color(val_lbl, lv_color_hex(color), 0);
+            }
+            row++;
+        };
+
+        char snr_str[16], rssi_str[16], type_str[24];
+        snprintf(snr_str, sizeof(snr_str), "%.1f dB", target->snr);
+        snprintf(rssi_str, sizeof(rssi_str), "%d dBm", target->rssi);
+        switch (target->type) {
+            case ADV_TYPE_REPEATER: strcpy(type_str, "Repeater"); break;
+            case ADV_TYPE_ROOM:     strcpy(type_str, "Room Server"); break;
+            default:                strcpy(type_str, "Unknown"); break;
+        }
+        add_row("Type", type_str, ACCENT);
+        add_row("SNR", snr_str, TEXT_PRIMARY);
+        add_row("RSSI", rssi_str, TEXT_PRIMARY);
+
+        // Login status
+        const char* login_text = "Not logged in";
+        uint32_t login_color = TEXT_SECONDARY;
+        switch (login_st) {
+            case LOGIN_STATUS_PENDING: login_text = "Login pending..."; login_color = ACCENT; break;
+            case LOGIN_STATUS_FAILED:  login_text = "Login failed";     login_color = ACCENT_RED; break;
+        }
+        add_row("Login", login_text, login_color);
+
+        // Spacer
+        lv_obj_t* spacer = lv_list_add_btn(list, nullptr, "");
+        lv_obj_set_style_bg_opa(spacer, LV_OPA_TRANSP, 0);
+        lv_obj_clear_flag(spacer, LV_OBJ_FLAG_CLICKABLE);
+        row++;
+
+        // Login button (prominent)
+        if (login_st != LOGIN_STATUS_PENDING) {
+            char* li_name = strdup(contact_name);
+            lv_obj_t* login_btn = lv_list_add_btn(list, LV_SYMBOL_DIRECTORY, "  Login");
+            lv_obj_set_style_bg_color(login_btn, lv_color_hex(ACCENT), 0);
+            lv_obj_set_style_bg_opa(login_btn, LV_OPA_COVER, 0);
+            lv_obj_set_style_text_color(login_btn, lv_color_hex(BG_PRIMARY), 0);
+            lv_obj_set_user_data(login_btn, li_name);
+            lv_obj_add_event_cb(login_btn, [](lv_event_t* e) {
+                lv_obj_t* btn = (lv_obj_t*)lv_event_get_target(e);
+                const char* name = (const char*)lv_obj_get_user_data(btn);
+                if (name) show_login_password_dialog(name);
+            }, LV_EVENT_CLICKED, nullptr);
+            lv_obj_add_event_cb(login_btn, [](lv_event_t* e) {
+                free(lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(e)));
+            }, LV_EVENT_DELETE, nullptr);
+        }
+
+    } else {
+        // ── Post-login: settings-style sections ───────
+
+        // ── Section: Connection ───────────────────────
+        {
+            lv_obj_t* sec = lv_list_add_btn(list, nullptr, "  Connection");
+            lv_obj_set_style_bg_color(sec, lv_color_hex(BG_TERTIARY), 0);
+            lv_obj_set_style_bg_opa(sec, LV_OPA_COVER, 0);
+            lv_obj_set_style_text_color(sec, lv_color_hex(TEXT_MUTED), 0);
+            lv_obj_set_style_text_font(sec, &lv_font_montserrat_10, 0);
+            lv_obj_clear_flag(sec, LV_OBJ_FLAG_CLICKABLE);
+            row++;
+
+            char buf[128];
+            auto add_con = [&](const char* label, const char* val, uint32_t color) {
+                snprintf(buf, sizeof(buf), "  %s", label);
+                lv_obj_t* r = lv_list_add_btn(list, buf, val);
+                lv_obj_set_style_bg_color(r, lv_color_hex(row % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
+                lv_obj_set_style_bg_opa(r, LV_OPA_COVER, 0);
+                lv_obj_set_style_text_color(r, lv_color_hex(TEXT_PRIMARY), 0);
+                lv_obj_t* val_lbl = lv_obj_get_child(r, 1);
+                if (val_lbl && lv_obj_check_type(val_lbl, &lv_label_class)) {
+                    lv_obj_set_style_text_color(val_lbl, lv_color_hex(color), 0);
+                }
+                row++;
+            };
+
+            char snr_str[16], rssi_str[16];
+            snprintf(snr_str, sizeof(snr_str), "%.1f dB", target->snr);
+            snprintf(rssi_str, sizeof(rssi_str), "%d dBm", target->rssi);
+
+            add_con("Status", "Connected", ACCENT_GREEN);
+            add_con("SNR", snr_str, TEXT_PRIMARY);
+            add_con("RSSI", rssi_str, TEXT_PRIMARY);
+            add_con("Login", "Logged in", ACCENT_GREEN);
+
+            uint8_t perm = slopos::mesh::getLoginPermission(contact_name);
+            char perm_buf[24];
+            snprintf(perm_buf, sizeof(perm_buf), "Admin (perm=%d)", perm);
+            add_con("Permission", perm_buf, ACCENT);
+        }
+
+        // ── Section: Commands ────────────────────────
+        {
+            lv_obj_t* sec2 = lv_list_add_btn(list, nullptr, "  Commands");
+            lv_obj_set_style_bg_color(sec2, lv_color_hex(BG_TERTIARY), 0);
+            lv_obj_set_style_bg_opa(sec2, LV_OPA_COVER, 0);
+            lv_obj_set_style_text_color(sec2, lv_color_hex(TEXT_MUTED), 0);
+            lv_obj_set_style_text_font(sec2, &lv_font_montserrat_10, 0);
+            lv_obj_clear_flag(sec2, LV_OBJ_FLAG_CLICKABLE);
+            row++;
+
+            // Admin Cmd
+            char* ac_name = strdup(contact_name);
+            lv_obj_t* ac_btn = lv_list_add_btn(list, LV_SYMBOL_SETTINGS, "  Admin Cmd");
+            lv_obj_set_style_bg_color(ac_btn, lv_color_hex(row % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
+            lv_obj_set_style_bg_opa(ac_btn, LV_OPA_COVER, 0);
+            lv_obj_set_style_text_color(ac_btn, lv_color_hex(TEXT_PRIMARY), 0);
+            lv_obj_set_user_data(ac_btn, ac_name);
+            lv_obj_add_event_cb(ac_btn, [](lv_event_t* e) {
+                lv_obj_t* btn = (lv_obj_t*)lv_event_get_target(e);
+                const char* name = (const char*)lv_obj_get_user_data(btn);
+                if (name) show_admin_cmd_dialog(name);
+            }, LV_EVENT_CLICKED, nullptr);
+            lv_obj_add_event_cb(ac_btn, [](lv_event_t* e) {
+                free(lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(e)));
+            }, LV_EVENT_DELETE, nullptr);
+            row++;
+
+            // Fetch Msgs
+            char* fm_name = strdup(contact_name);
+            lv_obj_t* fm_btn = lv_list_add_btn(list, LV_SYMBOL_LIST, "  Fetch Msgs");
+            lv_obj_set_style_bg_color(fm_btn, lv_color_hex(row % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
+            lv_obj_set_style_bg_opa(fm_btn, LV_OPA_COVER, 0);
+            lv_obj_set_style_text_color(fm_btn, lv_color_hex(TEXT_PRIMARY), 0);
+            lv_obj_set_user_data(fm_btn, fm_name);
+            lv_obj_add_event_cb(fm_btn, [](lv_event_t* e) {
+                lv_obj_t* btn = (lv_obj_t*)lv_event_get_target(e);
+                const char* name = (const char*)lv_obj_get_user_data(btn);
+                if (name) show_fetch_msgs_dialog(name);
+            }, LV_EVENT_CLICKED, nullptr);
+            lv_obj_add_event_cb(fm_btn, [](lv_event_t* e) {
+                free(lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(e)));
+            }, LV_EVENT_DELETE, nullptr);
+            row++;
+
+            // Logout
+            char* lo_name = strdup(contact_name);
+            lv_obj_t* lo_btn = lv_list_add_btn(list, LV_SYMBOL_REFRESH, "  Logout");
+            lv_obj_set_style_bg_color(lo_btn, lv_color_hex(ACCENT_ORANGE), 0);
+            lv_obj_set_style_bg_opa(lo_btn, LV_OPA_COVER, 0);
+            lv_obj_set_style_text_color(lo_btn, lv_color_hex(0xffffff), 0);
+            lv_obj_set_user_data(lo_btn, lo_name);
+            lv_obj_add_event_cb(lo_btn, [](lv_event_t* e) {
+                lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
+                const char* name = (const char*)lv_obj_get_user_data(target);
+                if (name) {
+                    slopos::mesh::sendLogout(name);
+                    lv_timer_create([](lv_timer_t* t) {
+                        go_back();
+                        lv_timer_del(t);
+                    }, 600, nullptr);
+                }
+            }, LV_EVENT_CLICKED, nullptr);
+            lv_obj_add_event_cb(lo_btn, [](lv_event_t* e) {
+                free(lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(e)));
+            }, LV_EVENT_DELETE, nullptr);
+            row++;
+        }
     }
 
     show_screen(scr);

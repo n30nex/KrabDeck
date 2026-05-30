@@ -903,6 +903,31 @@ int exportContactsFull(ContactInfo* out, int max) {
     return n;
 }
 
+// ── Favourite contacts ──────────────────────────
+
+bool isContactFavourite(const char* name) {
+    if (!g_mesh || !name) return false;
+    for (int i = 0; i < g_mesh->getContactCount(); i++) {
+        auto* c = g_mesh->getContact(i);
+        if (c && strcmp(c->name, name) == 0) {
+            return (c->flags & 0x01) != 0;
+        }
+    }
+    return false;
+}
+
+void setContactFavourite(const char* name, bool favourite) {
+    if (!g_mesh || !name) return;
+    for (int i = 0; i < g_mesh->getContactCount(); i++) {
+        auto* c = const_cast<::ContactInfo*>(g_mesh->getContact(i));
+        if (c && strcmp(c->name, name) == 0) {
+            if (favourite) c->flags |= 0x01;
+            else           c->flags &= ~0x01;
+            return;
+        }
+    }
+}
+
 // ── Channels ────────────────────────────────────
 
 int getChannelCount() { return g_mesh ? g_mesh->getChannelCount() : 0; }

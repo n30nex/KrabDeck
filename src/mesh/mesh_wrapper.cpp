@@ -501,6 +501,22 @@ bool getTelemetryResult(TelemetryResult* out) {
     return true;
 }
 
+// ── Path discovery (Phase 4.4) ────────────────
+uint32_t discoverPath(const char* dest_name) {
+    if (!g_mesh || !dest_name || !dest_name[0]) return 0;
+    return g_mesh->sendPathDiscovery(dest_name);
+}
+
+bool hasPathTo(const char* dest_name) {
+    if (!g_mesh || !dest_name) return false;
+    return g_mesh->getPathLen(dest_name) != OUT_PATH_UNKNOWN;
+}
+
+uint8_t getContactPathLen(const char* dest_name) {
+    if (!g_mesh || !dest_name) return OUT_PATH_UNKNOWN;
+    return g_mesh->getPathLen(dest_name);
+}
+
 // Inject a simulated message into the queue (for remote test mode — no radio)
 // All functions in this file that access the radio check for g_mesh == nullptr,
 // so this is safe to call without radio initialisation.

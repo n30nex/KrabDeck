@@ -577,6 +577,93 @@ public:
         Serial.printf("[mesh] Path updated for %s (len=%d)\n",
                       contact.name, contact.out_path_len);
 #endif
+        // If we had a pending discovery for this contact, mark it complete
+        for (int i = 0; i < MAX_DISCOVERY_PENDING; i++) {
+            if (_discovery_pending[i].in_use &&
+                strcmp(_discovery_pending[i].dest_name, contact.name) == 0) {
+                _discovery_pending[i].completed = true;
+                break;
+            }
+        }
+    }
+
+    // ── Path discovery (Phase 4.4) ──────────────
+    static constexpr int MAX_DISCOVERY_PENDING = 4;
+    struct DiscoveryPending {
+        char     dest_name[32];
+        uint32_t tag;
+        bool     in_use = false;
+        bool     completed = false;
+        uint32_t started_at_ms;
+    };
+    DiscoveryPending _discovery_pending[MAX_DISCOVERY_PENDING];
+
+    // Send a path discovery request — forces flood routing to learn the return path.
+    // Returns the request tag (>0) on success, 0 on failure.
+    uint32_t sendPathDiscovery(const char* name) {
+        if (!name || !name[0]) return 0;
+        int n = getNumContacts();
+        ::ContactInfo tmp;
+        for (int i = 0; i < n; i++) {
+            if (getContactByIdx((uint32_t)i, tmp) && strcmp(tmp.name, name) == 0) {
+                // Get a writable pointer to the contact
+                ::ContactInfo* c = lookupContactByPubKey(tmp.id.pub_key, PUB_KEY_SIZE);
+                if (!c) return 0;
+                uint32_t tag = 0, est_timeout = 0;
+                // Force flood by temporarily clearing path
+                uint8_t saved_len = c->out_path_len;
+                uint8_t saved_path[32];
+                if (saved_len <= 32 && saved_len != OUT_PATH_UNKNOWN)
+                    memcpy(saved_path, c->out_path, saved_len);
+                c->out_path_len = OUT_PATH_UNKNOWN;
+                // Send minimal discovery request
+                uint8_t req_data[5] = {0x04, 0x00, 0x00, 0x00, 0x00};
+                int r = BaseChatMesh::sendRequest(*c, req_data, sizeof(req_data), tag, est_timeout);
+                // Restore original path
+                c->out_path_len = saved_len;
+                if (saved_len != OUT_PATH_UNKNOWN && saved_len <= 32)
+                    memcpy(c->out_path, saved_path, saved_len);
+                if (r != MSG_SEND_FAILED) {
+                    for (int j = 0; j < MAX_DISCOVERY_PENDING; j++) {
+                        if (!_discovery_pending[j].in_use) {
+                            _discovery_pending[j].tag = tag;
+                            strncpy(_discovery_pending[j].dest_name, name,
+                                    sizeof(_discovery_pending[j].dest_name) - 1);
+                            _discovery_pending[j].dest_name[sizeof(_discovery_pending[j].dest_name) - 1] = '\0';
+                            _discovery_pending[j].in_use = true;
+                            _discovery_pending[j].completed = false;
+                            _discovery_pending[j].started_at_ms = _ms->getMillis();
+                            return tag;
+                        }
+                    }
+                }
+                return 0;
+            }
+        }
+        return 0;
+    }
+
+    // Check if a pending discovery has completed
+    bool isDiscoveryComplete(const char* name) {
+        for (int i = 0; i < MAX_DISCOVERY_PENDING; i++) {
+            if (_discovery_pending[i].in_use &&
+                strcmp(_discovery_pending[i].dest_name, name) == 0) {
+                return _discovery_pending[i].completed;
+            }
+        }
+        return false;
+    }
+
+    // Get path length for a contact (OUT_PATH_UNKNOWN = 0xFF if unknown)
+    uint8_t getPathLen(const char* name) {
+        int n = getNumContacts();
+        ::ContactInfo tmp;
+        for (int i = 0; i < n; i++) {
+            if (getContactByIdx((uint32_t)i, tmp) && strcmp(tmp.name, name) == 0) {
+                return tmp.out_path_len;
+            }
+        }
+        return OUT_PATH_UNKNOWN;
     }
 
     // ── SPIFFS blob persistence ─────────────────

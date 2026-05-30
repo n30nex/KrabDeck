@@ -204,6 +204,7 @@ static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px
 // Test touch injection for remote test controller
 static lv_point_t test_touch_point = {0, 0};
 static bool test_touch_pressed = false;
+static uint32_t test_release_tick = 0;
 #endif
 
 static void lvgl_touch_cb(lv_indev_t* indev, lv_indev_data_t* data)
@@ -213,7 +214,14 @@ static void lvgl_touch_cb(lv_indev_t* indev, lv_indev_data_t* data)
         data->point = test_touch_point;
         data->state = LV_INDEV_STATE_PRESSED;
         test_touch_pressed = false;
+        test_release_tick = lv_tick_get() + 80;  // release after 80ms
         slopos_display_wake();
+        return;
+    }
+    if (test_release_tick && lv_tick_get() >= test_release_tick) {
+        data->point = test_touch_point;
+        data->state = LV_INDEV_STATE_RELEASED;
+        test_release_tick = 0;
         return;
     }
 #endif

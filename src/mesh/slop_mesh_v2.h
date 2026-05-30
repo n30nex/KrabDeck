@@ -883,7 +883,7 @@ public:
 
     bool isAutoAddEnabled() const override { return true; }
     bool shouldAutoAddContactType(uint8_t type) const override {
-        return type == ADV_TYPE_CHAT || type == ADV_TYPE_ROOM || type == ADV_TYPE_NONE;
+        return type == ADV_TYPE_CHAT || type == ADV_TYPE_ROOM || type == ADV_TYPE_REPEATER || type == ADV_TYPE_NONE;
     }
     bool shouldOverwriteWhenFull() const override { return true; }
     uint8_t getAutoAddMaxHops() const override {

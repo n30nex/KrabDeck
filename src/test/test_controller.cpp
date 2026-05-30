@@ -88,6 +88,7 @@ static const ScreenEntry screen_table[] = {
     {"contactdetail",   slopos::ui::Screen::ContactDetail},
     {"nodestatus",      slopos::ui::Screen::NodeStatus},
     {"telemetry",       slopos::ui::Screen::Telemetry},
+    {"repeaters",       slopos::ui::Screen::Repeaters},
 };
 
 static const char* screen_name(slopos::ui::Screen s) {
@@ -147,6 +148,14 @@ static void print_help() {
 // ── Command dispatcher ───────────────────────────────────
 
 static void cmd_navigate(const char* arg) {
+    // Support "contactdetail <name>" to open a specific contact's detail screen
+    if (strncmp(arg, "contactdetail ", 14) == 0) {
+        const char* name = arg + 14;
+        if (name[0]) {
+            slopos::ui::contact_detail_screen_show(name);
+            return;
+        }
+    }
     slopos::ui::Screen s = screen_from_name(arg);
     if (s == slopos::ui::Screen::COUNT) {
         Serial.printf("[test] unknown screen: %s\n", arg);

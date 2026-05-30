@@ -1701,9 +1701,14 @@ void repeaters_screen_show()
         lv_obj_set_size(row, LV_PCT(100), ROW_H);
         lv_obj_set_style_bg_color(row,
             lv_color_hex(i % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
+        lv_obj_set_style_bg_color(row,
+            lv_color_hex(ACCENT), LV_STATE_PRESSED);
+        lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_opa(row, LV_OPA_20, LV_STATE_PRESSED);
         lv_obj_set_style_border_width(row, 0, 0);
         lv_obj_set_style_pad_all(row, 0, 0);
         lv_obj_set_scrollbar_mode(row, LV_SCROLLBAR_MODE_OFF);
+        lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
 
         // Icon
         lv_obj_t* icon = lv_label_create(row);
@@ -1718,6 +1723,10 @@ void repeaters_screen_show()
         lv_obj_set_style_text_color(name_l, lv_color_hex(TEXT_PRIMARY), 0);
         lv_obj_set_style_text_font(name_l, &lv_font_montserrat_12, 0);
         lv_obj_align(name_l, LV_ALIGN_LEFT_MID, 28, 0);
+
+        // Store name for click handler
+        char* name_dup = strdup(c.name);
+        lv_obj_set_user_data(row, name_dup);
 
         // RSSI
         char rssi_buf[12];
@@ -1736,6 +1745,19 @@ void repeaters_screen_show()
         lv_obj_set_style_text_color(snr_l, lv_color_hex(TEXT_SECONDARY), 0);
         lv_obj_set_style_text_font(snr_l, &lv_font_montserrat_10, 0);
         lv_obj_align(snr_l, LV_ALIGN_RIGHT_MID, -56, 0);
+
+        // Click handler — open contact detail (where Login/Admin Cmd buttons live)
+        lv_obj_add_event_cb(row, [](lv_event_t* e) {
+            lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
+            const char* name = (const char*)lv_obj_get_user_data(target);
+            if (name) {
+                contact_detail_screen_show(name);
+            }
+        }, LV_EVENT_CLICKED, nullptr);
+
+        lv_obj_add_event_cb(row, [](lv_event_t* e) {
+            free(lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(e)));
+        }, LV_EVENT_DELETE, nullptr);
     }
 
     show_screen(scr);

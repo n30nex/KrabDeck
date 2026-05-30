@@ -195,5 +195,24 @@ bool requestStatus(const char* dest_name);
 bool hasStatusResponse();
 bool getStatusResult(NodeStatus* out);
 
+// ── Telemetry queries (Phase 4.3) ─────────────
+#define MAX_TELEMETRY_ITEMS 12
+
+struct TelemetryItem {
+    uint8_t channel;
+    uint8_t type;
+    float   value_float;     // decoded float value (temperature C, voltage V, etc.)
+    char    value_str[24];   // formatted string for display
+};
+
+struct TelemetryResult {
+    int          n_items;
+    TelemetryItem items[MAX_TELEMETRY_ITEMS];
+};
+
+bool requestTelemetry(const char* dest_name);
+bool hasTelemetryResponse();
+bool getTelemetryResult(TelemetryResult* out);
+
 } // namespace mesh
 } // namespace slopos

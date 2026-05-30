@@ -1290,4 +1290,115 @@ TEST_F(StatusParseTest, StatusResponseSizeConstant) {
     EXPECT_EQ(56, 56) << "RepeaterStats should be 56 bytes";
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  Telemetry parsing tests (Phase 4.3) — CayenneLPP format
+// ═══════════════════════════════════════════════════════════════
+
+// CayenneLPP format: [channel:1B][type:1B][data:N bytes]
+// We test the binary format parsing directly (same logic as LPPReader
+// but without the library dependency in the test environment).
+
+class LPPParseTest : public ::testing::Test {};
+
+static float t4_decode_lpp_voltage(const uint8_t* data) {
+    uint16_t raw = ((uint16_t)data[0] << 8) | data[1];
+    return (float)raw / 100.0f;
+}
+
+static float t4_decode_lpp_temperature(const uint8_t* data) {
+    int16_t raw = (int16_t)((uint16_t)data[0] << 8) | data[1];
+    return (float)raw / 10.0f;
+}
+
+static float t4_decode_lpp_humidity(const uint8_t* data) {
+    return (float)data[0] / 2.0f;
+}
+
+static float t4_decode_lpp_coord_3byte(const uint8_t* data) {
+    int32_t val = (int32_t)(((uint32_t)data[0] << 16) | ((uint32_t)data[1] << 8) | data[2]);
+    if (val & 0x800000) val |= 0xFF000000;
+    return (float)val / 10000.0f;
+}
+
+static float t4_decode_lpp_altitude_3byte(const uint8_t* data) {
+    int32_t val = (int32_t)(((uint32_t)data[0] << 16) | ((uint32_t)data[1] << 8) | data[2]);
+    if (val & 0x800000) val |= 0xFF000000;
+    return (float)val / 100.0f;
+}
+
+TEST_F(LPPParseTest, DecodesVoltageRaw) {
+    uint8_t data[2] = {0x09, 0xC4};
+    float v = t4_decode_lpp_voltage(data);
+    EXPECT_FLOAT_EQ(v, 25.0f);
+}
+
+TEST_F(LPPParseTest, DecodesTemperaturePositive) {
+    uint8_t data[2] = {0x00, 0x96};
+    float t = t4_decode_lpp_temperature(data);
+    EXPECT_FLOAT_EQ(t, 15.0f);
+}
+
+TEST_F(LPPParseTest, DecodesTemperatureNegative) {
+    uint8_t data[2] = {0xFF, 0x38};
+    float t = t4_decode_lpp_temperature(data);
+    EXPECT_FLOAT_EQ(t, -20.0f);
+}
+
+TEST_F(LPPParseTest, DecodesHumidity) {
+    uint8_t data[1] = {0x9C};
+    float h = t4_decode_lpp_humidity(data);
+    EXPECT_FLOAT_EQ(h, 78.0f);
+}
+
+TEST_F(LPPParseTest, DecodesGPSCoordinates) {
+    // 51.5 * 10000 = 515000 = 0x07DBB8
+    uint8_t lat_data[3] = {0x07, 0xDB, 0xB8};
+    float lat = t4_decode_lpp_coord_3byte(lat_data);
+    EXPECT_NEAR(lat, 51.5f, 0.001f);
+    // -0.127 * 10000 = -1270 = 0xFFFFFB0A (24-bit 2's complement truncated)
+    uint8_t lon_data[3] = {0xFF, 0xFB, 0x0A};
+    float lon = t4_decode_lpp_coord_3byte(lon_data);
+    EXPECT_NEAR(lon, -0.127f, 0.001f);
+}
+
+TEST_F(LPPParseTest, DecodesAltitude) {
+    // 50 * 100 = 5000 = 0x001388
+    uint8_t alt_data[3] = {0x00, 0x13, 0x88};
+    float alt = t4_decode_lpp_altitude_3byte(alt_data);
+    EXPECT_NEAR(alt, 50.0f, 0.05f);
+    // Negative: -15m = -1500, 24-bit 2's comp: 0xFFFA24
+    uint8_t alt_neg[3] = {0xFF, 0xFA, 0x24};
+    float alt2 = t4_decode_lpp_altitude_3byte(alt_neg);
+    EXPECT_NEAR(alt2, -15.0f, 0.05f);
+}
+
+TEST_F(LPPParseTest, ParsesTwoRecordSequence) {
+    // Simulate full telemetry response buffer
+    uint8_t resp[4 + 4 + 4] = {0};
+    uint32_t tag = 0xDEAD;
+    memcpy(resp, &tag, 4);
+    // Record 1: ch=1, type=116(VOLTAGE), data=0x09C4(25.00V)
+    resp[4] = 1; resp[5] = 116; resp[6] = 0x09; resp[7] = 0xC4;
+    // Record 2: ch=2, type=103(TEMP), data=0x0096(15.0C)
+    resp[8] = 2; resp[9] = 103; resp[10] = 0x00; resp[11] = 0x96;
+
+    struct LPPItem { uint8_t ch, type; float val; };
+    LPPItem items[4];
+    int n = 0, pos = 4;
+    while (pos + 1 < (int)sizeof(resp)) {
+        uint8_t ch = resp[pos++];
+        uint8_t type = resp[pos++];
+        if (type == 116 && pos + 2 <= (int)sizeof(resp)) {
+            items[n].ch = ch; items[n].type = type;
+            items[n].val = t4_decode_lpp_voltage(&resp[pos]); pos += 2; n++;
+        } else if (type == 103 && pos + 2 <= (int)sizeof(resp)) {
+            items[n].ch = ch; items[n].type = type;
+            items[n].val = t4_decode_lpp_temperature(&resp[pos]); pos += 2; n++;
+        } else break;
+    }
+    ASSERT_EQ(n, 2);
+    EXPECT_EQ(items[0].ch, 1); EXPECT_EQ(items[0].type, 116); EXPECT_FLOAT_EQ(items[0].val, 25.0f);
+    EXPECT_EQ(items[1].ch, 2); EXPECT_EQ(items[1].type, 103); EXPECT_FLOAT_EQ(items[1].val, 15.0f);
+}
+
 } // anonymous namespace

@@ -12,6 +12,12 @@
 #include "slop_mesh_v2.h"
 #include "slop_mesh.h"
 #include "../diagnostics/debug_cfg.h"
+#include <helpers/sensors/LPPDataHelpers.h>
+
+// REQ_TYPE constants not defined in core BaseChatMesh.h (only in examples)
+#ifndef REQ_TYPE_GET_TELEMETRY_DATA
+#define REQ_TYPE_GET_TELEMETRY_DATA  0x03
+#endif
 
 #include <SPIFFS.h>
 #include <Preferences.h>
@@ -222,6 +228,10 @@ static int _acked_head = 0;
 static int _acked_count = 0;
 static int _ack_counter = 0;   // bumped on each registerAckedMessage() — used by UI to detect new ACKs
 
+static uint32_t _last_telemetry_tag = 0;
+static slopos::mesh::TelemetryResult _cached_telemetry;
+static bool _has_cached_telemetry = false;
+
 // ── Status request tracking (Phase 4.2) ───────
 static uint32_t _last_status_tag = 0;
 static slopos::mesh::NodeStatus _cached_status;
@@ -384,6 +394,110 @@ bool hasStatusResponse() {
 bool getStatusResult(NodeStatus* out) {
     if (!out || !_has_cached_status) return false;
     memcpy(out, &_cached_status, sizeof(*out));
+    return true;
+}
+
+// ── Telemetry queries (Phase 4.3) ────────────
+bool requestTelemetry(const char* dest_name) {
+    if (!g_mesh || !dest_name || !dest_name[0]) return false;
+    bool ok = g_mesh->sendRequest(dest_name, REQ_TYPE_GET_TELEMETRY_DATA);
+    if (ok) {
+        for (int i = 0; i < SlopMeshV2::MAX_PENDING_REQUESTS; i++) {
+            if (g_mesh->_pending_reqs[i].in_use &&
+                strcmp(g_mesh->_pending_reqs[i].dest_name, dest_name) == 0) {
+                _last_telemetry_tag = g_mesh->_pending_reqs[i].tag;
+                break;
+            }
+        }
+    }
+    return ok;
+}
+
+bool hasTelemetryResponse() {
+    if (!g_mesh || _last_telemetry_tag == 0) return false;
+    int n = g_mesh->getResponseCount();
+    for (int i = 0; i < n; i++) {
+        auto* re = g_mesh->getResponse(i);
+        if (re && re->tag == _last_telemetry_tag) {
+            // Parse CayenneLPP from response body (skip 4-byte tag)
+            TelemetryResult result;
+            memset(&result, 0, sizeof(result));
+            if (re->len > 4) {
+                LPPReader reader(re->data + 4, re->len - 4);
+                uint8_t ch, type;
+                int idx = 0;
+                while (reader.readHeader(ch, type) && idx < MAX_TELEMETRY_ITEMS) {
+                    TelemetryItem& item = result.items[result.n_items++];
+                    item.channel = ch;
+                    item.type = type;
+                    switch (type) {
+                        case LPP_VOLTAGE: {
+                            float v;
+                            reader.readVoltage(v);
+                            item.value_float = v;
+                            snprintf(item.value_str, sizeof(item.value_str),
+                                     "%.2fV", v);
+                            break;
+                        }
+                        case LPP_TEMPERATURE: {
+                            float t;
+                            reader.readTemperature(t);
+                            item.value_float = t;
+                            snprintf(item.value_str, sizeof(item.value_str),
+                                     "%.1fC", t);
+                            break;
+                        }
+                        case LPP_RELATIVE_HUMIDITY: {
+                            float h;
+                            reader.readRelativeHumidity(h);
+                            item.value_float = h;
+                            snprintf(item.value_str, sizeof(item.value_str),
+                                     "%.0f%%", h);
+                            break;
+                        }
+                        case LPP_BAROMETRIC_PRESSURE: {
+                            float p;
+                            reader.readPressure(p);
+                            item.value_float = p;
+                            snprintf(item.value_str, sizeof(item.value_str),
+                                     "%.1f hPa", p);
+                            break;
+                        }
+                        case LPP_GPS: {
+                            float lat, lon, alt;
+                            reader.readGPS(lat, lon, alt);
+                            item.value_float = lat;
+                            snprintf(item.value_str, sizeof(item.value_str),
+                                     "%.4f, %.4f %.0fm", lat, lon, alt);
+                            break;
+                        }
+                        case LPP_CURRENT: {
+                            float a;
+                            reader.readCurrent(a);
+                            item.value_float = a;
+                            snprintf(item.value_str, sizeof(item.value_str),
+                                     "%.3fA", a);
+                            break;
+                        }
+                        default:
+                            reader.skipData(type);
+                            snprintf(item.value_str, sizeof(item.value_str),
+                                     "type=%d", type);
+                            break;
+                    }
+                }
+            }
+            _cached_telemetry = result;
+            _has_cached_telemetry = true;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool getTelemetryResult(TelemetryResult* out) {
+    if (!out || !_has_cached_telemetry) return false;
+    memcpy(out, &_cached_telemetry, sizeof(*out));
     return true;
 }
 

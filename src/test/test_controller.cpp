@@ -84,8 +84,10 @@ static const ScreenEntry screen_table[] = {
     {"terminal",    slopos::ui::Screen::Terminal},
     {"signal",      slopos::ui::Screen::Signal},
     {"radio",       slopos::ui::Screen::RadioSetup},
-    {"onboarding",  slopos::ui::Screen::Onboarding},
-    {"contactdetail", slopos::ui::Screen::ContactDetail},
+    {"onboarding",      slopos::ui::Screen::Onboarding},
+    {"contactdetail",   slopos::ui::Screen::ContactDetail},
+    {"nodestatus",      slopos::ui::Screen::NodeStatus},
+    {"telemetry",       slopos::ui::Screen::Telemetry},
 };
 
 static const char* screen_name(slopos::ui::Screen s) {

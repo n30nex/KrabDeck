@@ -450,6 +450,11 @@ void slopos_display_loop()
                     {"radio",     slopos::ui::Screen::RadioSetup},
                     {"repeaters", slopos::ui::Screen::Repeaters},
                     {"onboarding",slopos::ui::Screen::Onboarding},
+                    {"s-radio",   slopos::ui::Screen::SettingsRadio},
+                    {"s-gps",     slopos::ui::Screen::SettingsGPS},
+                    {"s-display", slopos::ui::Screen::SettingsDisplay},
+                    {"s-system",  slopos::ui::Screen::SettingsSystem},
+                    {"packets",   slopos::ui::Screen::Network},
                 };
                 bool found = false;
                 for (auto& e : tbl) {

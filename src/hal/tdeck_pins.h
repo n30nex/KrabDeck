@@ -137,4 +137,4 @@
 #define P_LORA_MOSI   PIN_LORA_MOSI
 
 // Firmware version — displayed in Settings > About
-#define SLOPOS_VERSION  "beta-0.1.36"
+#define SLOPOS_VERSION  "beta-0.1.37"

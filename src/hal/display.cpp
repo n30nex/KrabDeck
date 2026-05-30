@@ -455,6 +455,7 @@ void slopos_display_loop()
                     {"s-display", slopos::ui::Screen::SettingsDisplay},
                     {"s-system",  slopos::ui::Screen::SettingsSystem},
                     {"packets",   slopos::ui::Screen::Network},
+                    {"node-status", slopos::ui::Screen::NodeStatus},
                 };
                 bool found = false;
                 for (auto& e : tbl) {

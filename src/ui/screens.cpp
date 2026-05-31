@@ -2228,7 +2228,7 @@ void repeater_detail_screen_show(const char* contact_name, bool skip_login)
                 if (name) {
                     bool cur = slopos::mesh::isContactFavourite(name);
                     slopos::mesh::setContactFavourite(name, !cur);
-                    repeater_detail_screen_show(name, false);
+                    repeater_detail_screen_show(name, true);
                 }
             }, LV_EVENT_CLICKED, nullptr);
             lv_obj_add_event_cb(fav_btn, [](lv_event_t* e) {

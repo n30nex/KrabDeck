@@ -51,7 +51,9 @@ struct PacketLogEntry {
 bool init(bool spiffs_ok = true);
 void loop();
 
-bool sendMessage(const char* dest_name, const char* text);
+// Returns 0 on failure, or the epoch-second timestamp the mesh layer used for ACK tracking.
+// The UI must store this returned timestamp so isMessageAcked() can match against it later.
+uint32_t sendMessage(const char* dest_name, const char* text);
 bool sendChannelMessage(const char* channel_name, const char* text);
 
 int  pollMessages(MeshMessage* out, int max);
@@ -246,6 +248,15 @@ bool sendCommand(const char* name, const char* text);
 bool isLoggedIn(const char* name);
 uint8_t getLoginPermission(const char* name);
 uint8_t getLoginStatus(const char* name);
+void forceLoginState(const char* name, uint8_t status, uint8_t permission);
+
+#if defined(SLOPOS_REMOTE_TEST)
+// Test helper: inject a fake repeater contact into the mesh contact list.
+// The contact will have the given name, type ADV_TYPE_REPEATER, and test SNR/RSSI.
+// Used by the test controller to verify the repeater detail UI without real radio traffic.
+bool addTestRepeater(const char* name);
+bool addTestRoomServer(const char* name);
+#endif
 
 // ── Anonymous requests (Phase 4.7) ────────────────
 // Send a text message to a node identified by its 64-hex-char public key.

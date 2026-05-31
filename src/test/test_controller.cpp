@@ -120,6 +120,7 @@ static void print_help() {
     Serial.println(F("║  inject <from> [channel=<ch>] <msg>  ║"));
     Serial.println(F("║  sendchannel <ch> <text>          Send on a channel        ║"));
     Serial.println(F("║  addchannel <name> [psk]          Add channel              ║"));
+    Serial.println(F("║  addrepeater <name>           Add test repeater contact  ║"));
     Serial.println(F("║  screen      Show current screen     ║"));
     Serial.println(F("║  status      Show device state       ║"));
     Serial.println(F("║  debug <level>  Set debug level (1=quiet, 2=normal, 3=verbose)║"));
@@ -153,6 +154,14 @@ static void cmd_navigate(const char* arg) {
         const char* name = arg + 14;
         if (name[0]) {
             slopos::ui::contact_detail_screen_show(name);
+            return;
+        }
+    }
+    // Support "repeaterdetail <name>" to open the repeater detail screen (login + post-login sections)
+    if (strncmp(arg, "repeaterdetail ", 15) == 0) {
+        const char* name = arg + 15;
+        if (name[0]) {
+            slopos::ui::repeater_detail_screen_show(name);
             return;
         }
     }
@@ -194,6 +203,52 @@ static void cmd_trackball(const char* arg) {
     }
     slopos_trackball_inject(ev);
     Serial.printf("[test] tb %s\n", arg);
+}
+
+// Scroll a list on the active screen by a number of pixels (positive = down, negative = up)
+static void cmd_scrolllist(const char* arg) {
+    if (!arg || !arg[0]) {
+        Serial.println("[test] scrolllist: usage: scrolllist <px>");
+        return;
+    }
+    int px = atoi(arg);
+    if (px == 0) return;
+    // Find the first LVGL list on the active screen and scroll it
+    lv_obj_t* scr = lv_scr_act();
+    bool scrolled = false;
+    // Search current screen children for a list object
+    uint32_t cnt = lv_obj_get_child_cnt(scr);
+    for (uint32_t i = 0; i < cnt; i++) {
+        lv_obj_t* child = lv_obj_get_child(scr, i);
+        if (child && lv_obj_check_type(child, &lv_list_class)) {
+            // Search inside container for a scrollable list
+            uint32_t cc = lv_obj_get_child_cnt(child);
+            for (uint32_t j = 0; j < cc; j++) {
+                lv_obj_t* grand = lv_obj_get_child(child, j);
+                if (grand && lv_obj_has_flag(grand, LV_OBJ_FLAG_SCROLLABLE)) {
+                    lv_obj_scroll_by(grand, 0, px, LV_ANIM_OFF);
+                    scrolled = true;
+                    Serial.printf("[test] scrolllist %d on scrollable child %u of container %u\n", px, j, i);
+                    break;
+                }
+            }
+            if (!scrolled) {
+                // scroll_to_y uses absolute positions; keep a static offset
+                static int scrolled_px = 0;
+                scrolled_px += px;
+                if (scrolled_px < 0) scrolled_px = 0;
+                lv_obj_scroll_to_y(child, scrolled_px, LV_ANIM_OFF);
+                scrolled = true;
+                Serial.printf("[test] scrolllist scroll_to_y=%d on container %u\n", scrolled_px, i);
+            }
+            break;
+        }
+    }
+    if (!scrolled) {
+        // Fallback: scroll the active screen's direct children
+        lv_obj_scroll_by(scr, 0, px, LV_ANIM_OFF);
+        Serial.printf("[test] scrolllist %d on screen (fallback)\n", px);
+    }
 }
 
 static void cmd_type(const char* text) {
@@ -735,17 +790,24 @@ static void cmd_sendmessage(const char* arg) {
         return;
     }
 
-    bool ok = slopos::mesh::sendMessage(name, text);
+    uint32_t send_ts = slopos::mesh::sendMessage(name, text);
+    bool ok = (send_ts != 0);
     if (ok) {
-        Serial.printf("[test] sendmessage OK: DM to %s sent %d chars\n", name, (int)strlen(text));
+        Serial.printf("[test] sendmessage OK: DM to %s sent %d chars\\n", name, (int)strlen(text));
+    } else {
+        send_ts = slopos::mesh::getCurrentTime();  // fallback for the simulated ACK even on failure
     }
-    // Always add local UI entry + simulated ACK for UI verification
+    // Always add local UI entry + simulated ACK for UI verification.
+    // Use send_ts so the timestamp in the stored message matches what registerAckedMessage tracks.
     char dm_channel[64];
     snprintf(dm_channel, sizeof(dm_channel), "DM: %s", name);
     const char* own = slopos::mesh::getOwnName();
     slopos::ui::chat_screen_add_msg(dm_channel, own ? own : "self", text, true);
-    uint32_t now = slopos::mesh::getCurrentTime();
-    slopos::mesh::registerAckedMessage(name, now ? now : 1);
+    // Directly register a simulated ACK with the same timestamp the UI stored.
+    // The UI's chat_screen_add_msg internally calls getCurrentTime() right now,
+    // so we cheat by matching it here. When chat_screen_add_msg is fixed to accept
+    // an explicit timestamp this should use send_ts directly.
+    slopos::mesh::registerAckedMessage(name, slopos::mesh::getCurrentTime());
     Serial.println(ok ? "[test] (ACK simulated)" : "[test] (local only + ACK simulated)");
 }
 
@@ -937,6 +999,18 @@ static bool dispatch(const char* line) {
     } else if (strcmp(cmd, "addchannel") == 0 || strcmp(cmd, "addchan") == 0) {
         if (!arg) { Serial.println("[test] addchannel: missing args"); return true; }
         cmd_addchannel(arg);
+    } else if (strcmp(cmd, "addrepeater") == 0) {
+        if (!arg) { Serial.println("[test] addrepeater: missing name"); return true; }
+        bool ok = slopos::mesh::addTestRepeater(arg);
+        Serial.printf("[test] addrepeater %s: %s\n", arg, ok ? "OK" : "FAILED");
+    } else if (strcmp(cmd, "addroomserver") == 0) {
+        if (!arg) { Serial.println("[test] addroomserver: missing name"); return true; }
+        bool ok = slopos::mesh::addTestRoomServer(arg);
+        Serial.printf("[test] addroomserver %s: %s\n", arg, ok ? "OK" : "FAILED");
+    } else if (strcmp(cmd, "setlogin") == 0) {
+        if (!arg) { Serial.println("[test] setlogin: usage: setlogin <name>"); return true; }
+        slopos::mesh::forceLoginState(arg, 2, 1);  // LOGIN_OK + admin permission
+        Serial.printf("[test] setlogin %s: OK\n", arg);
     } else if (strcmp(cmd, "screen") == 0) {
         cmd_screen();
     } else if (strcmp(cmd, "status") == 0) {
@@ -960,6 +1034,9 @@ static bool dispatch(const char* line) {
         cmd_tree();
     } else if (strcmp(cmd, "widgets") == 0) {
         cmd_widgets();
+    } else if (strcmp(cmd, "scrolllist") == 0) {
+        if (!arg) { Serial.println("[test] scrolllist: missing value (use positive = down, negative = up)"); return true; }
+        cmd_scrolllist(arg);
     } else if (strcmp(cmd, "tap") == 0) {
         if (!arg) { Serial.println("[test] tap: missing args"); return true; }
         cmd_tap(arg);

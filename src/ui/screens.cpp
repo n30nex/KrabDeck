@@ -628,7 +628,7 @@ static void show_login_password_dialog(const char* contact_name)
     // Password textarea
     lv_obj_t* ta = lv_textarea_create(dlg);
     lv_obj_set_size(ta, dlg_sz.w - 16, 28);
-    lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, 24);
+    lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, 26);
     lv_textarea_set_placeholder_text(ta, "Password (press Enter to submit)");
     lv_textarea_set_password_mode(ta, true);
     lv_textarea_set_one_line(ta, true);
@@ -644,7 +644,7 @@ static void show_login_password_dialog(const char* contact_name)
     // "Save Password" checkbox
     lv_obj_t* save_cb = lv_checkbox_create(dlg);
     lv_checkbox_set_text(save_cb, "Save Password");
-    lv_obj_align(save_cb, LV_ALIGN_TOP_MID, 0, 56);
+    lv_obj_align(save_cb, LV_ALIGN_TOP_MID, 0, 62);
     lv_obj_set_style_text_color(save_cb, lv_color_hex(TEXT_SECONDARY), 0);
     lv_obj_set_style_text_font(save_cb, &lv_font_montserrat_10, 0);
 
@@ -1042,7 +1042,7 @@ static void show_fetch_msgs_dialog(const char* contact_name)
     if (!contact_name) return;
 
     lv_obj_t* scr = lv_obj_get_screen(lv_scr_act());
-    auto dlg_sz = dialog_size(260, 100);
+    auto dlg_sz = dialog_size(260, 124);
     lv_obj_t* dlg = lv_obj_create(scr);
     lv_obj_set_size(dlg, dlg_sz.w, dlg_sz.h);
     lv_obj_center(dlg);
@@ -1063,12 +1063,12 @@ static void show_fetch_msgs_dialog(const char* contact_name)
     lv_label_set_text(hint, "Enter channel name (e.g. #general)");
     lv_obj_set_style_text_color(hint, lv_color_hex(TEXT_SECONDARY), 0);
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_10, 0);
-    lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 22);
+    lv_obj_align(hint, LV_ALIGN_TOP_MID, 0, 24);
 
     // Channel name textarea
     lv_obj_t* ta = lv_textarea_create(dlg);
     lv_obj_set_size(ta, dlg_sz.w - 16, 28);
-    lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, 36);
+    lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, 38);
     lv_textarea_set_placeholder_text(ta, "#channel");
     lv_textarea_set_one_line(ta, true);
     lv_obj_set_style_bg_color(ta, lv_color_hex(BG_INPUT), 0);
@@ -2025,7 +2025,7 @@ static void repeater_input_dialog(const char* contact_name,
 {
     if (!contact_name) return;
     lv_obj_t* scr = lv_obj_get_screen(lv_scr_act());
-    auto dlg_sz = dialog_size(260, 110);
+    auto dlg_sz = dialog_size(260, 124);
     lv_obj_t* dlg = lv_obj_create(scr);
     lv_obj_set_size(dlg, dlg_sz.w, dlg_sz.h);
     lv_obj_center(dlg);
@@ -2046,12 +2046,12 @@ static void repeater_input_dialog(const char* contact_name,
     lv_label_set_text(hnt, hint);
     lv_obj_set_style_text_color(hnt, lv_color_hex(TEXT_SECONDARY), 0);
     lv_obj_set_style_text_font(hnt, &lv_font_montserrat_10, 0);
-    lv_obj_align(hnt, LV_ALIGN_TOP_MID, 0, 22);
+    lv_obj_align(hnt, LV_ALIGN_TOP_MID, 0, 24);
 
     // Textarea
     lv_obj_t* ta = lv_textarea_create(dlg);
     lv_obj_set_size(ta, dlg_sz.w - 16, 28);
-    lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, 36);
+    lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, 38);
     lv_textarea_set_placeholder_text(ta, "Value (Enter to send)");
     lv_textarea_set_password_mode(ta, password_mode);
     lv_textarea_set_one_line(ta, true);

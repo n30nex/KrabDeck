@@ -267,7 +267,7 @@ static void refresh_channels()
     // Cache old channel state so we can clean up + rebuild without flicker
     // NOTE: static to avoid ~1.9KB stack allocation in LVGL event handler context
     static char old_names[MAX_CHANNELS][32] = {{0}};
-    static ChannelMeta old_meta[MAX_CHANNELS] = {{0}};
+    static ChannelMeta old_meta[MAX_CHANNELS] = {};
     static uint16_t old_counts[MAX_CHANNELS] = {0};
     static ChannelMessage* old_msgs[MAX_CHANNELS] = {nullptr};
     static uint16_t old_caps[MAX_CHANNELS] = {0};
@@ -1609,9 +1609,8 @@ static void refresh_chat_list_view(lv_obj_t* scr) {
 }
 
 static void show_add_channel_options(lv_obj_t* parent) {
-    // 180px height: title (4) + gap + label(12) + input(28) + gap + label(12) + input(28)
-    // + gap + feedback(10) + gap + button(28) + margin
-    auto dlg_sz = dialog_size(260, 180);
+    // 190px height gives consistent 8px gaps between all elements
+    auto dlg_sz = dialog_size(260, 190);
     lv_obj_t* dlg = lv_obj_create(parent);
     lv_obj_set_size(dlg, dlg_sz.w, dlg_sz.h);
     lv_obj_center(dlg);
@@ -1629,11 +1628,11 @@ static void show_add_channel_options(lv_obj_t* parent) {
     lv_obj_t* nl = lv_label_create(dlg);
     lv_label_set_text(nl, "Name:");
     lv_obj_set_style_text_color(nl, lv_color_hex(TEXT_SECONDARY), 0);
-    lv_obj_align(nl, LV_ALIGN_TOP_LEFT, 4, 22);
+    lv_obj_align(nl, LV_ALIGN_TOP_LEFT, 4, 24);
 
     lv_obj_t* ni = lv_textarea_create(dlg);
     lv_obj_set_size(ni, dlg_sz.w - 16, 26);
-    lv_obj_align(ni, LV_ALIGN_TOP_MID, 0, 36);
+    lv_obj_align(ni, LV_ALIGN_TOP_MID, 0, 38);
     lv_obj_set_style_bg_color(ni, lv_color_hex(BG_INPUT), 0);
     lv_obj_set_style_text_color(ni, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(ni, emoji_wrapped_montserrat_10, 0);
@@ -1646,11 +1645,11 @@ static void show_add_channel_options(lv_obj_t* parent) {
     lv_obj_t* pl = lv_label_create(dlg);
     lv_label_set_text(pl, "PSK (optional):");
     lv_obj_set_style_text_color(pl, lv_color_hex(TEXT_SECONDARY), 0);
-    lv_obj_align(pl, LV_ALIGN_TOP_LEFT, 4, 68);
+    lv_obj_align(pl, LV_ALIGN_TOP_LEFT, 4, 72);
 
     lv_obj_t* pi = lv_textarea_create(dlg);
     lv_obj_set_size(pi, dlg_sz.w - 16, 26);
-    lv_obj_align(pi, LV_ALIGN_TOP_MID, 0, 82);
+    lv_obj_align(pi, LV_ALIGN_TOP_MID, 0, 86);
     lv_obj_set_style_bg_color(pi, lv_color_hex(BG_INPUT), 0);
     lv_obj_set_style_text_color(pi, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(pi, emoji_wrapped_montserrat_10, 0);

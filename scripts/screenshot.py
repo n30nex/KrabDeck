@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SlopOS T-Deck Screenshot Capture
+SigurdOS T-Deck Screenshot Capture
 
 Connects to the T-Deck over USB serial (via the Pi), sends the SCREENSHOT
 command, captures hex-encoded RGB565 framebuffer data, and converts to PNG.
@@ -178,11 +178,11 @@ def capture_via_ssh(pi_host, output_path, use_remote_test_cmd=False):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Capture screenshot from SlopOS T-Deck")
+    parser = argparse.ArgumentParser(description="Capture screenshot from SigurdOS T-Deck")
     parser.add_argument("--port", help="Serial port (e.g., /dev/ttyACM0)")
     parser.add_argument("--baud", type=int, default=115200, help="Serial baud rate")
     parser.add_argument("--pi", help="Pi hostname (e.g., hermes-pi)")
-    parser.add_argument("--output", "-o", default="/tmp/slopos_screen.png", help="Output PNG path")
+    parser.add_argument("--output", "-o", default="/tmp/sigurdos_screen.png", help="Output PNG path")
     parser.add_argument("--remote-test", action="store_true",
                         help="Use 'capture' command instead of 'SCREENSHOT' (for remote_test builds)")
     args = parser.parse_args()

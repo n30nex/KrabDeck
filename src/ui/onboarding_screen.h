@@ -2,7 +2,7 @@
 
 #include "../hal/trackball.h"
 
-namespace slopos::ui {
+namespace sigurdos::ui {
 void onboarding_screen_show();
 }
 

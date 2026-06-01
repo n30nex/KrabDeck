@@ -16,7 +16,7 @@ def merge_bin_action(target, source, env):
 
     for f in [bootloader, partitions, firmware_bin]:
         if not _os.path.isfile(f):
-            print(f"SlopOS: skipping merge — missing: {f}")
+            print(f"SigurdOS: skipping merge — missing: {f}")
             return
 
     flash_images = [
@@ -41,11 +41,11 @@ def merge_bin_action(target, source, env):
         *flash_images,
     ])
 
-    print(f"SlopOS: merging firmware ({board_config.get('build.mcu', 'esp32s3')})…")
+    print(f"SigurdOS: merging firmware ({board_config.get('build.mcu', 'esp32s3')})…")
     env.Execute(merge_cmd)
 
     if _os.path.isfile(merged_bin):
-        print(f"SlopOS: merged → firmware-merged.bin ({_os.path.getsize(merged_bin):,} bytes)")
+        print(f"SigurdOS: merged → firmware-merged.bin ({_os.path.getsize(merged_bin):,} bytes)")
 
     # ── Web flasher manifest ──────────────────────────────
     import json as _json
@@ -67,7 +67,7 @@ def merge_bin_action(target, source, env):
     }
 
     boot_app0_src = _os.path.join(_os.path.dirname(build_dir),
-        ".pio/build/SlopOS_TDeck/boot_app0.bin")
+        ".pio/build/SigurdOS_TDeck/boot_app0.bin")
     # boot_app0 comes from framework, find it
     for root, dirs, files in _os.walk(_os.path.join(env.subst("$PROJECT_PACKAGES_DIR"), "framework-arduinoespressif32")):
         if "boot_app0.bin" in files:
@@ -88,13 +88,13 @@ def merge_bin_action(target, source, env):
     try:
         with open(pins_h) as f:
             for line in f:
-                if "SLOPOS_VERSION" in line and '"' in line:
+                if "SIGURDOS_VERSION" in line and '"' in line:
                     version = line.split('"')[1]
                     break
     except: pass
 
     manifest = {
-        "name": "SlopOS T-Deck",
+        "name": "SigurdOS T-Deck",
         "board": "LilyGo T-Deck",
         "mcu": mcu,
         "firmware_version": version,
@@ -108,7 +108,7 @@ def merge_bin_action(target, source, env):
 
     for name, src in artifacts.items():
         if _os.path.isfile(src):
-            dst_name = f"slopos-tdeck-{name}.bin"
+            dst_name = f"sigurdos-tdeck-{name}.bin"
             dst = _os.path.join(web_dir, dst_name)
             with open(src, "rb") as fsrc:
                 with open(dst, "wb") as fdst:
@@ -118,13 +118,13 @@ def merge_bin_action(target, source, env):
                 "file": dst_name, "size": size,
                 "offset": offsets.get(name, "0x0")
             }
-            print(f"SlopOS webflasher: {dst_name} ({size:,} bytes)")
+            print(f"SigurdOS webflasher: {dst_name} ({size:,} bytes)")
         else:
-            print(f"SlopOS webflasher: SKIP {name} — not found")
+            print(f"SigurdOS webflasher: SKIP {name} — not found")
 
     manifest_path = _os.path.join(web_dir, "manifest.json")
     with open(manifest_path, "w") as f:
         _json.dump(manifest, f, indent=2)
-    print(f"SlopOS webflasher: manifest written")
+    print(f"SigurdOS webflasher: manifest written")
 
 env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", merge_bin_action)

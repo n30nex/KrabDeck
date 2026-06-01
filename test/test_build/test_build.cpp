@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// This file is part of SlopOS-TDeck.
+// This file is part of SigurdOS.
 //
-// SlopOS-TDeck is free software: you can redistribute it and/or modify
+// SigurdOS is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// SlopOS-TDeck is distributed in the hope that it will be useful,
+// SigurdOS is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
+// along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
 
 /**
@@ -65,9 +65,9 @@ TEST_F(BuildIntegrationTest, BatteryAPIExists) {
     using mv_fn = uint16_t (*)();
     using pct_fn = uint8_t (*)();
 
-    (void)static_cast<init_fn>(slopos_battery_init);
-    (void)static_cast<mv_fn>(slopos_battery_mv);
-    (void)static_cast<pct_fn>(slopos_battery_pct);
+    (void)static_cast<init_fn>(sigurdos_battery_init);
+    (void)static_cast<mv_fn>(sigurdos_battery_mv);
+    (void)static_cast<pct_fn>(sigurdos_battery_pct);
     SUCCEED();
 }
 
@@ -76,16 +76,16 @@ TEST_F(BuildIntegrationTest, DisplayAPIExists) {
     using loop_fn = void (*)();
     using ms_fn = uint32_t (*)();
 
-    (void)static_cast<init_fn>(slopos_display_init);
-    (void)static_cast<loop_fn>(slopos_display_loop);
-    (void)static_cast<ms_fn>(slopos_display_millis);
+    (void)static_cast<init_fn>(sigurdos_display_init);
+    (void)static_cast<loop_fn>(sigurdos_display_loop);
+    (void)static_cast<ms_fn>(sigurdos_display_millis);
     SUCCEED();
 }
 
 // ── Screen count matches between modules ────────────────
 TEST_F(BuildIntegrationTest, ScreenCountConsistent) {
     // navigation.h defines screens (Home + app screens)
-    EXPECT_EQ((int)slopos::ui::Screen::COUNT, 22);
+    EXPECT_EQ((int)sigurdos::ui::Screen::COUNT, 22);
 }
 
 // ── LVGL config sanity ──────────────────────────────────

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// MeshCore protocol integration for SlopOS-TDeck.
-// Uses SlopMesh, a minimal mesh::Mesh subclass.
+// MeshCore protocol integration for SigurdOS.
+// Uses SigurdMesh, a minimal mesh::Mesh subclass.
 
 #pragma once
 #include <cstdint>
@@ -14,7 +14,7 @@
 #define ADV_TYPE_ROOM      3
 #define ADV_TYPE_SENSOR    4
 
-namespace slopos {
+namespace sigurdos {
 namespace mesh {
 
 // Forward declarations from mesh_wrapper.cpp
@@ -257,7 +257,7 @@ void pushCmdResponse(const char* name, const char* text);
 bool pollCmdResponse(char* name_out, int name_sz, char* text_out, int text_sz);
 void clearCmdResponses();
 
-#if defined(SLOPOS_REMOTE_TEST)
+#if defined(SIGURDOS_REMOTE_TEST)
 // Test helper: inject a fake repeater contact into the mesh contact list.
 // The contact will have the given name, type ADV_TYPE_REPEATER, and test SNR/RSSI.
 // Used by the test controller to verify the repeater detail UI without real radio traffic.
@@ -272,7 +272,7 @@ bool sendAnonMessage(const char* pubkey_hex, const char* text);
 
 // ── Group data datagrams (Phase 4.8) ─────────────
 // Standard data type constants
-// (Defined as static constexpr in SlopMeshV2; reusing here via enum)
+// (Defined as static constexpr in SigurdMeshV2; reusing here via enum)
 enum GroupDataType : uint16_t {
     GDT_NONE        = 0x0000,
     GDT_TEMPERATURE = 0x0001,
@@ -300,4 +300,4 @@ bool getGroupDataRecvEntry(int index, uint16_t* data_type_out,
 void clearGroupDataRecv();
 
 } // namespace mesh
-} // namespace slopos
+} // namespace sigurdos

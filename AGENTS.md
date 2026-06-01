@@ -1,6 +1,6 @@
-# SlopOS T-Deck — Agent Onboarding
+# SigurdOS T-Deck — Agent Onboarding
 
-**You are an AI agent working on the SlopOS T-Deck firmware.** This file is your instruction manual. Read it before modifying code.
+**You are an AI agent working on the SigurdOS T-Deck firmware.** This file is your instruction manual. Read it before modifying code.
 
 **Do not modify this file or `CLAUDE.md` in any PR.** They are AI agent context. Only the repo owner changes them. Any PR that touches `AGENTS.md` or `CLAUDE.md` will be rejected without review.
 
@@ -33,11 +33,11 @@ These are the reference documents you should load before starting work. Which on
 
 Standalone T-Deck LVGL firmware that runs in the MeshCore mesh network. Think "Discord UI on a LoRa radio." Full mesh protocol compatibility — interoperates with any MeshCore node.
 
-Three repos form the SlopOS ecosystem:
+Three repos form the SigurdOS ecosystem:
 
 | Repo | What | Stack |
 |------|------|-------|
-| `hermes-gadget/SlopOS` | MeshCore fork (core library) | C++/PlatformIO, ESP32 |
+| `hermes-gadget/SigurdOS` | MeshCore fork (core library) | C++/PlatformIO, ESP32 |
 | **`hermes-gadget/SlopOS-tdeck`** ← **you are here** | T-Deck LVGL firmware | C++/PlatformIO, LVGL v9, LovyanGFX |
 | `hermes-gadget/SlopOS-client` | Flutter mobile app | Dart/Flutter, BLE/USB/TCP |
 
@@ -56,7 +56,7 @@ pio test -e native_test -v
 pio test -e native_test -f test_keyboard -v
 
 # Build firmware
-pio run -e SlopOS_TDeck
+pio run -e SigurdOS_TDeck
 
 # Check test count (varies as tests are added)
 pio test -e native_test --list
@@ -99,7 +99,7 @@ src/
 │   ├── map_renderer.cpp/h # Offline map (PNG tiles via lodepng, PSRAM cache)
 │   └── lodepng_alloc.cpp  # lodepng allocator → PSRAM with DRAM fallback
 ├── diagnostics/
-│   └── debug.cpp/h        # Debug dumps (SLOPOS_DEBUG=1 build)
+│   └── debug.cpp/h        # Debug dumps (SIGURDOS_DEBUG=1 build)
 ├── fonts/
 │   └── emoji_font_setup.cpp/h  # Emoji font fallback for LVGL
 └── lib/
@@ -204,20 +204,20 @@ Use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 
 ## Mesh Integration
 
-MeshCore is a submodule at `lib/meshcore/`. The UI never touches MeshCore directly — all calls go through `slopos::mesh::*` in `mesh_wrapper.h`.
+MeshCore is a submodule at `lib/meshcore/`. The UI never touches MeshCore directly — all calls go through `sigurdos::mesh::*` in `mesh_wrapper.h`.
 
 **Key mesh wrapper API:**
 
 ```cpp
-slopos::mesh::init(spiffs_ok)          // Boot — load identity, start radio
-slopos::mesh::loop()                   // Call from main loop
-slopos::mesh::sendMessage(name, text)  // Direct message
-slopos::mesh::sendChannelMessage(ch, text)  // Group message
-slopos::mesh::addChannel(name, psk_b64)     // PSK channel
-slopos::mesh::addHashtagChannel(name)       // Hash-of-name channel
-slopos::mesh::exportContacts(out, max)      // Name list
-slopos::mesh::exportChannels(out, max)      // Channel name list
-slopos::mesh::getNoiseFloor()              // Current noise floor dBm
+sigurdos::mesh::init(spiffs_ok)          // Boot — load identity, start radio
+sigurdos::mesh::loop()                   // Call from main loop
+sigurdos::mesh::sendMessage(name, text)  // Direct message
+sigurdos::mesh::sendChannelMessage(ch, text)  // Group message
+sigurdos::mesh::addChannel(name, psk_b64)     // PSK channel
+sigurdos::mesh::addHashtagChannel(name)       // Hash-of-name channel
+sigurdos::mesh::exportContacts(out, max)      // Name list
+sigurdos::mesh::exportChannels(out, max)      // Channel name list
+sigurdos::mesh::getNoiseFloor()              // Current noise floor dBm
 ```
 
 **Messages arrive** via `chat_screen_add_msg(channel, sender, text, is_self)`. The chat screen maintains per-channel message caches (8 messages each, 16 channels max).
@@ -253,13 +253,13 @@ pio test -e native_test -f test_touch -v     # One module
 
 ```bash
 # Build firmware (release — no serial debug output)
-pio run -e SlopOS_TDeck
+pio run -e SigurdOS_TDeck
 
 # Debug build (full boot sequence + periodic diagnostics over serial)
-pio run -e SlopOS_TDeck_debug
+pio run -e SigurdOS_TDeck_debug
 
 # Trackball debug build (raw GPIO state visible)
-pio run -e SlopOS_TDeck_trackball_debug
+pio run -e SigurdOS_TDeck_trackball_debug
 
 # Run native tests (no hardware)
 pio test -e native_test -v
@@ -294,36 +294,36 @@ s.close()
 "'
 ```
 
-The debug build (`SlopOS_TDeck_debug`) enables:
+The debug build (`SigurdOS_TDeck_debug`) enables:
 - Step-by-step boot logging (`[boot] step N: ...`)
 - Periodic heap/PSRAM/battery stats (`[stat]`)
 - Display flush tracking (`[flush] #N`)
 - Trackball pin states (`[pins]`)
-- On-demand debug dump via `slopos_debug_dump()`
+- On-demand debug dump via `sigurdos_debug_dump()`
 - Map tile discovery logging
 
-The release build (`SlopOS_TDeck`) suppresses all of these via `NDEBUG` and the absence of `SLOPOS_DEBUG=1`. Only critical errors and warnings print in release mode.
+The release build (`SigurdOS_TDeck`) suppresses all of these via `NDEBUG` and the absence of `SIGURDOS_DEBUG=1`. Only critical errors and warnings print in release mode.
 
 ### Remote Test Controller
 
-**⚠️ CRITICAL: Do NOT use this mode without explicit user consent.** This disables the LoRa radio and makes the device a serial-controlled input simulator. Only the user decides when to use this mode. Never switch to `SlopOS_TDeck_remote_test` build env unless the user asks you to or explicitly approves it.
+**⚠️ CRITICAL: Do NOT use this mode without explicit user consent.** This disables the LoRa radio and makes the device a serial-controlled input simulator. Only the user decides when to use this mode. Never switch to `SigurdOS_TDeck_remote_test` build env unless the user asks you to or explicitly approves it.
 
 Enables automated and manual testing over serial (USB CDC). No LoRa radio is initialised — all mesh messages are simulated via injection. The radio hardware is never touched.
 
 Build with:
 ```bash
-pio run -e SlopOS_TDeck_remote_test
+pio run -e SigurdOS_TDeck_remote_test
 ```
 
 Flash and connect (local):
 ```bash
-pio run -e SlopOS_TDeck_remote_test -t upload
+pio run -e SigurdOS_TDeck_remote_test -t upload
 pio device monitor -b 115200
 ```
 
 Flash and connect (remote via hardware gateway):
 ```bash
-scp .pio/build/SlopOS_TDeck_remote_test/firmware-merged.bin <gateway>:/tmp/
+scp .pio/build/SigurdOS_TDeck_remote_test/firmware-merged.bin <gateway>:/tmp/
 ssh <gateway> "esptool --chip esp32s3 --port <serial-port> --baud 921600 write-flash 0x0 /tmp/firmware-merged.bin && rm /tmp/firmware-merged.bin"
 ssh <gateway> "stty -F <serial-port> 115200 raw -echo && cat <serial-port>"
 ```
@@ -344,7 +344,7 @@ Once connected, the T-Deck shows a test controller banner. Type commands directl
 | `debug <1\|2\|3>` | `debug 1` | Set debug verbosity (1=quiet, 2=normal, 3=verbose) |
 
 Safety guarantees:
-- No LoRa radio initialised — `slopos::mesh::init()` is never called
+- No LoRa radio initialised — `sigurdos::mesh::init()` is never called
 - All `sendMessage`, `sendChannelMessage`, `sendAdvert` return false (g_mesh is null)
 - Radio accessors (`getLastRSSI`, `getLastSNR`, `getNoiseFloor`) return dummy values
 - No SPI transactions ever reach the SX1262 hardware
@@ -360,15 +360,15 @@ If the issue involves physical input hardware (trackball, keyboard, touch, butto
 
 ### Debug Levels
 
-The debug build system (`SLOPOS_DEBUG=1`) supports three verbosity levels, controlled at build time via `-D SLOPOS_DEBUG_LEVEL=N` or at runtime via the `debug <1|2|3>` serial command:
+The debug build system (`SIGURDOS_DEBUG=1`) supports three verbosity levels, controlled at build time via `-D SIGURDOS_DEBUG_LEVEL=N` or at runtime via the `debug <1|2|3>` serial command:
 
 | Level | Name | Output | Default Env |
 |-------|------|--------|-------------|
-| 1 | Quiet | Only `[test]` responses from the test controller. No `[flush]`, `[stat]`, or `[pins]` output. | `SlopOS_TDeck_remote_test` |
-| 2 | Normal | All debug output: `[flush]` per frame, `[stat]` + `[pins]` every 5s. | `SlopOS_TDeck_debug` |
+| 1 | Quiet | Only `[test]` responses from the test controller. No `[flush]`, `[stat]`, or `[pins]` output. | `SigurdOS_TDeck_remote_test` |
+| 2 | Normal | All debug output: `[flush]` per frame, `[stat]` + `[pins]` every 5s. | `SigurdOS_TDeck_debug` |
 | 3 | Verbose | Level 2 output plus on-demand heavy dumps (`dump_system`, object tree, etc.). | — |
 
-When any `SLOPOS_DEBUG` build is running, the display auto-off timer is disabled — the screen stays on so you can observe behavior without needing to wake it. This only applies to debug builds; release builds retain the 30-second auto-off.
+When any `SIGURDOS_DEBUG` build is running, the display auto-off timer is disabled — the screen stays on so you can observe behavior without needing to wake it. This only applies to debug builds; release builds retain the 30-second auto-off.
 
 ---
 
@@ -380,9 +380,9 @@ Main + dev branch model:
 - Tags: `beta-0.1.XX` (zero-padded for correct sort: `beta-0.1.09` not `beta-0.1.9`)
 
 **Release flow (maintainer only):**
-1. Update `SLOPOS_VERSION` in `tdeck_pins.h`
-2. `pio run -e SlopOS_TDeck`
-3. `cp .pio/build/SlopOS_TDeck/firmware-merged.bin firmware/firmware-merged.bin`
+1. Update `SIGURDOS_VERSION` in `tdeck_pins.h`
+2. `pio run -e SigurdOS_TDeck`
+3. `cp .pio/build/SigurdOS_TDeck/firmware-merged.bin firmware/firmware-merged.bin`
 4. Commit, tag, push, `gh release create`
 
 ---
@@ -398,7 +398,7 @@ When working on this codebase, follow this sequence:
 5. **Run tests first** — `pio test -e native_test` before any changes to confirm baseline
 6. **Make changes** — use the file tools (`read_file`, `patch`, `write_file`)
 7. **Run tests again** — all tests must pass
-8. **Build firmware** — `pio run -e SlopOS_TDeck` must succeed
+8. **Build firmware** — `pio run -e SigurdOS_TDeck` must succeed
 9. **Commit and push** — conventional commit messages (`feat:`, `fix:`, `docs:`, etc.)
 
 ### Bug Spotting
@@ -477,7 +477,7 @@ Before submitting a PR (or before merging someone else's), use this checklist to
 #### Testing
 - [ ] Tests added or updated for every change
 - [ ] `pio test -e native_test -v` passes (all tests)
-- [ ] `pio run -e SlopOS_TDeck` builds without error
+- [ ] `pio run -e SigurdOS_TDeck` builds without error
 - [ ] PlatformIO discovers test dirs correctly (`test/test_<name>/main.cpp`)
 - [ ] PR body declares how hardware testing was done: "Remote test" (serial-controlled), "Physical hardware test", or both. If neither is stated, auto-decline.
 
@@ -494,7 +494,7 @@ Before submitting a PR (or before merging someone else's), use this checklist to
 1. List PRs: `gh pr list --repo hermes-gadget/SlopOS-tdeck --state open`
 2. Check diff: `gh pr diff N` or `git fetch origin pull/N/head:pr-N && git diff dev...pr-N`
 3. Verify PR body declares testing method — "Remote test" (serial-controlled), "Physical hardware test", or both. If missing, decline with: "PR must state how hardware testing was done — remote test, physical hardware, or both."
-4. Build: `pio run -e SlopOS_TDeck`
+4. Build: `pio run -e SigurdOS_TDeck`
 5. Test: `pio test -e native_test -v` (all tests must pass)
 6. Run the [Code Audit Checklist](#code-audit-checklist) — check every applicable item
 7. If the PR came from an AI agent: read the full diff for logic errors beyond what the agent self-checked. Agents miss subtle race conditions and edge-case buffer overflows.
@@ -507,7 +507,7 @@ Before submitting a PR (or before merging someone else's), use this checklist to
 
 | Trigger | Why |
 |---------|-----|
-| Unconditional `Serial.printf` without `#if defined(SLOPOS_DEBUG)` guard | Leaks debug output to production builds |
+| Unconditional `Serial.printf` without `#if defined(SIGURDOS_DEBUG)` guard | Leaks debug output to production builds |
 | Test suite not passing | Any single failure rejects the PR |
 | Hardcoded colors instead of theme constants | Breaks the pixel theme — use `theme.h` |
 | Missing `apply_dark_bg()` on screen backgrounds | Background won't match the dark theme |
@@ -561,5 +561,5 @@ Before submitting a PR (or before merging someone else's), use this checklist to
 | Terminal labels | Each command creates a new LVGL label with no pruning — cap at 64 lines |
 | Emoji truncation | Byte-level msg truncation can split 4-byte emoji, sending invalid UTF-8 over mesh |
 | SPI bus sharing | Display (SPI3_HOST, 40MHz) and SD card (HSPI=SPI3_HOST, 4MHz) share same SPI peripheral. LovyanGFX comment says "SPI2" but code uses SPI3 — fragile |
-| Debug shadow mode | `SLOPOS_TRACKBALL_DEBUG_SHADOW` drops trackball events instead of logging+forwarding |
-| Debug.h header guards | Declaration in `debug.h` is unconditional, but `debug.cpp` wraps all implementation in `#if defined(SLOPOS_DEBUG)` — latent linker risk |
+| Debug shadow mode | `SIGURDOS_TRACKBALL_DEBUG_SHADOW` drops trackball events instead of logging+forwarding |
+| Debug.h header guards | Declaration in `debug.h` is unconditional, but `debug.cpp` wraps all implementation in `#if defined(SIGURDOS_DEBUG)` — latent linker risk |

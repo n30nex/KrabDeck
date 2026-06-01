@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// This file is part of SlopOS-TDeck.
+// This file is part of SigurdOS.
 //
-// SlopOS-TDeck is free software: you can redistribute it and/or modify
+// SigurdOS is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// SlopOS-TDeck is distributed in the hope that it will be useful,
+// SigurdOS is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
+// along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
 
 #include "map_renderer.h"
@@ -67,12 +67,12 @@ static TileCoverage tile_coverage[MAX_ZOOM + 1];
 static int min_available_zoom = MIN_ZOOM;
 static int max_available_zoom = MAX_ZOOM;
 static bool have_tile_coverage = false;
-#if SLOPOS_DEBUG_MAP
-#define SLOPOS_MAP_DIAGNOSTICS 1
+#if SIGURDOS_DEBUG_MAP
+#define SIGURDOS_MAP_DIAGNOSTICS 1
 #define MAP_DEBUG_PRINTF(...) Serial.printf(__VA_ARGS__)
 #define MAP_DEBUG_PRINTLN(msg) Serial.println(msg)
 #else
-#define SLOPOS_MAP_DIAGNOSTICS 0
+#define SIGURDOS_MAP_DIAGNOSTICS 0
 #define MAP_DEBUG_PRINTF(...) do {} while (0)
 #define MAP_DEBUG_PRINTLN(msg) do {} while (0)
 #endif
@@ -123,7 +123,7 @@ static void map_free(void* p) {
     heap_caps_free(p);
 }
 
-#if SLOPOS_MAP_DIAGNOSTICS
+#if SIGURDOS_MAP_DIAGNOSTICS
 static void appendf(char* out, size_t out_sz, size_t* pos, const char* fmt, ...) {
     if (!out || out_sz == 0 || !pos || *pos >= out_sz) return;
 
@@ -221,7 +221,7 @@ static bool load_tile(int zoom, int tx, int ty) {
     }
 
     char path[64];
-    snprintf(path, sizeof(path), SLOPOS_SD_MOUNTPOINT "/tiles/%d/%d/%d.png", zoom, tx, ty);
+    snprintf(path, sizeof(path), SIGURDOS_SD_MOUNTPOINT "/tiles/%d/%d/%d.png", zoom, tx, ty);
 
     FILE* f = fopen(path, "rb");
     if (!f) {
@@ -341,7 +341,7 @@ static bool scan_y_range(int zoom, int x, int* min_y, int* max_y, int* sample_y)
     if (!min_y || !max_y || !sample_y) return false;
 
     char y_path[64];
-    snprintf(y_path, sizeof(y_path), SLOPOS_SD_MOUNTPOINT "/tiles/%d/%d", zoom, x);
+    snprintf(y_path, sizeof(y_path), SIGURDOS_SD_MOUNTPOINT "/tiles/%d/%d", zoom, x);
 
     DIR* yd = opendir(y_path);
     if (!yd) return false;
@@ -401,7 +401,7 @@ static bool scan_zoom_coverage(int z, TileCoverage* out) {
     if (!out) return false;
 
     char x_path[48];
-    snprintf(x_path, sizeof(x_path), SLOPOS_SD_MOUNTPOINT "/tiles/%d", z);
+    snprintf(x_path, sizeof(x_path), SIGURDOS_SD_MOUNTPOINT "/tiles/%d", z);
     DIR* xd = opendir(x_path);
     if (!xd) return false;
 
@@ -502,14 +502,14 @@ static bool scan_zoom_coverage(int z, TileCoverage* out) {
 }
 
 static void discover_tiles() {
-    if (!slopos_sdcard_mounted()) {
+    if (!sigurdos_sdcard_mounted()) {
         MAP_DEBUG_PRINTLN("[map] discover: SD not mounted");
         return;
     }
 
     reset_tile_coverage();
 
-    const char* tiles_path = SLOPOS_SD_MOUNTPOINT "/tiles";
+    const char* tiles_path = SIGURDOS_SD_MOUNTPOINT "/tiles";
     DIR* tiles_dir = opendir(tiles_path);
     if (!tiles_dir) {
         MAP_DEBUG_PRINTF("[map] discover: opendir(%s) failed\n", tiles_path);
@@ -556,13 +556,13 @@ static void discover_tiles() {
 
 // ── Metadata auto-center (from metadata.json, fallback to discover) ──
 static void load_metadata() {
-    if (!slopos_sdcard_mounted()) return;
+    if (!sigurdos_sdcard_mounted()) return;
 
     // Always discover tiles first — this correctly sets zoom_level = best_zoom
     discover_tiles();
 
     // If metadata.json has bounds, refine the center from those
-    FILE* f = fopen(SLOPOS_SD_MOUNTPOINT "/tiles/metadata.json", "r");
+    FILE* f = fopen(SIGURDOS_SD_MOUNTPOINT "/tiles/metadata.json", "r");
     if (!f) return;
     char buf[512];
     size_t len = fread(buf, 1, sizeof(buf) - 1, f);
@@ -599,7 +599,7 @@ static void load_metadata() {
 
 static bool delete_cb_registered = false;
 
-void slopos_map_init() {
+void sigurdos_map_init() {
     if (initialized) return;
 
     // Allocate draw buffer (320×240×2 = 153KB for RGB565).
@@ -614,14 +614,14 @@ void slopos_map_init() {
     if (!canvas_pixels) return;
 
     // Discover tiles and set initial center/zoom.
-    // Canvas is created later in slopos_map_reparent() once we have a real
+    // Canvas is created later in sigurdos_map_reparent() once we have a real
     // screen parent — lv_canvas_create(nullptr) in LVGL v9 makes a screen
     // object, not an orphan widget, so reparenting it silently fails.
     load_metadata();
 
     initialized = true;
 }
-void slopos_map_reparent(lv_obj_t* new_parent) {
+void sigurdos_map_reparent(lv_obj_t* new_parent) {
     if (!initialized || !new_parent || !canvas_pixels) return;
 
     if (!map_canvas) {
@@ -641,13 +641,13 @@ void slopos_map_reparent(lv_obj_t* new_parent) {
 
     if (!delete_cb_registered) {
         lv_obj_add_event_cb(new_parent, [](lv_event_t* e) {
-            slopos_map_deinit();
+            sigurdos_map_deinit();
         }, LV_EVENT_DELETE, nullptr);
         delete_cb_registered = true;
     }
 }
 
-void slopos_map_deinit() {
+void sigurdos_map_deinit() {
     if (!initialized) return;
     delete_cb_registered = false;
     // Free LRU tile cache pixels
@@ -666,18 +666,18 @@ void slopos_map_deinit() {
     initialized = false;
 }
 
-void slopos_map_set_view(double lat, double lon, int zoom) {
+void sigurdos_map_set_view(double lat, double lon, int zoom) {
     center_lat = clamp_d(lat, MIN_LAT, MAX_LAT);
     center_lon = clamp_d(lon, MIN_LON, MAX_LON);
     zoom_level = clamp(zoom, MIN_ZOOM, MAX_ZOOM);
     clamp_view_to_coverage();
 }
 
-double slopos_map_get_lat()    { return center_lat; }
-double slopos_map_get_lon()    { return center_lon; }
-int    slopos_map_get_zoom()   { return zoom_level; }
+double sigurdos_map_get_lat()    { return center_lat; }
+double sigurdos_map_get_lon()    { return center_lon; }
+int    sigurdos_map_get_zoom()   { return zoom_level; }
 
-void slopos_map_pan(int dx, int dy) {
+void sigurdos_map_pan(int dx, int dy) {
     // Convert screen pixel delta to tile coordinate delta
     // This properly handles Web Mercator's non-linear latitude scaling
     double tx = lon_to_tile_x(center_lon, zoom_level);
@@ -691,24 +691,24 @@ void slopos_map_pan(int dx, int dy) {
     clamp_view_to_coverage();
 }
 
-void slopos_map_zoom_in()  {
+void sigurdos_map_zoom_in()  {
     zoom_level = clamp(zoom_level + 1, MIN_ZOOM, MAX_ZOOM);
     clamp_view_to_coverage();
 }
 
-void slopos_map_zoom_out() {
+void sigurdos_map_zoom_out() {
     zoom_level = clamp(zoom_level - 1, MIN_ZOOM, MAX_ZOOM);
     clamp_view_to_coverage();
 }
 
-#if SLOPOS_MAP_DIAGNOSTICS
-static void slopos_map_debug_summary(char* out, size_t out_sz) {
+#if SIGURDOS_MAP_DIAGNOSTICS
+static void sigurdos_map_debug_summary(char* out, size_t out_sz) {
     if (!out || out_sz == 0) return;
     out[0] = '\0';
 
     size_t pos = 0;
     appendf(out, out_sz, &pos, "SD:%d init:%d z:%d\n",
-            slopos_sdcard_mounted() ? 1 : 0,
+            sigurdos_sdcard_mounted() ? 1 : 0,
             initialized ? 1 : 0,
             zoom_level);
 
@@ -719,7 +719,7 @@ static void slopos_map_debug_summary(char* out, size_t out_sz) {
     appendf(out, out_sz, &pos, "\n");
     appendf(out, out_sz, &pos, "%s\n", last_tile_status);
 
-    DIR* root = opendir(SLOPOS_SD_MOUNTPOINT);
+    DIR* root = opendir(SIGURDOS_SD_MOUNTPOINT);
     appendf(out, out_sz, &pos, "root:%s", root ? "ok" : "fail");
     if (root) {
         int shown = 0;
@@ -733,7 +733,7 @@ static void slopos_map_debug_summary(char* out, size_t out_sz) {
     }
     appendf(out, out_sz, &pos, "\n");
 
-    const char* tiles_path = SLOPOS_SD_MOUNTPOINT "/tiles";
+    const char* tiles_path = SIGURDOS_SD_MOUNTPOINT "/tiles";
     DIR* tiles = opendir(tiles_path);
     appendf(out, out_sz, &pos, "tiles:%s", tiles ? "ok" : "fail");
     int best_z = -1;
@@ -764,7 +764,7 @@ static void slopos_map_debug_summary(char* out, size_t out_sz) {
 
     if (best_z >= 0) {
         char z_path[48];
-        snprintf(z_path, sizeof(z_path), SLOPOS_SD_MOUNTPOINT "/tiles/%d", best_z);
+        snprintf(z_path, sizeof(z_path), SIGURDOS_SD_MOUNTPOINT "/tiles/%d", best_z);
         DIR* zd = opendir(z_path);
         appendf(out, out_sz, &pos, "z%d:%s", best_z, zd ? "ok" : "fail");
 
@@ -800,7 +800,7 @@ static void slopos_map_debug_summary(char* out, size_t out_sz) {
         if (best_x >= 0) {
             char sample_path[80];
             snprintf(sample_path, sizeof(sample_path),
-                     SLOPOS_SD_MOUNTPOINT "/tiles/%d/%d/%d.png",
+                     SIGURDOS_SD_MOUNTPOINT "/tiles/%d/%d/%d.png",
                      best_z, best_x, best_sample_y);
             FILE* f = fopen(sample_path, "rb");
             appendf(out, out_sz, &pos, "x:%d y:%d-%d\nopen:%s\n",
@@ -815,7 +815,7 @@ static void slopos_map_debug_summary(char* out, size_t out_sz) {
 }
 #endif
 
-void slopos_map_render() {
+void sigurdos_map_render() {
     if (!initialized || !map_canvas || !canvas_pixels) return;
 
     MAP_DEBUG_PRINTF("[map] render: zoom=%d center=%.4f,%.4f\n",
@@ -867,7 +867,7 @@ void slopos_map_render() {
             }
 
             // Try to load and render the tile (cache-aware, PNG)
-            if (slopos_sdcard_mounted() && load_tile(zoom_level, tile_x, tile_y)) {
+            if (sigurdos_sdcard_mounted() && load_tile(zoom_level, tile_x, tile_y)) {
                 CachedTile* ct = tile_cache_lookup(tile_cache, TILE_CACHE_SIZE, zoom_level, tile_x, tile_y, &cache_clock);
                 if (ct) {
                     draw_tile_from_cache(ct, screen_x, screen_y);
@@ -895,25 +895,25 @@ void slopos_map_render() {
 
     // If no tiles loaded at all, show status message
     if (!any_tile_loaded) {
-#if SLOPOS_MAP_DIAGNOSTICS
+#if SIGURDOS_MAP_DIAGNOSTICS
         static char status[512];
-        slopos_map_debug_summary(status, sizeof(status));
+        sigurdos_map_debug_summary(status, sizeof(status));
 #endif
 
         lv_draw_label_dsc_t label_dsc;
         lv_draw_label_dsc_init(&label_dsc);
         label_dsc.color = lv_color_hex(0x8e9297);
-#if SLOPOS_MAP_DIAGNOSTICS
+#if SIGURDOS_MAP_DIAGNOSTICS
         label_dsc.text = status;
 #else
-        label_dsc.text = slopos_sdcard_mounted() ?
+        label_dsc.text = sigurdos_sdcard_mounted() ?
             "No map tiles found\nCopy tiles/ folder\nto SD card root" :
             "No SD card\nInsert SD card with\ntiles/ folder";
 #endif
         label_dsc.text_local = true;
 
         lv_area_t label_area;
-#if SLOPOS_MAP_DIAGNOSTICS
+#if SIGURDOS_MAP_DIAGNOSTICS
         label_area.x1 = 8;
         label_area.y1 = 38;
         label_area.x2 = TFT_WIDTH - 8;
@@ -946,18 +946,18 @@ void slopos_map_render() {
     lv_obj_invalidate(map_canvas);
 }
 
-bool slopos_map_tiles_available() {
-    if (!slopos_sdcard_mounted()) return false;
+bool sigurdos_map_tiles_available() {
+    if (!sigurdos_sdcard_mounted()) return false;
     int tx = (int)lon_to_tile_x(center_lon, zoom_level);
     int ty = (int)lat_to_tile_y(center_lat, zoom_level);
     char path[64];
-    snprintf(path, sizeof(path), SLOPOS_SD_MOUNTPOINT "/tiles/%d/%d/%d.png", zoom_level, tx, ty);
+    snprintf(path, sizeof(path), SIGURDOS_SD_MOUNTPOINT "/tiles/%d/%d/%d.png", zoom_level, tx, ty);
     FILE* f = fopen(path, "r");
     if (f) { fclose(f); return true; }
     return false;
 }
 
-void slopos_map_pixel_to_latlon(int px, int py, double* out_lat, double* out_lon) {
+void sigurdos_map_pixel_to_latlon(int px, int py, double* out_lat, double* out_lon) {
     double center_tx = lon_to_tile_x(center_lon, zoom_level);
     double center_ty = lat_to_tile_y(center_lat, zoom_level);
 

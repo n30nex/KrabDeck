@@ -1,4 +1,4 @@
-# SlopOS T-Deck
+# SigurdOS T-Deck
 
 **Status: Beta testing** — several users have flashed successfully. See [Known Issues](#known-issues) below.
 
@@ -166,7 +166,7 @@ git submodule update --init --recursive
 ### Build
 
 ```bash
-pio run -e SlopOS_TDeck
+pio run -e SigurdOS_TDeck
 ```
 
 First build downloads the ESP32-S3 toolchain (~800 MB). Subsequent builds are fast.
@@ -176,7 +176,7 @@ First build downloads the ESP32-S3 toolchain (~800 MB). Subsequent builds are fa
 Put the T-Deck in download mode: **hold the trackball button while plugging in USB** (or hold BOOT + tap RESET). The screen stays black — that's correct.
 
 ```bash
-pio run -e SlopOS_TDeck -t upload
+pio run -e SigurdOS_TDeck -t upload
 ```
 
 ### Monitor
@@ -204,14 +204,14 @@ pip install esptool
 esptool.py --chip esp32s3 --port COM21 --baud 921600 \
   --before default_reset --after hard_reset write_flash \
   --flash_mode qio --flash_freq 80m --flash_size 16MB \
-  0x0 firmware/slopos-tdeck-merged.bin
+  0x0 firmware/sigurdos-tdeck-merged.bin
 ```
 
 See [`firmware/README.md`](firmware/README.md) for details.
 
 ## Screenshots
 
-All screens from the SlopOS T-Deck UI, captured from a live device running the production firmware build.
+All screens from the SigurdOS T-Deck UI, captured from a live device running the production firmware build.
 
 | Screen | Screenshot | Description |
 |--------|-----------|-------------|
@@ -247,7 +247,7 @@ below for the full audit.
 
 This project builds on and incorporates open source software from the following projects:
 
-| Project | License | Usage in SlopOS |
+| Project | License | Usage in SigurdOS |
 |---------|---------|-----------------|
 | [MeshCore](https://github.com/meshcore-dev/MeshCore) | MIT | Mesh networking protocol (submodule at `lib/meshcore/`). Also: RTC clock (`ESP32RTCClock`), auto-off display timer, deep sleep patterns, and `NodePrefs` struct — all adapted from MeshCore's companion radio firmware. |
 | [LilyGo T-Deck Keyboard_ESP32C3](https://github.com/Xinyuan-LilyGO/T-Deck) | MIT | I2C keyboard protocol reference — our `keyboard.cpp` driver is based on the command set and keymap from this firmware (© 2023 Shenzhen Xin Yuan Electronic Technology Co., Ltd) |

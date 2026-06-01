@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// Minimal MeshCore Mesh subclass for SlopOS-TDeck.
+// Minimal MeshCore Mesh subclass for SigurdOS.
 // Based on advice from Claude Code analysis of MeshCore internals.
 // MeshCore is MIT licensed (meshcore-dev/MeshCore).
 
@@ -14,7 +14,7 @@
 #include "utils/utf8_util.h"
 #include "../diagnostics/debug_cfg.h"
 
-namespace slopos {
+namespace sigurdos {
 namespace mesh {
 
 // Forward declaration for packet logging (defined in mesh_wrapper.cpp)
@@ -45,7 +45,7 @@ struct SlopChannel {
     char name[32];
 };
 
-class SlopMesh : public ::mesh::Mesh {
+class SigurdMesh : public ::mesh::Mesh {
     SlopContact _contacts[SLOP_MAX_CONTACTS];
     int _nContacts = 0;
 
@@ -56,7 +56,7 @@ class SlopMesh : public ::mesh::Mesh {
     int  _matchIdxs[SLOP_MAX_CONTACTS];
     int  _nMatches = 0;
 
-    slopos::NodePrefs _prefs;
+    sigurdos::NodePrefs _prefs;
     void (*_onMessage)(const char* sender, const char* channel, const char* text);
 
     char _own_name[32];
@@ -172,7 +172,7 @@ protected:
 
         // Flood max hops check: skip auto-adding contacts beyond the configured limit
         {
-            uint8_t max_hops = slopos::prefs_get().autoadd_max_hops;
+            uint8_t max_hops = sigurdos::prefs_get().autoadd_max_hops;
             if (max_hops > 0 && pkt->getPathHashCount() >= max_hops) {
                 pushPacketLog(name, (int)_radio->getLastRSSI(), pkt->getSNR(), "ADVERT(SKIPPED)");
                 return;
@@ -181,7 +181,7 @@ protected:
 
         // Per-type auto-add config check
         {
-            uint8_t config = slopos::prefs_get().autoadd_config;
+            uint8_t config = sigurdos::prefs_get().autoadd_config;
             uint8_t ctype = parser.getType();
             bool allow = false;
             if      (ctype == 1 && (config & 0x02)) allow = true; // chat
@@ -287,7 +287,7 @@ protected:
         const char* channel = chname ? chname : "[group]";
 
         // Parse "<sender_name>: <message>" — this is the format used by
-        // MeshCore's BaseChatMesh (and now by SlopOS sendGroupText).
+        // MeshCore's BaseChatMesh (and now by SigurdOS sendGroupText).
         // Falls back to raw_text as sender if no colon separator found.
         char sender_buf[32];
         const char* message;
@@ -347,19 +347,19 @@ protected:
 
     // ── TX/RX delay tuning ──────────────────────────
     int calcRxDelay(float score, uint32_t air_time) const override {
-        slopos::NodePrefs p = slopos::prefs_get();
+        sigurdos::NodePrefs p = sigurdos::prefs_get();
         if (p.rx_delay_base <= 0.0f) return 0;
         return (int)((pow(p.rx_delay_base, 0.85f - score) - 1.0) * air_time);
     }
 
     uint32_t getRetransmitDelay(const ::mesh::Packet* packet) override {
-        slopos::NodePrefs p = slopos::prefs_get();
+        sigurdos::NodePrefs p = sigurdos::prefs_get();
         uint32_t t = (_radio->getEstAirtimeFor(packet->getRawLength()) * 52 / 50) / 2;
         return (uint32_t)(p.tx_delay_factor * getRNG()->nextInt(1, 5) * t);
     }
 
     uint32_t getDirectRetransmitDelay(const ::mesh::Packet* packet) override {
-        slopos::NodePrefs p = slopos::prefs_get();
+        sigurdos::NodePrefs p = sigurdos::prefs_get();
         if (p.direct_tx_delay_factor <= 0.0f) return 0;
         uint32_t t = (_radio->getEstAirtimeFor(packet->getRawLength()) * 52 / 50) / 2;
         return (uint32_t)(p.direct_tx_delay_factor * getRNG()->nextInt(1, 5) * t);
@@ -491,15 +491,15 @@ public:
         int rssi = (int)_radio->getLastRSSI();
         float snr = pkt->getSNR();
         pushPacketLog("RADIO", rssi, snr, tname);
-#if SLOPOS_DEBUG_MESH
-        SLOPOS_RUNTIME_FEAT(mesh) {
+#if SIGURDOS_DEBUG_MESH
+        SIGURDOS_RUNTIME_FEAT(mesh) {
         Serial.printf("[rx] %s  RSSI:%ddBm SNR:%.1fdB\n",
                       tname, rssi, snr);
         }
 #endif
     }
 
-    SlopMesh(::mesh::Radio& r, ::mesh::MillisecondClock& ms, ::mesh::RNG& rng,
+    SigurdMesh(::mesh::Radio& r, ::mesh::MillisecondClock& ms, ::mesh::RNG& rng,
              ::mesh::RTCClock& rtc, ::mesh::PacketManager& mgr, ::mesh::MeshTables& tbl)
         : ::mesh::Mesh(r, ms, rng, rtc, mgr, tbl),
           _onMessage(nullptr)
@@ -539,7 +539,7 @@ public:
             uint32_t ts = getRTCClock()->getCurrentTime();
             memcpy(buf, &ts, 4);
             buf[4] = 0;   // TXT_TYPE_PLAIN, attempt 0
-            size_t text_len = slopos::utf8_truncate_bytes(text, MAX_PAYLOAD - 1);
+            size_t text_len = sigurdos::utf8_truncate_bytes(text, MAX_PAYLOAD - 1);
             memcpy(buf + 5, text, text_len);
             buf[5 + text_len] = '\0';
             size_t len = 5 + text_len + 1;
@@ -731,7 +731,7 @@ public:
             if (prefix_len < 0) prefix_len = 0;
             if ((size_t)prefix_len >= remaining) prefix_len = remaining - 1;
         }
-        size_t text_len = slopos::utf8_truncate_bytes(text, remaining - (size_t)prefix_len);
+        size_t text_len = sigurdos::utf8_truncate_bytes(text, remaining - (size_t)prefix_len);
         if (text_len > remaining - (size_t)prefix_len)
             text_len = remaining - (size_t)prefix_len - 1;
         memcpy(text_start + prefix_len, text, text_len);
@@ -749,7 +749,7 @@ public:
     }
 
     // ── Prefs ─────────────────────────────────────────
-    slopos::NodePrefs& prefs() { return _prefs; }
+    sigurdos::NodePrefs& prefs() { return _prefs; }
 
     // ── Ping Nearby ─────────────────────────────────
     // Send a zero-hop PING to discover nearby nodes
@@ -825,4 +825,4 @@ public:
 };
 
 } // namespace mesh
-} // namespace slopos
+} // namespace sigurdos

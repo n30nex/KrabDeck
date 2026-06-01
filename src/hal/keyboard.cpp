@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// This file is part of SlopOS-TDeck.
+// This file is part of SigurdOS.
 //
-// SlopOS-TDeck is free software: you can redistribute it and/or modify
+// SigurdOS is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// SlopOS-TDeck is distributed in the hope that it will be useful,
+// SigurdOS is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
+// along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
 
 #include "keyboard.h"
@@ -70,7 +70,7 @@ static bool     alt_held        = false;
 
 // ── Ring buffer for key events ─────────────────────────────
 // Fixes single-slot latch that dropped fast key presses:
-// slopos_keyboard_scan() now pushes every valid key into the buffer,
+// sigurdos_keyboard_scan() now pushes every valid key into the buffer,
 // and the LVGL indev callback dequeues one key at a time.
 static constexpr int KEY_BUF_SIZE = 16;
 static uint8_t  key_buf[KEY_BUF_SIZE] = {0};
@@ -83,7 +83,7 @@ static int      last_consumed_key = 0; // key returned by most recent consume_ev
 // PUBLIC API
 // ════════════════════════════════════════════════════════
 
-bool slopos_keyboard_init()
+bool sigurdos_keyboard_init()
 {
     if (initialized) return true;
 
@@ -99,7 +99,7 @@ bool slopos_keyboard_init()
     }
 
     // Set initial backlight from stored preferences
-    uint8_t brightness = slopos::prefs_get().kbd_backlight;
+    uint8_t brightness = sigurdos::prefs_get().kbd_backlight;
     Wire.beginTransmission(KB_I2C_ADDR);
     Wire.write(CMD_BRIGHTNESS);
     Wire.write(brightness);
@@ -129,7 +129,7 @@ bool slopos_keyboard_init()
     return true;
 }
 
-void slopos_keyboard_scan()
+void sigurdos_keyboard_scan()
 {
     if (!initialized) return;
 
@@ -182,7 +182,7 @@ void slopos_keyboard_scan()
     }
 }
 
-int slopos_keyboard_get_key()
+int sigurdos_keyboard_get_key()
 {
     if (key_count > 0) {
         return key_buf[key_tail];
@@ -190,27 +190,27 @@ int slopos_keyboard_get_key()
     return last_consumed_key;
 }
 
-bool slopos_keyboard_is_shift()
+bool sigurdos_keyboard_is_shift()
 {
     return shift_held;
 }
 
-bool slopos_keyboard_is_ctrl()
+bool sigurdos_keyboard_is_ctrl()
 {
     return ctrl_held;
 }
 
-bool slopos_keyboard_is_alt()
+bool sigurdos_keyboard_is_alt()
 {
     return alt_held;
 }
 
-bool slopos_keyboard_has_event()
+bool sigurdos_keyboard_has_event()
 {
     return key_count > 0;
 }
 
-bool slopos_keyboard_consume_event()
+bool sigurdos_keyboard_consume_event()
 {
     if (key_count > 0) {
         last_consumed_key = key_buf[key_tail];
@@ -221,7 +221,7 @@ bool slopos_keyboard_consume_event()
     return false;
 }
 
-void slopos_keyboard_set_brightness(uint8_t duty)
+void sigurdos_keyboard_set_brightness(uint8_t duty)
 {
     Wire.setClock(100000);
     Wire.beginTransmission(KB_I2C_ADDR);
@@ -232,7 +232,7 @@ void slopos_keyboard_set_brightness(uint8_t duty)
     }
 }
 
-void slopos_keyboard_set_default_brightness(uint8_t duty)
+void sigurdos_keyboard_set_default_brightness(uint8_t duty)
 {
     if (duty < 30) duty = 30;  // minimum for Alt+B toggle
     Wire.setClock(100000);
@@ -244,7 +244,7 @@ void slopos_keyboard_set_default_brightness(uint8_t duty)
     }
 }
 
-void slopos_keyboard_reset_scan_state()
+void sigurdos_keyboard_reset_scan_state()
 {
     last_poll_ms    = 0;
     key_head  = 0;
@@ -256,7 +256,7 @@ void slopos_keyboard_reset_scan_state()
     alt_held        = false;
 }
 
-void slopos_keyboard_consume_key()
+void sigurdos_keyboard_consume_key()
 {
     // consume_event() already dequeued the key from the ring buffer.
     // We just need to clear the latched value so subsequent get_key() calls
@@ -264,7 +264,7 @@ void slopos_keyboard_consume_key()
     last_consumed_key = 0;
 }
 
-void slopos_keyboard_inject(uint8_t key_code)
+void sigurdos_keyboard_inject(uint8_t key_code)
 {
     // Push into ring buffer (if full, overwrite oldest)
     key_buf[key_head] = key_code;

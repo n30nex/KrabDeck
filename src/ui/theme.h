@@ -3,14 +3,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// SlopOS Pixel Theme — Discord-inspired palette with blocky pixel styling
+// SigurdOS Pixel Theme — Discord-inspired palette with blocky pixel styling
 // Theme colors are runtime variables (inline) so they can be changed by the
 // theme system and persist across reboots via NVS.
 
 #include <lvgl.h>
 #include <cstdint>
 
-namespace slopos::theme {
+namespace sigurdos::theme {
 
 // ── Themeable backgrounds ───────────────────────────────
 inline uint32_t BG_PRIMARY   = 0x0f0f0f;  // deep black
@@ -232,4 +232,4 @@ inline void apply_card_style(lv_obj_t* obj) {
     apply_pixel_card(obj);
 }
 
-} // namespace slopos::theme
+} // namespace sigurdos::theme

@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// This file is part of SlopOS-TDeck.
+// This file is part of SigurdOS.
 //
-// SlopOS-TDeck is free software: you can redistribute it and/or modify
+// SigurdOS is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// SlopOS-TDeck is distributed in the hope that it will be useful,
+// SigurdOS is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
+// along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
 
 /**
@@ -45,92 +45,92 @@ TEST_F(MeshWrapperTest, InitFunctionExists) {
     // We can't call init() without hardware, but the function symbol exists.
     // Verify return type is bool (spiffs_ok parameter has default).
     using init_fn = bool (*)(bool);
-    (void)static_cast<init_fn>(slopos::mesh::init);
+    (void)static_cast<init_fn>(sigurdos::mesh::init);
     SUCCEED();
 }
 
 TEST_F(MeshWrapperTest, LoopFunctionExists) {
     using loop_fn = void (*)();
-    (void)static_cast<loop_fn>(slopos::mesh::loop);
+    (void)static_cast<loop_fn>(sigurdos::mesh::loop);
     SUCCEED();
 }
 
 TEST_F(MeshWrapperTest, SendDirectSignature) {
     using send_fn = uint32_t (*)(const char*, const char*);
-    (void)static_cast<send_fn>(slopos::mesh::sendMessage);
+    (void)static_cast<send_fn>(sigurdos::mesh::sendMessage);
     SUCCEED();
 }
 
 TEST_F(MeshWrapperTest, SendChannelSignature) {
     using send_fn = bool (*)(const char*, const char*);
-    (void)static_cast<send_fn>(slopos::mesh::sendChannelMessage);
+    (void)static_cast<send_fn>(sigurdos::mesh::sendChannelMessage);
     SUCCEED();
 }
 
 TEST_F(MeshWrapperTest, AddHashtagChannelSignature) {
     using add_fn = bool (*)(const char*);
-    (void)static_cast<add_fn>(slopos::mesh::addHashtagChannel);
+    (void)static_cast<add_fn>(sigurdos::mesh::addHashtagChannel);
     SUCCEED();
 }
 
 TEST_F(MeshWrapperTest, RemoveChannelSignature) {
     using rm_fn = bool (*)(int);
-    (void)static_cast<rm_fn>(slopos::mesh::removeChannel);
+    (void)static_cast<rm_fn>(sigurdos::mesh::removeChannel);
     SUCCEED();
 }
 
 TEST_F(MeshWrapperTest, GetNoiseFloorReturnsInt) {
     using fn = int (*)();
-    (void)static_cast<fn>(slopos::mesh::getNoiseFloor);
+    (void)static_cast<fn>(sigurdos::mesh::getNoiseFloor);
     SUCCEED();
 }
 
 TEST_F(MeshWrapperTest, GetLastRSSIReturnsInt) {
     using fn = int (*)();
-    (void)static_cast<fn>(slopos::mesh::getLastRSSI);
+    (void)static_cast<fn>(sigurdos::mesh::getLastRSSI);
     SUCCEED();
 }
 
 TEST_F(MeshWrapperTest, GetLastSNRReturnsFloat) {
     using fn = float (*)();
-    (void)static_cast<fn>(slopos::mesh::getLastSNR);
+    (void)static_cast<fn>(sigurdos::mesh::getLastSNR);
     SUCCEED();
 }
 
 TEST_F(MeshWrapperTest, GetUnreadCountReturnsInt) {
     using fn = int (*)();
-    (void)static_cast<fn>(slopos::mesh::pendingMessageCount);
+    (void)static_cast<fn>(sigurdos::mesh::pendingMessageCount);
     SUCCEED();
 }
 
 TEST_F(MeshWrapperTest, ApplyRadioParamsAcceptsRxGainFlag) {
     using fn = bool (*)(float, float, int, int, int, bool);
-    (void)static_cast<fn>(slopos::mesh::applyRadioParams);
+    (void)static_cast<fn>(sigurdos::mesh::applyRadioParams);
     SUCCEED();
 }
 
 // ── Initial unread count is zero ────────────────────────
 TEST_F(MeshWrapperTest, UnreadCountStartsAtZero) {
-    EXPECT_EQ(slopos::mesh::pendingMessageCount(), 0);
+    EXPECT_EQ(sigurdos::mesh::pendingMessageCount(), 0);
 }
 
 // ── Noise floor is within realistic range ───────────────
 TEST_F(MeshWrapperTest, NoiseFloorInRealisticRange) {
     // Even with mocks, the return should be in dBm range
-    int nf = slopos::mesh::getNoiseFloor();
+    int nf = sigurdos::mesh::getNoiseFloor();
     EXPECT_GE(nf, -150);
     EXPECT_LE(nf, 0);
 }
 
 // ── Signal values are within physical limits ─────────────
 TEST_F(MeshWrapperTest, RSSIInRealisticRange) {
-    int rssi = slopos::mesh::getLastRSSI();
+    int rssi = sigurdos::mesh::getLastRSSI();
     EXPECT_GE(rssi, -160);
     EXPECT_LE(rssi, 0);
 }
 
 TEST_F(MeshWrapperTest, SNRInRealisticRange) {
-    float snr = slopos::mesh::getLastSNR();
+    float snr = sigurdos::mesh::getLastSNR();
     EXPECT_GE(snr, -20.0f);
     EXPECT_LE(snr, 20.0f);
 }
@@ -138,14 +138,14 @@ TEST_F(MeshWrapperTest, SNRInRealisticRange) {
 // ── Recent nodes returns valid count ────────────────────
 TEST_F(MeshWrapperTest, GetRecentNodesReturnsNonNegative) {
     char names[4][32];
-    int count = slopos::mesh::exportContacts(names, 4);
+    int count = sigurdos::mesh::exportContacts(names, 4);
     EXPECT_GE(count, 0);
     EXPECT_LE(count, 4);
 }
 
 // ── ContactInfo struct includes type field ──────────────
 TEST_F(MeshWrapperTest, ContactInfoHasTypeField) {
-    slopos::mesh::ContactInfo ci;
+    sigurdos::mesh::ContactInfo ci;
     // type should be a uint8_t; verify it compiles and has a known default
     // In native test mode (no mesh init), exportContactsFull returns 0,
     // but the struct layout is what we're testing.
@@ -153,7 +153,7 @@ TEST_F(MeshWrapperTest, ContactInfoHasTypeField) {
 }
 
 TEST_F(MeshWrapperTest, ContactInfoHasLocationFields) {
-    slopos::mesh::ContactInfo ci{};
+    sigurdos::mesh::ContactInfo ci{};
     ci.has_location = true;
     ci.latitude = 43.6532f;
     ci.longitude = -79.3832f;
@@ -174,22 +174,22 @@ TEST_F(MeshWrapperTest, AdvTypeConstants) {
 
 // ── exportContactsFull returns valid ContactInfo data ───
 TEST_F(MeshWrapperTest, ExportContactsFullReturnsNonNegative) {
-    slopos::mesh::ContactInfo contacts[4];
-    int count = slopos::mesh::exportContactsFull(contacts, 4);
+    sigurdos::mesh::ContactInfo contacts[4];
+    int count = sigurdos::mesh::exportContactsFull(contacts, 4);
     EXPECT_GE(count, 0);
 }
 
 // ── removeContact signature exists ──────────────────────
 TEST_F(MeshWrapperTest, RemoveContactSignature) {
     using rm_fn = bool (*)(const char*);
-    (void)static_cast<rm_fn>(slopos::mesh::removeContact);
+    (void)static_cast<rm_fn>(sigurdos::mesh::removeContact);
     SUCCEED();
 }
 
 // ── resetPathTo signature exists ────────────────────────
 TEST_F(MeshWrapperTest, ResetPathToSignature) {
     using fn = bool (*)(const char*);
-    (void)static_cast<fn>(slopos::mesh::resetPathTo);
+    (void)static_cast<fn>(sigurdos::mesh::resetPathTo);
     SUCCEED();
 }
 

@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-enum class SlopOSTrackballEvent : uint8_t {
+enum class SigurdOSTrackballEvent : uint8_t {
     None = 0,
     Up,
     Down,
@@ -14,13 +14,13 @@ enum class SlopOSTrackballEvent : uint8_t {
     Click,
 };
 
-bool slopos_trackball_init();
-void slopos_trackball_scan();
-bool slopos_trackball_next_event(SlopOSTrackballEvent* out);
+bool sigurdos_trackball_init();
+void sigurdos_trackball_scan();
+bool sigurdos_trackball_next_event(SigurdOSTrackballEvent* out);
 
 // Reset internal debouncing/repeat state. Useful for tests and wake recovery.
-void slopos_trackball_reset_scan_state();
+void sigurdos_trackball_reset_scan_state();
 
 // Inject a simulated trackball event into the queue (for remote test mode).
 // The event will be consumed by the normal trackball read path.
-void slopos_trackball_inject(SlopOSTrackballEvent event);
+void sigurdos_trackball_inject(SigurdOSTrackballEvent event);

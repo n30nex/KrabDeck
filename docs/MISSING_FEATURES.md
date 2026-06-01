@@ -1,12 +1,12 @@
 # Missing Features
 
-This document catalogs features present in the MeshCore protocol and ecosystem that are **not yet implemented** in SlopOS-TDeck firmware. It is a roadmap reference — not a bug tracker. Bugs and workarounds belong in `KNOWN_ISSUES.md`.
+This document catalogs features present in the MeshCore protocol and ecosystem that are **not yet implemented** in SigurdOS-TDeck firmware. It is a roadmap reference — not a bug tracker. Bugs and workarounds belong in `KNOWN_ISSUES.md`.
 
-SlopOS-TDeck is a standalone **companion-radio firmware** for the LilyGo T-Deck. It interoperates with any MeshCore node and is designed for the end-user handheld experience — not for infrastructure roles (dedicated repeaters, room servers, sensors). Features are tagged to distinguish companion-relevant from infrastructure-only items. For build order, dependencies, and step-by-step implementation guidance, see [`ROADMAP.md`](ROADMAP.md).
+SigurdOS-TDeck is a standalone **companion-radio firmware** for the LilyGo T-Deck. It interoperates with any MeshCore node and is designed for the end-user handheld experience — not for infrastructure roles (dedicated repeaters, room servers, sensors). Features are tagged to distinguish companion-relevant from infrastructure-only items. For build order, dependencies, and step-by-step implementation guidance, see [`ROADMAP.md`](ROADMAP.md).
 
 ## Where to find things in upstream MeshCore
 
-Every reference below links directly into **`https://github.com/meshcore-dev/MeshCore`** (main branch) so other agents can jump straight to the source. The repo submodule (`lib/meshcore/`) is pinned to companion firmware **v1.15.0 / `FIRMWARE_VER_CODE 11`** ([`examples/companion_radio/MyMesh.h`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.h)). Line numbers drift between versions — references cite **symbol names**, so grep the linked file if a line has moved. If a symbol can't be found upstream, check `lib/meshcore/` directly (the pinned commit is authoritative for what SlopOS actually builds against).
+Every reference below links directly into **`https://github.com/meshcore-dev/MeshCore`** (main branch) so other agents can jump straight to the source. The repo submodule (`lib/meshcore/`) is pinned to companion firmware **v1.15.0 / `FIRMWARE_VER_CODE 11`** ([`examples/companion_radio/MyMesh.h`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.h)). Line numbers drift between versions — references cite **symbol names**, so grep the linked file if a line has moved. If a symbol can't be found upstream, check `lib/meshcore/` directly (the pinned commit is authoritative for what SigurdOS actually builds against).
 
 The single most useful reference is the companion radio command dispatcher:
 [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) — `handleCmdFrame()` defines all **64 `CMD_*` request codes**, **28 `RESP_CODE_*` reply codes**, and **17 `PUSH_CODE_*` async push codes**. Almost every protocol feature below has a worked example in this one file.
@@ -15,17 +15,17 @@ The single most useful reference is the companion radio command dispatcher:
 
 The companion radio (`MyMesh`) extends **`BaseChatMesh`** ([`src/helpers/BaseChatMesh.h`](https://github.com/meshcore-dev/MeshCore/blob/main/src/helpers/BaseChatMesh.h)), which provides ready-made high-level helpers: `sendLogin()`, `sendCommandData()`, `sendRequest()`, `resetPathTo()`, `processAck()` with an `expected_ack_table`, an offline message queue, and contact-by-pubkey lookup.
 
-**SlopOS's `SlopMesh` extends `::mesh::Mesh` *directly*** (`src/mesh/slop_mesh.h`), one layer lower. It therefore does **not** inherit any of those helpers — they are reimplemented (partially) or absent. For each missing feature below, the implementer chooses one of:
+**SigurdOS's `SlopMesh` extends `::mesh::Mesh` *directly*** (`src/mesh/slop_mesh.h`), one layer lower. It therefore does **not** inherit any of those helpers — they are reimplemented (partially) or absent. For each missing feature below, the implementer chooses one of:
 - **Port the `BaseChatMesh` method** into `SlopMesh` (usually the fastest path — the logic already exists), or
 - **Reimplement on raw `Mesh`** using `createDatagram()` / `createAnonDatagram()` / `sendRequest`-style primitives.
 
-This is why several "the library already does this" features still require real work in SlopOS.
+This is why several "the library already does this" features still require real work in SigurdOS.
 
 ---
 
 ## How to use this document
 
-Each entry describes the feature, what MeshCore provides, and what implementing it in SlopOS would take. Effort levels:
+Each entry describes the feature, what MeshCore provides, and what implementing it in SigurdOS would take. Effort levels:
 
 - **S** — small: isolated change, few files, testable in native tests
 - **M** — medium: touches mesh layer + UI, needs device testing
@@ -35,11 +35,11 @@ Each entry describes the feature, what MeshCore provides, and what implementing 
 
 ## Infrastructure Interaction (companion-relevant)
 
-> These are **companion** features even though they involve infrastructure nodes. A handheld companion routinely logs into repeaters/room servers, pulls their status/telemetry, and discovers paths. SlopOS currently does none of this. All of these have a complete worked implementation in `BaseChatMesh` + the companion radio — the gap is that `SlopMesh` extends `Mesh` directly (see architectural note above).
+> These are **companion** features even though they involve infrastructure nodes. A handheld companion routinely logs into repeaters/room servers, pulls their status/telemetry, and discovers paths. SigurdOS currently does none of this. All of these have a complete worked implementation in `BaseChatMesh` + the companion radio — the gap is that `SlopMesh` extends `Mesh` directly (see architectural note above).
 
 ### Repeater / room-server login + remote administration — L
 
-A companion logs into a repeater or room server with a password, receiving a permission level (guest / admin), then issues CLI admin commands over the mesh (`set freq`, `reboot`, `set name`, etc.) as encrypted COMMAND-type datagrams. This is how the official app administers remote infrastructure. SlopOS has no login, no session/keep-alive, and no remote-command path.
+A companion logs into a repeater or room server with a password, receiving a permission level (guest / admin), then issues CLI admin commands over the mesh (`set freq`, `reboot`, `set name`, etc.) as encrypted COMMAND-type datagrams. This is how the official app administers remote infrastructure. SigurdOS has no login, no session/keep-alive, and no remote-command path.
 
 **What's needed:** Port `sendLogin()` and `sendCommandData()` into `SlopMesh`. Track login sessions (keep-alive seconds, permission byte). Add a "Login / Admin" action on repeater/room contacts in Contacts, with a password field and a command console. Parse the login response for the permission level.
 
@@ -52,7 +52,7 @@ A companion logs into a repeater or room server with a password, receiving a per
 
 ### Status request (repeater / room server health) — M
 
-`CMD_SEND_STATUS_REQ` asks an infrastructure node for a status blob (uptime, battery, airtime, TX/RX queue depth, free heap). The companion displays this so a user can check a remote repeater without physical access. SlopOS cannot query node status.
+`CMD_SEND_STATUS_REQ` asks an infrastructure node for a status blob (uptime, battery, airtime, TX/RX queue depth, free heap). The companion displays this so a user can check a remote repeater without physical access. SigurdOS cannot query node status.
 
 **What's needed:** Port the REQ send path for a status request, match the response by pubkey/tag, parse the status struct, and show it on a "Node status" detail panel.
 
@@ -65,7 +65,7 @@ A companion logs into a repeater or room server with a password, receiving a per
 
 ### Telemetry queries (remote + self, CayenneLPP) — M
 
-MeshCore carries sensor telemetry in CayenneLPP format. `CMD_SEND_TELEMETRY_REQ` queries a remote node's telemetry (battery voltage, environment sensors, GPS); a length-4 self-request returns the device's own telemetry. SlopOS exposes none of this — neither requesting a remote node's battery/sensors nor reporting its own over the mesh.
+MeshCore carries sensor telemetry in CayenneLPP format. `CMD_SEND_TELEMETRY_REQ` queries a remote node's telemetry (battery voltage, environment sensors, GPS); a length-4 self-request returns the device's own telemetry. SigurdOS exposes none of this — neither requesting a remote node's battery/sensors nor reporting its own over the mesh.
 
 **What's needed:** Port `sendRequest(recipient, REQ_TYPE_GET_TELEMETRY_DATA, …)`. Decode the CayenneLPP response and render channels (voltage, temp, humidity, lat/lon). Optionally answer inbound telemetry requests with the T-Deck's own battery via `onContactRequest()`.
 
@@ -78,7 +78,7 @@ MeshCore carries sensor telemetry in CayenneLPP format. `CMD_SEND_TELEMETRY_REQ`
 
 ### Path discovery request — M
 
-Distinct from Trace (which probes an *already-known* path). `CMD_SEND_PATH_DISCOVERY_REQ` actively asks the mesh to discover a route to a contact whose path is unknown, returning the path in a `PAYLOAD_TYPE_RESPONSE`. SlopOS only floods blindly when `out_path_len == OUT_PATH_UNKNOWN` and has no explicit discovery action.
+Distinct from Trace (which probes an *already-known* path). `CMD_SEND_PATH_DISCOVERY_REQ` actively asks the mesh to discover a route to a contact whose path is unknown, returning the path in a `PAYLOAD_TYPE_RESPONSE`. SigurdOS only floods blindly when `out_path_len == OUT_PATH_UNKNOWN` and has no explicit discovery action.
 
 **What's needed:** Add a "Discover path" action on contacts. Send the discovery REQ, match the response by tag, store the learned path into `SlopContact::out_path`.
 
@@ -89,7 +89,7 @@ Distinct from Trace (which probes an *already-known* path). `CMD_SEND_PATH_DISCO
 
 ### Reset path to a contact — S
 
-When a learned path goes stale (a repeater moves or dies), messages keep failing on the dead route until the path is cleared. `CMD_RESET_PATH` wipes the stored out-path so the next message floods and re-learns. SlopOS stores `out_path` in `SlopContact` but offers no way to clear it from the UI.
+When a learned path goes stale (a repeater moves or dies), messages keep failing on the dead route until the path is cleared. `CMD_RESET_PATH` wipes the stored out-path so the next message floods and re-learns. SigurdOS stores `out_path` in `SlopContact` but offers no way to clear it from the UI.
 
 **What's needed:** A "Reset path" action on the contact detail screen that sets `out_path_len = OUT_PATH_UNKNOWN` and persists. Port `resetPathTo()` semantics (it also notifies the mesh).
 
@@ -149,7 +149,7 @@ When a learned path goes stale (a repeater moves or dies), messages keep failing
 
 ### Anonymous requests (PAYLOAD_TYPE_ANON_REQ 0x07) — M
 
-SlopOS *receives* anonymous requests in `onAnonDataRecv` (shown as `anon_XX`) but cannot send one. Anonymous requests let a node contact another without a prior advert exchange — the sender's pubkey is embedded in the packet. Used for first-contact login to room servers.
+SigurdOS *receives* anonymous requests in `onAnonDataRecv` (shown as `anon_XX`) but cannot send one. Anonymous requests let a node contact another without a prior advert exchange — the sender's pubkey is embedded in the packet. Used for first-contact login to room servers.
 
 **What's needed:** Add `sendAnonMessage(pubkey_hex, text)` to the wrapper. Wire a "Message unknown node" entry in Contacts or a Terminal command.
 
@@ -175,9 +175,9 @@ SlopOS *receives* anonymous requests in `onAnonDataRecv` (shown as `anon_XX`) bu
 
 ### Control packets (PAYLOAD_TYPE_CONTROL 0x0B) — L
 
-`onControlDataRecv` in `slop_mesh.h` implements a SlopOS-specific PING/PONG over zero-hop control packets (the Finder "Ping Nearby" feature). No other control sub-types (capability query, neighbour hello, sub-mesh management) are handled. The library only dispatches control packets for direct-routed, previously-unseen, zero-hop packets where `payload[0] & 0x80` is set; subtypes are application-defined.
+`onControlDataRecv` in `slop_mesh.h` implements a SigurdOS-specific PING/PONG over zero-hop control packets (the Finder "Ping Nearby" feature). No other control sub-types (capability query, neighbour hello, sub-mesh management) are handled. The library only dispatches control packets for direct-routed, previously-unseen, zero-hop packets where `payload[0] & 0x80` is set; subtypes are application-defined.
 
-**What's needed:** Design which control sub-types SlopOS should answer. Note the companion radio exposes this generically via `CMD_SEND_CONTROL_DATA` / `PUSH_CODE_CONTROL_DATA`.
+**What's needed:** Design which control sub-types SigurdOS should answer. Note the companion radio exposes this generically via `CMD_SEND_CONTROL_DATA` / `PUSH_CODE_CONTROL_DATA`.
 
 **MeshCore reference:**
 - [`src/Packet.h`](https://github.com/meshcore-dev/MeshCore/blob/main/src/Packet.h) — `#define PAYLOAD_TYPE_CONTROL 0x0B`
@@ -189,7 +189,7 @@ SlopOS *receives* anonymous requests in `onAnonDataRecv` (shown as `anon_XX`) bu
 ### Raw custom payloads (PAYLOAD_TYPE_RAW_CUSTOM 0x0F) — ❌ NOT DOING
 
 - **Reason:** User declined — not implementing.
-- **Reference (for posterity):** `onRawDataRecv` in `slop_mesh.h` is a stub. (Note: SlopOS uses `createRawData()` internally for PING/PONG, but there is no general app dispatch.) [`src/Packet.h`](https://github.com/meshcore-dev/MeshCore/blob/main/src/Packet.h) — `#define PAYLOAD_TYPE_RAW_CUSTOM 0x0F`
+- **Reference (for posterity):** `onRawDataRecv` in `slop_mesh.h` is a stub. (Note: SigurdOS uses `createRawData()` internally for PING/PONG, but there is no general app dispatch.) [`src/Packet.h`](https://github.com/meshcore-dev/MeshCore/blob/main/src/Packet.h) — `#define PAYLOAD_TYPE_RAW_CUSTOM 0x0F`
 
 ---
 
@@ -197,7 +197,7 @@ SlopOS *receives* anonymous requests in `onAnonDataRecv` (shown as `anon_XX`) bu
 
 ### RX gain boost toggle — S
 
-The SX1262 supports a boosted RX sensitivity mode, unexposed in SlopOS. (`applyRadioParams()` in `mesh_wrapper.h` already takes an `rx_gain` argument — the plumbing exists; what's missing is the persisted pref + Settings toggle.)
+The SX1262 supports a boosted RX sensitivity mode, unexposed in SigurdOS. (`applyRadioParams()` in `mesh_wrapper.h` already takes an `rx_gain` argument — the plumbing exists; what's missing is the persisted pref + Settings toggle.)
 
 **What's needed:** Add `rx_boosted_gain` to `NodePrefs`. Add a toggle in Radio Setup. Apply via `setRxBoostedGainMode()` at radio init.
 
@@ -210,7 +210,7 @@ The SX1262 supports a boosted RX sensitivity mode, unexposed in SlopOS. (`applyR
 
 ### Temporary radio config (no reboot) — M
 
-MeshCore's CLI supports `tempradio freq,bw,sf,cr,timeout_mins` — a trial config that auto-reverts on reboot without writing NVS. SlopOS has `applyRadioParams()` / `revertRadioParams()` in the wrapper (live apply without NVS), but no auto-revert timer and no Radio Setup "Try" UI exposing it.
+MeshCore's CLI supports `tempradio freq,bw,sf,cr,timeout_mins` — a trial config that auto-reverts on reboot without writing NVS. SigurdOS has `applyRadioParams()` / `revertRadioParams()` in the wrapper (live apply without NVS), but no auto-revert timer and no Radio Setup "Try" UI exposing it.
 
 **What's needed:** A "Try (no save)" button in Radio Setup wired to `applyRadioParams()`, plus a timeout that calls `revertRadioParams()`.
 
@@ -249,7 +249,7 @@ Per-type bitmask: `AUTO_ADD_CHAT` (0x02), `AUTO_ADD_REPEATER` (0x04), `AUTO_ADD_
 
 ### Custom variables (key-value store) — S
 
-`CMD_GET_CUSTOM_VARS` / `CMD_SET_CUSTOM_VAR` provide a named `name:value` key-value store for vendor-specific config (GPS tuning, sensor calibration). SlopOS has no equivalent — every config needs a new `NodePrefs` field + firmware change.
+`CMD_GET_CUSTOM_VARS` / `CMD_SET_CUSTOM_VAR` provide a named `name:value` key-value store for vendor-specific config (GPS tuning, sensor calibration). SigurdOS has no equivalent — every config needs a new `NodePrefs` field + firmware change.
 
 **What's needed:** A small NVS-backed key-value store, exposed via a Terminal command.
 
@@ -263,7 +263,7 @@ Per-type bitmask: `AUTO_ADD_CHAT` (0x02), `AUTO_ADD_REPEATER` (0x04), `AUTO_ADD_
 
 ### Advert location-share policy (privacy) — S
 
-`SlopMesh::broadcastAdvert()` has a lat/lon overload and SlopOS reports `getLastAdvertUsedGps()` — so location *can* go into adverts. What's missing is the **policy toggle**: the companion `NodePrefs::advert_loc_policy` (`ADVERT_LOC_NONE` = 0, `ADVERT_LOC_SHARE` = 1) lets the user decide whether their position is broadcast. SlopOS has no privacy control over this.
+`SlopMesh::broadcastAdvert()` has a lat/lon overload and SigurdOS reports `getLastAdvertUsedGps()` — so location *can* go into adverts. What's missing is the **policy toggle**: the companion `NodePrefs::advert_loc_policy` (`ADVERT_LOC_NONE` = 0, `ADVERT_LOC_SHARE` = 1) lets the user decide whether their position is broadcast. SigurdOS has no privacy control over this.
 
 **What's needed:** Add `advert_loc_policy` to `NodePrefs`. A Settings toggle "Share my location in adverts". Gate the lat/lon advert overload on it.
 
@@ -275,7 +275,7 @@ Per-type bitmask: `AUTO_ADD_CHAT` (0x02), `AUTO_ADD_REPEATER` (0x04), `AUTO_ADD_
 
 ### GPS enable / read-interval control — S
 
-The companion stores `gps_enabled` and `gps_interval` (seconds) and applies them through the sensor/custom-var system (`applyGpsPrefs()`). SlopOS parses NMEA (`hal/gps.cpp`) but offers no UI to enable/disable the GPS or set its polling interval — affecting battery life.
+The companion stores `gps_enabled` and `gps_interval` (seconds) and applies them through the sensor/custom-var system (`applyGpsPrefs()`). SigurdOS parses NMEA (`hal/gps.cpp`) but offers no UI to enable/disable the GPS or set its polling interval — affecting battery life.
 
 **What's needed:** Add `gps_enabled` + `gps_interval` to `NodePrefs`. Settings controls. Gate `gps.cpp` polling on them.
 
@@ -287,7 +287,7 @@ The companion stores `gps_enabled` and `gps_interval` (seconds) and applies them
 
 ### Periodic auto-advert — S
 
-Companion nodes can broadcast periodic adverts so they stay discoverable. SlopOS only adverts on manual taps of the Advertise screen — a node left on for hours is invisible to new nodes. Optional, user-toggled.
+Companion nodes can broadcast periodic adverts so they stay discoverable. SigurdOS only adverts on manual taps of the Advertise screen — a node left on for hours is invisible to new nodes. Optional, user-toggled.
 
 **What's needed:** Add `advert_interval` / `flood_advert_interval` to `NodePrefs`. A loop timer that re-adverts on the interval. A Settings toggle.
 
@@ -310,7 +310,7 @@ The Map screen shows offline tiles and own GPS position but not other nodes. Con
 
 ### Contact removal — S
 
-SlopOS can add contacts (auto + via advert) but offers **no way to delete one**. The list is a fixed 64-entry array with LRU eviction only when full; the user cannot manually remove a stale or unwanted contact.
+SigurdOS can add contacts (auto + via advert) but offers **no way to delete one**. The list is a fixed 64-entry array with LRU eviction only when full; the user cannot manually remove a stale or unwanted contact.
 
 **What's needed:** A "Remove contact" action on the contact detail screen that compacts the `_contacts[]` array and persists. (Channel removal is a separate entry under Messaging.)
 
@@ -321,7 +321,7 @@ SlopOS can add contacts (auto + via advert) but offers **no way to delete one**.
 
 ### Identity backup — export / import private key — M
 
-The node's identity *is* its private key — losing it means losing your address on the mesh, and there is no recovery. The companion exposes `CMD_EXPORT_PRIVATE_KEY` / `CMD_IMPORT_PRIVATE_KEY` so a user can back up and restore identity. SlopOS has no export, import, or backup of its identity.
+The node's identity *is* its private key — losing it means losing your address on the mesh, and there is no recovery. The companion exposes `CMD_EXPORT_PRIVATE_KEY` / `CMD_IMPORT_PRIVATE_KEY` so a user can back up and restore identity. SigurdOS has no export, import, or backup of its identity.
 
 **What's needed:** A "Back up identity" action (export hex/QR) and an "Import identity" path (re-key the node). Handle the re-key carefully — contacts' shared secrets must be recomputed.
 
@@ -411,7 +411,7 @@ The Signal screen shows a snapshot bar chart, no trend. `SlopContact` keeps only
 
 ### Factory reset — S
 
-`CMD_FACTORY_RESET` wipes prefs, contacts, channels, and identity to a clean state. SlopOS has no reset path — recovering from a corrupt config means reflashing.
+`CMD_FACTORY_RESET` wipes prefs, contacts, channels, and identity to a clean state. SigurdOS has no reset path — recovering from a corrupt config means reflashing.
 
 **What's needed:** A "Factory reset" action in Settings (double-confirm). Clear NVS prefs, contacts, channels, and regenerate identity. Delay for flash writes, then reboot.
 
@@ -422,7 +422,7 @@ The Signal screen shows a snapshot bar chart, no trend. `SlopContact` keeps only
 
 ### Message signing — S *(niche)*
 
-`CMD_SIGN_START` / `CMD_SIGN_DATA` / `CMD_SIGN_FINISH` sign arbitrary data with the node's private key (for signed announcements / authenticated messages). SlopOS does not expose signing.
+`CMD_SIGN_START` / `CMD_SIGN_DATA` / `CMD_SIGN_FINISH` sign arbitrary data with the node's private key (for signed announcements / authenticated messages). SigurdOS does not expose signing.
 
 **What's needed:** Port the streaming-sign API; expose via Terminal command. Low priority for the handheld use case.
 
@@ -467,7 +467,7 @@ Companions advertise as `ADV_TYPE_CHAT`. A fixed T-Deck might advertise as repea
 
 ### Node stats query (CMD_GET_STATS) — S
 
-SlopOS tracks `getNumSentFlood/Direct`, `getNumRecvFlood/Direct`, and airtime totals in the wrapper, but does not expose the full companion stats set (per-type counters, dropped packets, airtime budget). The companion `CMD_GET_STATS` returns a typed stats blob.
+SigurdOS tracks `getNumSentFlood/Direct`, `getNumRecvFlood/Direct`, and airtime totals in the wrapper, but does not expose the full companion stats set (per-type counters, dropped packets, airtime budget). The companion `CMD_GET_STATS` returns a typed stats blob.
 
 **What's needed:** Surface the existing counters plus dropped/airtime stats on a diagnostics panel; optionally match the companion stats-type layout.
 
@@ -511,7 +511,7 @@ Also in `KNOWN_ISSUES.md`. Left-swipe → `go_back()` works only on the Chat scr
 
 ### Graceful shutdown from UI — S
 
-No UI shutdown — the user holds the power button, risking lost NVS writes (see `KNOWN_ISSUES.md`). SlopOS already has `saveState()` / `saveChannels()` / `shutdown()` in the wrapper.
+No UI shutdown — the user holds the power button, risking lost NVS writes (see `KNOWN_ISSUES.md`). SigurdOS already has `saveState()` / `saveChannels()` / `shutdown()` in the wrapper.
 
 **What's needed:** A "Shut down" Settings option (or long-press home): `saveState()`, `saveChannels()`, ~100 ms delay, then `esp_deep_sleep_start()`.
 
@@ -523,7 +523,7 @@ No UI shutdown — the user holds the power button, risking lost NVS writes (see
 
 ### ACL / contact permissions — L
 
-MeshCore defines permission levels (guest / read-only / read-write / admin). SlopOS treats all contacts identically.
+MeshCore defines permission levels (guest / read-only / read-write / admin). SigurdOS treats all contacts identically.
 
 **What's needed:** Add a `perm` field to `SlopContact`; promote contacts in Contact Detail; gate sensitive actions behind permission checks.
 
@@ -548,7 +548,7 @@ No password protects Settings or Terminal — anyone with physical access can ch
 
 ### OTA firmware update — L
 
-MeshCore supports `start ota` over BLE/serial. SlopOS requires a USB cable + flashing tool.
+MeshCore supports `start ota` over BLE/serial. SigurdOS requires a USB cable + flashing tool.
 
 **What's needed:** An OTA partition layout in `platformio.ini`; a download mechanism (WiFi or BLE — both present on ESP32-S3, neither initialised); a UI progress indicator. Transfer uses ESP-IDF `esp_ota_ops.h` (outside MeshCore).
 

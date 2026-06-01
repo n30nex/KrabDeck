@@ -61,6 +61,6 @@ for y in range(h):
         b = (rgb565 & 0x1F) << 3
         pixels[x, y] = (r, g, b)
 
-out = sys.argv[1] if len(sys.argv) > 1 else '/tmp/slopos_screen.png'
+out = sys.argv[1] if len(sys.argv) > 1 else '/tmp/sigurdos_screen.png'
 img.save(out)
 print(f"Saved: {out}")

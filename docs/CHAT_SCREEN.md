@@ -1,6 +1,6 @@
 # Chat Screen
 
-The Chat screen is SlopOS's primary messaging interface — a Discord-inspired chat application running on the LilyGo T-Deck over the MeshCore LoRa mesh network. It supports channel-based group messaging, direct messages (DMs), emoji input, message history persistence, and full trackball navigation.
+The Chat screen is SigurdOS's primary messaging interface — a Discord-inspired chat application running on the LilyGo T-Deck over the MeshCore LoRa mesh network. It supports channel-based group messaging, direct messages (DMs), emoji input, message history persistence, and full trackball navigation.
 
 ---
 
@@ -49,7 +49,7 @@ The entry point when tapping the CHATS tile on the home screen.
 ├──────────────────────────────────┤
 │        [+ Add # Channel]         │  ← opens add-channel dialog
 ├──────────────────────────────────┤
-│ SlopOS T-Deck   ▂▄▆█       72%  │  ← bottom bar: device name, signal bars, battery
+│ SigurdOS T-Deck   ▂▄▆█       72%  │  ← bottom bar: device name, signal bars, battery
 └──────────────────────────────────┘
 ```
 
@@ -114,7 +114,7 @@ Opened by tapping a channel row or calling `chat_screen_open_dm()`.
 │ │ Message       │               │
 │ └───────────────┘               │
 ├──────────────────────────────────┤
-│ SlopOS T-Deck   ▂▄▆█       72%  │  ← bottom bar
+│ SigurdOS T-Deck   ▂▄▆█       72%  │  ← bottom bar
 └──────────────────────────────────┘
 ```
 
@@ -383,7 +383,7 @@ A modal dialog with 46 emoji in a scrollable grid. See the [Emoji Picker](#emoji
 
 ## UI Theme Integration
 
-All visual styling follows the SlopOS pixel theme (`src/ui/theme.h`):
+All visual styling follows the SigurdOS pixel theme (`src/ui/theme.h`):
 
 | Role | Color | Hex |
 |------|-------|-----|
@@ -452,7 +452,7 @@ Adds a message to the per-channel history. The primary entry point for incoming 
 - Unread count is incremented for background channels
 - Automatically trims excess LVGL label widgets if display cap is exceeded
 
-### `chat_screen_handle_trackball(SlopOSTrackballEvent event) -> bool`
+### `chat_screen_handle_trackball(SigurdOSTrackballEvent event) -> bool`
 
 Routes trackball events to the active sub-view. Returns `true` if the event was consumed.
 

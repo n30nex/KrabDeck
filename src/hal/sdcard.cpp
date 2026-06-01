@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// This file is part of SlopOS-TDeck.
+// This file is part of SigurdOS.
 //
-// SlopOS-TDeck is free software: you can redistribute it and/or modify
+// SigurdOS is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// SlopOS-TDeck is distributed in the hope that it will be useful,
+// SigurdOS is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
+// along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
 
 #include "sdcard.h"
@@ -35,13 +35,13 @@ static bool mounted = false;
 static uint64_t capacity_bytes = 0;
 static uint64_t free_bytes = 0;
 
-bool slopos_sdcard_init()
+bool sigurdos_sdcard_init()
 {
     sd_spi.begin(PIN_LORA_SCLK, PIN_LORA_MISO, PIN_LORA_MOSI, PIN_SD_CS);
 
     for (int attempt = 0; attempt < 3; attempt++) {
         if (attempt > 0) delay(500);
-        if (SD.begin(PIN_SD_CS, sd_spi, 4000000, SLOPOS_SD_MOUNTPOINT)) {
+        if (SD.begin(PIN_SD_CS, sd_spi, 4000000, SIGURDOS_SD_MOUNTPOINT)) {
             capacity_bytes = (uint64_t)SD.totalBytes();
             free_bytes     = (uint64_t)(SD.totalBytes() - SD.usedBytes());
             mounted = true;
@@ -53,22 +53,22 @@ bool slopos_sdcard_init()
     return false;
 }
 
-bool slopos_sdcard_mounted()
+bool sigurdos_sdcard_mounted()
 {
     return mounted;
 }
 
-uint64_t slopos_sdcard_capacity_bytes()
+uint64_t sigurdos_sdcard_capacity_bytes()
 {
     return capacity_bytes;
 }
 
-uint64_t slopos_sdcard_free_bytes()
+uint64_t sigurdos_sdcard_free_bytes()
 {
     return free_bytes;
 }
 
-const char* slopos_sdcard_format_size(uint64_t bytes, char* buf, size_t buf_sz)
+const char* sigurdos_sdcard_format_size(uint64_t bytes, char* buf, size_t buf_sz)
 {
     if (!buf || buf_sz == 0) return "";
 
@@ -87,13 +87,13 @@ const char* slopos_sdcard_format_size(uint64_t bytes, char* buf, size_t buf_sz)
     return buf;
 }
 
-bool slopos_sdcard_exists(const char* path)
+bool sigurdos_sdcard_exists(const char* path)
 {
     if (!mounted || !path) return false;
     return SD.exists(path);
 }
 
-size_t slopos_sdcard_read(const char* path, uint8_t* buf, size_t max_len)
+size_t sigurdos_sdcard_read(const char* path, uint8_t* buf, size_t max_len)
 {
     if (!mounted || !path || !buf || max_len == 0) return 0;
 
@@ -105,7 +105,7 @@ size_t slopos_sdcard_read(const char* path, uint8_t* buf, size_t max_len)
     return read;
 }
 
-bool slopos_sdcard_write(const char* path, const uint8_t* data, size_t len)
+bool sigurdos_sdcard_write(const char* path, const uint8_t* data, size_t len)
 {
     if (!mounted || !path || !data || len == 0) return false;
 

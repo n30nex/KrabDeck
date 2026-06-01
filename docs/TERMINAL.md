@@ -160,11 +160,11 @@ RSSI:-67dBm SNR:12.3dB Noise:-98dBm  Contacts:3 Channels:5
 
 | Field | Source | Description |
 |---|---|---|
-| `RSSI` | `slopos::mesh::getLastRSSI()` | Received Signal Strength Indicator of the last packet, in dBm. Typical range: -30 (very strong) to -120 (very weak). |
-| `SNR` | `slopos::mesh::getLastSNR()` | Signal-to-Noise Ratio of the last packet, in dB. Higher values indicate a cleaner signal. |
-| `Noise` | `slopos::mesh::getNoiseFloor()` | Current noise floor measurement, in dBm. Lower (more negative) values indicate a quieter RF environment. |
-| `Contacts` | `slopos::mesh::getContactCount()` | Number of unique mesh nodes this device has discovered and stored. |
-| `Channels` | `slopos::mesh::getChannelCount()` | Number of active mesh channels known to this node. |
+| `RSSI` | `sigurdos::mesh::getLastRSSI()` | Received Signal Strength Indicator of the last packet, in dBm. Typical range: -30 (very strong) to -120 (very weak). |
+| `SNR` | `sigurdos::mesh::getLastSNR()` | Signal-to-Noise Ratio of the last packet, in dB. Higher values indicate a cleaner signal. |
+| `Noise` | `sigurdos::mesh::getNoiseFloor()` | Current noise floor measurement, in dBm. Lower (more negative) values indicate a quieter RF environment. |
+| `Contacts` | `sigurdos::mesh::getContactCount()` | Number of unique mesh nodes this device has discovered and stored. |
+| `Channels` | `sigurdos::mesh::getChannelCount()` | Number of active mesh channels known to this node. |
 
 **Notes**:
 - All values reflect the **last received packet** (RSSI/SNR) or **current channel state** (noise floor, contacts, channels).
@@ -196,7 +196,7 @@ Send failed
 ```
 
 **Implementation**:
-- Calls `slopos::mesh::sendAdvert()` which returns a boolean
+- Calls `sigurdos::mesh::sendAdvert()` which returns a boolean
 - A `bool` return value is converted to the appropriate message
 
 **Notes**:
@@ -306,7 +306,7 @@ Unknown: foobar  (type 'help')
 When the Terminal screen is first opened, four or five initial lines are printed before any user interaction:
 
 ```
-SlopOS T-Deck Terminal
+SigurdOS T-Deck Terminal
 MeshCore protocol active
 Radio: SX1262 868.000 MHz configured     ← (if configured)
 ```
@@ -314,7 +314,7 @@ Radio: SX1262 868.000 MHz configured     ← (if configured)
 Or, if the radio has not been configured:
 
 ```
-SlopOS T-Deck Terminal
+SigurdOS T-Deck Terminal
 MeshCore protocol active
 Radio: ERROR - not configured
 ```
@@ -323,12 +323,12 @@ Radio: ERROR - not configured
 
 | # | Line | Colour | Condition |
 |---|---|---|---|
-| 1 | `SlopOS T-Deck Terminal` | `#00ff00` (default fallback) | Always |
+| 1 | `SigurdOS T-Deck Terminal` | `#00ff00` (default fallback) | Always |
 | 2 | `MeshCore protocol active` | `#00ff00` (default fallback) | Always |
 | 3 | `Radio: SX1262 <freq> MHz configured` | `#00bfff` (Accent Cyan — contains MHz) | `NodePrefs.configured == true` |
 | 3 | `Radio: ERROR - not configured` | `#ed4245` (Accent Red — contains ERROR) | `NodePrefs.configured == false` |
 
-The radio configuration line reads from `slopos::prefs_get()` at the moment the Terminal screen is created.
+The radio configuration line reads from `sigurdos::prefs_get()` at the moment the Terminal screen is created.
 
 ---
 

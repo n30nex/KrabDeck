@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// This file is part of SlopOS-TDeck.
+// This file is part of SigurdOS.
 //
-// SlopOS-TDeck is free software: you can redistribute it and/or modify
+// SigurdOS is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// SlopOS-TDeck is distributed in the hope that it will be useful,
+// SigurdOS is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
+// along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
 
 #include "gps.h"
@@ -197,14 +197,14 @@ static void process_nmea(const char* sentence) {
 // PUBLIC API
 // ════════════════════════════════════════════════════════
 
-void slopos_gps_init() {
+void sigurdos_gps_init() {
     Serial1.begin(GPS_BAUD_RATE, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX);
     memset(&gps, 0, sizeof(gps));
     nmea_pos = 0;
     gps.initialized = true;
 }
 
-void slopos_gps_loop() {
+void sigurdos_gps_loop() {
     if (!gps.initialized) return;
 
     while (Serial1.available()) {
@@ -252,15 +252,15 @@ void slopos_gps_loop() {
     }
 }
 
-float    slopos_gps_latitude()     { return gps.latitude; }
-float    slopos_gps_longitude()    { return gps.longitude; }
-float    slopos_gps_altitude_m()   { return gps.altitude_m; }
-float    slopos_gps_speed_kn()     { return gps.speed_kn; }
-float    slopos_gps_heading()      { return gps.heading; }
-uint8_t  slopos_gps_satellites()   { return gps.satellites; }
-uint8_t  slopos_gps_fix_quality()  { return gps.fix_quality; }
-bool     slopos_gps_has_fix()      { return gps.has_fix; }
-uint8_t  slopos_gps_hour()         { return gps.hour; }
-uint8_t  slopos_gps_minute()       { return gps.minute; }
-uint8_t  slopos_gps_second()       { return gps.second; }
-bool     slopos_gps_time_synced()  { return gps.time_synced; }
+float    sigurdos_gps_latitude()     { return gps.latitude; }
+float    sigurdos_gps_longitude()    { return gps.longitude; }
+float    sigurdos_gps_altitude_m()   { return gps.altitude_m; }
+float    sigurdos_gps_speed_kn()     { return gps.speed_kn; }
+float    sigurdos_gps_heading()      { return gps.heading; }
+uint8_t  sigurdos_gps_satellites()   { return gps.satellites; }
+uint8_t  sigurdos_gps_fix_quality()  { return gps.fix_quality; }
+bool     sigurdos_gps_has_fix()      { return gps.has_fix; }
+uint8_t  sigurdos_gps_hour()         { return gps.hour; }
+uint8_t  sigurdos_gps_minute()       { return gps.minute; }
+uint8_t  sigurdos_gps_second()       { return gps.second; }
+bool     sigurdos_gps_time_synced()  { return gps.time_synced; }

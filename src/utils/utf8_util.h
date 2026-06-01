@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstring>
 
-namespace slopos {
+namespace sigurdos {
 
 // Safely truncate a UTF-8 string to at most max_bytes without splitting a
 // multi-byte character. Returns the number of bytes to keep.
@@ -22,4 +22,4 @@ static inline size_t utf8_truncate_bytes(const char* str, size_t max_bytes)
     return len;
 }
 
-} // namespace slopos
+} // namespace sigurdos

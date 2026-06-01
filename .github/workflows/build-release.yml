@@ -7,7 +7,7 @@ name: Build & Release
 
 jobs:
   build:
-    name: Build SlopOS T-Deck
+    name: Build SigurdOS T-Deck
     runs-on: ubuntu-latest
 
     steps:
@@ -34,15 +34,15 @@ jobs:
           pip install platformio
 
       - name: Build firmware
-        run: pio run -e SlopOS_TDeck
+        run: pio run -e SigurdOS_TDeck
 
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: slopos-tdeck-firmware
+          name: sigurdos-tdeck-firmware
           path: |
-            .pio/build/SlopOS_TDeck/firmware.bin
-            .pio/build/SlopOS_TDeck/firmware-merged.bin
+            .pio/build/SigurdOS_TDeck/firmware.bin
+            .pio/build/SigurdOS_TDeck/firmware-merged.bin
             webflasher/
           if-no-files-found: error
 
@@ -58,14 +58,14 @@ jobs:
       - name: Download firmware
         uses: actions/download-artifact@v4
         with:
-          name: slopos-tdeck-firmware
+          name: sigurdos-tdeck-firmware
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
           body: |
-            **SlopOS T-Deck Firmware** — ${{ github.ref_name }}
+            **SigurdOS T-Deck Firmware** — ${{ github.ref_name }}
 
             ### Flash with esptool
             ```bash
@@ -84,10 +84,10 @@ jobs:
             |------|-----|
             | `firmware.bin` | App only (flash at 0x10000) |
             | `firmware-merged.bin` | Full flash (flash at 0x0) |
-            | `webflasher/slopos-tdeck-firmware.bin` | App update |
-            | `webflasher/slopos-tdeck-full.bin` | Full flash |
-            | `webflasher/slopos-tdeck-bootloader.bin` | Bootloader |
-            | `webflasher/slopos-tdeck-partitions.bin` | Partition table |
+            | `webflasher/sigurdos-tdeck-firmware.bin` | App update |
+            | `webflasher/sigurdos-tdeck-full.bin` | Full flash |
+            | `webflasher/sigurdos-tdeck-bootloader.bin` | Bootloader |
+            | `webflasher/sigurdos-tdeck-partitions.bin` | Partition table |
             | `webflasher/manifest.json` | Web flasher manifest |
           draft: false
           prerelease: true

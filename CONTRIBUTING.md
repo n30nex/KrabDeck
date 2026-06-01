@@ -1,4 +1,4 @@
-# Contributing to SlopOS T-Deck
+# Contributing to SigurdOS T-Deck
 
 Thanks for considering contributing! This project is in beta and welcomes
 bug reports, feature requests, and code contributions.
@@ -76,7 +76,7 @@ tolerated.
    ```
 5. **Ensure it builds** for the target hardware:
    ```
-   pio run -e SlopOS_TDeck
+   pio run -e SigurdOS_TDeck
    ```
 6. **Push to your fork** and open a PR against the `dev` branch.
 7. In the PR description, reference the related issue (`Fixes #123`).
@@ -125,13 +125,13 @@ Fixes #ISSUE_NUMBER
 Testing method: [Remote test / Physical hardware test / Both]
 
 <!--
-Remote test = SlopOS_TDeck_remote_test build env, serial-controlled simulation
+Remote test = SigurdOS_TDeck_remote_test build env, serial-controlled simulation
 Physical hardware test = flashed to real T-Deck, verified by human
 -->
 
 ## Checklist
 - [ ] `pio test -e native_test -v` passes
-- [ ] `pio run -e SlopOS_TDeck` builds
+- [ ] `pio run -e SigurdOS_TDeck` builds
 - [ ] No new warnings or errors
 - [ ] docs/KNOWN_ISSUES.md updated (if applicable)
 ```
@@ -215,10 +215,10 @@ For hardware-validated PR testing, flash the debug build and check serial output
 
 ```bash
 # Build debug firmware
-pio run -e SlopOS_TDeck_debug
+pio run -e SigurdOS_TDeck_debug
 
 # Flash to device (via USB or remote gateway)
-# Local: pio run -e SlopOS_TDeck_debug -t upload
+# Local: pio run -e SigurdOS_TDeck_debug -t upload
 # Remote: scp .bin to gateway, flash via esptool
 
 # Capture boot log (adjust port as needed)
@@ -230,7 +230,7 @@ Verify in the boot log:
 - No `FATAL` or `CRASH` or `PANIC` errors
 - All `[boot] step N:` messages appear in sequence
 - `[mesh] SlopMesh initialized` confirms radio init
-- `[boot] === SlopOS T-Deck ready ===` at the end
+- `[boot] === SigurdOS T-Deck ready ===` at the end
 
 ## Design Guide
 

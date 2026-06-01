@@ -1,6 +1,6 @@
 # Home Screen
 
-The Home screen is SlopOS's main launcher — a 4×3 icon grid that provides access to all major features of the firmware. Inspired by feature-phone and handheld-console launchers, it presents a fixed set of 12 icon tiles arranged in a uniform grid with trackball-driven keyboard navigation, touch support, and full theme integration.
+The Home screen is SigurdOS's main launcher — a 4×3 icon grid that provides access to all major features of the firmware. Inspired by feature-phone and handheld-console launchers, it presents a fixed set of 12 icon tiles arranged in a uniform grid with trackball-driven keyboard navigation, touch support, and full theme integration.
 
 ---
 
@@ -32,7 +32,7 @@ The Home screen is composed of three stacked regions:
 │ │ TRAC│TERMI│ SETU│SIGNA│        │
 │ └─────┴─────┴─────┴─────┘        │
 ├──────────────────────────────────┤  ← divider (DIVIDER_H = 1px)
-│ SlopOS T-Deck   ▂▄▆█       72%  │  ← bottom bar (BOT_BAR_H px, BG_SECONDARY)
+│ SigurdOS T-Deck   ▂▄▆█       72%  │  ← bottom bar (BOT_BAR_H px, BG_SECONDARY)
 └──────────────────────────────────┘
 ```
 
@@ -241,7 +241,7 @@ Both `create()` and `show()` call the internal `build_home_screen()` function at
 6. Creates top bar, bottom bar, and icon grid
 7. Loads the screen with the requested animation
 
-### `home_screen_handle_trackball(SlopOSTrackballEvent event)`
+### `home_screen_handle_trackball(SigurdOSTrackballEvent event)`
 
 Routes a trackball event to the icon grid navigation. See [Trackball Navigation](#trackball-navigation). Called from `ui::handle_trackball_event()` in `ui.cpp`.
 
@@ -273,7 +273,7 @@ Rebuilds the channel hashtag string in the top bar. Called periodically to refle
 
 ## UI Theme Integration
 
-All visual styling follows the SlopOS pixel theme (`src/ui/theme.h`):
+All visual styling follows the SigurdOS pixel theme (`src/ui/theme.h`):
 
 | Role | Colour | Hex | Usage |
 |------|--------|-----|-------|

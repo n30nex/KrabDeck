@@ -1,4 +1,4 @@
-# SlopOS T-Deck — Features Overview
+# SigurdOS T-Deck — Features Overview
 
 **Standalone LoRa mesh messaging firmware for the LilyGo T-Deck (ESP32-S3 + SX1262).**
 
@@ -185,7 +185,7 @@ Signal diagnostics screen showing current RSSI, noise floor, SNR, and signal qua
 **Sources:** [`src/hal/prefs.cpp`](../src/hal/prefs.cpp), [`src/hal/prefs.h`](../src/hal/prefs.h)
 
 ### Diagnostics & Debug
-- **Compile-time flag** — `SLOPOS_DEBUG=1` build enables the full debug subsystem
+- **Compile-time flag** — `SIGURDOS_DEBUG=1` build enables the full debug subsystem
 - **Runtime levels** — 1 (quiet), 2 (normal, periodic 5s stats), 3 (verbose)
 - **Per-feature toggles** — independent runtime on/off for display, mesh, UI, map, diagnostics
 - **Dump functions** — `dump_system()`, `dump_lvgl_rendering()`, `dump_trackball_state()`, `dump_home_screen_layout()`, `dump_memory()`, `dump_display_config()`, `dump_mesh_state()`
@@ -217,7 +217,7 @@ Signal diagnostics screen showing current RSSI, noise floor, SNR, and signal qua
 **Sources:** [`webflasher/manifest.json`](../webflasher/manifest.json), [`firmware/README.md`](../firmware/README.md), [`webflasher/`](../webflasher/)
 
 ### Remote Test Controller
-- **`SLOPOS_REMOTE_TEST` build mode** — disables LoRa radio, enables simulated input
+- **`SIGURDOS_REMOTE_TEST` build mode** — disables LoRa radio, enables simulated input
 - **Inject capabilities** — `keyboard_inject()`, `trackball_inject()`, `test_set_touch()`, `injectMessage()`
 - **Remote test loop** — runs alongside normal display/UI loop for automated QA
 **Sources:** [`src/test/test_controller.h`](../src/test/test_controller.h), [`src/main.cpp`](../src/main.cpp) (lines 67–73, 127)
@@ -238,7 +238,7 @@ Signal diagnostics screen showing current RSSI, noise floor, SNR, and signal qua
 ### GT911 Touch
 - **Interface:** I2C at 0x5D (SDA=18, SCL=8, INT=16), 400 kHz
 - **Coordinate transform:** SWAP_XY=true, MIRROR_X=false, MIRROR_Y=true (matches rotation 1)
-- **Polling:** `slopos_touch_loop()` called each display frame
+- **Polling:** `sigurdos_touch_loop()` called each display frame
 - **Multitouch:** Supports multi-point read from GT911 register map
 - **Press→release lifecycle** with proper touch-down/touch-up detection
 **Sources:** [`src/hal/touch.cpp`](../src/hal/touch.cpp), [`src/hal/touch.h`](../src/hal/touch.h), [`test/test_touch/`](../test/test_touch/)
@@ -255,7 +255,7 @@ Signal diagnostics screen showing current RSSI, noise floor, SNR, and signal qua
 ### 5-Direction Trackball
 - **GPIO:** UP=3, DOWN=15, LEFT=1, RIGHT=2, CLICK=0 (BOOT button)
 - **Debounce:** Per-direction configurable deadtime (150ms default), falling-edge only
-- **Event queue:** `trackball_next_event()` returns queued `SlopOSTrackballEvent` (None, Up, Down, Left, Right, Click)
+- **Event queue:** `trackball_next_event()` returns queued `SigurdOSTrackballEvent` (None, Up, Down, Left, Right, Click)
 - **Idle calibration** — reads and stores idle level at init
 - **Resettable** — `trackball_reset_scan_state()` for test and wake recovery
 - **Inject API** — `trackball_inject()` for remote testing

@@ -4,7 +4,7 @@
 #include "mesh/mesh_wrapper.h"
 #include <cstring>
 
-namespace slopos::mesh {
+namespace sigurdos::mesh {
 
 static MeshMessage     mock_msgs[8];
 static int             mock_msg_count = 0;
@@ -116,4 +116,4 @@ void mock_set_rssi(int v)   { mock_rssi = v; }
 void mock_set_snr(float v)  { mock_snr = v; }
 void mock_set_drop_count(uint32_t v) { mock_drop_count = v; }
 
-} // namespace slopos::mesh
+} // namespace sigurdos::mesh

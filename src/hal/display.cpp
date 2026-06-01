@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// This file is part of SlopOS-TDeck.
+// This file is part of SigurdOS.
 //
-// SlopOS-TDeck is free software: you can redistribute it and/or modify
+// SigurdOS is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// SlopOS-TDeck is distributed in the hope that it will be useful,
+// SigurdOS is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
+// along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
 
 #include "display.h"
@@ -35,14 +35,14 @@
 #include <LovyanGFX.hpp>
 
 // ── LovyanGFX configuration for T-Deck ST7789 ────────────
-class LGFX_SlopOS : public lgfx::LGFX_Device
+class LGFX_SigurdOS : public lgfx::LGFX_Device
 {
     lgfx::Panel_ST7789  _panel;
     lgfx::Bus_SPI       _bus;
     lgfx::Light_PWM     _light;
 
 public:
-    LGFX_SlopOS()
+    LGFX_SigurdOS()
     {
         {
             auto cfg = _bus.config();
@@ -88,7 +88,7 @@ public:
     }
 };
 
-static LGFX_SlopOS tft;
+static LGFX_SigurdOS tft;
 static lv_display_t* lv_disp = nullptr;
 // Full-screen PSRAM buffer: 320×240×2 = 153,600 bytes.
 // Full rendering mode flushes the entire frame in one go,
@@ -96,11 +96,11 @@ static lv_display_t* lv_disp = nullptr;
 static lv_color_t* draw_buf = nullptr;
 
 // ── Debug: expose last flush area for diagnostics ────────
-#if SLOPOS_DEBUG_DISPLAY
+#if SIGURDOS_DEBUG_DISPLAY
 static lv_area_t dbg_last_flush_area = {0,0,0,0};
 static uint32_t  dbg_flush_count = 0;
-const lv_area_t* slopos_debug_last_flush_area() { return &dbg_last_flush_area; }
-uint32_t slopos_debug_flush_count() { return dbg_flush_count; }
+const lv_area_t* sigurdos_debug_last_flush_area() { return &dbg_last_flush_area; }
+uint32_t sigurdos_debug_flush_count() { return dbg_flush_count; }
 #endif
 
 // ── Auto-off timer ──────────────────────────────────
@@ -109,13 +109,13 @@ static uint32_t            auto_off_at = 0;
 static bool                display_on  = true;
 static bool                wake_refresh_pending = false;
 static constexpr uint8_t TRACKBALL_FALLBACK_QUEUE_SIZE = 8;
-static SlopOSTrackballEvent trackball_fallback_queue[TRACKBALL_FALLBACK_QUEUE_SIZE];
+static SigurdOSTrackballEvent trackball_fallback_queue[TRACKBALL_FALLBACK_QUEUE_SIZE];
 static uint8_t trackball_fallback_head = 0;
 static uint8_t trackball_fallback_tail = 0;
 static uint8_t trackball_fallback_count = 0;
 
 static void reset_auto_off() {
-    uint16_t sec = slopos::prefs_get().auto_off_timeout;
+    uint16_t sec = sigurdos::prefs_get().auto_off_timeout;
     auto_off_at = (sec > 0) ? (millis() + (uint32_t)sec * 1000) : UINT32_MAX;
 }
 
@@ -130,7 +130,7 @@ static void restore_display_after_sleep()
     }
 }
 
-static void queue_trackball_fallback(SlopOSTrackballEvent event)
+static void queue_trackball_fallback(SigurdOSTrackballEvent event)
 {
     if (trackball_fallback_count >= TRACKBALL_FALLBACK_QUEUE_SIZE) return;
     trackball_fallback_queue[trackball_fallback_head] = event;
@@ -138,7 +138,7 @@ static void queue_trackball_fallback(SlopOSTrackballEvent event)
     trackball_fallback_count++;
 }
 
-static bool next_trackball_fallback(SlopOSTrackballEvent* out)
+static bool next_trackball_fallback(SigurdOSTrackballEvent* out)
 {
     if (!out || trackball_fallback_count == 0) return false;
     *out = trackball_fallback_queue[trackball_fallback_tail];
@@ -149,10 +149,10 @@ static bool next_trackball_fallback(SlopOSTrackballEvent* out)
 
 static void dispatch_trackball_events()
 {
-    SlopOSTrackballEvent event = SlopOSTrackballEvent::None;
-    while (slopos_trackball_next_event(&event)) {
-        slopos_display_wake();
-        if (!slopos::ui::handle_trackball_event(event)) {
+    SigurdOSTrackballEvent event = SigurdOSTrackballEvent::None;
+    while (sigurdos_trackball_next_event(&event)) {
+        sigurdos_display_wake();
+        if (!sigurdos::ui::handle_trackball_event(event)) {
             queue_trackball_fallback(event);
         }
     }
@@ -161,12 +161,12 @@ static void dispatch_trackball_events()
 // ── LVGL flush callback ─────────────────────────────────
 static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px_map)
 {
-#if SLOPOS_DEBUG_DISPLAY
+#if SIGURDOS_DEBUG_DISPLAY
     dbg_last_flush_area = *area;
     dbg_flush_count++;
     // Runtime level + feature check only when full debug module is compiled
-#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
-    if (slopos::debug::get_level() >= 2 && slopos::debug::feat_get_display())
+#if defined(SIGURDOS_DEBUG) && SIGURDOS_DEBUG
+    if (sigurdos::debug::get_level() >= 2 && sigurdos::debug::feat_get_display())
 #endif
     {
         Serial.printf("[flush] #%lu  area=(%ld,%ld,%ld,%ld) w=%ld h=%ld pixels=%ld\n",
@@ -200,7 +200,7 @@ static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px
 
 // ── Touch read callback ──────────────────────────────────
 
-#if defined(SLOPOS_REMOTE_TEST)
+#if defined(SIGURDOS_REMOTE_TEST)
 // Test touch injection for remote test controller
 static lv_point_t test_touch_point = {0, 0};
 static bool test_touch_pressed = false;
@@ -209,13 +209,13 @@ static uint32_t test_release_tick = 0;
 
 static void lvgl_touch_cb(lv_indev_t* indev, lv_indev_data_t* data)
 {
-#if defined(SLOPOS_REMOTE_TEST)
+#if defined(SIGURDOS_REMOTE_TEST)
     if (test_touch_pressed) {
         data->point = test_touch_point;
         data->state = LV_INDEV_STATE_PRESSED;
         test_touch_pressed = false;
         test_release_tick = lv_tick_get() + 80;  // release after 80ms
-        slopos_display_wake();
+        sigurdos_display_wake();
         return;
     }
     if (test_release_tick && lv_tick_get() >= test_release_tick) {
@@ -227,11 +227,11 @@ static void lvgl_touch_cb(lv_indev_t* indev, lv_indev_data_t* data)
 #endif
     int x, y;
     bool pressed = false;
-    if (slopos_touch_get(&x, &y, &pressed) && pressed) {
+    if (sigurdos_touch_get(&x, &y, &pressed) && pressed) {
         data->point.x = x;
         data->point.y = y;
         data->state = LV_INDEV_STATE_PRESSED;
-        slopos_display_wake();
+        sigurdos_display_wake();
     } else {
         data->state = LV_INDEV_STATE_RELEASED;
     }
@@ -240,12 +240,12 @@ static void lvgl_touch_cb(lv_indev_t* indev, lv_indev_data_t* data)
 // ── Keyboard read callback ───────────────────────────────
 static void lvgl_kb_cb(lv_indev_t* indev, lv_indev_data_t* data)
 {
-    slopos_keyboard_scan();   // force a fresh poll (catches first key after focus)
-    int key = slopos_keyboard_get_key();
-    if (key > 0 && slopos_keyboard_consume_event()) {
+    sigurdos_keyboard_scan();   // force a fresh poll (catches first key after focus)
+    int key = sigurdos_keyboard_get_key();
+    if (key > 0 && sigurdos_keyboard_consume_event()) {
         // Always route keyboard input to the chat textarea when the chat
         // messaging view is active, so the text box stays ready to type in.
-        lv_obj_t* chat_input = slopos::ui::chat_screen_get_input_field();
+        lv_obj_t* chat_input = sigurdos::ui::chat_screen_get_input_field();
         if (chat_input) {
             lv_group_t* g = lv_group_get_default();
             if (g) lv_group_focus_obj(chat_input);
@@ -256,11 +256,11 @@ static void lvgl_kb_cb(lv_indev_t* indev, lv_indev_data_t* data)
         else if (key == 0x09) data->key = LV_KEY_NEXT;
         else data->key = (uint32_t)key;
         data->state = LV_INDEV_STATE_PRESSED;
-        slopos_display_wake();
+        sigurdos_display_wake();
 
         // Single-shot: clear the key immediately so the next LVGL read gets RELEASED.
         // This prevents the last character from repeating forever.
-        slopos_keyboard_consume_key();
+        sigurdos_keyboard_consume_key();
     } else {
         data->state = LV_INDEV_STATE_RELEASED;
     }
@@ -272,34 +272,34 @@ static void lvgl_trackball_cb(lv_indev_t* indev, lv_indev_data_t* data)
     data->enc_diff = 0;
     data->state = LV_INDEV_STATE_RELEASED;
 
-    SlopOSTrackballEvent event = SlopOSTrackballEvent::None;
+    SigurdOSTrackballEvent event = SigurdOSTrackballEvent::None;
     if (!next_trackball_fallback(&event)) return;
 
     switch (event) {
-    case SlopOSTrackballEvent::Up:
-    case SlopOSTrackballEvent::Left:
+    case SigurdOSTrackballEvent::Up:
+    case SigurdOSTrackballEvent::Left:
         data->enc_diff = -1;
         break;
-    case SlopOSTrackballEvent::Down:
-    case SlopOSTrackballEvent::Right:
+    case SigurdOSTrackballEvent::Down:
+    case SigurdOSTrackballEvent::Right:
         data->enc_diff = 1;
         break;
-    case SlopOSTrackballEvent::Click:
+    case SigurdOSTrackballEvent::Click:
         data->state = LV_INDEV_STATE_PRESSED;
         break;
-    case SlopOSTrackballEvent::None:
+    case SigurdOSTrackballEvent::None:
     default:
         break;
     }
 }
 
 // ── Public API ───────────────────────────────────────────
-#if SLOPOS_DEBUG_DISPLAY
+#if SIGURDOS_DEBUG_DISPLAY
 static void lvgl_invalidate_cb(lv_event_t* e)
 {
     lv_area_t* area = (lv_area_t*)lv_event_get_param(e);
-#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
-    if (area && slopos::debug::get_level() >= 2 && slopos::debug::feat_get_display())
+#if defined(SIGURDOS_DEBUG) && SIGURDOS_DEBUG
+    if (area && sigurdos::debug::get_level() >= 2 && sigurdos::debug::feat_get_display())
 #else
     if (area)
 #endif
@@ -311,15 +311,15 @@ static void lvgl_invalidate_cb(lv_event_t* e)
 }
 #endif
 
-bool slopos_display_init()
+bool sigurdos_display_init()
 {
     tft.init();
     tft.setRotation(1);  // 90° CW: native portrait (240×320) → landscape (320×240)
-    tft.setBrightness(slopos::prefs_get().display_brightness);
+    tft.setBrightness(sigurdos::prefs_get().display_brightness);
     tft.fillScreen(TFT_BLACK);
 
     lv_init();
-    lv_tick_set_cb(slopos_display_millis);
+    lv_tick_set_cb(sigurdos_display_millis);
     lv_disp = lv_display_create(TFT_WIDTH, TFT_HEIGHT);
     lv_display_set_flush_cb(lv_disp, lvgl_flush_cb);
 
@@ -351,7 +351,7 @@ bool slopos_display_init()
         }
     }
 
-#if SLOPOS_DEBUG_DISPLAY
+#if SIGURDOS_DEBUG_DISPLAY
     lv_display_add_event_cb(lv_disp, lvgl_invalidate_cb, LV_EVENT_INVALIDATE_AREA, nullptr);
     Serial.println("[debug] LVGL invalidate area tracking enabled");
 #endif
@@ -376,38 +376,38 @@ bool slopos_display_init()
     lv_group_set_default(g);
 
     // Initialize touch controller
-    if (!slopos_touch_init()) {
+    if (!sigurdos_touch_init()) {
         // Touch init failed — device works with keyboard only
     }
 
     // Initialize keyboard matrix scanner
-    if (!slopos_keyboard_init()) {
+    if (!sigurdos_keyboard_init()) {
         // Keyboard init failed — device works with touch only
     }
 
     // Initialize trackball GPIO input
-    slopos_trackball_init();
+    sigurdos_trackball_init();
 
     display_on = true;
     reset_auto_off();
 
     // Backlight pulse: brief off→on to confirm display is alive
-    uint8_t saved_brightness = slopos::prefs_get().display_brightness;
+    uint8_t saved_brightness = sigurdos::prefs_get().display_brightness;
     tft.setBrightness(0);
     delay(50);
     tft.setBrightness(255);
     // Restore saved brightness after the pulse
-    slopos_display_set_brightness(saved_brightness);
+    sigurdos_display_set_brightness(saved_brightness);
 
     return true;
 }
 
-void slopos_display_loop()
+void sigurdos_display_loop()
 {
     // Serial screenshot/nav commands — only in non-remote-test builds.
-    // In SLOPOS_REMOTE_TEST builds the test controller's serial handler
+    // In SIGURDOS_REMOTE_TEST builds the test controller's serial handler
     // owns all Serial reads; this block would steal characters from commands.
-#if !defined(SLOPOS_REMOTE_TEST)
+#if !defined(SIGURDOS_REMOTE_TEST)
     if (Serial.available()) {
         static char cmd_buf[64];
         static uint8_t cmd_pos = 0;
@@ -415,7 +415,7 @@ void slopos_display_loop()
         if (c == '\n' || c == '\r') {
             cmd_buf[cmd_pos] = '\0';
             if (strcmp(cmd_buf, "SCREENSHOT") == 0) {
-                slopos_display_capture_framebuffer();
+                sigurdos_display_capture_framebuffer();
             } else if (strncmp(cmd_buf, "SEND ", 5) == 0) {
                 // SEND <channel_name> <text>
                 // Serial-accessible channel message send for debugging.
@@ -429,7 +429,7 @@ void slopos_display_loop()
                     memcpy(ch_name, rest, ch_len);
                     ch_name[ch_len] = '\0';
                     const char* text = space + 1;
-                    bool ok = slopos::mesh::sendChannelMessage(ch_name, text);
+                    bool ok = sigurdos::mesh::sendChannelMessage(ch_name, text);
                     Serial.printf("[serial] SEND ch=%s text=%s -> %s\n",
                                   ch_name, text, ok ? "OK" : "FAILED");
                 } else {
@@ -442,34 +442,34 @@ void slopos_display_loop()
                 // repeaters, onboarding
                 const char* n = cmd_buf + 4;
                 while (*n == ' ') ++n;
-                struct { const char* name; slopos::ui::Screen scr; } tbl[] = {
-                    {"home",      slopos::ui::Screen::Home},
-                    {"chat",      slopos::ui::Screen::Chat},
-                    {"contacts",  slopos::ui::Screen::Contacts},
-                    {"channels",  slopos::ui::Screen::Channels},
-                    {"network",   slopos::ui::Screen::Network},
-                    {"heard",     slopos::ui::Screen::Heard},
-                    {"map",       slopos::ui::Screen::Map},
-                    {"advertise", slopos::ui::Screen::Advertise},
-                    {"settings",  slopos::ui::Screen::Settings},
-                    {"trace",     slopos::ui::Screen::Trace},
-                    {"terminal",  slopos::ui::Screen::Terminal},
-                    {"signal",    slopos::ui::Screen::Signal},
-                    {"radio",     slopos::ui::Screen::RadioSetup},
-                    {"repeaters", slopos::ui::Screen::Repeaters},
-                    {"onboarding",slopos::ui::Screen::Onboarding},
-                    {"s-radio",   slopos::ui::Screen::SettingsRadio},
-                    {"s-gps",     slopos::ui::Screen::SettingsGPS},
-                    {"s-display", slopos::ui::Screen::SettingsDisplay},
-                    {"s-system",  slopos::ui::Screen::SettingsSystem},
-                    {"packets",   slopos::ui::Screen::Network},
-                    {"node-status", slopos::ui::Screen::NodeStatus},
-                    {"telemetry",   slopos::ui::Screen::Telemetry},
+                struct { const char* name; sigurdos::ui::Screen scr; } tbl[] = {
+                    {"home",      sigurdos::ui::Screen::Home},
+                    {"chat",      sigurdos::ui::Screen::Chat},
+                    {"contacts",  sigurdos::ui::Screen::Contacts},
+                    {"channels",  sigurdos::ui::Screen::Channels},
+                    {"network",   sigurdos::ui::Screen::Network},
+                    {"heard",     sigurdos::ui::Screen::Heard},
+                    {"map",       sigurdos::ui::Screen::Map},
+                    {"advertise", sigurdos::ui::Screen::Advertise},
+                    {"settings",  sigurdos::ui::Screen::Settings},
+                    {"trace",     sigurdos::ui::Screen::Trace},
+                    {"terminal",  sigurdos::ui::Screen::Terminal},
+                    {"signal",    sigurdos::ui::Screen::Signal},
+                    {"radio",     sigurdos::ui::Screen::RadioSetup},
+                    {"repeaters", sigurdos::ui::Screen::Repeaters},
+                    {"onboarding",sigurdos::ui::Screen::Onboarding},
+                    {"s-radio",   sigurdos::ui::Screen::SettingsRadio},
+                    {"s-gps",     sigurdos::ui::Screen::SettingsGPS},
+                    {"s-display", sigurdos::ui::Screen::SettingsDisplay},
+                    {"s-system",  sigurdos::ui::Screen::SettingsSystem},
+                    {"packets",   sigurdos::ui::Screen::Network},
+                    {"node-status", sigurdos::ui::Screen::NodeStatus},
+                    {"telemetry",   sigurdos::ui::Screen::Telemetry},
                 };
                 bool found = false;
                 for (auto& e : tbl) {
                     if (strcasecmp(n, e.name) == 0) {
-                        slopos::ui::navigate_to(e.scr);
+                        sigurdos::ui::navigate_to(e.scr);
                         found = true;
                         break;
                     }
@@ -484,9 +484,9 @@ void slopos_display_loop()
     }
 #endif
 
-    slopos_touch_loop();
-    slopos_keyboard_scan();
-    slopos_trackball_scan();
+    sigurdos_touch_loop();
+    sigurdos_keyboard_scan();
+    sigurdos_trackball_scan();
     dispatch_trackball_events();
 
     if (wake_refresh_pending) {
@@ -496,10 +496,10 @@ void slopos_display_loop()
 
     // Auto-off: turn off backlight after inactivity
     // Disabled in display debug builds — the screen must stay on for observation
-#if !SLOPOS_DEBUG_DISPLAY
+#if !SIGURDOS_DEBUG_DISPLAY
     if (display_on && millis() > auto_off_at) {
         tft.setBrightness(0);
-        slopos_keyboard_set_brightness(0);
+        sigurdos_keyboard_set_brightness(0);
         display_on = false;
     }
 #endif
@@ -508,39 +508,39 @@ void slopos_display_loop()
     delay(next > 5 ? 5 : next);
 }
 
-uint32_t slopos_display_millis()
+uint32_t sigurdos_display_millis()
 {
     return millis();
 }
 
-void slopos_display_wake()
+void sigurdos_display_wake()
 {
     if (!display_on) {
-        tft.setBrightness(slopos::prefs_get().display_brightness);
-        slopos_keyboard_set_brightness(slopos::prefs_get().kbd_backlight);
+        tft.setBrightness(sigurdos::prefs_get().display_brightness);
+        sigurdos_keyboard_set_brightness(sigurdos::prefs_get().kbd_backlight);
         display_on = true;
         wake_refresh_pending = true;
     }
     reset_auto_off();
 }
 
-bool slopos_display_is_on()
+bool sigurdos_display_is_on()
 {
     return display_on;
 }
 
-void slopos_display_set_brightness(uint8_t brightness)
+void sigurdos_display_set_brightness(uint8_t brightness)
 {
     tft.setBrightness(brightness);
 }
 
-void slopos_display_reset_auto_off()
+void sigurdos_display_reset_auto_off()
 {
     reset_auto_off();
 }
 
-#if defined(SLOPOS_REMOTE_TEST)
-void slopos_test_set_touch(int x, int y)
+#if defined(SIGURDOS_REMOTE_TEST)
+void sigurdos_test_set_touch(int x, int y)
 {
     test_touch_point.x = x;
     test_touch_point.y = y;
@@ -551,22 +551,22 @@ void slopos_test_set_touch(int x, int y)
 // ════════════════════════════════════════════════════════
 // Screenshot capture (all builds)
 // ════════════════════════════════════════════════════════
-void* slopos_display_get_buffer()
+void* sigurdos_display_get_buffer()
 {
     return draw_buf;
 }
 
-uint32_t slopos_display_get_width()
+uint32_t sigurdos_display_get_width()
 {
     return TFT_WIDTH;
 }
 
-uint32_t slopos_display_get_height()
+uint32_t sigurdos_display_get_height()
 {
     return TFT_HEIGHT;
 }
 
-void slopos_display_capture_framebuffer()
+void sigurdos_display_capture_framebuffer()
 {
     // Force a full LVGL render into the buffer
     lv_refr_now(NULL);

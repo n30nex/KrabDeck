@@ -1,6 +1,6 @@
 # Network Screen (Finder)
 
-The Network screen (internally called **Finder**) is SlopOS's node discovery and network neighbourhood view. It displays nearby nodes discovered via MeshCore adverts, sorted by most recently seen, and includes a **Ping Nearby** feature to actively probe for reachable nodes on the mesh.
+The Network screen (internally called **Finder**) is SigurdOS's node discovery and network neighbourhood view. It displays nearby nodes discovered via MeshCore adverts, sorted by most recently seen, and includes a **Ping Nearby** feature to actively probe for reachable nodes on the mesh.
 
 ---
 
@@ -29,7 +29,7 @@ The Network screen (internally called **Finder**) is SlopOS's node discovery and
 │ ◎ NodeDelta  78s ago -105dBm     │
 │ ...                              │
 ├──────────────────────────────────┤
-│ SlopOS T-Deck   ▂▄▆█       72%  │  ← bottom bar
+│ SigurdOS T-Deck   ▂▄▆█       72%  │  ← bottom bar
 └──────────────────────────────────┘
 ```
 
@@ -91,7 +91,7 @@ Returned by `getPingResult(i)` for `i` in `[0, getPingResultCount())`.
 
 When `pingIsActive()` is false and `pingOnCooldown()` is false, the top area shows a styled **"Ping Nearby"** button (`ACCENT` cyan, 100×22px, zero-radius). Tapping it:
 
-1. Calls `slopos::mesh::sendPingNearby()` — sends the PING with a unique tag
+1. Calls `sigurdos::mesh::sendPingNearby()` — sends the PING with a unique tag
 2. Recreates the screen via `finder_screen_show()` — transitions to listening state
 
 ### Listening / Active State

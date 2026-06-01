@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SlopOS-TDeck Map Downloader
+SigurdOS Map Downloader
 
 Downloads OpenStreetMap tiles for a specified region and zoom range,
 outputting JPEG tiles in the directory structure expected by the firmware:
@@ -51,21 +51,21 @@ TILE_SERVERS = {
         "url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
         "attribution": "© OpenStreetMap contributors",
         "max_zoom": 19,
-        "user_agent": "SlopOS-TDeck-MapDownloader/1.0",
+        "user_agent": "SigurdOS-MapDownloader/1.0",
     },
     "cyclosm": {
         "url": "https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png",
         "attribution": "© OpenStreetMap contributors, CyclOSM",
         "max_zoom": 20,
         "subdomains": ["a", "b", "c"],
-        "user_agent": "SlopOS-TDeck-MapDownloader/1.0",
+        "user_agent": "SigurdOS-MapDownloader/1.0",
     },
     "carto": {
         "url": "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
         "attribution": "© OpenStreetMap contributors, CARTO",
         "max_zoom": 19,
         "subdomains": ["a", "b", "c", "d"],
-        "user_agent": "SlopOS-TDeck-MapDownloader/1.0",
+        "user_agent": "SigurdOS-MapDownloader/1.0",
     },
 }
 
@@ -125,7 +125,7 @@ def init_session(server_config):
     global session
     session = requests.Session()
     session.headers.update({
-        "User-Agent": server_config.get("user_agent", "SlopOS-TDeck/1.0"),
+        "User-Agent": server_config.get("user_agent", "Sigurdos/1.0"),
         "Accept": "image/png,image/jpeg,image/webp,*/*",
     })
     return session
@@ -226,7 +226,7 @@ def write_metadata(output_dir, name, server_config, lat1, lon1, lat2, lon2, zoom
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Download map tiles for SlopOS-TDeck offline use",
+        description="Download map tiles for Sigurdos offline use",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )

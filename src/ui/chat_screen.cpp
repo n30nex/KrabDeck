@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// This file is part of SlopOS-TDeck.
+// This file is part of SigurdOS.
 //
-// SlopOS-TDeck is free software: you can redistribute it and/or modify
+// SigurdOS is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// SlopOS-TDeck is distributed in the hope that it will be useful,
+// SigurdOS is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
+// along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
 
 #include "chat_screen.h"
@@ -34,7 +34,7 @@
 #include <esp_heap_caps.h>
 #include "utils/utf8_util.h"
 
-namespace slopos::ui {
+namespace sigurdos::ui {
 
 using namespace theme;
 
@@ -167,7 +167,7 @@ static bool has_channel_buffer(int idx)
 
 static uint16_t chat_msg_cap()
 {
-    const uint16_t configured = slopos::prefs_get().chat_msg_cap;
+    const uint16_t configured = sigurdos::prefs_get().chat_msg_cap;
     if (configured == 0) return CHAT_MSGS_DEFAULT_CAP;
     if (configured < CHAT_MSGS_MIN_CAP) return CHAT_MSGS_MIN_CAP;
     if (configured > CHAT_MSGS_MAX) return CHAT_MSGS_MAX;
@@ -294,10 +294,10 @@ static void refresh_channels()
     }
 
     // ── Get fresh channel list from mesh ─────────────────
-    dyn_count = slopos::mesh::exportChannels(dyn_channels, MAX_CHANNELS);
+    dyn_count = sigurdos::mesh::exportChannels(dyn_channels, MAX_CHANNELS);
     if (dyn_count == 0) {
-        if (slopos::mesh::joinPublicChannel()) {
-            dyn_count = slopos::mesh::exportChannels(dyn_channels, MAX_CHANNELS);
+        if (sigurdos::mesh::joinPublicChannel()) {
+            dyn_count = sigurdos::mesh::exportChannels(dyn_channels, MAX_CHANNELS);
         }
         if (dyn_count == 0) {
             strncpy(dyn_channels[0], "#general", 31);
@@ -309,7 +309,7 @@ static void refresh_channels()
     // ── Apply channel filter ─────────────────────────────
     if (chat_filter_mode == 1) {
         // #channels only: keep entries starting with #
-#if defined(SLOPOS_DEBUG)
+#if defined(SIGURDOS_DEBUG)
         Serial.printf("[chat] filter: #channels only, before=%d\n", dyn_count);
 #endif
         int keep = 0;
@@ -320,12 +320,12 @@ static void refresh_channels()
             }
         }
         dyn_count = keep;
-#if defined(SLOPOS_DEBUG)
+#if defined(SIGURDOS_DEBUG)
         Serial.printf("[chat] filter: #channels only, after=%d\n", dyn_count);
 #endif
     } else if (chat_filter_mode == 2) {
         // DMs only: keep entries starting with "DM:"
-#if defined(SLOPOS_DEBUG)
+#if defined(SIGURDOS_DEBUG)
         Serial.printf("[chat] filter: DMs only, before=%d\n", dyn_count);
 #endif
         int keep = 0;
@@ -336,7 +336,7 @@ static void refresh_channels()
             }
         }
         dyn_count = keep;
-#if defined(SLOPOS_DEBUG)
+#if defined(SIGURDOS_DEBUG)
         Serial.printf("[chat] filter: DMs only, after=%d\n", dyn_count);
 #endif
     }
@@ -574,7 +574,7 @@ static void populate_channel_rows(lv_obj_t* list) {
             lv_obj_center(dl);
             lv_obj_add_event_cb(del_btn, [](lv_event_t* e) {
                 int idx = (int)(intptr_t)lv_event_get_user_data(e);
-                slopos::mesh::removeChannel(idx);
+                sigurdos::mesh::removeChannel(idx);
                 lv_obj_t* s = lv_obj_get_screen((lv_obj_t*)lv_event_get_target(e));
                 if (s) refresh_chat_list_view(s);
             }, LV_EVENT_CLICKED, (void*)(intptr_t)ch_idx);
@@ -605,7 +605,7 @@ static void update_channel_meta(int idx, const char* text, uint32_t timestamp)
     size_t slen = strlen(src);
     constexpr size_t MAX_PREVIEW_CHARS = 25;
     if (slen > MAX_PREVIEW_CHARS) {
-        size_t trunc = slopos::utf8_truncate_bytes(src, MAX_PREVIEW_CHARS);
+        size_t trunc = sigurdos::utf8_truncate_bytes(src, MAX_PREVIEW_CHARS);
         memcpy(ch_meta[idx].preview, src, trunc);
         memcpy(ch_meta[idx].preview + trunc, "...", 4);
     } else {
@@ -684,7 +684,7 @@ static lv_obj_t* make_chat_list_screen()
 
     // Time snapshot
     {
-        uint32_t epoch = slopos::mesh::getCurrentTime();
+        uint32_t epoch = sigurdos::mesh::getCurrentTime();
         char t[8];
         if (epoch == 0) snprintf(t, sizeof(t), "--:--");
         else {
@@ -716,14 +716,14 @@ static lv_obj_t* make_chat_list_screen()
     lv_obj_set_style_border_width(bot, 0, 0);
 
     lv_obj_t* dev = lv_label_create(bot);
-    lv_label_set_text(dev, slopos::mesh::getOwnName());
+    lv_label_set_text(dev, sigurdos::mesh::getOwnName());
     lv_obj_set_style_text_color(dev, lv_color_hex(TEXT_SECONDARY), 0);
     lv_obj_set_style_text_font(dev, emoji_wrapped_montserrat_10, 0);
     lv_obj_align(dev, LV_ALIGN_LEFT_MID, 4, 0);
 
     {
         char batt[8];
-        int pct = slopos_battery_pct();
+        int pct = sigurdos_battery_pct();
         snprintf(batt, sizeof(batt), "%d%%", pct);
         lv_obj_t* bl = lv_label_create(bot);
         lv_label_set_text(bl, batt);
@@ -774,7 +774,7 @@ static void show_channel_list(lv_scr_load_anim_t anim)
         LV_OBJ_FLAG_SCROLL_CHAIN));
 
     populate_channel_rows(ch_list);
-#if defined(SLOPOS_DEBUG)
+#if defined(SIGURDOS_DEBUG)
     Serial.printf("[chat] populate: dyn_count=%d names=[", dyn_count);
     for (int i = 0; i < dyn_count; i++) {
         Serial.printf("%s%s", i > 0 ? "," : "", dyn_channels[i]);
@@ -1034,7 +1034,7 @@ static void create_top_bar()
 
     // 24h time (right side)
     {
-        uint32_t epoch = slopos::mesh::getCurrentTime();
+        uint32_t epoch = sigurdos::mesh::getCurrentTime();
         char t[8];
         if (epoch == 0) snprintf(t, sizeof(t), "--:--");
         else {
@@ -1246,7 +1246,7 @@ static void render_active_messages()
         if (msg.is_self && !msg.acked) {
             if (strncmp(dyn_channels[active_channel], "DM: ", 4) == 0) {
                 const char* dest = dyn_channels[active_channel] + 4;
-                if (slopos::mesh::isMessageAcked(dest, msg.timestamp)) {
+                if (sigurdos::mesh::isMessageAcked(dest, msg.timestamp)) {
                     msg.acked = true;
                 }
             }
@@ -1377,7 +1377,7 @@ static void do_send()
     // so multi-byte UTF-8 text needs explicit truncation before sending.
     // Use utf8_truncate_bytes to avoid splitting a multi-byte codepoint.
     char text[150];
-    size_t len = slopos::utf8_truncate_bytes(raw, MAX_MSG_BYTES);
+    size_t len = sigurdos::utf8_truncate_bytes(raw, MAX_MSG_BYTES);
     memcpy(text, raw, len);
     text[len] = '\0';
 
@@ -1386,13 +1386,13 @@ static void do_send()
     const char* dest = is_dm ? (chan + 4) : chan;
 
     bool sent = false;
-    uint32_t ts = slopos::mesh::getCurrentTime();
+    uint32_t ts = sigurdos::mesh::getCurrentTime();
     if (is_dm) {
-        uint32_t send_ts = slopos::mesh::sendMessage(dest, text);
+        uint32_t send_ts = sigurdos::mesh::sendMessage(dest, text);
         sent = (send_ts != 0);
         if (sent) ts = send_ts;  // use the timestamp the mesh layer tracked the ACK with
     } else {
-        sent = slopos::mesh::sendChannelMessage(dest, text);
+        sent = sigurdos::mesh::sendChannelMessage(dest, text);
     }
 
     int sent_channel = active_channel;
@@ -1403,7 +1403,7 @@ static void do_send()
     } else {
         snprintf(display_text, sizeof(display_text), "%s [FAILED]", text);
     }
-    append_channel_message(sent_channel, slopos::mesh::getOwnName(), display_text, ts, true);
+    append_channel_message(sent_channel, sigurdos::mesh::getOwnName(), display_text, ts, true);
     mark_channel_used(sent_channel);
     render_active_messages();
     lv_textarea_set_text(input_field, "");
@@ -1509,13 +1509,13 @@ static void create_bottom_bar()
     lv_obj_set_style_border_width(bot, 0, 0);
 
     lv_obj_t* dev = lv_label_create(bot);
-    lv_label_set_text(dev, slopos::mesh::getOwnName());
+    lv_label_set_text(dev, sigurdos::mesh::getOwnName());
     lv_obj_set_style_text_color(dev, lv_color_hex(TEXT_SECONDARY), 0);
     lv_obj_set_style_text_font(dev, emoji_wrapped_montserrat_10, 0);
     lv_obj_align(dev, LV_ALIGN_LEFT_MID, 4, 0);
 
     char batt_buf[8];
-    int pct = slopos_battery_pct();
+    int pct = sigurdos_battery_pct();
     snprintf(batt_buf, sizeof(batt_buf), "%d%%", pct);
     lv_obj_t* bl = lv_label_create(bot);
     lv_label_set_text(bl, batt_buf);
@@ -1570,8 +1570,8 @@ static void open_channel_messaging(int idx)
     if (idx >= 0 && idx < dyn_count && dyn_channels[idx] &&
         strncmp(dyn_channels[idx], "DM: ", 4) == 0) {
         const char* contact_name = dyn_channels[idx] + 4;
-        slopos::mesh::ContactInfo cbuf[32];
-        int cn = slopos::mesh::exportContactsFull(cbuf, 32);
+        sigurdos::mesh::ContactInfo cbuf[32];
+        int cn = sigurdos::mesh::exportContactsFull(cbuf, 32);
         for (int ci = 0; ci < cn; ci++) {
             if (strcmp(cbuf[ci].name, contact_name) == 0) {
                 lv_obj_t* sig = create_signal_dots(top_bar, cbuf[ci].rssi);
@@ -1702,10 +1702,10 @@ static void show_add_channel_options(lv_obj_t* parent) {
         bool ok;
         if (psk[0]) {
             // PSK provided — add as encrypted channel
-            ok = slopos::mesh::addChannel(nm, psk);
+            ok = sigurdos::mesh::addChannel(nm, psk);
         } else {
             // No PSK — add as public hashtag channel
-            ok = slopos::mesh::addHashtagChannel(nm);
+            ok = sigurdos::mesh::addHashtagChannel(nm);
         }
 
         if (ok) {
@@ -1744,7 +1744,7 @@ static void show_add_channel_options(lv_obj_t* parent) {
             lv_obj_t* sc = lv_obj_get_screen(d);
             const char* nm = lv_textarea_get_text(input);
             if (!nm || !nm[0]) { if (feedback) lv_label_set_text(feedback, "Enter channel name"); return; }
-            bool ok = slopos::mesh::addHashtagChannel(nm);
+            bool ok = sigurdos::mesh::addHashtagChannel(nm);
             if (ok) {
                 lv_obj_del_async(d);
                 refresh_chat_list_view(sc);
@@ -1776,9 +1776,9 @@ static void show_add_channel_options(lv_obj_t* parent) {
 
         bool ok;
         if (psk && psk[0]) {
-            ok = slopos::mesh::addChannel(nm, psk);
+            ok = sigurdos::mesh::addChannel(nm, psk);
         } else {
-            ok = slopos::mesh::addHashtagChannel(nm);
+            ok = sigurdos::mesh::addHashtagChannel(nm);
         }
         if (ok) {
             lv_obj_del_async(d);
@@ -1798,7 +1798,7 @@ void chat_screen_show()
     screens_clear_back_btn();
     show_channel_list(LV_SCR_LOAD_ANIM_MOVE_LEFT);
     // Reset unread badge counter when the user opens chat
-    slopos::mesh::resetUnreadMessageCount();
+    sigurdos::mesh::resetUnreadMessageCount();
 }
 
 void chat_screen_open_dm(const char* contact_name)
@@ -1826,7 +1826,7 @@ void chat_screen_open_dm(const char* contact_name)
 
 void chat_screen_add_msg(const char* channel, const char* sender, const char* text, bool is_self)
 {
-    uint32_t now = slopos::mesh::getCurrentTime();
+    uint32_t now = sigurdos::mesh::getCurrentTime();
 
     // Map DM messages (empty channel) to "DM: <sender>" conversation
     char dm_buf[32];
@@ -1877,7 +1877,7 @@ void chat_screen_refresh_acks()
 {
     if (!msg_list) return;
     static int last_ack_counter = 0;
-    int cur = slopos::mesh::getAckCounter();
+    int cur = sigurdos::mesh::getAckCounter();
     if (cur != last_ack_counter) {
         last_ack_counter = cur;
         render_active_messages();
@@ -1887,15 +1887,15 @@ void chat_screen_refresh_acks()
 // ════════════════════════════════════════════════════
 // Trackball handler
 // ════════════════════════════════════════════════════
-bool chat_screen_handle_trackball(SlopOSTrackballEvent event)
+bool chat_screen_handle_trackball(SigurdOSTrackballEvent event)
 {
     if (msg_list) {
         // ── Search mode: Up/Down cycles through matches, Left dismisses search ──
         if (search_active && search_query[0] && search_match_count > 0) {
             switch (event) {
-            case SlopOSTrackballEvent::Up:
-            case SlopOSTrackballEvent::Down: {
-                if (event == SlopOSTrackballEvent::Up) {
+            case SigurdOSTrackballEvent::Up:
+            case SigurdOSTrackballEvent::Down: {
+                if (event == SigurdOSTrackballEvent::Up) {
                     search_current_match = (search_current_match <= 0) ?
                         search_match_count - 1 : search_current_match - 1;
                 } else {
@@ -1907,7 +1907,7 @@ bool chat_screen_handle_trackball(SlopOSTrackballEvent event)
                 if (child) lv_obj_scroll_to_view(child, LV_ANIM_OFF);
                 return true;
             }
-            case SlopOSTrackballEvent::Left:
+            case SigurdOSTrackballEvent::Left:
                 hide_search();
                 show_channel_list(LV_SCR_LOAD_ANIM_MOVE_RIGHT);
                 return true;
@@ -1917,29 +1917,29 @@ bool chat_screen_handle_trackball(SlopOSTrackballEvent event)
         }
 
         switch (event) {
-        case SlopOSTrackballEvent::Up: {
+        case SigurdOSTrackballEvent::Up: {
             // Let LVGL clamp at top (no elastic = hard stop at 0)
             lv_coord_t sy = lv_obj_get_scroll_y(msg_list);
             lv_coord_t new_y = sy > 44 ? sy - 44 : 0;
             lv_obj_scroll_to_y(msg_list, new_y, LV_ANIM_OFF);
             return true;
         }
-        case SlopOSTrackballEvent::Down: {
+        case SigurdOSTrackballEvent::Down: {
             // Let LVGL clamp at bottom (no elastic = hard stop at max)
             lv_coord_t sy = lv_obj_get_scroll_y(msg_list);
             lv_obj_scroll_to_y(msg_list, sy + 44, LV_ANIM_OFF);
             return true;
         }
-        case SlopOSTrackballEvent::Left:
+        case SigurdOSTrackballEvent::Left:
             show_channel_list(LV_SCR_LOAD_ANIM_MOVE_RIGHT);
             return true;
-        case SlopOSTrackballEvent::Right:
+        case SigurdOSTrackballEvent::Right:
             if (input_field) {
                 lv_group_t* g = lv_group_get_default();
                 if (g) lv_group_focus_obj(input_field);
             }
             return true;
-        case SlopOSTrackballEvent::Click:
+        case SigurdOSTrackballEvent::Click:
             if (input_field) {
                 lv_group_t* g = lv_group_get_default();
                 if (g) lv_group_focus_obj(input_field);
@@ -1952,8 +1952,8 @@ bool chat_screen_handle_trackball(SlopOSTrackballEvent event)
 
     if (ch_list) {
         switch (event) {
-        case SlopOSTrackballEvent::Up:
-        case SlopOSTrackballEvent::Down: {
+        case SigurdOSTrackballEvent::Up:
+        case SigurdOSTrackballEvent::Down: {
             // Any vertical motion returns focus to the channel list
             if (ch_focus != 0) {
                 clear_ch_focus_buttons();
@@ -1964,7 +1964,7 @@ bool chat_screen_handle_trackball(SlopOSTrackballEvent event)
                 }
             }
             int old = ch_list_selected;
-            if (event == SlopOSTrackballEvent::Up)
+            if (event == SigurdOSTrackballEvent::Up)
                 ch_list_selected = ch_list_selected > 0 ? ch_list_selected - 1 : dyn_count - 1;
             else
                 ch_list_selected = ch_list_selected < dyn_count - 1 ? ch_list_selected + 1 : 0;
@@ -1979,7 +1979,7 @@ bool chat_screen_handle_trackball(SlopOSTrackballEvent event)
             }
             return true;
         }
-        case SlopOSTrackballEvent::Left:
+        case SigurdOSTrackballEvent::Left:
             if (ch_focus == 1) {
                 go_back();
             } else if (ch_focus == 0) {
@@ -1999,7 +1999,7 @@ bool chat_screen_handle_trackball(SlopOSTrackballEvent event)
                 }
             }
             return true;
-        case SlopOSTrackballEvent::Right:
+        case SigurdOSTrackballEvent::Right:
             if (ch_focus == 2) {
                 if (ch_add_btn) lv_obj_set_style_border_width(ch_add_btn, 0, 0);
                 ch_focus = 0;
@@ -2024,7 +2024,7 @@ bool chat_screen_handle_trackball(SlopOSTrackballEvent event)
                 }
             }
             return true;
-        case SlopOSTrackballEvent::Click:
+        case SigurdOSTrackballEvent::Click:
             if (ch_focus == 1) {
                 go_back();
             } else if (ch_focus == 2 && ch_add_btn) {
@@ -2111,9 +2111,9 @@ void chat_save_messages()
 void chat_load_messages()
 {
     if (dyn_count == 0) {
-        dyn_count = slopos::mesh::exportChannels(dyn_channels, MAX_CHANNELS);
-        if (dyn_count == 0 && slopos::mesh::joinPublicChannel()) {
-            dyn_count = slopos::mesh::exportChannels(dyn_channels, MAX_CHANNELS);
+        dyn_count = sigurdos::mesh::exportChannels(dyn_channels, MAX_CHANNELS);
+        if (dyn_count == 0 && sigurdos::mesh::joinPublicChannel()) {
+            dyn_count = sigurdos::mesh::exportChannels(dyn_channels, MAX_CHANNELS);
         }
         if (dyn_count == 0) {
             strncpy(dyn_channels[0], "#general", sizeof(dyn_channels[0]) - 1);
@@ -2219,13 +2219,13 @@ void chat_screen_set_message_cap(uint16_t cap)
         (cap < CHAT_MSGS_MIN_CAP ? CHAT_MSGS_MIN_CAP :
          (cap > CHAT_MSGS_MAX ? CHAT_MSGS_MAX : cap));
 
-    slopos::NodePrefs np = slopos::prefs_get();
+    sigurdos::NodePrefs np = sigurdos::prefs_get();
     np.chat_msg_cap = clamped;
-    slopos::prefs_set(np);
+    sigurdos::prefs_set(np);
 
     for (int i = 0; i < MAX_CHANNELS; i++) {
         trim_channel_history(i, clamped);
     }
 }
 
-} // namespace slopos::ui
+} // namespace sigurdos::ui

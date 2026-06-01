@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// This file is part of SlopOS-TDeck.
+// This file is part of SigurdOS.
 //
-// SlopOS-TDeck is free software: you can redistribute it and/or modify
+// SigurdOS is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// SlopOS-TDeck is distributed in the hope that it will be useful,
+// SigurdOS is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
+// along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
 
 #include "screens.h"
@@ -42,7 +42,7 @@
 #include <functional>
 #include <SPIFFS.h>
 
-namespace slopos::ui {
+namespace sigurdos::ui {
 
 using namespace theme;
 
@@ -69,10 +69,10 @@ static void advertise_status_update()
 {
     if (!g_advert_status_label) return;
 
-    uint32_t last = slopos::mesh::getLastAdvertTime();
-    uint32_t now = slopos::mesh::getCurrentTime();
-    bool success = slopos::mesh::getLastAdvertSuccess();
-    bool used_gps = slopos::mesh::getLastAdvertUsedGps();
+    uint32_t last = sigurdos::mesh::getLastAdvertTime();
+    uint32_t now = sigurdos::mesh::getCurrentTime();
+    bool success = sigurdos::mesh::getLastAdvertSuccess();
+    bool used_gps = sigurdos::mesh::getLastAdvertUsedGps();
 
     char age[24];
     bool on_cooldown = false;
@@ -185,7 +185,7 @@ static lv_obj_t* make_screen_full(const char* title)
 
     // Time (24h snapshot)
     {
-        uint32_t epoch = slopos::mesh::getCurrentTime();
+        uint32_t epoch = sigurdos::mesh::getCurrentTime();
         char t[8];
         if (epoch == 0) {
             snprintf(t, sizeof(t), "--:--");
@@ -202,7 +202,7 @@ static lv_obj_t* make_screen_full(const char* title)
 
     // Signal dots (right of top bar, iOS-style)
     {
-        int rssi = slopos::mesh::getLastRSSI();
+        int rssi = sigurdos::mesh::getLastRSSI();
         lv_obj_t* sig = create_signal_dots(top, rssi);
         lv_obj_align(sig, LV_ALIGN_RIGHT_MID, -54, 0);
     }
@@ -226,7 +226,7 @@ static lv_obj_t* make_screen_full(const char* title)
 
     // Device name (left)
     lv_obj_t* dev = lv_label_create(bot);
-    lv_label_set_text(dev, slopos::mesh::getOwnName());
+    lv_label_set_text(dev, sigurdos::mesh::getOwnName());
     lv_obj_set_style_text_color(dev, lv_color_hex(TEXT_SECONDARY), 0);
     lv_obj_set_style_text_font(dev, &lv_font_montserrat_10, 0);
     lv_obj_align(dev, LV_ALIGN_LEFT_MID, 4, 0);
@@ -234,7 +234,7 @@ static lv_obj_t* make_screen_full(const char* title)
     // Battery % (right, snapshot)
     {
         char batt[8];
-        int pct = slopos_battery_pct();
+        int pct = sigurdos_battery_pct();
         snprintf(batt, sizeof(batt), "%d%%", pct);
         lv_obj_t* bl = lv_label_create(bot);
         lv_label_set_text(bl, batt);
@@ -277,7 +277,7 @@ static void packets_rebuild_list()
 {
     if (!g_packets_list) return;
 
-    int n = slopos::mesh::getPacketLogCount();
+    int n = sigurdos::mesh::getPacketLogCount();
     if (n == g_packets_last_count) return;
     g_packets_last_count = n;
 
@@ -293,8 +293,8 @@ static void packets_rebuild_list()
     }
 
     for (int i = n - 1; i >= 0; i--) {
-        slopos::mesh::PacketLogEntry e;
-        if (!slopos::mesh::getPacketLogEntry(i, &e)) continue;
+        sigurdos::mesh::PacketLogEntry e;
+        if (!sigurdos::mesh::getPacketLogEntry(i, &e)) continue;
 
         lv_obj_t* row = lv_obj_create(g_packets_list);
         lv_obj_set_size(row, LV_PCT(100), PKT_ROW_H);
@@ -453,8 +453,8 @@ void contacts_screen_show()
 {
     lv_obj_t* scr = make_screen_full("Contacts");
 
-    slopos::mesh::ContactInfo all_contacts[32];
-    int total = slopos::mesh::exportContactsFull(all_contacts, 32);
+    sigurdos::mesh::ContactInfo all_contacts[32];
+    int total = sigurdos::mesh::exportContactsFull(all_contacts, 32);
 
     // Filter based on mode
     int n = 0;
@@ -473,7 +473,7 @@ void contacts_screen_show()
             n++;
         }
     }
-    slopos::mesh::ContactInfo* contacts = all_contacts;
+    sigurdos::mesh::ContactInfo* contacts = all_contacts;
 
     // Sort alphabetically
     for (int i = 0; i < n - 1; i++)
@@ -650,7 +650,7 @@ static void show_login_password_dialog(const char* contact_name)
 
     // Pre-fill password from NVS if saved
     char saved_pw[64] = {0};
-    if (slopos::loadRepeaterPassword(contact_name, saved_pw, sizeof(saved_pw))) {
+    if (sigurdos::loadRepeaterPassword(contact_name, saved_pw, sizeof(saved_pw))) {
         lv_textarea_set_text(ta, saved_pw);
         lv_obj_add_state(save_cb, LV_STATE_CHECKED);
     }
@@ -690,12 +690,12 @@ static void show_login_password_dialog(const char* contact_name)
         if (d && d->name) {
             const char* pw = lv_textarea_get_text(d->ta);
             if (pw && pw[0]) {
-                slopos::mesh::sendLogin(d->name, pw);
+                sigurdos::mesh::sendLogin(d->name, pw);
                 // Start a login-polling timer on the main screen
                 start_login_poll_timer(d->name);
                 // Save password to NVS if checkbox is checked
                 if (d->save_cb && (lv_obj_get_state(d->save_cb) & LV_STATE_CHECKED)) {
-                    slopos::saveRepeaterPassword(d->name, pw);
+                    sigurdos::saveRepeaterPassword(d->name, pw);
                 }
             }
         }
@@ -775,7 +775,7 @@ static void on_login_poll_timer(lv_timer_t* t) {
         return;
     }
 
-    uint8_t st = slopos::mesh::getLoginStatus(ctx->name);
+    uint8_t st = sigurdos::mesh::getLoginStatus(ctx->name);
     if (st == LOGIN_STATUS_OK) {
         char* n = strdup(ctx->name);
         free(ctx->name);
@@ -821,7 +821,7 @@ static void show_admin_cmd_dialog(const char* contact_name)
     if (!contact_name) return;
 
     // Clear stale responses from previous session
-    slopos::mesh::clearCmdResponses();
+    sigurdos::mesh::clearCmdResponses();
 
     static constexpr int TERM_TOP_H    = TOP_BAR_H;         // 21
     static constexpr int TERM_INPUT_H  = 28;
@@ -959,7 +959,7 @@ static void show_admin_cmd_dialog(const char* contact_name)
                 char echo[256];
                 snprintf(echo, sizeof(echo), "\n> %s\n", cmd);
                 lv_textarea_add_text(dd->out, echo);
-                bool ok = slopos::mesh::sendCommand(dd->name, cmd);
+                bool ok = sigurdos::mesh::sendCommand(dd->name, cmd);
                 lv_textarea_set_text(dd->ta, "");
                 if (lv_group_get_default()) lv_group_focus_obj(dd->ta);
                 if (!ok) lv_textarea_add_text(dd->out, "! Send failed\n");
@@ -968,7 +968,7 @@ static void show_admin_cmd_dialog(const char* contact_name)
                         TermData* dd2 = (TermData*)lv_timer_get_user_data(t);
                         if (!dd2 || dd2->deleted) return;
                         char nb[32], tb[160];
-                        while (slopos::mesh::pollCmdResponse(nb, sizeof(nb), tb, sizeof(tb))) {
+                        while (sigurdos::mesh::pollCmdResponse(nb, sizeof(nb), tb, sizeof(tb))) {
                             if (dd2->deleted) return;
                             if (dd2->name && strcmp(nb, dd2->name) == 0) {
                                 char rb[256];
@@ -1026,7 +1026,7 @@ static void show_admin_cmd_dialog(const char* contact_name)
             if (d->name) free(d->name);
             delete d;
         }
-        slopos::mesh::clearCmdResponses();
+        sigurdos::mesh::clearCmdResponses();
     }, LV_EVENT_DELETE, nullptr);
 }
 
@@ -1112,13 +1112,13 @@ static void show_fetch_msgs_dialog(const char* contact_name)
         if (d && d->name) {
             const char* channel = lv_textarea_get_text(d->ta);
             if (channel && channel[0]) {
-                slopos::mesh::sendRoomMsgFetchRequest(d->name, channel);
+                sigurdos::mesh::sendRoomMsgFetchRequest(d->name, channel);
                 char confirm[64];
                 snprintf(confirm, sizeof(confirm), "Fetching msgs from %s channel %s",
                          d->name, channel);
-                slopos::mesh::mesh_v2_queue_push("System", "", confirm, 0, 0.0f);
+                sigurdos::mesh::mesh_v2_queue_push("System", "", confirm, 0, 0.0f);
                 // Navigate to Chat screen so user sees incoming messages
-                slopos::ui::navigate_to(slopos::ui::Screen::Chat);
+                sigurdos::ui::navigate_to(sigurdos::ui::Screen::Chat);
             }
         }
         lv_obj_t* dlg = lv_obj_get_parent((lv_obj_t*)lv_event_get_target(le));
@@ -1171,9 +1171,9 @@ void contact_detail_screen_show(const char* contact_name)
     lv_obj_t* scr = make_screen_full("Contact");
 
     // Look up the contact via exportContactsFull
-    slopos::mesh::ContactInfo contacts[64];
-    int total = slopos::mesh::exportContactsFull(contacts, 64);
-    const slopos::mesh::ContactInfo* target = nullptr;
+    sigurdos::mesh::ContactInfo contacts[64];
+    int total = sigurdos::mesh::exportContactsFull(contacts, 64);
+    const sigurdos::mesh::ContactInfo* target = nullptr;
     for (int i = 0; i < total; i++) {
         if (strcmp(contacts[i].name, contact_name) == 0) {
             target = &contacts[i];
@@ -1254,7 +1254,7 @@ void contact_detail_screen_show(const char* contact_name)
     // Last seen
     if (target->last_seen > 0) {
         // Get contract index to look up path info later
-        int cidx = slopos::mesh::findContactIndex(contact_name);
+        int cidx = sigurdos::mesh::findContactIndex(contact_name);
         char time_buf[24];
         time_t t = (time_t)target->last_seen;
         struct tm* tm_info = localtime(&t);
@@ -1266,7 +1266,7 @@ void contact_detail_screen_show(const char* contact_name)
         }
 
         // Show path status
-        if (cidx >= 0 && slopos::mesh::contactHasPath(cidx)) {
+        if (cidx >= 0 && sigurdos::mesh::contactHasPath(cidx)) {
             add_row("Path", "Direct", ACCENT_GREEN);
         } else if (cidx >= 0) {
             add_row("Path", "Flood", TEXT_SECONDARY);
@@ -1285,7 +1285,7 @@ void contact_detail_screen_show(const char* contact_name)
         add_row("Location", "Not shared", TEXT_SECONDARY);
     // ── Login status row (repeater/room only) ─────────
     if (target->type == ADV_TYPE_REPEATER || target->type == ADV_TYPE_ROOM) {
-        uint8_t st = slopos::mesh::getLoginStatus(contact_name);
+        uint8_t st = sigurdos::mesh::getLoginStatus(contact_name);
         const char* login_text = "Not logged in";
         uint32_t login_color = TEXT_SECONDARY;
         switch (st) {
@@ -1297,7 +1297,7 @@ void contact_detail_screen_show(const char* contact_name)
 
         // When logged in, show permission level
         if (st == LOGIN_STATUS_OK) {
-            uint8_t perm = slopos::mesh::getLoginPermission(contact_name);
+            uint8_t perm = sigurdos::mesh::getLoginPermission(contact_name);
             char perm_buf[24];
             if (perm) {
                 snprintf(perm_buf, sizeof(perm_buf), "Admin (perm=%d)", perm);
@@ -1337,7 +1337,7 @@ void contact_detail_screen_show(const char* contact_name)
             lv_obj_t* btn = (lv_obj_t*)lv_event_get_target(e);
             const char* name = (const char*)lv_obj_get_user_data(btn);
             if (name) {
-                slopos::ui::chat_screen_open_dm(name);
+                sigurdos::ui::chat_screen_open_dm(name);
             }
         }, LV_EVENT_CLICKED, nullptr);
         lv_obj_add_event_cb(dm_btn, [](lv_event_t* e) {
@@ -1346,7 +1346,7 @@ void contact_detail_screen_show(const char* contact_name)
     }
 
     // Send Trace button (skip for room/repeater)
-    int trace_idx = slopos::mesh::findContactIndex(contact_name);
+    int trace_idx = sigurdos::mesh::findContactIndex(contact_name);
     if (!is_room_type && trace_idx >= 0) {
         lv_obj_t* trace_btn = lv_btn_create(btn_row);
         lv_obj_set_size(trace_btn, 110, 24);
@@ -1363,10 +1363,10 @@ void contact_detail_screen_show(const char* contact_name)
             int idx = (int)(intptr_t)lv_obj_get_user_data(btn);
             if (idx >= 0) {
                 uint32_t tag = 0;
-                slopos::mesh::sendTrace(idx, &tag);
+                sigurdos::mesh::sendTrace(idx, &tag);
                 // Brief snackbar-style feedback — navigate to trace screen
                 // so the user can see the result
-                slopos::ui::navigate_to(slopos::ui::Screen::Trace);
+                sigurdos::ui::navigate_to(sigurdos::ui::Screen::Trace);
             }
         }, LV_EVENT_CLICKED, nullptr);
         // No LV_EVENT_DELETE handler needed — no heap allocation
@@ -1388,8 +1388,8 @@ void contact_detail_screen_show(const char* contact_name)
             lv_obj_t* btn = (lv_obj_t*)lv_event_get_target(e);
             const char* name = (const char*)lv_obj_get_user_data(btn);
             if (name) {
-                slopos::mesh::requestStatus(name);
-                slopos::ui::navigate_to(slopos::ui::Screen::NodeStatus);
+                sigurdos::mesh::requestStatus(name);
+                sigurdos::ui::navigate_to(sigurdos::ui::Screen::NodeStatus);
             }
         }, LV_EVENT_CLICKED, nullptr);
         lv_obj_add_event_cb(st_btn, [](lv_event_t* e) {
@@ -1421,8 +1421,8 @@ void contact_detail_screen_show(const char* contact_name)
             lv_obj_t* btn = (lv_obj_t*)lv_event_get_target(e);
             const char* name = (const char*)lv_obj_get_user_data(btn);
             if (name) {
-                slopos::mesh::requestTelemetry(name);
-                slopos::ui::navigate_to(slopos::ui::Screen::Telemetry);
+                sigurdos::mesh::requestTelemetry(name);
+                sigurdos::ui::navigate_to(sigurdos::ui::Screen::Telemetry);
             }
         }, LV_EVENT_CLICKED, nullptr);
         lv_obj_add_event_cb(tm_btn, [](lv_event_t* e) {
@@ -1495,7 +1495,7 @@ void contact_detail_screen_show(const char* contact_name)
             lv_obj_set_user_data(confirm_btn, cn);
             lv_obj_add_event_cb(confirm_btn, [](lv_event_t* ce) {
                 const char* cn = (const char*)lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(ce));
-                slopos::mesh::removeContact(cn);
+                sigurdos::mesh::removeContact(cn);
                 go_back();
             }, LV_EVENT_CLICKED, nullptr);
             lv_obj_set_user_data(dlg, cn);
@@ -1533,7 +1533,7 @@ void contact_detail_screen_show(const char* contact_name)
             lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
             const char* name = (const char*)lv_obj_get_user_data(target);
             if (name) {
-                slopos::mesh::resetPathTo(name);
+                sigurdos::mesh::resetPathTo(name);
             }
             lv_timer_create([](lv_timer_t* t) {
                 go_back();
@@ -1559,7 +1559,7 @@ void contact_detail_screen_show(const char* contact_name)
             lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
             const char* name = (const char*)lv_obj_get_user_data(target);
             if (name) {
-                slopos::mesh::discoverPath(name);
+                sigurdos::mesh::discoverPath(name);
             }
         }, LV_EVENT_CLICKED, nullptr);
         lv_obj_add_event_cb(dp_btn, [](lv_event_t* e) {
@@ -1570,7 +1570,7 @@ void contact_detail_screen_show(const char* contact_name)
 
     // ── Login/Logout/Admin Cmd buttons (repeater/room) ──
     if (target->type == ADV_TYPE_REPEATER || target->type == ADV_TYPE_ROOM) {
-        uint8_t login_st = slopos::mesh::getLoginStatus(contact_name);
+        uint8_t login_st = sigurdos::mesh::getLoginStatus(contact_name);
         lv_obj_t* login_row = lv_obj_create(scr);
         lv_obj_set_size(login_row, CONTENT_W, 30);
         // Place the login row above the action btn_row so it's always visible.
@@ -1617,7 +1617,7 @@ void contact_detail_screen_show(const char* contact_name)
                 lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
                 const char* name = (const char*)lv_obj_get_user_data(target);
                 if (name) {
-                    slopos::mesh::sendLogout(name);
+                    sigurdos::mesh::sendLogout(name);
                     lv_timer_create([](lv_timer_t* t) {
                         go_back();
                         lv_timer_del(t);
@@ -1697,7 +1697,7 @@ void contact_detail_screen_show(const char* contact_name)
                     lv_obj_t* t = (lv_obj_t*)lv_event_get_target(ce);
                     const char* n = (const char*)lv_obj_get_user_data(t);
                     if (n) {
-                        slopos::mesh::sendLogout(n); // clears pending/failed state
+                        sigurdos::mesh::sendLogout(n); // clears pending/failed state
                         go_back();
                     }
                 }, LV_EVENT_CLICKED, nullptr);
@@ -1717,7 +1717,7 @@ void finder_screen_show()
 {
     lv_obj_t* scr = make_screen_full("Finder");
 
-    bool have_ping = slopos::mesh::getPingResultCount() > 0;
+    bool have_ping = sigurdos::mesh::getPingResultCount() > 0;
 
     // ── Ping status / button area ──────────────────
     lv_obj_t* ping_row = lv_obj_create(scr);
@@ -1728,9 +1728,9 @@ void finder_screen_show()
     lv_obj_set_flex_flow(ping_row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(ping_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    if (slopos::mesh::pingIsActive()) {
+    if (sigurdos::mesh::pingIsActive()) {
         // Ping in progress — show countdown
-        uint32_t remain = slopos::mesh::activePingRemaining();
+        uint32_t remain = sigurdos::mesh::activePingRemaining();
         uint32_t elapsed = 3000 - (remain > 0 ? remain : 0);
         char ping_buf[40];
         snprintf(ping_buf, sizeof(ping_buf), "%s Listening... (%lu/%lu)",
@@ -1738,9 +1738,9 @@ void finder_screen_show()
         lv_obj_t* status = lv_label_create(ping_row);
         lv_label_set_text(status, ping_buf);
         lv_obj_set_style_text_color(status, lv_color_hex(ACCENT), 0);
-    } else if (slopos::mesh::pingOnCooldown()) {
+    } else if (sigurdos::mesh::pingOnCooldown()) {
         // On cooldown — show remaining time
-        uint32_t cd = (slopos::mesh::pingCooldownRemaining() + 999) / 1000;
+        uint32_t cd = (sigurdos::mesh::pingCooldownRemaining() + 999) / 1000;
         char ping_buf[32];
         snprintf(ping_buf, sizeof(ping_buf), "%s Ping ready in %lus", LV_SYMBOL_WIFI, (unsigned long)cd);
         lv_obj_t* status = lv_label_create(ping_row);
@@ -1761,7 +1761,7 @@ void finder_screen_show()
 
         // Button click handler
         lv_obj_add_event_cb(btn, [](lv_event_t* e) {
-            slopos::mesh::sendPingNearby();
+            sigurdos::mesh::sendPingNearby();
             // Recreate screen to show listening state
             finder_screen_show();
         }, LV_EVENT_CLICKED, nullptr);
@@ -1780,9 +1780,9 @@ void finder_screen_show()
 
     // ── Ping results ───────────────────────────────
     if (have_ping) {
-        int n = slopos::mesh::getPingResultCount();
+        int n = sigurdos::mesh::getPingResultCount();
         for (int i = 0; i < n; i++) {
-            auto* r = slopos::mesh::getPingResult(i);
+            auto* r = sigurdos::mesh::getPingResult(i);
             if (!r) continue;
             row_n++;
             snprintf(buf, sizeof(buf), "%s  %ddBm", r->name, r->rssi);
@@ -1793,17 +1793,17 @@ void finder_screen_show()
     }
 
     // ── Repeaters from contact list ────────────────
-    slopos::mesh::ContactInfo contacts[32];
-    int total = slopos::mesh::exportContactsFull(contacts, 32);
+    sigurdos::mesh::ContactInfo contacts[32];
+    int total = sigurdos::mesh::exportContactsFull(contacts, 32);
     if (total > 32) total = 32;
     if (total < 0) total = 0;
 
     // Build a set of ping responder names so we don't double-show
     bool is_ping_responder[32] = {};
     if (have_ping) {
-        int np = slopos::mesh::getPingResultCount();
+        int np = sigurdos::mesh::getPingResultCount();
         for (int i = 0; i < np && i < 32; i++) {
-            auto* r = slopos::mesh::getPingResult(i);
+            auto* r = sigurdos::mesh::getPingResult(i);
             if (!r) continue;
             for (int j = 0; j < total; j++) {
                 if (strcmp(r->name, contacts[j].name) == 0) {
@@ -1835,7 +1835,7 @@ void finder_screen_show()
     if (show_empty) {
         // Choose message based on state
         const char* msg;
-        if (slopos::mesh::pingIsActive()) {
+        if (sigurdos::mesh::pingIsActive()) {
             msg = "Listening for nearby nodes...";
         } else if (have_ping) {
             msg = "Ping complete — no nodes responded.\n\n"
@@ -1880,8 +1880,8 @@ void repeaters_screen_show()
 {
     lv_obj_t* scr = make_screen_full("Repeaters");
 
-    slopos::mesh::ContactInfo contacts[32];
-    int total = slopos::mesh::exportContactsFull(contacts, 32);
+    sigurdos::mesh::ContactInfo contacts[32];
+    int total = sigurdos::mesh::exportContactsFull(contacts, 32);
 
     // Filter to repeaters only
     int n = 0;
@@ -1897,7 +1897,7 @@ void repeaters_screen_show()
         for (int i = 0; i < n - 1; i++) {
             for (int j = 0; j < n - 1 - i; j++) {
                 if (contacts[j].last_seen < contacts[j + 1].last_seen) {
-                    slopos::mesh::ContactInfo tmp = contacts[j];
+                    sigurdos::mesh::ContactInfo tmp = contacts[j];
                     contacts[j] = contacts[j + 1];
                     contacts[j + 1] = tmp;
                 }
@@ -2009,10 +2009,10 @@ void repeaters_screen_show()
 // arrives later as a chat message from the server.
 static void repeater_send(const char* contact_name, const char* cmd, const char* fmt) {
     if (!contact_name || !cmd || !cmd[0]) return;
-    slopos::mesh::sendCommand(contact_name, cmd);
+    sigurdos::mesh::sendCommand(contact_name, cmd);
     char buf[80];
     snprintf(buf, sizeof(buf), fmt, cmd);
-    slopos::mesh::mesh_v2_queue_push("System", "", buf, 0, 0.0f);
+    sigurdos::mesh::mesh_v2_queue_push("System", "", buf, 0, 0.0f);
 }
 
 // Generic input dialog — shows a text entry box and sends
@@ -2151,9 +2151,9 @@ void repeater_detail_screen_show(const char* contact_name, bool skip_login)
     if (!contact_name || !contact_name[0]) return;
 
     // Look up the contact first (need type for screen title)
-    slopos::mesh::ContactInfo contacts[64];
-    int total = slopos::mesh::exportContactsFull(contacts, 64);
-    const slopos::mesh::ContactInfo* target = nullptr;
+    sigurdos::mesh::ContactInfo contacts[64];
+    int total = sigurdos::mesh::exportContactsFull(contacts, 64);
+    const sigurdos::mesh::ContactInfo* target = nullptr;
     for (int i = 0; i < total; i++) {
         if (strcmp(contacts[i].name, contact_name) == 0) {
             target = &contacts[i];
@@ -2183,8 +2183,8 @@ void repeater_detail_screen_show(const char* contact_name, bool skip_login)
         return;
     }
 
-    uint8_t login_st = slopos::mesh::getLoginStatus(contact_name);
-    bool is_fav = slopos::mesh::isContactFavourite(contact_name);
+    uint8_t login_st = sigurdos::mesh::getLoginStatus(contact_name);
+    bool is_fav = sigurdos::mesh::isContactFavourite(contact_name);
 
     // ── Content list ──────────────────────────────────
     lv_obj_t* list = lv_list_create(scr);
@@ -2241,8 +2241,8 @@ void repeater_detail_screen_show(const char* contact_name, bool skip_login)
                 lv_obj_t* btn = (lv_obj_t*)lv_event_get_target(e);
                 const char* name = (const char*)lv_obj_get_user_data(btn);
                 if (name) {
-                    bool cur = slopos::mesh::isContactFavourite(name);
-                    slopos::mesh::setContactFavourite(name, !cur);
+                    bool cur = sigurdos::mesh::isContactFavourite(name);
+                    sigurdos::mesh::setContactFavourite(name, !cur);
 
                     repeater_detail_screen_show(name, true);
 
@@ -2471,7 +2471,7 @@ void repeater_detail_screen_show(const char* contact_name, bool skip_login)
             add_con("SNR", snr_str, TEXT_PRIMARY);
             add_con("RSSI", rssi_str, TEXT_PRIMARY);
             add_con("Login", "Logged in", ACCENT_GREEN);
-            uint8_t perm = slopos::mesh::getLoginPermission(contact_name);
+            uint8_t perm = sigurdos::mesh::getLoginPermission(contact_name);
             char perm_buf[24];
             snprintf(perm_buf, sizeof(perm_buf), "Admin (perm=%d)", perm);
             add_con("Permission", perm_buf, ACCENT);
@@ -2616,7 +2616,7 @@ void repeater_detail_screen_show(const char* contact_name, bool skip_login)
             lv_obj_add_event_cb(r, [](lv_event_t* e) {
                 const char* name = (const char*)lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(e));
                 if (name) {
-                    slopos::mesh::sendLogout(name);
+                    sigurdos::mesh::sendLogout(name);
                     lv_timer_create([](lv_timer_t* t) {
                         go_back();
                         lv_timer_del(t);
@@ -2657,10 +2657,10 @@ void signal_screen_show()
 {
     lv_obj_t* scr = make_screen_full("Signal");
 
-    int rssi   = slopos::mesh::getLastRSSI();
-    float snr  = slopos::mesh::getLastSNR();
-    int noise  = slopos::mesh::getNoiseFloor();
-    const slopos::NodePrefs& p = slopos::prefs_get();
+    int rssi   = sigurdos::mesh::getLastRSSI();
+    float snr  = sigurdos::mesh::getLastSNR();
+    int noise  = sigurdos::mesh::getNoiseFloor();
+    const sigurdos::NodePrefs& p = sigurdos::prefs_get();
 
     if (!p.configured) {
         // ── Unconfigured: single centered message ──────────
@@ -2684,7 +2684,7 @@ void signal_screen_show()
             rssi, snr, noise);
         lv_label_set_text(lbl, buf);
         // ── RSSI sparkline (even unconfigured shows captured samples) ─
-        int hist_count = slopos::mesh::getSignalHistoryCount();
+        int hist_count = sigurdos::mesh::getSignalHistoryCount();
         if (hist_count >= 2) {
             lv_obj_t* chart = lv_chart_create(scr);
             lv_obj_set_size(chart, CONTENT_W - 12, 60);
@@ -2704,7 +2704,7 @@ void signal_screen_show()
 
             lv_chart_set_all_value(chart, rssi_ser, LV_CHART_POINT_NONE);
             for (int i = 0; i < hist_count && i < 64; i++) {
-                int rssi_val = slopos::mesh::getSignalHistoryRSSI(i);
+                int rssi_val = sigurdos::mesh::getSignalHistoryRSSI(i);
                 lv_chart_set_value_by_id(chart, rssi_ser, i, rssi_val + 120);
             }
 
@@ -2764,18 +2764,18 @@ void signal_screen_show()
             "RX Air  %lu ms\n\n"
             "Duty    %u%%\n"
             "Budget  %lu ms",
-            slopos::mesh::getNumSentFlood(),
-            slopos::mesh::getNumSentDirect(),
-            slopos::mesh::getNumRecvFlood(),
-            slopos::mesh::getNumRecvDirect(),
-            slopos::mesh::getTotalTxAirtimeMs(),
-            slopos::mesh::getTotalRxAirtimeMs(),
+            sigurdos::mesh::getNumSentFlood(),
+            sigurdos::mesh::getNumSentDirect(),
+            sigurdos::mesh::getNumRecvFlood(),
+            sigurdos::mesh::getNumRecvDirect(),
+            sigurdos::mesh::getTotalTxAirtimeMs(),
+            sigurdos::mesh::getTotalRxAirtimeMs(),
             (unsigned)p.duty_cycle,
-            slopos::mesh::getRemainingTxBudget());
+            sigurdos::mesh::getRemainingTxBudget());
         lv_label_set_text(right, right_buf);
 
         // ── RSSI sparkline ─────────────────────────────────
-        int hist_count = slopos::mesh::getSignalHistoryCount();
+        int hist_count = sigurdos::mesh::getSignalHistoryCount();
         if (hist_count >= 2) {
             lv_obj_t* chart = lv_chart_create(scr);
             lv_obj_set_size(chart, CONTENT_W - 12, 60);
@@ -2797,7 +2797,7 @@ void signal_screen_show()
             // Fill series with signal history
             lv_chart_set_all_value(chart, rssi_ser, LV_CHART_POINT_NONE);
             for (int i = 0; i < hist_count && i < 64; i++) {
-                int rssi_val = slopos::mesh::getSignalHistoryRSSI(i);
+                int rssi_val = sigurdos::mesh::getSignalHistoryRSSI(i);
                 lv_chart_set_value_by_id(chart, rssi_ser, i, rssi_val + 120);
             }
 
@@ -2820,9 +2820,9 @@ void map_screen_show()
 {
     lv_obj_t* scr = make_screen_full("Map");
 
-    slopos_map_init();
-    slopos_map_reparent(scr);
-    slopos_map_render();
+    sigurdos_map_init();
+    sigurdos_map_reparent(scr);
+    sigurdos_map_render();
 
     lv_obj_t* map = lv_obj_create(scr);
     lv_obj_set_size(map, DISPLAY_W, CONTENT_H);
@@ -2854,14 +2854,14 @@ void map_screen_show()
             int dx = drag_start_x - pt.x;
             int dy = drag_start_y - pt.y;
             drag_start_x = pt.x; drag_start_y = pt.y;
-            if (dx != 0 || dy != 0) slopos_map_pan(dx, dy);
+            if (dx != 0 || dy != 0) sigurdos_map_pan(dx, dy);
             uint32_t now = millis();
             if (now - map_last_render_ms >= 200) {
-                slopos_map_render();
+                sigurdos_map_render();
                 map_last_render_ms = now;
             }
         } else if (code == LV_EVENT_RELEASED) {
-            slopos_map_render();
+            sigurdos_map_render();
             map_last_render_ms = millis();
         }
     }, LV_EVENT_ALL, nullptr);
@@ -2876,7 +2876,7 @@ void map_screen_show()
     lv_obj_set_style_radius(zoom_in, 0, 0);
     lv_obj_t* zi = lv_label_create(zoom_in);
     lv_label_set_text(zi, "+"); lv_obj_center(zi);
-    lv_obj_add_event_cb(zoom_in, [](lv_event_t*) { slopos_map_zoom_in(); slopos_map_render(); },
+    lv_obj_add_event_cb(zoom_in, [](lv_event_t*) { sigurdos_map_zoom_in(); sigurdos_map_render(); },
                         LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t* zoom_out = lv_btn_create(scr);
@@ -2886,13 +2886,13 @@ void map_screen_show()
     lv_obj_set_style_radius(zoom_out, 0, 0);
     lv_obj_t* zo = lv_label_create(zoom_out);
     lv_label_set_text(zo, "-"); lv_obj_center(zo);
-    lv_obj_add_event_cb(zoom_out, [](lv_event_t*) { slopos_map_zoom_out(); slopos_map_render(); },
+    lv_obj_add_event_cb(zoom_out, [](lv_event_t*) { sigurdos_map_zoom_out(); sigurdos_map_render(); },
                         LV_EVENT_CLICKED, nullptr);
 
     (void)zoom_y_base;
     show_screen(scr);
     lv_timer_create([](lv_timer_t* t) {
-        slopos_map_render();
+        sigurdos_map_render();
         lv_timer_del(t);
     }, 250, nullptr);
 }
@@ -2920,7 +2920,7 @@ struct DateTimeDialogCtx {
 static void datetime_set_dialog(lv_obj_t* parent, bool is_date)
 {
     int y, mo, d, h, mi;
-    slopos::mesh::getCurrentLocalDateTime(&y, &mo, &d, &h, &mi);
+    sigurdos::mesh::getCurrentLocalDateTime(&y, &mo, &d, &h, &mi);
 
     char cur[16];
     if (is_date) snprintf(cur, sizeof(cur), "%04d-%02d-%02d", y, mo, d);
@@ -3013,8 +3013,8 @@ static void datetime_set_dialog(lv_obj_t* parent, bool is_date)
                     max_days = 29;
                 if (nd <= max_days) {
                     int cy, cmo, cd, ch, cmi;
-                    slopos::mesh::getCurrentLocalDateTime(&cy, &cmo, &cd, &ch, &cmi);
-                    epoch = slopos::mesh::makeEpoch(ny, nm, nd, ch, cmi);
+                    sigurdos::mesh::getCurrentLocalDateTime(&cy, &cmo, &cd, &ch, &cmi);
+                    epoch = sigurdos::mesh::makeEpoch(ny, nm, nd, ch, cmi);
                     valid = true;
                 } else {
                     lv_label_set_text(ctx->feedback, "Invalid day for month");
@@ -3027,17 +3027,17 @@ static void datetime_set_dialog(lv_obj_t* parent, bool is_date)
             if (sscanf(s, "%d:%d", &nh, &nm_v) == 2 &&
                 nh >= 0 && nh <= 23 && nm_v >= 0 && nm_v <= 59) {
                 int cy, cmo, cd, ch, cmi;
-                slopos::mesh::getCurrentLocalDateTime(&cy, &cmo, &cd, &ch, &cmi);
-                epoch = slopos::mesh::makeEpoch(cy, cmo, cd, nh, nm_v);
+                sigurdos::mesh::getCurrentLocalDateTime(&cy, &cmo, &cd, &ch, &cmi);
+                epoch = sigurdos::mesh::makeEpoch(cy, cmo, cd, nh, nm_v);
                 valid = true;
             } else {
                 lv_label_set_text(ctx->feedback, "Invalid time (HH:MM)");
             }
         }
 
-        if (valid && slopos::mesh::setSystemTime(epoch)) {
+        if (valid && sigurdos::mesh::setSystemTime(epoch)) {
             int yy, mmo, dd, hh, mmi;
-            slopos::mesh::getCurrentLocalDateTime(&yy, &mmo, &dd, &hh, &mmi);
+            sigurdos::mesh::getCurrentLocalDateTime(&yy, &mmo, &dd, &hh, &mmi);
             char dbuf[32], tbuf[16];
             snprintf(dbuf, sizeof(dbuf), "  Date: %04d-%02d-%02d", yy, mmo, dd);
             snprintf(tbuf, sizeof(tbuf), "  Time: %02d:%02d", hh, mmi);
@@ -3179,7 +3179,7 @@ static void backlight_dialog(lv_obj_t* parent, lv_obj_t* row_label)
     lv_obj_set_style_text_font(title, &lv_font_montserrat_12, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 4);
 
-    const slopos::NodePrefs& p = slopos::prefs_get();
+    const sigurdos::NodePrefs& p = sigurdos::prefs_get();
     int brightness = p.kbd_backlight;
 
     lv_obj_t* val_lbl = lv_label_create(dlg);
@@ -3227,7 +3227,7 @@ static void backlight_dialog(lv_obj_t* parent, lv_obj_t* row_label)
         auto* c = (BacklightCtx*)lv_event_get_user_data(e);
         if (c->brightness >= 25) c->brightness -= 25;
         else c->brightness = 0;
-        slopos_keyboard_set_brightness(c->brightness);
+        sigurdos_keyboard_set_brightness(c->brightness);
         char b[24];
         snprintf(b, sizeof(b), "%d (%d%%)", c->brightness, c->brightness * 100 / 255);
         lv_label_set_text(c->value_label, b);
@@ -3237,7 +3237,7 @@ static void backlight_dialog(lv_obj_t* parent, lv_obj_t* row_label)
         auto* c = (BacklightCtx*)lv_event_get_user_data(e);
         if (c->brightness <= 230) c->brightness += 25;
         else c->brightness = 255;
-        slopos_keyboard_set_brightness(c->brightness);
+        sigurdos_keyboard_set_brightness(c->brightness);
         char b[24];
         snprintf(b, sizeof(b), "%d (%d%%)", c->brightness, c->brightness * 100 / 255);
         lv_label_set_text(c->value_label, b);
@@ -3245,10 +3245,10 @@ static void backlight_dialog(lv_obj_t* parent, lv_obj_t* row_label)
 
     lv_obj_add_event_cb(set_btn, [](lv_event_t* e) {
         auto* c = (BacklightCtx*)lv_event_get_user_data(e);
-        slopos::NodePrefs np = slopos::prefs_get();
+        sigurdos::NodePrefs np = sigurdos::prefs_get();
         np.kbd_backlight = (uint8_t)c->brightness;
-        slopos::prefs_set(np);
-        slopos_keyboard_set_default_brightness(c->brightness);
+        sigurdos::prefs_set(np);
+        sigurdos_keyboard_set_default_brightness(c->brightness);
 
         char row_buf[64];
         snprintf(row_buf, sizeof(row_buf), "  Keyboard BL: %d (%d%%)",
@@ -3296,7 +3296,7 @@ static void auto_off_dialog(lv_obj_t* parent, lv_obj_t* row_label)
     int total_w = 3 * btn_w + 2 * gap_x;
     int start_x = (dlg_sz.w - total_w) / 2;
 
-    uint16_t current = slopos::prefs_get().auto_off_timeout;
+    uint16_t current = sigurdos::prefs_get().auto_off_timeout;
     static lv_obj_t* selected = nullptr;
 
     for (int i = 0; i < 5; i++) {
@@ -3355,10 +3355,10 @@ static void auto_off_dialog(lv_obj_t* parent, lv_obj_t* row_label)
             }
         }
 
-        slopos::NodePrefs np = slopos::prefs_get();
+        sigurdos::NodePrefs np = sigurdos::prefs_get();
         np.auto_off_timeout = value;
-        slopos::prefs_set(np);
-        slopos_display_reset_auto_off();
+        sigurdos::prefs_set(np);
+        sigurdos_display_reset_auto_off();
 
         char row_buf[64];
         if (value == 0) {
@@ -3397,7 +3397,7 @@ static void display_brightness_dialog(lv_obj_t* parent, lv_obj_t* row_label)
     lv_obj_set_style_text_font(title, &lv_font_montserrat_12, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 4);
 
-    const slopos::NodePrefs& p = slopos::prefs_get();
+    const sigurdos::NodePrefs& p = sigurdos::prefs_get();
     int brightness = p.display_brightness;
 
     lv_obj_t* val_lbl = lv_label_create(dlg);
@@ -3445,7 +3445,7 @@ static void display_brightness_dialog(lv_obj_t* parent, lv_obj_t* row_label)
         auto* c = (DisplayBrightnessCtx*)lv_event_get_user_data(e);
         if (c->brightness >= 25) c->brightness -= 25;
         else c->brightness = 0;
-        slopos_display_set_brightness(c->brightness);
+        sigurdos_display_set_brightness(c->brightness);
         char b[24];
         snprintf(b, sizeof(b), "%d (%d%%)", c->brightness, c->brightness * 100 / 255);
         lv_label_set_text(c->value_label, b);
@@ -3455,7 +3455,7 @@ static void display_brightness_dialog(lv_obj_t* parent, lv_obj_t* row_label)
         auto* c = (DisplayBrightnessCtx*)lv_event_get_user_data(e);
         if (c->brightness <= 230) c->brightness += 25;
         else c->brightness = 255;
-        slopos_display_set_brightness(c->brightness);
+        sigurdos_display_set_brightness(c->brightness);
         char b[24];
         snprintf(b, sizeof(b), "%d (%d%%)", c->brightness, c->brightness * 100 / 255);
         lv_label_set_text(c->value_label, b);
@@ -3463,10 +3463,10 @@ static void display_brightness_dialog(lv_obj_t* parent, lv_obj_t* row_label)
 
     lv_obj_add_event_cb(set_btn, [](lv_event_t* e) {
         auto* c = (DisplayBrightnessCtx*)lv_event_get_user_data(e);
-        slopos::NodePrefs np = slopos::prefs_get();
+        sigurdos::NodePrefs np = sigurdos::prefs_get();
         np.display_brightness = (uint8_t)c->brightness;
-        slopos::prefs_set(np);
-        slopos_display_set_brightness(c->brightness);
+        sigurdos::prefs_set(np);
+        sigurdos_display_set_brightness(c->brightness);
 
         char row_buf[64];
         snprintf(row_buf, sizeof(row_buf), "  Display: %d (%d%%)",
@@ -3492,7 +3492,7 @@ void settings_radio_show()
     lv_obj_set_style_border_width(list, 0, 0);
     lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
 
-    const slopos::NodePrefs& p = slopos::prefs_get();
+    const sigurdos::NodePrefs& p = sigurdos::prefs_get();
     char buf[128];
     int row = 0;
 
@@ -3532,14 +3532,14 @@ void settings_radio_show()
         lv_obj_set_style_text_color(btn_flood, lv_color_hex(TEXT_PRIMARY), 0);
         lv_obj_add_event_cb(btn_flood, [](lv_event_t* e) {
             lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
-            slopos::NodePrefs np = slopos::prefs_get();
+            sigurdos::NodePrefs np = sigurdos::prefs_get();
             int idx = 0;
             for (int i = 0; i < 6; i++) {
                 if (np.flood_max_hops == (uint8_t[]){0,3,5,10,20,50}[i]) { idx = i; break; }
             }
             idx = (idx + 1) % 6;
             np.flood_max_hops = (uint8_t[]){0,3,5,10,20,50}[idx];
-            slopos::prefs_set(np);
+            sigurdos::prefs_set(np);
             char row_buf[64];
             snprintf(row_buf, sizeof(row_buf), "  Flood max hops: %s",
                      (const char*[]){"No limit","3","5","10","20","50"}[idx]);
@@ -3568,7 +3568,7 @@ void settings_radio_show()
         lv_obj_set_style_text_color(btn_aa, lv_color_hex(TEXT_PRIMARY), 0);
         lv_obj_add_event_cb(btn_aa, [](lv_event_t* e) {
             lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
-            slopos::NodePrefs np = slopos::prefs_get();
+            sigurdos::NodePrefs np = sigurdos::prefs_get();
             static constexpr uint8_t VALS[] = {0x1E, 0x06, 0x0A, 0x02};
             static constexpr const char* LABELS[] = {
                 "All types", "Chat+Repeater", "Chat+Room", "Chat only"};
@@ -3579,7 +3579,7 @@ void settings_radio_show()
             }
             idx = (idx + 1) % N;
             np.autoadd_config = VALS[idx];
-            slopos::prefs_set(np);
+            sigurdos::prefs_set(np);
             char row_buf[64];
             snprintf(row_buf, sizeof(row_buf), "  Auto-add: %s", LABELS[idx]);
             lv_obj_t* lbl = lv_obj_get_child(target, 1);
@@ -3606,7 +3606,7 @@ void settings_radio_show()
         lv_obj_set_style_text_color(btn_ah, lv_color_hex(TEXT_PRIMARY), 0);
         lv_obj_add_event_cb(btn_ah, [](lv_event_t* e) {
             lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
-            slopos::NodePrefs np = slopos::prefs_get();
+            sigurdos::NodePrefs np = sigurdos::prefs_get();
             static constexpr uint8_t VALS[] = {0, 3, 5, 10, 20, 50};
             static constexpr const char* LABELS[] = {"No limit","3","5","10","20","50"};
             static constexpr int N = 6;
@@ -3616,7 +3616,7 @@ void settings_radio_show()
             }
             idx = (idx + 1) % N;
             np.autoadd_max_hops = VALS[idx];
-            slopos::prefs_set(np);
+            sigurdos::prefs_set(np);
             char row_buf[64];
             snprintf(row_buf, sizeof(row_buf), "  Add max hops: %s", LABELS[idx]);
             lv_obj_t* lbl = lv_obj_get_child(target, 1);
@@ -3643,7 +3643,7 @@ void settings_radio_show()
         lv_obj_set_style_text_color(btn_rx, lv_color_hex(TEXT_PRIMARY), 0);
         lv_obj_add_event_cb(btn_rx, [](lv_event_t* e) {
             lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
-            slopos::NodePrefs np = slopos::prefs_get();
+            sigurdos::NodePrefs np = sigurdos::prefs_get();
             static constexpr float VALS[] = {0.0f, 5.0f, 10.0f, 15.0f, 20.0f};
             static constexpr const char* LABELS[] = {"0 (off)","5","10","15","20"};
             static constexpr int N = 5;
@@ -3653,7 +3653,7 @@ void settings_radio_show()
             }
             idx = (idx + 1) % N;
             np.rx_delay_base = VALS[idx];
-            slopos::prefs_set(np);
+            sigurdos::prefs_set(np);
             char row_buf[64];
             snprintf(row_buf, sizeof(row_buf), "  RX delay base: %s", LABELS[idx]);
             lv_obj_t* lbl = lv_obj_get_child(target, 1);
@@ -3680,7 +3680,7 @@ void settings_radio_show()
         lv_obj_set_style_text_color(btn_tx, lv_color_hex(TEXT_PRIMARY), 0);
         lv_obj_add_event_cb(btn_tx, [](lv_event_t* e) {
             lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
-            slopos::NodePrefs np = slopos::prefs_get();
+            sigurdos::NodePrefs np = sigurdos::prefs_get();
             static constexpr float VALS[] = {0.0f, 0.5f, 1.0f, 1.5f, 2.0f};
             static constexpr const char* LABELS[] = {"0 (off)","0.5","1.0","1.5","2.0"};
             static constexpr int N = 5;
@@ -3690,7 +3690,7 @@ void settings_radio_show()
             }
             idx = (idx + 1) % N;
             np.tx_delay_factor = VALS[idx];
-            slopos::prefs_set(np);
+            sigurdos::prefs_set(np);
             char row_buf[64];
             snprintf(row_buf, sizeof(row_buf), "  TX delay factor: %s", LABELS[idx]);
             lv_obj_t* lbl = lv_obj_get_child(target, 1);
@@ -3717,7 +3717,7 @@ void settings_radio_show()
         lv_obj_set_style_text_color(btn_dir, lv_color_hex(TEXT_PRIMARY), 0);
         lv_obj_add_event_cb(btn_dir, [](lv_event_t* e) {
             lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
-            slopos::NodePrefs np = slopos::prefs_get();
+            sigurdos::NodePrefs np = sigurdos::prefs_get();
             static constexpr float VALS[] = {0.0f, 0.5f, 1.0f, 1.5f, 2.0f};
             static constexpr const char* LABELS[] = {"0 (off)","0.5","1.0","1.5","2.0"};
             static constexpr int N = 5;
@@ -3727,7 +3727,7 @@ void settings_radio_show()
             }
             idx = (idx + 1) % N;
             np.direct_tx_delay_factor = VALS[idx];
-            slopos::prefs_set(np);
+            sigurdos::prefs_set(np);
             char row_buf[64];
             snprintf(row_buf, sizeof(row_buf), "  Direct TX delay: %s", LABELS[idx]);
             lv_obj_t* lbl = lv_obj_get_child(target, 1);
@@ -3754,7 +3754,7 @@ void settings_radio_show()
         lv_obj_set_style_text_color(btn_adv, lv_color_hex(TEXT_PRIMARY), 0);
         lv_obj_add_event_cb(btn_adv, [](lv_event_t* e) {
             lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
-            slopos::NodePrefs np = slopos::prefs_get();
+            sigurdos::NodePrefs np = sigurdos::prefs_get();
             static constexpr uint8_t VALS[] = {0, 10, 20, 40, 60, 120};
             static constexpr const char* LABELS[] = {"Disabled","5 min","10 min","20 min","30 min","1 hour"};
             static constexpr int N = 6;
@@ -3764,7 +3764,7 @@ void settings_radio_show()
             }
             idx = (idx + 1) % N;
             np.advert_interval = VALS[idx];
-            slopos::prefs_set(np);
+            sigurdos::prefs_set(np);
             char row_buf[64];
             snprintf(row_buf, sizeof(row_buf), "  Auto-advert: %s", LABELS[idx]);
             lv_obj_t* lbl = lv_obj_get_child(target, 1);
@@ -3791,7 +3791,7 @@ void settings_radio_show()
         lv_obj_set_style_text_color(btn_dc, lv_color_hex(TEXT_PRIMARY), 0);
         lv_obj_add_event_cb(btn_dc, [](lv_event_t* e) {
             lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
-            slopos::NodePrefs np = slopos::prefs_get();
+            sigurdos::NodePrefs np = sigurdos::prefs_get();
             static constexpr uint8_t VALS[] = {0, 1, 5, 10, 25, 50, 100};
             static constexpr const char* LABELS[] = {"Disabled","1%","5%","10%","25%","50%","100%"};
             static constexpr int N = 7;
@@ -3801,8 +3801,8 @@ void settings_radio_show()
             }
             idx = (idx + 1) % N;
             np.duty_cycle = VALS[idx];
-            slopos::prefs_set(np);
-            slopos::mesh::setDutyCycle(VALS[idx]);
+            sigurdos::prefs_set(np);
+            sigurdos::mesh::setDutyCycle(VALS[idx]);
             char row_buf[64];
             snprintf(row_buf, sizeof(row_buf), "  Duty cycle: %s", LABELS[idx]);
             lv_obj_t* lbl = lv_obj_get_child(target, 1);
@@ -3827,12 +3827,12 @@ void settings_gps_show()
     lv_obj_set_style_border_width(list, 0, 0);
     lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
 
-    const slopos::NodePrefs& p = slopos::prefs_get();
+    const sigurdos::NodePrefs& p = sigurdos::prefs_get();
     char buf[128];
     int row = 0;
 
     // GPS status
-    snprintf(buf, sizeof(buf), "  GPS: %s", slopos_gps_has_fix() ? "Fix acquired" : "No fix");
+    snprintf(buf, sizeof(buf), "  GPS: %s", sigurdos_gps_has_fix() ? "Fix acquired" : "No fix");
     lv_obj_t* row0 = lv_list_add_btn(list, LV_SYMBOL_GPS, buf);
     lv_obj_set_style_bg_color(row0, lv_color_hex(BG_TERTIARY), 0);
     lv_obj_set_style_bg_opa(row0, LV_OPA_COVER, 0);
@@ -3847,9 +3847,9 @@ void settings_gps_show()
     lv_obj_set_style_text_color(btn_gps_en, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_add_event_cb(btn_gps_en, [](lv_event_t* e) {
         lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
-        slopos::NodePrefs np = slopos::prefs_get();
+        sigurdos::NodePrefs np = sigurdos::prefs_get();
         np.gps_enabled = !np.gps_enabled;
-        slopos::prefs_set(np);
+        sigurdos::prefs_set(np);
         char row_buf[64];
         snprintf(row_buf, sizeof(row_buf), "  GPS: %s", np.gps_enabled ? "ON" : "OFF");
         lv_obj_t* lbl = lv_obj_get_child(target, 1);
@@ -3875,14 +3875,14 @@ void settings_gps_show()
         lv_obj_set_style_text_color(btn_gps_int, lv_color_hex(TEXT_PRIMARY), 0);
         lv_obj_add_event_cb(btn_gps_int, [](lv_event_t* e) {
             lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
-            slopos::NodePrefs np = slopos::prefs_get();
+            sigurdos::NodePrefs np = sigurdos::prefs_get();
             int idx = 0;
             for (int i = 0; i < 6; i++) {
                 if (np.gps_interval == (uint16_t[]){0,1,5,10,30,60}[i]) { idx = i; break; }
             }
             idx = (idx + 1) % 6;
             np.gps_interval = (uint16_t[]){0,1,5,10,30,60}[idx];
-            slopos::prefs_set(np);
+            sigurdos::prefs_set(np);
             char row_buf[64];
             snprintf(row_buf, sizeof(row_buf), "  GPS interval: %s",
                      (const char*[]){"Every loop","1s","5s","10s","30s","60s"}[idx]);
@@ -3902,9 +3902,9 @@ void settings_gps_show()
     lv_obj_set_style_text_color(btn_share, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_add_event_cb(btn_share, [](lv_event_t* e) {
         lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
-        slopos::NodePrefs np = slopos::prefs_get();
+        sigurdos::NodePrefs np = sigurdos::prefs_get();
         np.share_location = !np.share_location;
-        slopos::prefs_set(np);
+        sigurdos::prefs_set(np);
         char row_buf[64];
         snprintf(row_buf, sizeof(row_buf), "  Share location: %s", np.share_location ? "ON" : "OFF");
         lv_obj_t* lbl = lv_obj_get_child(target, 1);
@@ -3928,7 +3928,7 @@ void settings_display_show()
     lv_obj_set_style_border_width(list, 0, 0);
     lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
 
-    const slopos::NodePrefs& p = slopos::prefs_get();
+    const sigurdos::NodePrefs& p = sigurdos::prefs_get();
     char buf[128];
     int row = 0;
 
@@ -3989,7 +3989,7 @@ void settings_display_show()
 
     // Theme selector
     {
-        uint8_t cur_theme = slopos::prefs_get().theme_id;
+        uint8_t cur_theme = sigurdos::prefs_get().theme_id;
         if (cur_theme >= NUM_THEMES) cur_theme = 0;
         snprintf(buf, sizeof(buf), "  Theme: %s", THEMES[cur_theme].name);
         lv_obj_t* btn_theme = lv_list_add_btn(list, LV_SYMBOL_IMAGE, buf);
@@ -3998,10 +3998,10 @@ void settings_display_show()
         lv_obj_set_style_text_color(btn_theme, lv_color_hex(TEXT_PRIMARY), 0);
         lv_obj_add_event_cb(btn_theme, [](lv_event_t* e) {
             lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
-            slopos::NodePrefs np = slopos::prefs_get();
+            sigurdos::NodePrefs np = sigurdos::prefs_get();
             np.theme_id = (np.theme_id + 1) % NUM_THEMES;
             theme_apply(np.theme_id);
-            slopos::prefs_set(np);
+            sigurdos::prefs_set(np);
             char row_buf[64];
             snprintf(row_buf, sizeof(row_buf), "  Theme: %s", THEMES[np.theme_id].name);
             lv_obj_t* lbl = lv_obj_get_child(target, 1);
@@ -4032,7 +4032,7 @@ void settings_system_show()
     lv_obj_set_style_border_width(list, 0, 0);
     lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
 
-    const slopos::NodePrefs& p = slopos::prefs_get();
+    const sigurdos::NodePrefs& p = sigurdos::prefs_get();
     char buf[128];
     int row = 0;
 
@@ -4045,7 +4045,7 @@ void settings_system_show()
     row++;
 
     // SD Card
-    snprintf(buf, sizeof(buf), "  SD Card: %s", slopos_sdcard_mounted() ? "Mounted" : "Not mounted");
+    snprintf(buf, sizeof(buf), "  SD Card: %s", sigurdos_sdcard_mounted() ? "Mounted" : "Not mounted");
     lv_obj_t* r1 = lv_list_add_btn(list, LV_SYMBOL_SD_CARD, buf);
     lv_obj_set_style_bg_color(r1, lv_color_hex(row % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
     lv_obj_set_style_bg_opa(r1, LV_OPA_COVER, 0);
@@ -4055,7 +4055,7 @@ void settings_system_show()
     // Date
     {
         int y, mo, d, h, mi;
-        slopos::mesh::getCurrentLocalDateTime(&y, &mo, &d, &h, &mi);
+        sigurdos::mesh::getCurrentLocalDateTime(&y, &mo, &d, &h, &mi);
         snprintf(buf, sizeof(buf), "  Date: %04d-%02d-%02d", y, mo, d);
         lv_obj_t* btn_date = lv_list_add_btn(list, LV_SYMBOL_SETTINGS, buf);
         lv_obj_set_style_bg_color(btn_date, lv_color_hex(row % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
@@ -4071,7 +4071,7 @@ void settings_system_show()
     // Time
     {
         int y, mo, d, h, mi;
-        slopos::mesh::getCurrentLocalDateTime(&y, &mo, &d, &h, &mi);
+        sigurdos::mesh::getCurrentLocalDateTime(&y, &mo, &d, &h, &mi);
         snprintf(buf, sizeof(buf), "  Time: %02d:%02d", h, mi);
         lv_obj_t* btn_time = lv_list_add_btn(list, LV_SYMBOL_SETTINGS, buf);
         lv_obj_set_style_bg_color(btn_time, lv_color_hex(row % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
@@ -4143,13 +4143,13 @@ void settings_system_show()
         lv_label_set_text(cfl, "Shut down");
         lv_obj_center(cfl);
         lv_obj_add_event_cb(confirm_btn, [](lv_event_t*) {
-            slopos::mesh::shutdown();
+            sigurdos::mesh::shutdown();
         }, LV_EVENT_CLICKED, nullptr);
     }, LV_EVENT_CLICKED, nullptr);
     row++;
 
     // Version
-    snprintf(buf, sizeof(buf), "  SlopOS " SLOPOS_VERSION);
+    snprintf(buf, sizeof(buf), "  SigurdOS " SIGURDOS_VERSION);
     lv_obj_t* rv = lv_list_add_btn(list, LV_SYMBOL_HOME, buf);
     lv_obj_set_style_bg_color(rv, lv_color_hex(row % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
     lv_obj_set_style_bg_opa(rv, LV_OPA_COVER, 0);
@@ -4271,8 +4271,8 @@ void terminal_screen_show()
     lv_obj_set_scrollbar_mode(log, LV_SCROLLBAR_MODE_OFF);
 
     // Boot header lines
-    const slopos::NodePrefs& p = slopos::prefs_get();
-    term_add_line(log, "SlopOS T-Deck Terminal");
+    const sigurdos::NodePrefs& p = sigurdos::prefs_get();
+    term_add_line(log, "SigurdOS T-Deck Terminal");
     term_add_line(log, "MeshCore protocol active");
     if (p.configured) {
         char radio_buf[64];
@@ -4428,16 +4428,16 @@ void terminal_screen_show()
                 snprintf(result, sizeof(result), "%d variable%s", count, count == 1 ? "" : "s");
             }
         } else if (strcmp(cmd, "status") == 0) {
-            int rssi  = slopos::mesh::getLastRSSI();
-            float snr = slopos::mesh::getLastSNR();
-            int noise = slopos::mesh::getNoiseFloor();
+            int rssi  = sigurdos::mesh::getLastRSSI();
+            float snr = sigurdos::mesh::getLastSNR();
+            int noise = sigurdos::mesh::getNoiseFloor();
             snprintf(result, sizeof(result),
                 "RSSI:%ddBm SNR:%.1fdB Noise:%ddBm  Contacts:%d Channels:%d",
                 rssi, snr, noise,
-                slopos::mesh::getContactCount(),
-                slopos::mesh::getChannelCount());
+                sigurdos::mesh::getContactCount(),
+                sigurdos::mesh::getChannelCount());
         } else if (strcmp(cmd, "advert") == 0) {
-            bool ok = slopos::mesh::sendAdvert();
+            bool ok = sigurdos::mesh::sendAdvert();
             snprintf(result, sizeof(result), ok ? "Advert sent" : "Send failed");
         } else if (strcmp(cmd, "ping") == 0) {
             snprintf(result, sizeof(result), "Pong! Uptime: %lums", millis());
@@ -4453,7 +4453,7 @@ void terminal_screen_show()
                 memcpy(pubkey_hex, anon_arg, pklen);
                 pubkey_hex[pklen] = '\0';
                 const char* msg = anon_space + 1;
-                if (slopos::mesh::sendAnonMessage(pubkey_hex, msg)) {
+                if (sigurdos::mesh::sendAnonMessage(pubkey_hex, msg)) {
                     snprintf(result, sizeof(result), "Anon msg sent to %s", pubkey_hex);
                 } else {
                     snprintf(result, sizeof(result), "Send failed (bad hex? %zu chars)", pklen);
@@ -4471,7 +4471,7 @@ void terminal_screen_show()
                 memcpy(contact_name, fetch_arg, cn_len);
                 contact_name[cn_len] = '\0';
                 const char* channel = fetch_space + 1;
-                if (slopos::mesh::sendRoomMsgFetchRequest(contact_name, channel)) {
+                if (sigurdos::mesh::sendRoomMsgFetchRequest(contact_name, channel)) {
                     snprintf(result, sizeof(result), "Room fetch sent to %s for %s", contact_name, channel);
                 } else {
                     snprintf(result, sizeof(result), "Fetch failed (contact '%s' not found?)", contact_name);
@@ -4498,11 +4498,11 @@ void terminal_screen_show()
                     } else {
                         hex_start++; // skip space
                         uint8_t payload[64];
-                        int plen = slopos::mesh::hexToBytes(hex_start, payload, sizeof(payload));
+                        int plen = sigurdos::mesh::hexToBytes(hex_start, payload, sizeof(payload));
                         if (plen <= 0) {
                             snprintf(result, sizeof(result), "Bad hex payload");
                         } else {
-                            bool ok = slopos::mesh::sendGroupDataToChannel(
+                            bool ok = sigurdos::mesh::sendGroupDataToChannel(
                                 ch_idx, (uint16_t)dt, payload, plen);
                             snprintf(result, sizeof(result), ok
                                 ? "Group data sent to ch%d type=0x%04x (%d bytes)"
@@ -4549,13 +4549,13 @@ static void trace_screen_delete_cb(lv_event_t*) {
 void trace_screen_show()
 {
     lv_obj_t* scr = make_screen_full("Trace Route");
-    slopos::mesh::clearTraceResult();
+    sigurdos::mesh::clearTraceResult();
     trace_result_label = nullptr;
 
     lv_obj_add_event_cb(scr, trace_screen_delete_cb, LV_EVENT_DELETE, nullptr);
 
     char names[32][32];
-    int total = slopos::mesh::exportContacts(names, 32);
+    int total = sigurdos::mesh::exportContacts(names, 32);
 
     lv_obj_t* info = lv_label_create(scr);
     lv_obj_set_width(info, CONTENT_W);
@@ -4588,7 +4588,7 @@ void trace_screen_show()
     static constexpr int ROW_H = 32;
 
     for (int i = 0; i < total; i++) {
-        bool has_path = slopos::mesh::contactHasPath(i);
+        bool has_path = sigurdos::mesh::contactHasPath(i);
 
         lv_obj_t* row = lv_obj_create(list);
         lv_obj_set_size(row, LV_PCT(100), ROW_H);
@@ -4629,7 +4629,7 @@ void trace_screen_show()
             lv_obj_add_event_cb(row, [](lv_event_t* e) {
                 int idx = (int)(intptr_t)lv_event_get_user_data(e);
                 uint32_t tag;
-                if (slopos::mesh::sendTrace(idx, &tag)) {
+                if (sigurdos::mesh::sendTrace(idx, &tag)) {
                     lv_obj_t* scr_ref = lv_obj_get_screen((lv_obj_t*)lv_event_get_target(e));
                     lv_obj_t* result_lbl = lv_label_create(scr_ref);
                     lv_obj_set_style_text_color(result_lbl, lv_color_hex(ACCENT), 0);
@@ -4646,11 +4646,11 @@ void trace_screen_show()
 
                     lv_timer_create([](lv_timer_t* t) {
                         if (!trace_result_label) { lv_timer_del(t); return; }
-                        if (slopos::mesh::hasTraceResult()) {
-                            uint8_t len = slopos::mesh::getTracePathLen();
+                        if (sigurdos::mesh::hasTraceResult()) {
+                            uint8_t len = sigurdos::mesh::getTracePathLen();
                             if (len > 64) len = 64;  // MAX_PATH_SIZE
                             uint8_t snrs[64], hashes[64];
-                            slopos::mesh::getTracePath(snrs, hashes);
+                            sigurdos::mesh::getTracePath(snrs, hashes);
                             char res[128];
                             if (len == 0) {
                                 snprintf(res, sizeof(res), "Trace timed out");
@@ -4662,7 +4662,7 @@ void trace_screen_show()
                                         "  [%ddBm]", snrs[h]);
                             }
                             lv_label_set_text(trace_result_label, res);
-                            slopos::mesh::clearTraceResult();
+                            sigurdos::mesh::clearTraceResult();
                             lv_timer_del(t);
                         }
                     }, 500, nullptr);
@@ -4750,7 +4750,7 @@ static lv_obj_t* channel_create_dialog(lv_obj_t* parent)
 
         if (!name[0]) { if (fb) lv_label_set_text(fb, "Enter a hashtag"); return; }
 
-        bool ok = slopos::mesh::addHashtagChannel(name);
+        bool ok = sigurdos::mesh::addHashtagChannel(name);
         if (ok) {
             lv_obj_del_async(dlg);
             if (g_channels_rebuild) g_channels_rebuild();
@@ -4779,7 +4779,7 @@ void channels_screen_show()
     std::function<void()> rebuild = [list, &rebuild]() {
         lv_obj_clean(list);
         char names[8][32];
-        int n = slopos::mesh::exportChannels(names, 8);
+        int n = sigurdos::mesh::exportChannels(names, 8);
         if (n == 0) {
             auto* item = lv_list_add_btn(list, LV_SYMBOL_WARNING, "No channels joined");
             lv_obj_set_style_bg_color(item, lv_color_hex(BG_TERTIARY), 0);
@@ -4825,7 +4825,7 @@ void channels_screen_show()
                     int ch_idx = i;
                     lv_obj_add_event_cb(del_btn, [](lv_event_t* e) {
                         int idx = (int)(intptr_t)lv_event_get_user_data(e);
-                        slopos::mesh::removeChannel(idx);
+                        sigurdos::mesh::removeChannel(idx);
                         if (g_channels_rebuild) g_channels_rebuild();
                     }, LV_EVENT_CLICKED, (void*)(intptr_t)ch_idx);
                 }
@@ -4902,7 +4902,7 @@ void advertise_screen_show()
     lv_label_set_text(bl, LV_SYMBOL_AUDIO "  Advertise Now");
     lv_obj_center(bl);
     lv_obj_add_event_cb(btn, [](lv_event_t*) {
-        slopos::mesh::sendAdvert();
+        sigurdos::mesh::sendAdvert();
         advertise_status_update();
     }, LV_EVENT_CLICKED, nullptr);
 
@@ -4929,7 +4929,7 @@ static uint8_t s_duty_cycle = 0;    // duty cycle percentage (0 = disabled)
 
 void custom_rf_screen_show()
 {
-    using namespace slopos::theme;
+    using namespace sigurdos::theme;
     using responsive::CONTENT_Y;
     using responsive::CONTENT_W;
     using responsive::CONTENT_H;
@@ -5076,7 +5076,7 @@ void radio_setup_screen_show()
 {
     lv_obj_t* scr = make_screen_full("Radio Setup");
 
-    const slopos::NodePrefs& p = slopos::prefs_get();
+    const sigurdos::NodePrefs& p = sigurdos::prefs_get();
 
     s_rf_freq = p.configured ? p.freq          : 869.618f;
     s_rf_sf   = p.configured ? p.sf            : 8;
@@ -5292,7 +5292,7 @@ void radio_setup_screen_show()
     lv_label_set_text(svl, LV_SYMBOL_SAVE "  Save & Reboot");
     lv_obj_center(svl);
     lv_obj_add_event_cb(save_btn, [](lv_event_t*) {
-        slopos::NodePrefs np = slopos::prefs_get();
+        sigurdos::NodePrefs np = sigurdos::prefs_get();
         np.freq         = s_rf_freq;
         np.bw           = s_rf_bw;
         np.sf           = (uint8_t)s_rf_sf;
@@ -5301,8 +5301,8 @@ void radio_setup_screen_show()
         np.rx_boosted_gain = s_rx_gain;
         np.duty_cycle   = s_duty_cycle;
         np.configured   = true;
-        slopos::prefs_set(np);
-        slopos::mesh::saveChannels();
+        sigurdos::prefs_set(np);
+        sigurdos::mesh::saveChannels();
         chat_save_messages();
         delay(100); // allow flash writes to complete before restart
         ESP.restart();
@@ -5349,9 +5349,9 @@ void telemetry_screen_show()
         lv_obj_align(val, LV_ALIGN_RIGHT_MID, -8, 0);
     };
 
-    if (slopos::mesh::hasTelemetryResponse()) {
-        slopos::mesh::TelemetryResult tr;
-        slopos::mesh::getTelemetryResult(&tr);
+    if (sigurdos::mesh::hasTelemetryResponse()) {
+        sigurdos::mesh::TelemetryResult tr;
+        sigurdos::mesh::getTelemetryResult(&tr);
 
         if (tr.n_items == 0) {
             lv_obj_t* empty = lv_label_create(list);
@@ -5370,7 +5370,7 @@ void telemetry_screen_show()
             }
         }
 
-        slopos::mesh::clearResponses();
+        sigurdos::mesh::clearResponses();
     } else {
         lv_obj_t* waiting = lv_label_create(list);
         lv_label_set_text(waiting, "Requesting telemetry...\nWaiting for response...");
@@ -5420,9 +5420,9 @@ void node_status_screen_show()
         lv_obj_align(val, LV_ALIGN_RIGHT_MID, -8, 0);
     };
 
-    if (slopos::mesh::hasStatusResponse()) {
-        slopos::mesh::NodeStatus st;
-        slopos::mesh::getStatusResult(&st);
+    if (sigurdos::mesh::hasStatusResponse()) {
+        sigurdos::mesh::NodeStatus st;
+        sigurdos::mesh::getStatusResult(&st);
 
         char buf[32];
 
@@ -5465,7 +5465,7 @@ void node_status_screen_show()
                  st.n_direct_dups, st.n_flood_dups, st.err_events);
         add_row("Dup/Err", buf);
 
-        slopos::mesh::clearResponses();
+        sigurdos::mesh::clearResponses();
     } else {
         lv_obj_t* waiting = lv_label_create(list);
         lv_label_set_text(waiting, "Requesting status...\nWaiting for response...");
@@ -5498,4 +5498,4 @@ void screens_clear_back_btn()
     s_back_btn = nullptr;
 }
 
-} // namespace slopos::ui
+} // namespace sigurdos::ui

@@ -47,4 +47,4 @@ jobs:
         run: pio test -e native_test -v
 
       - name: Build T-Deck firmware
-        run: pio run -e SlopOS_TDeck
+        run: pio run -e SigurdOS_TDeck

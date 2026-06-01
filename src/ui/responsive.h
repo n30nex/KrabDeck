@@ -9,7 +9,7 @@
 #include "hal/tdeck_pins.h"
 #include <algorithm>
 
-namespace slopos::responsive {
+namespace sigurdos::responsive {
 
 // ── Display metadata ────────────────────────────────────
 constexpr int DISPLAY_W = TFT_WIDTH;
@@ -96,4 +96,4 @@ inline int bar_widget_h(int pct_of_content = 33) {
     return (CONTENT_H * pct_of_content) / 100;
 }
 
-} // namespace slopos::responsive
+} // namespace sigurdos::responsive

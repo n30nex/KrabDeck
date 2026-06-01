@@ -15,61 +15,61 @@
 #include "ui/ui.h"
 #include "ui/theme.h"
 #include "diagnostics/debug_cfg.h"
-#if SLOPOS_DEBUG_DIAG
+#if SIGURDOS_DEBUG_DIAG
 #include "diagnostics/debug.h"
 #endif
-#if defined(SLOPOS_REMOTE_TEST) && SLOPOS_REMOTE_TEST
+#if defined(SIGURDOS_REMOTE_TEST) && SIGURDOS_REMOTE_TEST
 #include "test/test_controller.h"
 #endif
 
-static slopos::TDeckBoard board;
+static sigurdos::TDeckBoard board;
 
 void setup()
 {
     delay(250);  // Let WebSerial port close before claiming USB CDC endpoint
     Serial.begin(115200);
     delay(500);
-#if SLOPOS_DEBUG_UI
-    Serial.println("SlopOS T-Deck — booting...");
+#if SIGURDOS_DEBUG_UI
+    Serial.println("SigurdOS T-Deck — booting...");
     Serial.println("[boot] step 1: serial OK");
 #endif
 
     board.begin();
-#if SLOPOS_DEBUG_UI
+#if SIGURDOS_DEBUG_UI
     Serial.println("[boot] step 2: board init OK");
 #endif
-    slopos_battery_init();
+    sigurdos_battery_init();
 
     bool spiffs_ok = SPIFFS.begin(true);
     if (!spiffs_ok)
         Serial.println("[boot] WARNING: SPIFFS mount failed — identity/contacts won't persist across reboots");
-#if SLOPOS_DEBUG_UI
+#if SIGURDOS_DEBUG_UI
     else
         Serial.println("[boot] step 3: SPIFFS mounted");
 #endif
 
-    if (slopos::prefs_get().gps_enabled) {
-        slopos_gps_init();
+    if (sigurdos::prefs_get().gps_enabled) {
+        sigurdos_gps_init();
     }
-#if SLOPOS_DEBUG_UI
+#if SIGURDOS_DEBUG_UI
     Serial.println("[boot] step 4: GPS init done");
 #endif
 
-    if (!slopos_display_init()) {
+    if (!sigurdos_display_init()) {
         Serial.println("[boot] FATAL: Display init failed");
         while (1) delay(1000);
     }
-#if SLOPOS_DEBUG_UI
+#if SIGURDOS_DEBUG_UI
     Serial.println("[boot] step 6: display init OK");
 #endif
 
     {
-        const slopos::NodePrefs& p = slopos::prefs_get();
-        slopos::mesh::setOwnName(p.node_name);
-        slopos::theme::theme_apply(p.theme_id);
+        const sigurdos::NodePrefs& p = sigurdos::prefs_get();
+        sigurdos::mesh::setOwnName(p.node_name);
+        sigurdos::theme::theme_apply(p.theme_id);
     }
-#if defined(SLOPOS_REMOTE_TEST) && SLOPOS_REMOTE_TEST
-#if defined(SLOPOS_REMOTE_TEST_RADIO) && SLOPOS_REMOTE_TEST_RADIO
+#if defined(SIGURDOS_REMOTE_TEST) && SIGURDOS_REMOTE_TEST
+#if defined(SIGURDOS_REMOTE_TEST_RADIO) && SIGURDOS_REMOTE_TEST_RADIO
     Serial.println("[boot] REMOTE TEST MODE — LoRa radio enabled (test controller + mesh)");
 #else
     // Remote test mode — no LoRa radio initialised, but the shared SPI bus
@@ -77,41 +77,41 @@ void setup()
     // fails with FR_NOT_READY. mesh::init() handles this via lora_spi.begin().
     Serial.println("[boot] REMOTE TEST MODE — LoRa radio disabled");
 #endif
-    slopos::mesh::init(spiffs_ok);
-    slopos_test_controller_init();
+    sigurdos::mesh::init(spiffs_ok);
+    sigurdos_test_controller_init();
 #else
-    if (!slopos::mesh::init(spiffs_ok))
+    if (!sigurdos::mesh::init(spiffs_ok))
         Serial.println("[boot] WARNING: Radio init failed");
-#if SLOPOS_DEBUG_UI
+#if SIGURDOS_DEBUG_UI
     else
         Serial.println("[boot] step 7: mesh radio initialized");
 #endif
 #endif
 
-    slopos::ui::init();
-#if SLOPOS_DEBUG_UI
+    sigurdos::ui::init();
+#if SIGURDOS_DEBUG_UI
     Serial.println("[boot] step 8: UI splash screen shown");
 #endif
-#if SLOPOS_DEBUG_DIAG
-    slopos::debug::init();
+#if SIGURDOS_DEBUG_DIAG
+    sigurdos::debug::init();
     Serial.println("[boot] step 9: debug diagnostics enabled");
 #endif
 
     // SD card init after radio init so SPI bus is already configured
-    if (!slopos_sdcard_init()) {
-#if SLOPOS_DEBUG_UI
+    if (!sigurdos_sdcard_init()) {
+#if SIGURDOS_DEBUG_UI
         Serial.println("[boot] step 10: no SD card detected");
 #endif
     } else {
-#if SLOPOS_DEBUG_UI
+#if SIGURDOS_DEBUG_UI
         Serial.println("[boot] step 10: SD card mounted");
 #endif
     }
 
-    slopos_map_init();
+    sigurdos_map_init();
 
-#if SLOPOS_DEBUG_UI
-    Serial.println("[boot] === SlopOS T-Deck ready ===");
+#if SIGURDOS_DEBUG_UI
+    Serial.println("[boot] === SigurdOS T-Deck ready ===");
 #endif
 }
 
@@ -129,28 +129,28 @@ void loop()
     }
 
     // Process display/LVGL first so UI stays responsive during mesh ops
-    slopos_display_loop();
+    sigurdos_display_loop();
     {   // GPS enabled + interval gate
         static uint32_t last_gps_poll = 0;
-        const slopos::NodePrefs& gp = slopos::prefs_get();
+        const sigurdos::NodePrefs& gp = sigurdos::prefs_get();
         if (gp.gps_enabled) {
             uint32_t now = millis();
             uint32_t interval_ms = (uint32_t)gp.gps_interval * 1000;
             if (interval_ms == 0 || (now - last_gps_poll >= interval_ms)) {
                 last_gps_poll = now;
-                slopos_gps_loop();
+                sigurdos_gps_loop();
             }
         }
     }
-#if defined(SLOPOS_REMOTE_TEST) && SLOPOS_REMOTE_TEST
-    slopos::mesh::loop();
-    slopos_test_controller_loop();
+#if defined(SIGURDOS_REMOTE_TEST) && SIGURDOS_REMOTE_TEST
+    sigurdos::mesh::loop();
+    sigurdos_test_controller_loop();
 #else
-    slopos::mesh::loop();
+    sigurdos::mesh::loop();
 #endif
-    slopos::ui::loop();
+    sigurdos::ui::loop();
 
-#if SLOPOS_DEBUG_DIAG
-    slopos::debug::loop();
+#if SIGURDOS_DEBUG_DIAG
+    sigurdos::debug::loop();
 #endif
 }

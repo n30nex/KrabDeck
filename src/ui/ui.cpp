@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// This file is part of SlopOS-TDeck.
+// This file is part of SigurdOS.
 //
-// SlopOS-TDeck is free software: you can redistribute it and/or modify
+// SigurdOS is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// SlopOS-TDeck is distributed in the hope that it will be useful,
+// SigurdOS is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
+// along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
 
 #include "ui.h"
@@ -23,7 +23,7 @@
 #include "navigation.h"
 #include "theme.h"
 #include "responsive.h"
-using namespace slopos::responsive;
+using namespace sigurdos::responsive;
 #include "../mesh/mesh_wrapper.h"
 #include "../hal/battery.h"
 #include "../hal/prefs.h"
@@ -31,7 +31,7 @@ using namespace slopos::responsive;
 #include <Arduino.h>
 #include <lvgl.h>
 
-namespace slopos {
+namespace sigurdos {
 namespace ui {
 
 static lv_obj_t* splash_scr = nullptr;
@@ -48,7 +48,7 @@ void init()
     theme::apply_dark_bg(splash_scr);
 
     lv_obj_t* logo = lv_label_create(splash_scr);
-    lv_label_set_text(logo, "SlopOS");
+    lv_label_set_text(logo, "SigurdOS");
     lv_obj_set_style_text_color(logo, lv_color_hex(theme::ACCENT), 0);
     lv_obj_set_style_text_font(logo, &lv_font_montserrat_24, 0);
     lv_obj_align(logo, LV_ALIGN_CENTER, 0, -16);
@@ -88,9 +88,9 @@ void loop()
 {
     // Transition from splash to home or onboarding after 2 seconds
     if (!home_shown && (millis() - splash_start > 2000)) {
-        const slopos::NodePrefs& p = slopos::prefs_get();
+        const sigurdos::NodePrefs& p = sigurdos::prefs_get();
         // Show onboarding if: never saved prefs (fresh device) OR not yet configured
-        if (!slopos::prefs_exists() || !p.configured) {
+        if (!sigurdos::prefs_exists() || !p.configured) {
             navigate_to(Screen::Onboarding);
         } else {
             home_screen_create();
@@ -103,10 +103,10 @@ void loop()
     static uint32_t last_update = 0;
     if (home_shown && (millis() - last_update > 30000)) {
         last_update = millis();
-        home_screen_update_battery(slopos_battery_pct());
+        home_screen_update_battery(sigurdos_battery_pct());
         home_screen_update_badges();
         {
-            uint32_t epoch = slopos::mesh::getCurrentTime();
+            uint32_t epoch = sigurdos::mesh::getCurrentTime();
             char tbuf[8];
             if (epoch == 0) {
                 snprintf(tbuf, sizeof(tbuf), "--:--");
@@ -120,9 +120,9 @@ void loop()
         static uint8_t save_counter = 0;
         if (++save_counter >= 10) {
             save_counter = 0;
-            slopos::mesh::saveState();
-            slopos::mesh::saveChannels();
-            slopos::mesh::saveContacts();
+            sigurdos::mesh::saveState();
+            sigurdos::mesh::saveChannels();
+            sigurdos::mesh::saveContacts();
             chat_save_messages();
         }
     }
@@ -132,8 +132,8 @@ void loop()
         static uint32_t last_msg_poll = 0;
         if (millis() - last_msg_poll > 1000) {
             last_msg_poll = millis();
-            slopos::mesh::MeshMessage msgs[4];
-            int n = slopos::mesh::pollMessages(msgs, 4);
+            sigurdos::mesh::MeshMessage msgs[4];
+            int n = sigurdos::mesh::pollMessages(msgs, 4);
             for (int i = 0; i < n; i++) {
                 chat_screen_add_msg(msgs[i].channel, msgs[i].sender, msgs[i].text, msgs[i].is_self);
             }
@@ -143,7 +143,7 @@ void loop()
     }
 }
 
-bool handle_trackball_event(SlopOSTrackballEvent event)
+bool handle_trackball_event(SigurdOSTrackballEvent event)
 {
     if (!home_shown) return false;
     if (current_screen() == Screen::Home) {
@@ -160,4 +160,4 @@ bool handle_trackball_event(SlopOSTrackballEvent event)
 }
 
 } // namespace ui
-} // namespace slopos
+} // namespace sigurdos

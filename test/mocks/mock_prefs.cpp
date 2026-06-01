@@ -7,7 +7,7 @@
 
 #include "hal/prefs.h"
 
-namespace slopos {
+namespace sigurdos {
 
 static NodePrefs g_prefs;
 
@@ -33,4 +33,4 @@ void prefs_set(const NodePrefs& p) {
     g_prefs = p;
 }
 
-} // namespace slopos
+} // namespace sigurdos

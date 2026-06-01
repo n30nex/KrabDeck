@@ -1,4 +1,4 @@
-# SlopOS-TDeck Implementation Roadmap
+# SigurdOS-TDeck Implementation Roadmap
 
 **Audience: AI agents implementing features.** This is the *ordered, how-to* companion to [`MISSING_FEATURES.md`](MISSING_FEATURES.md). Read both:
 
@@ -29,18 +29,18 @@ You are working on embedded C++ firmware. Mistakes here are expensive (they requ
 4. pio test -e native_test -v        # confirm baseline GREEN before you change anything
 5. ... make changes + ADD TESTS ...
 6. pio test -e native_test -v        # all green
-7. pio run -e SlopOS_TDeck           # firmware must build
+7. pio run -e SigurdOS_TDeck           # firmware must build
 8. commit (conventional message), push, open PR targeting dev
 9. PR body MUST declare hardware testing: "Remote test", "Physical hardware test", or both
 ```
-If you cannot run hardware, say so explicitly in the PR and use **remote test mode** where the feature allows it (see CLAUDE.md → Remote Test Controller). **Never** switch the build to `SlopOS_TDeck_remote_test` or touch the radio config without the user's explicit say-so.
+If you cannot run hardware, say so explicitly in the PR and use **remote test mode** where the feature allows it (see CLAUDE.md → Remote Test Controller). **Never** switch the build to `SigurdOS_TDeck_remote_test` or touch the radio config without the user's explicit say-so.
 
 ### The architecture you must respect
 ```
 UI layer (src/ui/*)                ← screens, never touches MeshCore directly
       │  calls only
       ▼
-mesh_wrapper.h  (slopos::mesh::*)   ← THE SEAM. Public API the UI depends on.
+mesh_wrapper.h  (sigurdos::mesh::*)   ← THE SEAM. Public API the UI depends on.
       │  wraps
       ▼
 SlopMesh  (src/mesh/slop_mesh.h)    ← our subclass of MeshCore
@@ -48,19 +48,19 @@ SlopMesh  (src/mesh/slop_mesh.h)    ← our subclass of MeshCore
       ▼
 ::mesh::Mesh  (lib/meshcore/)       ← upstream library
 ```
-**Golden rule: keep the `mesh_wrapper.h` public API stable.** The UI is insulated by it. If you change mesh internals, translate back to the existing wrapper structs (`slopos::mesh::ContactInfo`, `MeshMessage`, etc.) so screens don't change. This seam is what makes large refactors (see Phase 0) survivable.
+**Golden rule: keep the `mesh_wrapper.h` public API stable.** The UI is insulated by it. If you change mesh internals, translate back to the existing wrapper structs (`sigurdos::mesh::ContactInfo`, `MeshMessage`, etc.) so screens don't change. This seam is what makes large refactors (see Phase 0) survivable.
 
 ### Traps that have already bitten this codebase (do not repeat)
 - **ACK value is NOT a CRC-32.** It is the first 4 bytes of SHA-256 over a recipient-pubkey-dependent buffer. Computing a CRC will *never* match. (`MISSING_FEATURES.md` → "Message delivery status".)
 - **Channel hash matching uses ONE byte** in the packet header, not the full hash. `searchChannelsByHash` compares `hash[0]` only — matching upstream `BaseChatMesh`. ~11% collision on 8 channels is expected; do not "fix" it to a full memcmp or you break interop.
 - **`strncpy` does not null-terminate** when the source is too long. Always `dest[n-1] = '\0'`.
-- **UTF-8 truncation** can split a 4-byte emoji mid-codepoint → invalid UTF-8 over the mesh. Use `slopos::utf8_truncate_bytes()` (already used in `slop_mesh.h`).
+- **UTF-8 truncation** can split a 4-byte emoji mid-codepoint → invalid UTF-8 over the mesh. Use `sigurdos::utf8_truncate_bytes()` (already used in `slop_mesh.h`).
 - **`lv_obj_del` inside an event handler** must be `lv_obj_del_async()`.
 - **`lv_scr_load_anim(..., true)`** deletes the old screen + all children; register `LV_EVENT_DELETE` to null any globals pointing into it.
 - **Stack arrays as LVGL `user_data`** dangle on click. Use `static` arrays.
 - **Adding a `NodePrefs` field**: old saved prefs won't have it. `prefs_get()` zero-fills missing keys — follow the existing default-value pattern in `NodePrefs::set_defaults()` (`src/hal/prefs.h`).
 - **`ESP.restart()`** before a flash write completes loses the write. `saveState()`/`saveChannels()` then delay ~100 ms before restart.
-- **Debug output** must be guarded by `#if defined(SLOPOS_DEBUG)` — unconditional `Serial.printf` is a rejection trigger.
+- **Debug output** must be guarded by `#if defined(SIGURDOS_DEBUG)` — unconditional `Serial.printf` is a rejection trigger.
 
 ### Where things live (verified paths)
 | Concern | File |
@@ -107,14 +107,14 @@ SlopMesh  (src/mesh/slop_mesh.h)    ← our subclass of MeshCore
 
 ### Why the blast radius is small
 
-The cost is concentrated in **one place**: adopting `BaseChatMesh`'s `ContactInfo[MAX_CONTACTS]` and `ChannelDetails` models in place of our `SlopContact`/`SlopChannel`, and implementing its ~12 pure-virtual hooks. Because the UI only ever sees `slopos::mesh::ContactInfo` (the wrapper struct in `mesh_wrapper.h`), the change is contained to **`slop_mesh.h` + `mesh_wrapper.cpp`** — translate `BaseChatMesh::ContactInfo` → the wrapper struct and **the UI layer does not change at all.** That seam is exactly why this migration is survivable.
+The cost is concentrated in **one place**: adopting `BaseChatMesh`'s `ContactInfo[MAX_CONTACTS]` and `ChannelDetails` models in place of our `SlopContact`/`SlopChannel`, and implementing its ~12 pure-virtual hooks. Because the UI only ever sees `sigurdos::mesh::ContactInfo` (the wrapper struct in `mesh_wrapper.h`), the change is contained to **`slop_mesh.h` + `mesh_wrapper.cpp`** — translate `BaseChatMesh::ContactInfo` → the wrapper struct and **the UI layer does not change at all.** That seam is exactly why this migration is survivable.
 
 ### Migration plan — spike, prove parity, then cut over (never big-bang)
 
 1. **Spike branch.** Create `SlopMeshV2 : public BaseChatMesh` alongside the existing `SlopMesh`. Implement the pure virtuals (`onMessageRecv`, `onChannelMessageRecv`, `onDiscoveredContact`, `processAck`, `onContactResponse`, `onCommandDataRecv`, `onSignedMessageRecv`, `calcFloodTimeoutMillisFor`, `calcDirectTimeoutMillisFor`, `onSendTimeout`, `onContactRequest`). Use [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) as a complete reference implementation of every one of these.
 2. **Define `MAX_CONTACTS` and `MAX_GROUP_CHANNELS`** via build flags (`BaseChatMesh` reads them; defaults are 32 / undefined). Match or exceed today's `SLOP_MAX_CONTACTS = 64` / `SLOP_MAX_CHANNELS = 8`.
 3. **Persistence.** `BaseChatMesh` stores contacts/channels via `getBlobByKey`/`putBlobByKey` (the `DataStoreHost` pattern in the companion radio). Wire these to NVS/SPIFFS. **Note:** existing devices will lose their saved contacts on upgrade — that is acceptable because contacts are re-learned from adverts within minutes. Identity is stored separately and must be preserved.
-4. **Keep the wrapper API byte-identical.** `mesh_wrapper.cpp` translates `BaseChatMesh::ContactInfo` → `slopos::mesh::ContactInfo`. Do not change any signature in `mesh_wrapper.h`.
+4. **Keep the wrapper API byte-identical.** `mesh_wrapper.cpp` translates `BaseChatMesh::ContactInfo` → `sigurdos::mesh::ContactInfo`. Do not change any signature in `mesh_wrapper.h`.
 5. **Parity checklist — prove ALL of these pass before cutover** (native tests + hardware/remote-test):
    - [x] DM send + receive (`test_mesh_messaging`)
    - [x] Channel text send + receive (hashtag + PSK channels)
@@ -187,7 +187,7 @@ The cost is concentrated in **one place**: adopting `BaseChatMesh`'s `ContactInf
 - **Status:** Already done. `share_location` toggle in Settings (set_defaults: true). Wireframe already in prefs for lat/lon gating.
 
 ### 2.5 — GPS enable / read-interval — S ✅
-- **Status:** Done. `gps_enabled` (bool) + `gps_interval` (uint16_t seconds) in NodePrefs. `slopos_gps_init()`/`slopos_gps_loop()` gated on the pref. Settings: GPS ON/OFF toggle + interval cycle (0/1/5/10/30/60s).
+- **Status:** Done. `gps_enabled` (bool) + `gps_interval` (uint16_t seconds) in NodePrefs. `sigurdos_gps_init()`/`sigurdos_gps_loop()` gated on the pref. Settings: GPS ON/OFF toggle + interval cycle (0/1/5/10/30/60s).
 - **PR:** #227.
 
 ### 2.6 — Custom variables (key-value store) — S ✅

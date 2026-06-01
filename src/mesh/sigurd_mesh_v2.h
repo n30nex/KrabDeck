@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// SlopMeshV2 — BaseChatMesh subclass for SlopOS-TDeck.
-// Built alongside the original SlopMesh during Phase 0 migration.
-// Once parity is proven, this replaces SlopMesh entirely.
+// SigurdMeshV2 — BaseChatMesh subclass for SigurdOS.
+// Built alongside the original SigurdMesh during Phase 0 migration.
+// Once parity is proven, this replaces SigurdMesh entirely.
 //
 // MeshCore is MIT licensed (meshcore-dev/MeshCore).
 
@@ -17,7 +17,7 @@
 #include "hal/tdeck_board.h"
 #include "../diagnostics/debug_cfg.h"
 
-namespace slopos {
+namespace sigurdos {
 namespace mesh {
 
 // RSSI/SNR side-channel — BaseChatMesh::ContactInfo doesn't carry signal data
@@ -28,17 +28,17 @@ struct SignalSample {
     uint32_t updated_at;
 };
 
-// NOTE: PingResult is declared in mesh_wrapper.h (slopos::mesh::PingResult).
+// NOTE: PingResult is declared in mesh_wrapper.h (sigurdos::mesh::PingResult).
 
-class SlopMeshV2 : public ::BaseChatMesh {
+class SigurdMeshV2 : public ::BaseChatMesh {
 public:
-    SlopMeshV2(::mesh::Radio& radio, ::mesh::MillisecondClock& clock, ::mesh::RNG& rng,
+    SigurdMeshV2(::mesh::Radio& radio, ::mesh::MillisecondClock& clock, ::mesh::RNG& rng,
                ::mesh::RTCClock& rtc, ::mesh::PacketManager& pm, ::mesh::MeshTables& mt)
         : BaseChatMesh(radio, clock, rng, rtc, pm, mt) {}
-    ~SlopMeshV2() {}
+    ~SigurdMeshV2() {}
 
     // ── Identity & name ─────────────────────────
-    char _own_name[32] = "SlopOS";
+    char _own_name[32] = "SigurdOS";
 
     void setOwnName(const char* name) {
         if (name) {
@@ -483,7 +483,7 @@ public:
             e.valid = true;
 
             // Also push to mesh message queue so it appears in chat
-            slopos::mesh::mesh_v2_queue_push(e.sender, e.channel, e.text, 0, 0.0f);
+            sigurdos::mesh::mesh_v2_queue_push(e.sender, e.channel, e.text, 0, 0.0f);
             if (_message_cb) {
                 _message_cb(e.sender, e.channel, e.text);
             }
@@ -500,9 +500,9 @@ public:
         int rssi = (int)_radio->getLastRSSI();
         float snr = _radio->getLastSNR();
         updateSignalSample(contact.id.pub_key, rssi, snr);
-        slopos::mesh::pushPacketLog(contact.name, rssi, snr,
+        sigurdos::mesh::pushPacketLog(contact.name, rssi, snr,
                                     is_new ? "ADVERT" : "ADVERT(UPDATE)");
-#if SLOPOS_DEBUG_MESH
+#if SIGURDOS_DEBUG_MESH
         Serial.printf("[mesh] %s contact: %s (type=%d)\n",
                       is_new ? "new" : "updated", contact.name, contact.type);
 #endif
@@ -556,7 +556,7 @@ public:
             if (_pending_acks[i].in_use && _pending_acks[i].expected_ack == ack_val) {
                 _pending_acks[i].in_use = false;
                 // Notify wrapper layer
-                slopos::mesh::registerAckedMessage(_pending_acks[i].dest_name, _pending_acks[i].timestamp);
+                sigurdos::mesh::registerAckedMessage(_pending_acks[i].dest_name, _pending_acks[i].timestamp);
                 // Return a valid ContactInfo for BaseChatMesh internal processing
                 for (int j = 0; j < getNumContacts(); j++) {
                     if (getContactByIdx((uint32_t)j, _contact_cache)) {
@@ -575,7 +575,7 @@ public:
         int rssi = (int)_radio->getLastRSSI();
         float snr = pkt ? pkt->getSNR() : _radio->getLastSNR();
         updateSignalSample(contact.id.pub_key, rssi, snr);
-        slopos::mesh::mesh_v2_queue_push(contact.name, "", text, rssi, snr);
+        sigurdos::mesh::mesh_v2_queue_push(contact.name, "", text, rssi, snr);
         if (_message_cb) {
             _message_cb(contact.name, "", text);
         }
@@ -584,10 +584,10 @@ public:
     void onCommandDataRecv(const ::ContactInfo& contact, ::mesh::Packet* pkt,
                            uint32_t sender_timestamp, const char* text) override
     {
-        slopos::mesh::pushCmdResponse(contact.name, text);
+        sigurdos::mesh::pushCmdResponse(contact.name, text);
         char buf[288];
         snprintf(buf, sizeof(buf), "[CMD] %s: %s", contact.name, text);
-        slopos::mesh::mesh_v2_queue_push(contact.name, "", buf, 0, 0.0f);
+        sigurdos::mesh::mesh_v2_queue_push(contact.name, "", buf, 0, 0.0f);
     }
 
     // ── Anonymous data (Phase 4.7) ──────────────────────
@@ -606,7 +606,7 @@ public:
         char fallback[16];
         snprintf(fallback, sizeof(fallback), "anon_%02x", sender.pub_key[0]);
 
-        slopos::mesh::mesh_v2_queue_push(fallback, "", text, rssi, snr);
+        sigurdos::mesh::mesh_v2_queue_push(fallback, "", text, rssi, snr);
         if (_message_cb) {
             _message_cb(fallback, "", text);
         }
@@ -618,7 +618,7 @@ public:
     {
         int rssi = pkt ? (int)_radio->getLastRSSI() : 0;
         float snr = pkt ? pkt->getSNR() : 0.0f;
-        slopos::mesh::mesh_v2_queue_push(contact.name, "", text, rssi, snr);
+        sigurdos::mesh::mesh_v2_queue_push(contact.name, "", text, rssi, snr);
         if (_message_cb) {
             _message_cb(contact.name, "", text);
         }
@@ -666,7 +666,7 @@ public:
             sender_name = sender_buf;
             msg_text = colon + 2;
         }
-        slopos::mesh::mesh_v2_queue_push(sender_name, chname, msg_text, rssi, snr);
+        sigurdos::mesh::mesh_v2_queue_push(sender_name, chname, msg_text, rssi, snr);
         if (_message_cb) {
             _message_cb(sender_name, chname, msg_text);
         }
@@ -706,7 +706,7 @@ public:
                     BaseChatMesh::startConnection(contact, keep_alive_secs);
                 }
 
-#if SLOPOS_DEBUG_MESH
+#if SIGURDOS_DEBUG_MESH
                 Serial.printf("[mesh] Login OK for %s (perm=%d, acl=%d, ka=%us)\n",
                               contact.name, perm, acl, keep_alive_secs);
 #endif
@@ -716,7 +716,7 @@ public:
             if (data[4] == 'O' && data[5] == 'K') {
                 _login_entries[login_idx].status = LOGIN_OK;
                 _login_entries[login_idx].permission = 1; // legacy: admin if "OK"
-#if SLOPOS_DEBUG_MESH
+#if SIGURDOS_DEBUG_MESH
                 Serial.printf("[mesh] Login OK (legacy) for %s\n", contact.name);
 #endif
                 return;
@@ -724,7 +724,7 @@ public:
             // Explicit login failure — pending entry with nonzero code
             if (_login_entries[login_idx].status == LOGIN_PENDING && data[4] != 0) {
                 _login_entries[login_idx].status = LOGIN_FAILED;
-#if SLOPOS_DEBUG_MESH
+#if SIGURDOS_DEBUG_MESH
                 Serial.printf("[mesh] Login FAILED for %s (reason=%d)\n",
                               contact.name, data[4]);
 #endif
@@ -762,7 +762,7 @@ public:
     }
 
     void onContactPathUpdated(const ::ContactInfo& contact) override {
-#if SLOPOS_DEBUG_MESH
+#if SIGURDOS_DEBUG_MESH
         Serial.printf("[mesh] Path updated for %s (len=%d)\n",
                       contact.name, contact.out_path_len);
 #endif
@@ -890,11 +890,11 @@ public:
     }
     bool shouldOverwriteWhenFull() const override { return true; }
     uint8_t getAutoAddMaxHops() const override {
-        return slopos::prefs_get().flood_max_hops;
+        return sigurdos::prefs_get().flood_max_hops;
     }
     void onContactsFull() override {}
     float getAirtimeBudgetFactor() const override {
-        slopos::NodePrefs p = slopos::prefs_get();
+        sigurdos::NodePrefs p = sigurdos::prefs_get();
         if (p.duty_cycle == 0) return -1.0f;
         return (float)p.duty_cycle / 100.0f;
     }
@@ -978,7 +978,7 @@ public:
         int r = BaseChatMesh::sendLogin(contact, password, est_timeout);
         if (r != MSG_SEND_FAILED) {
             addLoginEntry(contact.name);
-#if SLOPOS_DEBUG_MESH
+#if SIGURDOS_DEBUG_MESH
             Serial.printf("[mesh] Login sent to %s (result=%d, timeout=%u)\n",
                           contact.name, r, est_timeout);
 #endif
@@ -989,7 +989,7 @@ public:
     void sendLogoutTo(const ::ContactInfo& contact) {
         BaseChatMesh::stopConnection(contact.id.pub_key);
         removeLoginEntry(contact.name);
-#if SLOPOS_DEBUG_MESH
+#if SIGURDOS_DEBUG_MESH
         Serial.printf("[mesh] Logged out from %s\n", contact.name);
 #endif
     }
@@ -1003,7 +1003,7 @@ public:
         uint32_t ts = getRTCClock()->getCurrentTime();
         int r = BaseChatMesh::sendCommandData(contact, ts, 0, text, est_timeout);
         if (r != MSG_SEND_FAILED) {
-#if SLOPOS_DEBUG_MESH
+#if SIGURDOS_DEBUG_MESH
             Serial.printf("[mesh] Command sent to %s (result=%d)\n", contact.name, r);
 #endif
             return true;
@@ -1012,9 +1012,9 @@ public:
     }
 
     void setDutyCycle(uint8_t percent) {
-        slopos::NodePrefs p = slopos::prefs_get();
+        sigurdos::NodePrefs p = sigurdos::prefs_get();
         p.duty_cycle = percent;
-        slopos::prefs_set(p);
+        sigurdos::prefs_set(p);
     }
 
     int getContactCount() { return getNumContacts(); }
@@ -1033,7 +1033,7 @@ public:
     }
 
     // Transient pointer accessors backed by per-instance caches. Callers use
-    // the returned pointer before the next call (matching SlopMesh usage).
+    // the returned pointer before the next call (matching SigurdMesh usage).
     ChannelDetails _ch_cache;
     const ChannelDetails* getChannel(int idx) {
         if (idx < 0 || idx >= MAX_GROUP_CHANNELS) return nullptr;
@@ -1287,12 +1287,12 @@ public:
             e.timestamp = getRTCClock()->getCurrentTime();
             e.valid = true;
 
-#if SLOPOS_DEBUG_MESH
+#if SIGURDOS_DEBUG_MESH
             Serial.printf("[mesh] Group data recv on %s type=0x%04x len=%d\n",
                           chname, data_type, (int)data_len);
 #endif
         } else {
-#if SLOPOS_DEBUG_MESH
+#if SIGURDOS_DEBUG_MESH
             Serial.printf("[mesh] Group data recv buffer full (dropped type=0x%04x)\n",
                           data_type);
 #endif
@@ -1334,7 +1334,7 @@ public:
 
         int r = BaseChatMesh::sendAnonReq(tmp, buf, 5 + tlen, tag, est_timeout);
         if (r != MSG_SEND_FAILED) {
-#if SLOPOS_DEBUG_MESH
+#if SIGURDOS_DEBUG_MESH
             Serial.printf("[mesh] Anon msg sent to pubkey %02x%02x... (result=%d, tag=%u)\n",
                           pub_key[0], pub_key[1], r, tag);
 #endif
@@ -1393,4 +1393,4 @@ public:
 };
 
 } // namespace mesh
-} // namespace slopos
+} // namespace sigurdos

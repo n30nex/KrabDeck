@@ -6,7 +6,7 @@ The Settings screen provides a tappable list of device status indicators and con
 ┌──────────────────────────────────┐
 │          Settings                │  ← top bar + back button
 ├──────────────────────────────────┤
-│ ⚙  Name: SlopOS T-Deck          │  ← Node name (read-only)
+│ ⚙  Name: SigurdOS T-Deck          │  ← Node name (read-only)
 │ 📶 Radio: 869.618 MHz / 62.5 kHz│  ← tappable → Radio Setup screen
 │      / SF8 / 22 dBm              │
 │ 💾 SD Card: Mounted              │  ← status read-only
@@ -16,7 +16,7 @@ The Settings screen provides a tappable list of device status indicators and con
 │ ⚙  Date: 2025-05-26             │  ← tappable → set dialog (YYYY-MM-DD)
 │ ⚙  Time: 14:32                  │  ← tappable → set dialog (HH:MM 24h)
 │ ⚙  Run Setup Wizard             │  ← tappable → navigates to Onboarding
-│ ⌂  SlopOS beta-0.1.32           │  ← version info (read-only)
+│ ⌂  SigurdOS beta-0.1.32           │  ← version info (read-only)
 ├──────────────────────────────────┤
 │     (bottom bar — device info)   │
 └──────────────────────────────────┘
@@ -34,10 +34,10 @@ The Settings screen provides a tappable list of device status indicators and con
 | `src/ui/responsive.h` | `dialog_size()` — caps dialog dimensions to display bounds with margin |
 | `src/ui/theme.h` | Pixel theme colours — `BG_TERTIARY`, `BG_INPUT`, `TEXT_PRIMARY` for alternating rows |
 | `src/hal/prefs.h` | `NodePrefs` struct — all persisted configuration fields |
-| `src/hal/tdeck_pins.h` | `SLOPOS_VERSION` macro at line 130 |
-| `src/hal/sdcard.h` | `slopos_sdcard_mounted()` — SD card status check |
-| `src/hal/gps.h` | `slopos_gps_has_fix()` — GPS fix status check |
-| `src/hal/keyboard.h` | `slopos_keyboard_set_brightness()`, `slopos_keyboard_set_default_brightness()` |
+| `src/hal/tdeck_pins.h` | `SIGURDOS_VERSION` macro at line 130 |
+| `src/hal/sdcard.h` | `sigurdos_sdcard_mounted()` — SD card status check |
+| `src/hal/gps.h` | `sigurdos_gps_has_fix()` — GPS fix status check |
+| `src/hal/keyboard.h` | `sigurdos_keyboard_set_brightness()`, `sigurdos_keyboard_set_default_brightness()` |
 | `src/ui/chat_screen.cpp` | `chat_screen_get_message_cap()`, `chat_screen_set_message_cap()` |
 
 ---
@@ -82,7 +82,7 @@ Key characteristics:
 | Property | Value |
 |----------|-------|
 | **Label** | `"  Name: <node_name>"` (line 1184) |
-| **Data source** | `slopos::prefs_get().node_name` — a `char[32]` field in `NodePrefs` |
+| **Data source** | `sigurdos::prefs_get().node_name` — a `char[32]` field in `NodePrefs` |
 | **Tap action** | None (read-only status display) |
 | **Symbol** | `LV_SYMBOL_SETTINGS` (⚙) |
 
@@ -95,7 +95,7 @@ Displays the mesh node's name as configured during onboarding or via NVS prefere
 | Property | Value |
 |----------|-------|
 | **Label** | `"  Radio: <freq> MHz / <bw> kHz / SF<sf> / <power> dBm"` (line 1189) |
-| **Data source** | `slopos::prefs_get()` — `freq`, `bw`, `sf`, `tx_power_dbm` |
+| **Data source** | `sigurdos::prefs_get()` — `freq`, `bw`, `sf`, `tx_power_dbm` |
 | **Tap action** | Opens `radio_setup_screen_show()` — see [Radio Setup Dialog](#radio-setup-dialog) |
 | **Symbol** | `LV_SYMBOL_WIFI` (📶) |
 
@@ -122,7 +122,7 @@ The `radio_setup_screen_show()` function at line 1899 creates a full-screen "Rad
 - **SF (Spreading Factor)**: `-`/`+` buttons adjusting Spreading Factor (SF6–SF12)
 - **BW (Bandwidth)**: `-`/`+` buttons adjusting bandwidth in kHz
 - **TX Power**: `-`/`+` buttons adjusting transmit power in dBm
-- **Save button**: Persists all values to NVS via `slopos::prefs_set()`
+- **Save button**: Persists all values to NVS via `sigurdos::prefs_set()`
 
 ---
 
@@ -131,7 +131,7 @@ The `radio_setup_screen_show()` function at line 1899 creates a full-screen "Rad
 | Property | Value |
 |----------|-------|
 | **Label** | `"  SD Card: Mounted"` or `"  SD Card: Not mounted"` (line 1204) |
-| **Data source** | `slopos_sdcard_mounted()` |
+| **Data source** | `sigurdos_sdcard_mounted()` |
 | **Tap action** | None (read-only status) |
 | **Symbol** | `LV_SYMBOL_SD_CARD` (💾) |
 
@@ -144,7 +144,7 @@ Shows whether the microSD card is detected and mounted at boot. The SD card uses
 | Property | Value |
 |----------|-------|
 | **Label** | `"  GPS: Fix acquired"` or `"  GPS: No fix"` (line 1209) |
-| **Data source** | `slopos_gps_has_fix()` |
+| **Data source** | `sigurdos_gps_has_fix()` |
 | **Tap action** | None (read-only status) |
 | **Symbol** | `LV_SYMBOL_GPS` (🛰) |
 
@@ -157,7 +157,7 @@ Indicates whether the GPS module (UART, RX=43, TX=44, 38400 baud) has acquired a
 | Property | Value |
 |----------|-------|
 | **Label** | `"  Keyboard BL: <value> (<pct>%)"` (line 1214) |
-| **Data source** | `slopos::prefs_get().kbd_backlight` (0–255) |
+| **Data source** | `sigurdos::prefs_get().kbd_backlight` (0–255) |
 | **Tap action** | Opens `backlight_dialog()` — see [Backlight Dialog](#backlight-dialog) |
 | **Symbol** | `LV_SYMBOL_KEYBOARD` (⌨) |
 | **Global pointer** | `g_backlight_row` — updated on save so the row text reflects the new value |
@@ -181,9 +181,9 @@ The `backlight_dialog()` function at line 1059 creates a centered modal dialog (
 **Structure:**
 - **Title**: "Keyboard Backlight" label at top center, `montserrat_12`, `TEXT_PRIMARY`
 - **Value label**: Center-aligned, shows `"<brightness> (<pct>%)"` — e.g. `"127 (49%)"`
-- **Minus button** (`-`): Left-aligned, 40×28px, `ACCENT_RED` background. Decrements brightness by 25 (floor at 0 when < 25). Calls `slopos_keyboard_set_brightness()` for **live preview** — the keyboard lights change immediately as you tap.
+- **Minus button** (`-`): Left-aligned, 40×28px, `ACCENT_RED` background. Decrements brightness by 25 (floor at 0 when < 25). Calls `sigurdos_keyboard_set_brightness()` for **live preview** — the keyboard lights change immediately as you tap.
 - **Plus button** (`+`): Right-aligned, 40×28px, `ACCENT` background. Increments brightness by 25 (clamped to 255). Also provides live preview.
-- **Set button**: Bottom center, 72×24px, `ACCENT_GREEN`. Saves the final brightness to NVS via `slopos::prefs_set()` with `kbd_backlight` set to the current value, then calls `slopos_keyboard_set_default_brightness()` (persists the default used by the Alt+B toggle). Updates the settings row label and closes the dialog.
+- **Set button**: Bottom center, 72×24px, `ACCENT_GREEN`. Saves the final brightness to NVS via `sigurdos::prefs_set()` with `kbd_backlight` set to the current value, then calls `sigurdos_keyboard_set_default_brightness()` (persists the default used by the Alt+B toggle). Updates the settings row label and closes the dialog.
 
 **Context struct** (`BacklightCtx`, line 956):
 ```cpp
@@ -254,7 +254,7 @@ On save, all channel buffers are trimmed via `trim_channel_history()` to respect
 | Property | Value |
 |----------|-------|
 | **Label** | `"  Date: <YYYY>-<MM>-<DD>"` (line 1235) |
-| **Data source** | `slopos::mesh::getCurrentLocalDateTime()` |
+| **Data source** | `sigurdos::mesh::getCurrentLocalDateTime()` |
 | **Tap action** | Opens `datetime_set_dialog(parent, true)` — see [Date/Time Dialog](#datetime-dialog) |
 | **Symbol** | `LV_SYMBOL_SETTINGS` (⚙) |
 | **Global pointer** | `g_date_row` — updated on set |
@@ -264,7 +264,7 @@ On save, all channel buffers are trimmed via `trim_channel_history()` to respect
 | Property | Value |
 |----------|-------|
 | **Label** | `"  Time: <HH>:<MM>"` (line 1243) |
-| **Data source** | `slopos::mesh::getCurrentLocalDateTime()` |
+| **Data source** | `sigurdos::mesh::getCurrentLocalDateTime()` |
 | **Tap action** | Opens `datetime_set_dialog(parent, false)` — see [Date/Time Dialog](#datetime-dialog) |
 | **Symbol** | `LV_SYMBOL_SETTINGS` (⚙) |
 | **Global pointer** | `g_time_row` — updated on set |
@@ -292,10 +292,10 @@ The `datetime_set_dialog()` function at line 832 creates a centered modal dialog
 - **Set button**: Bottom-right, 72×24px, `ACCENT_GREEN`. Validates and persists.
 
 **Validation logic** (line 915):
-- **Date mode**: Parses `YYYY-MM-DD` via `sscanf()`. Validates: year > 2020, month 1–12, day 1–31. Combines parsed date with current time from `getCurrentLocalDateTime()` and builds epoch via `slopos::mesh::makeEpoch()`.
+- **Date mode**: Parses `YYYY-MM-DD` via `sscanf()`. Validates: year > 2020, month 1–12, day 1–31. Combines parsed date with current time from `getCurrentLocalDateTime()` and builds epoch via `sigurdos::mesh::makeEpoch()`.
 - **Time mode**: Parses `HH:MM` via `sscanf()`. Validates: hours 0–23, minutes 0–59. Combines parsed time with current date from `getCurrentLocalDateTime()`.
 
-On success, calls `slopos::mesh::setSystemTime(epoch)`, then:
+On success, calls `sigurdos::mesh::setSystemTime(epoch)`, then:
 1. Reads back the new time via `getCurrentLocalDateTime()`
 2. Updates both Date and Time row labels in-place via `update_row_label()`
 3. Calls `home_screen_update_time()` to refresh the top bar clock
@@ -328,15 +328,15 @@ Allows the user to re-run the setup wizard at any time. This navigates to `Scree
 
 | Property | Value |
 |----------|-------|
-| **Label** | `"  SlopOS beta-0.1.32"` (line 1257) |
-| **Data source** | `SLOPOS_VERSION` macro from `src/hal/tdeck_pins.h` |
+| **Label** | `"  SigurdOS beta-0.1.32"` (line 1257) |
+| **Data source** | `SIGURDOS_VERSION` macro from `src/hal/tdeck_pins.h` |
 | **Tap action** | None (read-only) |
 | **Symbol** | `LV_SYMBOL_HOME` (⌂) |
 
-Displays the firmware version string. The `SLOPOS_VERSION` macro is defined at line 130 of `tdeck_pins.h`:
+Displays the firmware version string. The `SIGURDOS_VERSION` macro is defined at line 130 of `tdeck_pins.h`:
 
 ```cpp
-#define SLOPOS_VERSION  "beta-0.1.32"
+#define SIGURDOS_VERSION  "beta-0.1.32"
 ```
 
 This is updated manually during release workflows.

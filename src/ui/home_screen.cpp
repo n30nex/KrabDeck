@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// This file is part of SlopOS-TDeck.
+// This file is part of SigurdOS.
 //
-// SlopOS-TDeck is free software: you can redistribute it and/or modify
+// SigurdOS is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// SlopOS-TDeck is distributed in the hope that it will be useful,
+// SigurdOS is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
+// along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
 
 #include "home_screen.h"
@@ -27,7 +27,7 @@
 #include "../mesh/mesh_wrapper.h"
 #include "../hal/prefs.h"
 #include "../diagnostics/debug_cfg.h"
-#if SLOPOS_DEBUG_UI
+#if SIGURDOS_DEBUG_UI
 #include "../diagnostics/debug.h"
 #include <Arduino.h>
 #endif
@@ -35,7 +35,7 @@
 #include <cstdio>
 #include <cstring>
 
-namespace slopos::ui {
+namespace sigurdos::ui {
 
 using namespace theme;
 
@@ -130,8 +130,8 @@ static void apply_selection(int old_idx = -1)
         force_full_tile_redraw(selected_icon);
     }
 
-#if SLOPOS_DEBUG_UI
-    SLOPOS_RUNTIME_FEAT(ui) {
+#if SIGURDOS_DEBUG_UI
+    SIGURDOS_RUNTIME_FEAT(ui) {
     Serial.printf("[home] apply_selection old=%d new=%d", old_idx, selected_icon);
     if (selected_icon >= 0 && selected_icon < ICON_COUNT) {
         lv_area_t coords;
@@ -202,7 +202,7 @@ static void create_top_bar()
     lv_obj_align(menu_icon, LV_ALIGN_LEFT_MID, 4, 0);
 
     // Radio status / setup warning (replaces old channel hashtags)
-    const bool configured = slopos::prefs_get().configured;
+    const bool configured = sigurdos::prefs_get().configured;
     hashtag_label = lv_label_create(top_bar);
     lv_label_set_text(hashtag_label, configured ? "" : "Do setup for radio");
     lv_label_set_long_mode(hashtag_label, LV_LABEL_LONG_DOT);
@@ -221,7 +221,7 @@ static void create_top_bar()
 
     // Signal dots (iOS-style, left of time)
     {
-        lv_obj_t* sig = create_signal_dots(top_bar, slopos::mesh::getLastRSSI());
+        lv_obj_t* sig = create_signal_dots(top_bar, sigurdos::mesh::getLastRSSI());
         lv_obj_align(sig, LV_ALIGN_RIGHT_MID, -54, 0);
     }
 
@@ -246,7 +246,7 @@ static void create_bottom_bar()
     lv_obj_set_style_border_width(bottom_bar, 0, 0);
 
     lv_obj_t* dev = lv_label_create(bottom_bar);
-    lv_label_set_text(dev, slopos::mesh::getOwnName());
+    lv_label_set_text(dev, sigurdos::mesh::getOwnName());
     lv_obj_set_style_text_color(dev, lv_color_hex(TEXT_SECONDARY), 0);
     lv_obj_set_style_text_font(dev, &lv_font_montserrat_10, 0);
     lv_obj_align(dev, LV_ALIGN_LEFT_MID, 4, 0);
@@ -300,7 +300,7 @@ static lv_obj_t* create_icon_tile(lv_obj_t* parent, const IconDef& icon, int idx
 
     if (icon.badge) {
         // Badge: container with count label, hidden by default, shown when
-        // slopos::mesh::pendingMessageCount() > 0 via home_screen_update_badges()
+        // sigurdos::mesh::pendingMessageCount() > 0 via home_screen_update_badges()
         badge_obj = lv_obj_create(tile);
         lv_obj_set_size(badge_obj, 18, 12);
         lv_obj_set_style_bg_color(badge_obj, lv_color_hex(ACCENT_RED), 0);
@@ -407,12 +407,12 @@ void home_screen_show()
     home_screen_update_badges();
 }
 
-void home_screen_handle_trackball(SlopOSTrackballEvent event)
+void home_screen_handle_trackball(SigurdOSTrackballEvent event)
 {
     if (!grid) return;
 
     switch (event) {
-    case SlopOSTrackballEvent::Left: {
+    case SigurdOSTrackballEvent::Left: {
         const int old = selected_icon;
         const int row = selected_icon / active_cols;
         const int first = row * active_cols;
@@ -421,7 +421,7 @@ void home_screen_handle_trackball(SlopOSTrackballEvent event)
         apply_selection(old);
         break;
     }
-    case SlopOSTrackballEvent::Right: {
+    case SigurdOSTrackballEvent::Right: {
         const int old = selected_icon;
         const int row = selected_icon / active_cols;
         const int first = row * active_cols;
@@ -430,7 +430,7 @@ void home_screen_handle_trackball(SlopOSTrackballEvent event)
         apply_selection(old);
         break;
     }
-    case SlopOSTrackballEvent::Up: {
+    case SigurdOSTrackballEvent::Up: {
         const int old = selected_icon;
         const int col = selected_icon % active_cols;
         int row = selected_icon / active_cols;
@@ -441,7 +441,7 @@ void home_screen_handle_trackball(SlopOSTrackballEvent event)
         apply_selection(old);
         break;
     }
-    case SlopOSTrackballEvent::Down: {
+    case SigurdOSTrackballEvent::Down: {
         const int old = selected_icon;
         const int col = selected_icon % active_cols;
         int row = selected_icon / active_cols;
@@ -452,12 +452,12 @@ void home_screen_handle_trackball(SlopOSTrackballEvent event)
         apply_selection(old);
         break;
     }
-    case SlopOSTrackballEvent::Click:
+    case SigurdOSTrackballEvent::Click:
         if (selected_icon >= 0 && selected_icon < ICON_COUNT) {
             navigate_to(icons[selected_icon].target);
         }
         break;
-    case SlopOSTrackballEvent::None:
+    case SigurdOSTrackballEvent::None:
     default:
         break;
     }
@@ -482,7 +482,7 @@ void home_screen_update_time(const char* time_str)
 void home_screen_update_channels()
 {
     if (!hashtag_label) return;
-    const bool configured = slopos::prefs_get().configured;
+    const bool configured = sigurdos::prefs_get().configured;
     lv_label_set_text(hashtag_label, configured ? "" : "Do setup for radio");
     lv_obj_set_style_text_color(hashtag_label,
         lv_color_hex(configured ? CHANNEL_HASH : ACCENT_RED), 0);
@@ -491,7 +491,7 @@ void home_screen_update_channels()
 void home_screen_update_badges()
 {
     if (!badge_obj) return;
-    int n = slopos::mesh::getUnreadMessageCount();
+    int n = sigurdos::mesh::getUnreadMessageCount();
     if (n > 0) {
         lv_obj_clear_flag(badge_obj, LV_OBJ_FLAG_HIDDEN);
         lv_obj_t* lbl = lv_obj_get_child(badge_obj, 0);
@@ -505,4 +505,4 @@ void home_screen_update_badges()
     }
 }
 
-} // namespace slopos::ui
+} // namespace sigurdos::ui

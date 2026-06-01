@@ -10,13 +10,13 @@ static constexpr uint32_t DIRECTION_DEADTIME_MS = 150;
 static constexpr uint32_t DIRECTION_SETTLE_MS = 250;
 static constexpr uint8_t EVENT_QUEUE_SIZE = 8;
 
-#if defined(SLOPOS_TRACKBALL_DEBUG)
+#if defined(SIGURDOS_TRACKBALL_DEBUG)
 static constexpr uint32_t DEBUG_STATUS_MS = 250;
 #endif
 
 struct ButtonState {
     uint8_t pin;
-    SlopOSTrackballEvent event;
+    SigurdOSTrackballEvent event;
     bool direction;
     int last_raw;
     bool raw_active;
@@ -27,20 +27,20 @@ struct ButtonState {
 };
 
 static ButtonState buttons[] = {
-    {PIN_TRACKBALL_UP,    SlopOSTrackballEvent::Up,    true,  HIGH, false, false, 0, 0, DIRECTION_DEADTIME_MS},
-    {PIN_TRACKBALL_DOWN,  SlopOSTrackballEvent::Down,  true,  HIGH, false, false, 0, 0, DIRECTION_DEADTIME_MS},
-    {PIN_TRACKBALL_LEFT,  SlopOSTrackballEvent::Left,  true,  HIGH, false, false, 0, 0, DIRECTION_DEADTIME_MS},
-    {PIN_TRACKBALL_RIGHT, SlopOSTrackballEvent::Right, true,  HIGH, false, false, 0, 0, DIRECTION_DEADTIME_MS},
-    {PIN_TRACKBALL_BTN,   SlopOSTrackballEvent::Click, false, HIGH, false, false, 0, 0, CLICK_DEBOUNCE_MS},
+    {PIN_TRACKBALL_UP,    SigurdOSTrackballEvent::Up,    true,  HIGH, false, false, 0, 0, DIRECTION_DEADTIME_MS},
+    {PIN_TRACKBALL_DOWN,  SigurdOSTrackballEvent::Down,  true,  HIGH, false, false, 0, 0, DIRECTION_DEADTIME_MS},
+    {PIN_TRACKBALL_LEFT,  SigurdOSTrackballEvent::Left,  true,  HIGH, false, false, 0, 0, DIRECTION_DEADTIME_MS},
+    {PIN_TRACKBALL_RIGHT, SigurdOSTrackballEvent::Right, true,  HIGH, false, false, 0, 0, DIRECTION_DEADTIME_MS},
+    {PIN_TRACKBALL_BTN,   SigurdOSTrackballEvent::Click, false, HIGH, false, false, 0, 0, CLICK_DEBOUNCE_MS},
 };
 
 static bool initialized = false;
 static uint32_t initialized_at = 0;
-static SlopOSTrackballEvent event_queue[EVENT_QUEUE_SIZE];
+static SigurdOSTrackballEvent event_queue[EVENT_QUEUE_SIZE];
 static uint8_t queue_head = 0;
 static uint8_t queue_tail = 0;
 static uint8_t queue_count = 0;
-#if defined(SLOPOS_TRACKBALL_DEBUG)
+#if defined(SIGURDOS_TRACKBALL_DEBUG)
 static uint32_t last_debug_status_at = 0;
 #endif
 
@@ -50,27 +50,27 @@ static bool raw_pin_active(const ButtonState& btn)
     return btn.direction ? raw != btn.last_raw : raw == LOW;
 }
 
-#if defined(SLOPOS_TRACKBALL_DEBUG)
-static const char* event_name(SlopOSTrackballEvent event)
+#if defined(SIGURDOS_TRACKBALL_DEBUG)
+static const char* event_name(SigurdOSTrackballEvent event)
 {
     switch (event) {
-    case SlopOSTrackballEvent::Up: return "UP";
-    case SlopOSTrackballEvent::Down: return "DOWN";
-    case SlopOSTrackballEvent::Left: return "LEFT";
-    case SlopOSTrackballEvent::Right: return "RIGHT";
-    case SlopOSTrackballEvent::Click: return "CLICK";
-    case SlopOSTrackballEvent::None:
+    case SigurdOSTrackballEvent::Up: return "UP";
+    case SigurdOSTrackballEvent::Down: return "DOWN";
+    case SigurdOSTrackballEvent::Left: return "LEFT";
+    case SigurdOSTrackballEvent::Right: return "RIGHT";
+    case SigurdOSTrackballEvent::Click: return "CLICK";
+    case SigurdOSTrackballEvent::None:
     default: return "NONE";
     }
 }
 #endif
 
-static void queue_event(SlopOSTrackballEvent event)
+static void queue_event(SigurdOSTrackballEvent event)
 {
-#if defined(SLOPOS_TRACKBALL_DEBUG)
+#if defined(SIGURDOS_TRACKBALL_DEBUG)
     Serial.printf("[trackball] event=%s shadow=%d queue=%u raw(U,D,L,R,C)=%d,%d,%d,%d,%d active=%d,%d,%d,%d,%d ms=%lu\n",
                   event_name(event),
-#if defined(SLOPOS_TRACKBALL_DEBUG_SHADOW)
+#if defined(SIGURDOS_TRACKBALL_DEBUG_SHADOW)
                   1,
 #else
                   0,
@@ -87,7 +87,7 @@ static void queue_event(SlopOSTrackballEvent event)
                   raw_pin_active(buttons[3]),
                   raw_pin_active(buttons[4]),
                   (unsigned long)millis());
-#if defined(SLOPOS_TRACKBALL_DEBUG_SHADOW)
+#if defined(SIGURDOS_TRACKBALL_DEBUG_SHADOW)
     // Shadow debug mode: the debug print above fires, and we still queue the event
     // so trackball input is not silently dropped during shadow debugging.
 #endif
@@ -99,7 +99,7 @@ static void queue_event(SlopOSTrackballEvent event)
     queue_count++;
 }
 
-#if defined(SLOPOS_TRACKBALL_DEBUG)
+#if defined(SIGURDOS_TRACKBALL_DEBUG)
 static void debug_status(uint32_t now)
 {
     if (now - last_debug_status_at < DEBUG_STATUS_MS) return;
@@ -147,7 +147,7 @@ static void scan_direction(ButtonState& btn, uint32_t now)
 
     btn.last_raw = raw;
     btn.raw_changed_at = now;
-#if defined(SLOPOS_TRACKBALL_DEBUG)
+#if defined(SIGURDOS_TRACKBALL_DEBUG)
     debug_change(btn, true, now);
 #endif
 
@@ -169,7 +169,7 @@ static void scan_click(ButtonState& btn, uint32_t now)
     if (raw != btn.raw_active) {
         btn.raw_active = raw;
         btn.raw_changed_at = now;
-#if defined(SLOPOS_TRACKBALL_DEBUG)
+#if defined(SIGURDOS_TRACKBALL_DEBUG)
         debug_change(btn, raw, now);
 #endif
         return;
@@ -193,7 +193,7 @@ static void scan_button(ButtonState& btn, uint32_t now)
     }
 }
 
-bool slopos_trackball_init()
+bool sigurdos_trackball_init()
 {
     for (ButtonState& btn : buttons) {
         pinMode(btn.pin, INPUT_PULLUP);
@@ -201,10 +201,10 @@ bool slopos_trackball_init()
 
     initialized = true;
     initialized_at = millis();
-    slopos_trackball_reset_scan_state();
-#if defined(SLOPOS_TRACKBALL_DEBUG)
+    sigurdos_trackball_reset_scan_state();
+#if defined(SIGURDOS_TRACKBALL_DEBUG)
     Serial.printf("[trackball] debug enabled shadow=%d pins U=%u D=%u L=%u R=%u C=%u\n",
-#if defined(SLOPOS_TRACKBALL_DEBUG_SHADOW)
+#if defined(SIGURDOS_TRACKBALL_DEBUG_SHADOW)
                   1,
 #else
                   0,
@@ -225,12 +225,12 @@ bool slopos_trackball_init()
     return true;
 }
 
-void slopos_trackball_scan()
+void sigurdos_trackball_scan()
 {
     if (!initialized) return;
 
     const uint32_t now = millis();
-#if defined(SLOPOS_TRACKBALL_DEBUG)
+#if defined(SIGURDOS_TRACKBALL_DEBUG)
     debug_status(now);
 #endif
     for (ButtonState& btn : buttons) {
@@ -238,7 +238,7 @@ void slopos_trackball_scan()
     }
 }
 
-bool slopos_trackball_next_event(SlopOSTrackballEvent* out)
+bool sigurdos_trackball_next_event(SigurdOSTrackballEvent* out)
 {
     if (!out || queue_count == 0) return false;
 
@@ -248,19 +248,19 @@ bool slopos_trackball_next_event(SlopOSTrackballEvent* out)
     return true;
 }
 
-void slopos_trackball_inject(SlopOSTrackballEvent event)
+void sigurdos_trackball_inject(SigurdOSTrackballEvent event)
 {
-    if (event == SlopOSTrackballEvent::None) return;
+    if (event == SigurdOSTrackballEvent::None) return;
     queue_event(event);
 }
 
-void slopos_trackball_reset_scan_state()
+void sigurdos_trackball_reset_scan_state()
 {
     const uint32_t now = millis();
     queue_head = 0;
     queue_tail = 0;
     queue_count = 0;
-#if defined(SLOPOS_TRACKBALL_DEBUG)
+#if defined(SIGURDOS_TRACKBALL_DEBUG)
     last_debug_status_at = 0;
 #endif
 

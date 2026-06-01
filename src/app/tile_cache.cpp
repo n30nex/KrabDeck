@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// This file is part of SlopOS-TDeck.
+// This file is part of SigurdOS.
 //
 // Tile cache — LRU eviction for offline map tiles.
 // 4 entries default, uint64_t monotonic clock (safe from wrap).

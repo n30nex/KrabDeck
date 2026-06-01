@@ -1,6 +1,6 @@
 # Mesh Networking
 
-**SlopOS-TDeck's mesh networking layer — architecture, protocol integration, and feature reference.**
+**SigurdOS-TDeck's mesh networking layer — architecture, protocol integration, and feature reference.**
 
 The firmware implements a full MeshCore protocol stack on the LilyGo T-Deck (ESP32-S3 + SX1262 LoRa radio). The mesh layer is built around `SlopMesh`, a minimal `mesh::Mesh` subclass, with a clean wrapper API (`mesh_wrapper.h/cpp`) that the LVGL UI and terminal interface consume.
 
@@ -99,7 +99,7 @@ The mesh initialisation call chain:
 
 ```
 main.cpp
-  └─ slopos::mesh::init(spiffs_ok)          [mesh_wrapper.cpp:186]
+  └─ sigurdos::mesh::init(spiffs_ok)          [mesh_wrapper.cpp:186]
        ├─ fallback_clock.begin()
        ├─ rtc_clock.begin(Wire)
        ├─ Read NodePrefs (freq, bw, sf, cr, tx_power)
@@ -144,17 +144,17 @@ The LoRa radio, display (ST7789), and microSD card all share the **same SPI bus*
 
 SPI is **not** initialised globally with a single `SPI.begin()`. Each driver initialises the bus independently from its own entry point:
 
-1. **Display init** (`slopos_display_init`) — configures SPI for the ST7789 via LovyanGFX
-2. **Mesh init** (`slopos::mesh::init`) — calls `lora_spi.begin(P_LORA_SCLK, P_LORA_MISO, P_LORA_MOSI)` for the SX1262
-3. **SD card init** (`slopos_sdcard_init`) — SPI is already configured from step 1 or 2
+1. **Display init** (`sigurdos_display_init`) — configures SPI for the ST7789 via LovyanGFX
+2. **Mesh init** (`sigurdos::mesh::init`) — calls `lora_spi.begin(P_LORA_SCLK, P_LORA_MISO, P_LORA_MOSI)` for the SX1262
+3. **SD card init** (`sigurdos_sdcard_init`) — SPI is already configured from step 1 or 2
 
-The mesh init **must happen after display init** (display init is at step 5 in main.cpp, mesh at step 7). In remote test mode (`SLOPOS_REMOTE_TEST`), `mesh::init()` still calls `lora_spi.begin()` so the SPI bus is available for SD card, even though the radio is not used.
+The mesh init **must happen after display init** (display init is at step 5 in main.cpp, mesh at step 7). In remote test mode (`SIGURDOS_REMOTE_TEST`), `mesh::init()` still calls `lora_spi.begin()` so the SPI bus is available for SD card, even though the radio is not used.
 
 ---
 
 ## SlopMesh — Core Mesh Subclass
 
-`SlopMesh` (defined in `src/mesh/slop_mesh.h`) is a subclass of `mesh::Mesh` from the MeshCore library. It overrides virtual callbacks to integrate SlopOS-specific behaviour: contact storage, channel management, path learning, trace route, ping nearby, and packet logging.
+`SlopMesh` (defined in `src/mesh/slop_mesh.h`) is a subclass of `mesh::Mesh` from the MeshCore library. It overrides virtual callbacks to integrate SigurdOS-specific behaviour: contact storage, channel management, path learning, trace route, ping nearby, and packet logging.
 
 ### Dependency Injection
 
@@ -177,7 +177,7 @@ static StdRNG                    fast_rng;
 static SimpleMeshTables          tables;
 static ArduinoMillis             millis_clock;
 static StaticPoolPacketManager   pkt_mgr(16);
-static slopos::mesh::SlopMesh*   g_mesh = nullptr;
+static sigurdos::mesh::SlopMesh*   g_mesh = nullptr;
 ```
 
 ### Virtual Overrides
@@ -247,7 +247,7 @@ When a group message arrives over the radio, MeshCore calls `searchChannelsByHas
 ```
 
 - Payload is capped at 150 bytes of total content (5 byte header + up to 150 byte body)
-- UTF-8 safe truncation via `slopos::utf8_truncate_bytes()`
+- UTF-8 safe truncation via `sigurdos::utf8_truncate_bytes()`
 - Messages are flood-routed (`sendFlood()`)
 - The prefix `<sender_name>: ` matches what `onGroupDataRecv` expects to parse
 
@@ -405,7 +405,7 @@ The Finder screen (`src/ui/screens.cpp:564`) provides the "Ping Nearby" UI:
 
 ## Path Learning & Route Discovery
 
-MeshCore uses a distributed routing table (`MeshTables`) to learn paths between nodes. SlopOS uses `SimpleMeshTables` and stores learned per-contact paths for direct routing.
+MeshCore uses a distributed routing table (`MeshTables`) to learn paths between nodes. SigurdOS uses `SimpleMeshTables` and stores learned per-contact paths for direct routing.
 
 ### SimpleMeshTables
 
@@ -567,7 +567,7 @@ The node's cryptographic identity (private key + public key) is persisted in SPI
 
 ### Channel Persistence (NVS)
 
-Channels are persisted using ESP32 **NVS** (Non-Volatile Storage) under the `"slopos"` namespace:
+Channels are persisted using ESP32 **NVS** (Non-Volatile Storage) under the `"sigurdos"` namespace:
 
 ```cpp
 void saveChannels()   // mesh_wrapper.cpp:561

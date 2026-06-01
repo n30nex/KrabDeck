@@ -12,7 +12,7 @@
 #include <cstring>
 #include <cmath>
 
-namespace slopos::ui {
+namespace sigurdos::ui {
 
 using namespace theme;
 using namespace responsive;
@@ -137,7 +137,7 @@ static void build_step2()
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 18);
 
     int y, mo, d, h, mi;
-    slopos::mesh::getCurrentLocalDateTime(&y, &mo, &d, &h, &mi);
+    sigurdos::mesh::getCurrentLocalDateTime(&y, &mo, &d, &h, &mi);
 
     lv_obj_t* dl = lv_label_create(s_content);
     lv_label_set_text(dl, "Date (YYYY-MM-DD):");
@@ -223,8 +223,8 @@ static void build_step2()
                         nh >= 0 && nh <= 23 && nmi >= 0 && nmi <= 59);
 
         if (date_ok && time_ok) {
-            uint32_t epoch = slopos::mesh::makeEpoch(ny, nm, nd, nh, nmi);
-            slopos::mesh::setSystemTime(epoch);
+            uint32_t epoch = sigurdos::mesh::makeEpoch(ny, nm, nd, nh, nmi);
+            sigurdos::mesh::setSystemTime(epoch);
         }
 
         s_step = 2;
@@ -240,7 +240,7 @@ static void build_step3()
     clear_widget_ptrs();
 
     // Reload from prefs — "Full Radio Setup" may have changed freq/SF/power
-    const auto& p = slopos::prefs_get();
+    const auto& p = sigurdos::prefs_get();
     s_freq = p.configured ? p.freq : 869.618f;
     s_sf   = p.configured ? p.sf   : 8;
     s_pwr  = p.configured ? p.tx_power_dbm : 22;
@@ -371,7 +371,7 @@ static void build_step3()
     lv_obj_set_style_text_font(ctl, &lv_font_montserrat_10, 0);
     lv_obj_center(ctl);
     lv_obj_add_event_cb(custom_btn, [](lv_event_t*) {
-        slopos::ui::radio_setup_screen_show();
+        sigurdos::ui::radio_setup_screen_show();
     }, LV_EVENT_CLICKED, nullptr);
 
     // Bottom: Back + Done
@@ -397,7 +397,7 @@ static void build_step3()
     lv_label_set_text(dl, LV_SYMBOL_OK "  Done");
     lv_obj_center(dl);
     lv_obj_add_event_cb(done_btn, [](lv_event_t*) {
-        slopos::NodePrefs np = slopos::prefs_get();
+        sigurdos::NodePrefs np = sigurdos::prefs_get();
         strncpy(np.node_name, s_name, sizeof(np.node_name) - 1);
         np.node_name[sizeof(np.node_name) - 1] = '\0';
         np.freq = s_freq;
@@ -406,13 +406,13 @@ static void build_step3()
         np.cr = 5;
         np.tx_power_dbm = (int8_t)s_pwr;
         np.configured = true;
-        slopos::mesh::setOwnName(s_name);
-        slopos::prefs_set(np);
+        sigurdos::mesh::setOwnName(s_name);
+        sigurdos::prefs_set(np);
         // Auto-join the Public channel so new devices can receive group messages
         // immediately. Without this, a freshly-flashed device has zero channels
         // and cannot decrypt any group traffic after restart.
-        slopos::mesh::joinPublicChannel();
-        slopos::mesh::saveChannels();
+        sigurdos::mesh::joinPublicChannel();
+        sigurdos::mesh::saveChannels();
         chat_save_messages();
         delay(100); // allow SPIFFS writes to complete before restart
         ESP.restart();
@@ -440,7 +440,7 @@ static void rebuild_content()
 void onboarding_screen_show()
 {
     screens_clear_back_btn();
-    const slopos::NodePrefs& p = slopos::prefs_get();
+    const sigurdos::NodePrefs& p = sigurdos::prefs_get();
 
     strncpy(s_name, p.node_name, sizeof(s_name) - 1);
     s_name[sizeof(s_name) - 1] = '\0';
@@ -513,4 +513,4 @@ static void show_screen(lv_obj_t* scr)
     lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_LEFT, 200, 0, true);
 }
 
-} // namespace slopos::ui
+} // namespace sigurdos::ui

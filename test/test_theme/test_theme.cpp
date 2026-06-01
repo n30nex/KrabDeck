@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// This file is part of SlopOS-TDeck.
+// This file is part of SigurdOS.
 //
-// SlopOS-TDeck is free software: you can redistribute it and/or modify
+// SigurdOS is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// SlopOS-TDeck is distributed in the hope that it will be useful,
+// SigurdOS is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
+// along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
 
 /**
@@ -33,7 +33,7 @@ class ThemeTest : public ::testing::Test {};
 
 // ── Background colors are dark ──────────────────────────
 TEST_F(ThemeTest, BackgroundColorsAreDark) {
-    using namespace slopos::theme;
+    using namespace sigurdos::theme;
     // All background colors should have low brightness (< 0x30 per channel)
     auto is_dark = [](uint32_t c) {
         return ((c >> 16) & 0xFF) < 0x30 &&
@@ -48,7 +48,7 @@ TEST_F(ThemeTest, BackgroundColorsAreDark) {
 
 // ── Accent colors are vibrant ───────────────────────────
 TEST_F(ThemeTest, AccentColorsAreBright) {
-    using namespace slopos::theme;
+    using namespace sigurdos::theme;
     // Accent colors should have at least one channel > 0xA0
     auto is_vibrant = [](uint32_t c) {
         return ((c >> 16) & 0xFF) > 0xA0 ||
@@ -63,7 +63,7 @@ TEST_F(ThemeTest, AccentColorsAreBright) {
 
 // ── Text colors are readable ─────────────────────────────
 TEST_F(ThemeTest, TextColorsAreLight) {
-    using namespace slopos::theme;
+    using namespace sigurdos::theme;
     auto is_light = [](uint32_t c) {
         int sum = ((c >> 16) & 0xFF) + ((c >> 8) & 0xFF) + (c & 0xFF);
         return sum > 350; // average > ~117 per channel
@@ -72,7 +72,7 @@ TEST_F(ThemeTest, TextColorsAreLight) {
 }
 
 TEST_F(ThemeTest, MutedTextIsDimmerThanPrimary) {
-    using namespace slopos::theme;
+    using namespace sigurdos::theme;
     auto brightness = [](uint32_t c) {
         return ((c >> 16) & 0xFF) + ((c >> 8) & 0xFF) + (c & 0xFF);
     };
@@ -82,7 +82,7 @@ TEST_F(ThemeTest, MutedTextIsDimmerThanPrimary) {
 
 // ── All constants are non-zero ──────────────────────────
 TEST_F(ThemeTest, AllConstantsNonZero) {
-    using namespace slopos::theme;
+    using namespace sigurdos::theme;
     EXPECT_NE(BG_PRIMARY,     0U);
     EXPECT_NE(BG_SECONDARY,   0U);
     EXPECT_NE(BG_TERTIARY,    0U);
@@ -103,7 +103,7 @@ TEST_F(ThemeTest, AllConstantsNonZero) {
 
 // ── Color uniqueness ────────────────────────────────────
 TEST_F(ThemeTest, AccentColorsAreDistinct) {
-    using namespace slopos::theme;
+    using namespace sigurdos::theme;
     EXPECT_NE(ACCENT, ACCENT_GREEN);
     EXPECT_NE(ACCENT, ACCENT_RED);
     EXPECT_NE(ACCENT_GREEN, ACCENT_RED);
@@ -111,7 +111,7 @@ TEST_F(ThemeTest, AccentColorsAreDistinct) {
 }
 
 TEST_F(ThemeTest, BackgroundColorsAreDistinct) {
-    using namespace slopos::theme;
+    using namespace sigurdos::theme;
     EXPECT_NE(BG_PRIMARY, BG_SECONDARY);
     EXPECT_NE(BG_PRIMARY, BG_TERTIARY);
     EXPECT_NE(BG_SECONDARY, BG_TERTIARY);

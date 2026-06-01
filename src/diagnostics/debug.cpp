@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// Comprehensive debug module for SlopOS-TDeck.
-// Build with -D SLOPOS_DEBUG=1 (env:SlopOS_TDeck_debug in platformio.ini).
+// Comprehensive debug module for SigurdOS.
+// Build with -D SIGURDOS_DEBUG=1 (env:SigurdOS_TDeck_debug in platformio.ini).
 //
 // Per-feature flags can be set independently — see debug_cfg.h.
 //
@@ -17,7 +17,7 @@
 #include "debug.h"
 #include "debug_cfg.h"
 
-#if defined(SLOPOS_DEBUG) && SLOPOS_DEBUG
+#if defined(SIGURDOS_DEBUG) && SIGURDOS_DEBUG
 
 #include <Arduino.h>
 #include <lvgl.h>
@@ -33,7 +33,7 @@
 #include "../ui/navigation.h"
 #include "../mesh/mesh_wrapper.h"
 
-namespace slopos {
+namespace sigurdos {
 namespace debug {
 
 using namespace responsive;
@@ -42,19 +42,19 @@ using namespace theme;
 static constexpr uint32_t DUMP_INTERVAL_MS = 5000;
 static uint32_t last_dump_ms = 0;
 static uint8_t  current_level = 
-    (SLOPOS_DEBUG_LEVEL < 1) ? 1 :
-    (SLOPOS_DEBUG_LEVEL > 3) ? 3 :
-    (uint8_t)SLOPOS_DEBUG_LEVEL;
+    (SIGURDOS_DEBUG_LEVEL < 1) ? 1 :
+    (SIGURDOS_DEBUG_LEVEL > 3) ? 3 :
+    (uint8_t)SIGURDOS_DEBUG_LEVEL;
 
 // ── Per-feature runtime state ─────────────────────────────
 // Default to the compile-time flag so builds with individual
-// flags start with that feature on, and full-SLOPOS_DEBUG builds
+// flags start with that feature on, and full-SIGURDOS_DEBUG builds
 // start with everything on.
-static bool feat_display = SLOPOS_DEBUG_DISPLAY ? true : false;
-static bool feat_mesh    = SLOPOS_DEBUG_MESH    ? true : false;
-static bool feat_ui      = SLOPOS_DEBUG_UI      ? true : false;
-static bool feat_map     = SLOPOS_DEBUG_MAP     ? true : false;
-static bool feat_diag    = SLOPOS_DEBUG_DIAG    ? true : false;
+static bool feat_display = SIGURDOS_DEBUG_DISPLAY ? true : false;
+static bool feat_mesh    = SIGURDOS_DEBUG_MESH    ? true : false;
+static bool feat_ui      = SIGURDOS_DEBUG_UI      ? true : false;
+static bool feat_map     = SIGURDOS_DEBUG_MAP     ? true : false;
+static bool feat_diag    = SIGURDOS_DEBUG_DIAG    ? true : false;
 
 void feat_set_display(bool on) { feat_display = on; }
 bool feat_get_display() { return feat_display; }
@@ -110,7 +110,7 @@ void init()
 {
     Serial.println();
     Serial.println("╔══════════════════════════════════════════════╗");
-    Serial.println("║   SlopOS-TDeck DEBUG build                  ║");
+    Serial.println("║   SigurdOS DEBUG build                  ║");
     Serial.println("║   (light periodic status; heavy dumps on demand) ║");
     Serial.printf(  "║   Debug level: %u                               ║\n", (unsigned)current_level);
     uint8_t mask = feat_to_mask();
@@ -131,7 +131,7 @@ void init()
                   (unsigned)current_level,
                   (unsigned)ESP.getFreeHeap(),
                   (unsigned)ESP.getFreePsram(),
-                  (unsigned)slopos_battery_pct());
+                  (unsigned)sigurdos_battery_pct());
     last_dump_ms = now;
 }
 
@@ -151,7 +151,7 @@ void loop()
                       (unsigned)ESP.getFreeHeap(),
                       (unsigned)ESP.getMinFreeHeap(),
                       (unsigned)ESP.getFreePsram(),
-                      (unsigned)slopos_battery_pct(),
+                      (unsigned)sigurdos_battery_pct(),
                       (unsigned long)0 /* flush count is local to display.cpp */,
                       (unsigned)feat_to_mask());
 
@@ -172,7 +172,7 @@ void dump_system()
     uint32_t now = millis();
 
     Serial.println();
-    Serial.println("━━━━━━━━━━━━━━ SlopOS DEBUG DUMP ━━━━━━━━━━━━━━");
+    Serial.println("━━━━━━━━━━━━━━ SigurdOS DEBUG DUMP ━━━━━━━━━━━━━━");
     Serial.printf("[sys]  uptime=%.1fs  free_heap=%u  min_heap=%u  free_psram=%u  min_psram=%u\n",
                   now / 1000.0f,
                   (unsigned)ESP.getFreeHeap(),
@@ -186,8 +186,8 @@ void dump_system()
                   (unsigned)ESP.getFlashChipSize(),
                   (unsigned)ESP.getFreeSketchSpace());
 
-    uint16_t mv = slopos_battery_mv();
-    uint8_t pct = slopos_battery_pct();
+    uint16_t mv = sigurdos_battery_mv();
+    uint8_t pct = sigurdos_battery_pct();
     Serial.printf("[batt] mv=%u  pct=%u%%\n", (unsigned)mv, (unsigned)pct);
 
     // Feature-conditional dumps
@@ -217,7 +217,7 @@ void dump_display_config()
     Serial.printf("  PIXEL_BORDER=%d\n", PIXEL_BORDER);
     Serial.printf("  LV_COLOR_DEPTH=%d  LV_COLOR_FORMAT=%d\n",
                   (int)LV_COLOR_DEPTH, (int)LV_COLOR_FORMAT_NATIVE);
-    Serial.printf("  display_on=%d\n", slopos_display_is_on() ? 1 : 0);
+    Serial.printf("  display_on=%d\n", sigurdos_display_is_on() ? 1 : 0);
 
     lv_display_t* disp = lv_display_get_default();
     if (disp) {
@@ -363,17 +363,17 @@ void dump_memory()
 void dump_mesh_state()
 {
     Serial.println("[mesh] ── radio & contacts ──");
-    Serial.printf("  own_name=%s\n", slopos::mesh::getOwnName());
+    Serial.printf("  own_name=%s\n", sigurdos::mesh::getOwnName());
     Serial.printf("  contacts=%d  channels=%d\n",
-                  slopos::mesh::getContactCount(),
-                  slopos::mesh::getChannelCount());
+                  sigurdos::mesh::getContactCount(),
+                  sigurdos::mesh::getChannelCount());
     Serial.printf("  rssi=%d  snr=%.1f  noise=%d\n",
-                  slopos::mesh::getLastRSSI(),
-                  slopos::mesh::getLastSNR(),
-                  slopos::mesh::getNoiseFloor());
+                  sigurdos::mesh::getLastRSSI(),
+                  sigurdos::mesh::getLastSNR(),
+                  sigurdos::mesh::getNoiseFloor());
 }
 
 } // namespace debug
-} // namespace slopos
+} // namespace sigurdos
 
-#endif // SLOPOS_DEBUG
+#endif // SIGURDOS_DEBUG

@@ -36,7 +36,7 @@ The Signal screen is a read-only dashboard displaying real-time radio statistics
 │         └──────────────┘         │
 │                                  │
 ├──────────────────────────────────┤
-│ SlopOS T-Deck   ▂▄▆█       72%  │  ← bottom bar (from make_screen_full)
+│ SigurdOS T-Deck   ▂▄▆█       72%  │  ← bottom bar (from make_screen_full)
 └──────────────────────────────────┘
 ```
 
@@ -46,9 +46,9 @@ The Signal screen is a read-only dashboard displaying real-time radio statistics
 
 | Metric | API Call | Type | Description |
 |--------|----------|------|-------------|
-| **RSSI** | `slopos::mesh::getLastRSSI()` | `int` (dBm) | Last received packet's signal strength. Negative values; closer to 0 = stronger. Typically −50 to −120 dBm. |
-| **SNR** | `slopos::mesh::getLastSNR()` | `float` (dB) | Last received packet's signal-to-noise ratio. Positive = signal above noise floor. Typically −10 to +15 dB. |
-| **Noise Floor** | `slopos::mesh::getNoiseFloor()` | `int` (dBm) | Background RF noise level measured by the SX1262. More negative = quieter band. |
+| **RSSI** | `sigurdos::mesh::getLastRSSI()` | `int` (dBm) | Last received packet's signal strength. Negative values; closer to 0 = stronger. Typically −50 to −120 dBm. |
+| **SNR** | `sigurdos::mesh::getLastSNR()` | `float` (dB) | Last received packet's signal-to-noise ratio. Positive = signal above noise floor. Typically −10 to +15 dB. |
+| **Noise Floor** | `sigurdos::mesh::getNoiseFloor()` | `int` (dBm) | Background RF noise level measured by the SX1262. More negative = quieter band. |
 
 ### Radio Configuration (from `NodePrefs`)
 
@@ -84,10 +84,10 @@ The user must navigate to **Settings > Radio** (`radio_setup_screen_show()`) to 
 
 1. Calls `make_screen_full("Signal")` to construct the standard top bar + bottom bar chrome.
 2. Queries three runtime metrics via the mesh wrapper:
-   - `slopos::mesh::getLastRSSI()` — most recent RX RSSI
-   - `slopos::mesh::getLastSNR()` — most recent RX SNR
-   - `slopos::mesh::getNoiseFloor()` — current RF noise floor
-3. Reads persisted `NodePrefs` via `slopos::prefs_get()`.
+   - `sigurdos::mesh::getLastRSSI()` — most recent RX RSSI
+   - `sigurdos::mesh::getLastSNR()` — most recent RX SNR
+   - `sigurdos::mesh::getNoiseFloor()` — current RF noise floor
+3. Reads persisted `NodePrefs` via `sigurdos::prefs_get()`.
 4. Composes a single multi-line label centred in the content area with `lv_font_montserrat_12`.
 5. Conditional formatting:
    - **Configured** (`p.configured == true`): displays all 8 metrics (RSSI, SNR, noise, freq, BW, SF, CR, TX power).

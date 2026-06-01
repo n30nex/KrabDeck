@@ -4,9 +4,9 @@
 #include "prefs.h"
 #include <Preferences.h>
 
-namespace slopos {
+namespace sigurdos {
 
-static constexpr const char* NVS_NS = "slopos";
+static constexpr const char* NVS_NS = "sigurdos";
 static NodePrefs g_prefs;
 
 bool prefs_load(NodePrefs& p) {
@@ -110,7 +110,7 @@ void prefs_set(const NodePrefs& p) {
 }
 
 // ── Repeater password storage ─────────────────────────────────────────
-static constexpr const char* PW_NS = "slopos_pw";
+static constexpr const char* PW_NS = "sigurdos_pw";
 static constexpr int MAX_SAVED_PWS = 8;
 
 bool saveRepeaterPassword(const char* name, const char* password) {
@@ -220,4 +220,4 @@ void removeRepeaterPassword(const char* name) {
     nvs.end();
 }
 
-} // namespace slopos
+} // namespace sigurdos

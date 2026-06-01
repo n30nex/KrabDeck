@@ -3,12 +3,12 @@
 
 #include <gtest/gtest.h>
 #include "utils/utf8_util.h"
-using namespace slopos;
+using namespace sigurdos;
 
 TEST(Utf8Truncation, AsciiOnly) {
     const char* s = "Hello World";
-    EXPECT_EQ(slopos::utf8_truncate_bytes(s, 100), strlen(s));  // fits
-    EXPECT_EQ(slopos::utf8_truncate_bytes(s, 5), 5);            // "Hello" — clean cut at ASCII boundary
+    EXPECT_EQ(sigurdos::utf8_truncate_bytes(s, 100), strlen(s));  // fits
+    EXPECT_EQ(sigurdos::utf8_truncate_bytes(s, 5), 5);            // "Hello" — clean cut at ASCII boundary
 }
 
 TEST(Utf8Truncation, AsciiExactlyAtLimit) {

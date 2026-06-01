@@ -1,12 +1,12 @@
-# SlopOS T-Deck — Hardware Reference
+# SigurdOS T-Deck — Hardware Reference
 
 > Complete documentation of all T-Deck peripherals, pin assignments, interfaces,
-> and configuration details for the SlopOS T-Deck firmware.
+> and configuration details for the SigurdOS T-Deck firmware.
 
 **Board:** LilyGo T-Deck  
 **MCU:** ESP32-S3 (240 MHz, 16 MB flash, 8 MB PSRAM)  
 **Source:** `src/hal/tdeck_pins.h` — canonical pin definitions  
-**Firmware Version:** `SLOPOS_VERSION` (`src/hal/tdeck_pins.h`)
+**Firmware Version:** `SIGURDOS_VERSION` (`src/hal/tdeck_pins.h`)
 
 ---
 
@@ -158,7 +158,7 @@ The GT911 touch controller and keyboard MCU share a single I2C bus on pins 18
 - Wake triggers: touch press, keyboard key, trackball event
 - Wake sequence: restore backlight, keyboard backlight, re-assert rotation(1),
   invalidate active screen
-- **Disabled** in `SLOPOS_DEBUG_DISPLAY` builds (screen must stay on for
+- **Disabled** in `SIGURDOS_DEBUG_DISPLAY` builds (screen must stay on for
   observation).
 
 ### Pixel Format
@@ -216,7 +216,7 @@ raw_x, raw_y  →  swap XY  →  scale to 320×240  →  mirror Y  →  clamp
 
 ### Data Read
 
-- Polled every 10 ms in `slopos_touch_loop()`
+- Polled every 10 ms in `sigurdos_touch_loop()`
 - INT pin goes LOW when data is ready
 - Read 40 bytes (5 points × 8 bytes each) from status register + 1
 - Acknowledge by writing 0 to status register
@@ -279,8 +279,8 @@ Row6   Mic      LShift   f        j        k
 
 | API Call                                          | Effect                          |
 |----------------------------------------------------|---------------------------------|
-| `slopos_keyboard_set_brightness(duty)` (0–255)     | Set immediate brightness        |
-| `slopos_keyboard_set_default_brightness(duty)`     | Set brightness for Alt+B toggle |
+| `sigurdos_keyboard_set_brightness(duty)` (0–255)     | Set immediate brightness        |
+| `sigurdos_keyboard_set_default_brightness(duty)`     | Set brightness for Alt+B toggle |
 
 - Minimum default brightness: **30** (below this yields no light on toggle)
 - Default stored in NVS (`NodePrefs.kbd_backlight`, initial value 127)
@@ -328,7 +328,7 @@ Row6   Mic      LShift   f        j        k
 |--------------------|-------|
 | Queue Size         | 8     |
 | Storage            | Ring buffer (head/tail) |
-| Drain              | `slopos_trackball_next_event()` in display loop |
+| Drain              | `sigurdos_trackball_next_event()` in display loop |
 | Fallback Queue     | 8-entry fallback in `display.cpp` when LVGL can't process |
 
 ### LVGL Integration
@@ -373,7 +373,7 @@ pct = ((mv - 3000) * 100) / (4200 - 3000);
 - Checked every 30 seconds in `main.cpp loop()`
 - If `mv < 3200`: enters deep sleep indefinitely (`board.sleep(0)`)
 - Shutdown powers off peripherals via `PIN_PERIPH_PWR` LOW
-- No dedicated charge-detect pin — `slopos_battery_charging()` always returns
+- No dedicated charge-detect pin — `sigurdos_battery_charging()` always returns
   `false`
 
 ---
@@ -403,15 +403,15 @@ pct = ((mv - 3000) * 100) / (4200 - 3000);
 
 | Function              | Source Sentence | Type   |
 |-----------------------|-----------------|--------|
-| `slopos_gps_latitude`  | GGA             | float  |
-| `slopos_gps_longitude` | GGA             | float  |
-| `slopos_gps_altitude_m`| GGA             | float  |
-| `slopos_gps_speed_kn`  | RMC             | float  |
-| `slopos_gps_heading`   | RMC             | float  |
-| `slopos_gps_satellites`| GGA             | uint8  |
-| `slopos_gps_fix_quality`| GGA            | uint8  (0=none, 1=GPS, 2=DGPS) |
-| `slopos_gps_has_fix`   | Combined        | bool   |
-| `slopos_gps_hour/min/sec` | GGA        | uint8  (UTC) |
+| `sigurdos_gps_latitude`  | GGA             | float  |
+| `sigurdos_gps_longitude` | GGA             | float  |
+| `sigurdos_gps_altitude_m`| GGA             | float  |
+| `sigurdos_gps_speed_kn`  | RMC             | float  |
+| `sigurdos_gps_heading`   | RMC             | float  |
+| `sigurdos_gps_satellites`| GGA             | uint8  |
+| `sigurdos_gps_fix_quality`| GGA            | uint8  (0=none, 1=GPS, 2=DGPS) |
+| `sigurdos_gps_has_fix`   | Combined        | bool   |
+| `sigurdos_gps_hour/min/sec` | GGA        | uint8  (UTC) |
 
 ### Init Sequence
 
@@ -432,9 +432,9 @@ pct = ((mv - 3000) * 100) / (4200 - 3000);
 | MISO               | 38 (shared)                      |
 | SPI Speed          | **4 MHz** (`SD.begin(..., 4000000)`) |
 | Filesystem         | FATFS via Arduino SD library     |
-| VFS Mountpoint     | **`/sdcard`** (`SLOPOS_SD_MOUNTPOINT`) |
+| VFS Mountpoint     | **`/sdcard`** (`SIGURDOS_SD_MOUNTPOINT`) |
 | Init Retries       | 3 attempts, 500 ms apart         |
-| Capacity           | Exposed via `slopos_sdcard_capacity_bytes()` |
+| Capacity           | Exposed via `sigurdos_sdcard_capacity_bytes()` |
 
 ### Shared Bus Note
 
@@ -454,13 +454,13 @@ If the SD card is initialised first with unconfigured pins, FATFS returns
 
 | Function                             | Purpose                   |
 |--------------------------------------|---------------------------|
-| `slopos_sdcard_init()`              | Mount SD card (3 retries) |
-| `slopos_sdcard_mounted()`           | Check mount status        |
-| `slopos_sdcard_capacity_bytes()`    | Total card capacity       |
-| `slopos_sdcard_free_bytes()`        | Free space                |
-| `slopos_sdcard_read(path, buf, len)`| Read file                 |
-| `slopos_sdcard_write(path, data, len)`| Write file              |
-| `slopos_sdcard_exists(path)`        | File existence check      |
+| `sigurdos_sdcard_init()`              | Mount SD card (3 retries) |
+| `sigurdos_sdcard_mounted()`           | Check mount status        |
+| `sigurdos_sdcard_capacity_bytes()`    | Total card capacity       |
+| `sigurdos_sdcard_free_bytes()`        | Free space                |
+| `sigurdos_sdcard_read(path, buf, len)`| Read file                 |
+| `sigurdos_sdcard_write(path, data, len)`| Write file              |
+| `sigurdos_sdcard_exists(path)`        | File existence check      |
 
 ### T-Deck v1.0 Note
 
@@ -606,23 +606,23 @@ Radio parameters are configurable at runtime via NVS (`NodePrefs`):
      → ADC resolution 12-bit
      → Wire.begin(18, 8)
      → Deep sleep wake detection
-3. slopos_battery_init()
+3. sigurdos_battery_init()
 4. SPIFFS.begin()
-5. slopos_gps_init()
-6. slopos_display_init()
+5. sigurdos_gps_init()
+6. sigurdos_display_init()
      → LovyanGFX init (rotation 1, 320×240)
      → LVGL init
      → Touch init (GT911 I2C)
      → Keyboard init (ESP32-C3 I2C)
      → Trackball init (GPIO)
-7. slopos::mesh::init()
+7. sigurdos::mesh::init()
      → LoRa SPI bus init
      → SX1262 hard reset + std_init
      → Radio config from prefs or defaults
      → MeshCore SlopMesh init
-8. slopos::ui::init()
-9. slopos_sdcard_init()
-10. slopos_map_init()
+8. sigurdos::ui::init()
+9. sigurdos_sdcard_init()
+10. sigurdos_map_init()
 ```
 
 ---

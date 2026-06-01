@@ -3,20 +3,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// This file is part of SlopOS-TDeck.
+// This file is part of SigurdOS.
 //
-// SlopOS-TDeck is free software: you can redistribute it and/or modify
+// SigurdOS is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// SlopOS-TDeck is distributed in the hope that it will be useful,
+// SigurdOS is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
+// along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
 #include <cstdint>
 
@@ -28,47 +28,47 @@
 // Initialize communication with the keyboard MCU
 // Must be called after I2C bus is configured (Wire.begin)
 // Returns true if keyboard is detected
-bool slopos_keyboard_init();
+bool sigurdos_keyboard_init();
 
 // Poll the keyboard for new keypresses (call each frame)
 // Reads 1 byte from I2C — non-zero means a key was pressed
-void slopos_keyboard_scan();
+void sigurdos_keyboard_scan();
 
 // Get the key code of the last keypress (ASCII char, 0 if none, -1 on error)
-int slopos_keyboard_get_key();
+int sigurdos_keyboard_get_key();
 
 // Returns true if a new key event is available (one-shot, consumed on read)
 /// @brief Check if a new keyboard event is available (non-destructive predicate).
 /// @return true if an event is pending (does NOT consume it).
-bool slopos_keyboard_has_event();
+bool sigurdos_keyboard_has_event();
 
 /// @brief Consume a pending event — returns true if one was available and clears the flag.
-/// Use this instead of slopos_keyboard_has_event() when you intend to immediately
-/// call slopos_keyboard_consume_key() afterward.
+/// Use this instead of sigurdos_keyboard_has_event() when you intend to immediately
+/// call sigurdos_keyboard_consume_key() afterward.
 /// @return true if an event was consumed
-bool slopos_keyboard_consume_event();
+bool sigurdos_keyboard_consume_event();
 
 // ── Backlight control ──────────────────────────────────
 // Set keyboard backlight brightness (0-255, 0=off)
-void slopos_keyboard_set_brightness(uint8_t duty);
+void sigurdos_keyboard_set_brightness(uint8_t duty);
 
 // Set the default brightness used when toggling with Alt+B (30-255)
-void slopos_keyboard_set_default_brightness(uint8_t duty);
+void sigurdos_keyboard_set_default_brightness(uint8_t duty);
 
 // ── Modifier state (derived from key codes, not I2C) ───
-bool slopos_keyboard_is_shift();
-bool slopos_keyboard_is_ctrl();
-bool slopos_keyboard_is_alt();
+bool sigurdos_keyboard_is_shift();
+bool sigurdos_keyboard_is_ctrl();
+bool sigurdos_keyboard_is_alt();
 
 // Reset internal scan state (poll timer, key buffer, modifier flags).
 // Does NOT reset the `initialized` flag or I2C communication.
 // Useful for testing and on device wake from deep sleep.
-void slopos_keyboard_reset_scan_state();
+void sigurdos_keyboard_reset_scan_state();
 
 // Consume/clear the current key event (used by LVGL indev after reporting a press).
 // Prevents the same character from being fed again on the next read.
-void slopos_keyboard_consume_key();
+void sigurdos_keyboard_consume_key();
 
 // Inject a simulated keypress (for remote test mode).
 // key_code: ASCII character or special code (0x0D=Enter, 0x08=Backspace, 0x1B=Esc).
-void slopos_keyboard_inject(uint8_t key_code);
+void sigurdos_keyboard_inject(uint8_t key_code);

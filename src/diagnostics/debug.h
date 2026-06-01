@@ -3,11 +3,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// Comprehensive device-wide debug diagnostics for SlopOS-TDeck.
-// Enabled by building with -D SLOPOS_DEBUG=1 (see platformio.ini debug env).
+// Comprehensive device-wide debug diagnostics for SigurdOS.
+// Enabled by building with -D SIGURDOS_DEBUG=1 (see platformio.ini debug env).
 // Per-feature flags in debug_cfg.h allow independent feature debug control.
 //
-// Debug levels (SLOPOS_DEBUG_LEVEL):
+// Debug levels (SIGURDOS_DEBUG_LEVEL):
 //   1 = Quiet   — test controller output only, no periodic stats/flushes/pins
 //   2 = Normal  — periodic [stat] + [pins] every 5s, [flush] on each frame
 //   3 = Verbose — all of level 2 plus on-demand heavy dumps
@@ -17,13 +17,13 @@
 
 #include <cstdint>
 
-#ifndef SLOPOS_DEBUG_LEVEL
-#define SLOPOS_DEBUG_LEVEL 2
+#ifndef SIGURDOS_DEBUG_LEVEL
+#define SIGURDOS_DEBUG_LEVEL 2
 #endif
 
-#if defined(SLOPOS_DEBUG) && (SLOPOS_DEBUG)
+#if defined(SIGURDOS_DEBUG) && (SIGURDOS_DEBUG)
 
-namespace slopos {
+namespace sigurdos {
 namespace debug {
 
 void init();
@@ -58,13 +58,13 @@ void dump_display_config();
 void dump_mesh_state();
 
 } // namespace debug
-} // namespace slopos
+} // namespace sigurdos
 
 #else
 
 // Empty inline stubs for non-debug builds — safe to call from any code
 // without linker errors, compiled to zero instructions.
-namespace slopos {
+namespace sigurdos {
 namespace debug {
 
 inline void init() {}
@@ -95,6 +95,6 @@ inline void dump_display_config() {}
 inline void dump_mesh_state() {}
 
 } // namespace debug
-} // namespace slopos
+} // namespace sigurdos
 
 #endif

@@ -1,4 +1,4 @@
-# SlopOS T-Deck — Agent Guide (Synced from Codebase)
+# SigurdOS T-Deck — Agent Guide (Synced from Codebase)
 
 **This file is auto-synced from the codebase.** It reflects the actual codebase state as of the last automated sync. Changes made by PRs will eventually be overwritten by the next sync — do not edit manually. The locked reference files are `AGENTS.md` and `CLAUDE.md`.
 
@@ -17,7 +17,7 @@ pio test -e native_test -v
 pio test -e native_test -f test_keyboard -v
 
 # Build firmware
-pio run -e SlopOS_TDeck
+pio run -e SigurdOS_TDeck
 
 # List all test modules
 pio test -e native_test --list-tests
@@ -63,7 +63,7 @@ src/
 │   └── lodepng_alloc.cpp  # lodepng allocator → PSRAM with DRAM fallback
 ├── diagnostics/
 │   ├── debug_cfg.h        # Per-feature debug flag selection (runtime toggle)
-│   └── debug.cpp/h        # Debug dumps (SLOPOS_DEBUG=1 build)
+│   └── debug.cpp/h        # Debug dumps (SIGURDOS_DEBUG=1 build)
 ├── fonts/
 │   ├── emoji_font_setup.cpp    # Emoji font fallback registration for LVGL (header: emoji_font.h)
 │   ├── emoji_font.c/h          # Compiled emoji font bitmap data (16px, Noto Emoji derivative)
@@ -71,7 +71,7 @@ src/
 │   └── emoji_images/           # Emoji picker image assets (generated)
 │       ├── emoji_picker_images.h
 │       └── emoji_picker_index.h
-├── test/                  # Remote test controller (SLOPOS_REMOTE_TEST=1)
+├── test/                  # Remote test controller (SIGURDOS_REMOTE_TEST=1)
 │   └── test_controller.cpp/h  # Serial-driven test harness — inject events, nav, type, screen capture
 ├── utils/                 # Utility modules
 │   └── utf8_util.h       # UTF-8 safe truncation (emoji-aware byte cutting)
@@ -108,10 +108,10 @@ src/
 
 Deep black `#0F0F0F` background, cyan `#00BFFF` accents, zero radius, 2px minimum borders.
 
-**Runtime theme system:** Theme colors are now runtime-variable `inline uint32_t` values in `theme.h` (not `constexpr`). Six presets are defined in `slopos::theme::THEMES[]`:
+**Runtime theme system:** Theme colors are now runtime-variable `inline uint32_t` values in `theme.h` (not `constexpr`). Six presets are defined in `sigurdos::theme::THEMES[]`:
 - 0: Default Cyan, 1: Midnight Blue, 2: Forest Green, 3: Sunset Orange, 4: Royal Purple, 5: Amber Glow
 
-Call `slopos::theme::theme_apply(id)` to switch themes. Theme ID is persisted in NVS via `NodePrefs.theme_id`. Changing theme applies to new screen creations immediately; existing screens may need to be re-entered to pick up new colors.
+Call `sigurdos::theme::theme_apply(id)` to switch themes. Theme ID is persisted in NVS via `NodePrefs.theme_id`. Changing theme applies to new screen creations immediately; existing screens may need to be re-entered to pick up new colors.
 
 Theme helpers in `src/ui/theme.h`:
 - `apply_dark_bg(obj)` — sets full-screen background (`BG_PRIMARY`)
@@ -199,129 +199,129 @@ Use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 
 ## Mesh Integration
 
-MeshCore is a submodule at `lib/meshcore/`. The UI never touches MeshCore directly — all calls go through `slopos::mesh::*` in `mesh_wrapper.h`.
+MeshCore is a submodule at `lib/meshcore/`. The UI never touches MeshCore directly — all calls go through `sigurdos::mesh::*` in `mesh_wrapper.h`.
 
 **Key mesh wrapper API:**
 
 ```cpp
-slopos::mesh::init(spiffs_ok)              // Boot — load identity, start radio
-slopos::mesh::loop()                       // Call from main loop
-slopos::mesh::sendMessage(name, text)      // Direct message
-slopos::mesh::sendChannelMessage(ch, text) // Group message
-slopos::mesh::addChannel(name, psk_b64)    // PSK channel
-slopos::mesh::addHashtagChannel(name)      // Hash-of-name channel
-slopos::mesh::joinPublicChannel()          // Join "Public" with default PSK
-slopos::mesh::exportContacts(out, max)     // Name list
-slopos::mesh::exportContactsFull(out, max) // Name + RSSI + last_seen
-slopos::mesh::exportChannels(out, max)     // Channel name list
-slopos::mesh::pollMessages(out, max)       // Non-blocking message fetch
-slopos::mesh::pendingMessageCount()        // Messages waiting in queue
-slopos::mesh::getQueueDropCount()           // Queue overflow drops since boot
-slopos::mesh::getUnreadMessageCount()       // Unread messages across all channels
-slopos::mesh::resetUnreadMessageCount()     // Reset unread counter
-slopos::mesh::setOwnName(name)             // Set this node's display name
-slopos::mesh::getOwnName()                 // Get this node's display name
-slopos::mesh::getNoiseFloor()              // Current noise floor dBm
-slopos::mesh::getLastRSSI()                // Last received message RSSI
-slopos::mesh::getLastSNR()                 // Last received message SNR
-slopos::mesh::getTotalTxAirtimeMs()         // Cumulative TX airtime in ms
-slopos::mesh::getTotalRxAirtimeMs()         // Cumulative RX airtime in ms
-slopos::mesh::getNumSentFlood()             // Flood messages sent
-slopos::mesh::getNumSentDirect()            // Direct messages sent
-slopos::mesh::getNumRecvFlood()             // Flood messages received
-slopos::mesh::getNumRecvDirect()            // Direct messages received
-slopos::mesh::resetPacketStats()            // Reset all packet counters
-slopos::mesh::getContactCount()            // Number of known contacts
-slopos::mesh::findContactIndexByName(name) // Find contact index by exact name match
-slopos::mesh::getChannelCount()            // Number of joined channels
-slopos::mesh::sendAdvert()                 // Broadcast advert
-slopos::mesh::getLastAdvertTime()          // Timestamp of last advert
-slopos::mesh::getLastAdvertSuccess()       // Whether last advert succeeded
-slopos::mesh::getLastAdvertUsedGps()       // Whether GPS data was included
-slopos::mesh::saveState()                  // Save contacts to NVS
-slopos::mesh::saveChannels()               // Save channels to NVS
-slopos::mesh::loadChannels()               // Restore channels from NVS
-slopos::mesh::saveContacts()               // Save contacts to NVS (Phase 2.6+)
-slopos::mesh::loadContacts()               // Restore contacts from NVS
-slopos::mesh::isContactFavourite(name)     // Check if contact is favourited
-slopos::mesh::setContactFavourite(n, fav)  // Set favourite flag
-slopos::mesh::shutdown()                   // Graceful radio + power off
-slopos::mesh::injectMessage(sender, ch, text)  // Simulate incoming (test only)
-slopos::mesh::getCurrentTime()             // RTC epoch seconds
-slopos::mesh::setSystemTime(epoch)         // Set RTC from UI
-slopos::mesh::getCurrentLocalDateTime()    // Breakdown: y/m/d/h/m
-slopos::mesh::makeEpoch(y, m, d, h, mn)    // Create epoch from components
-slopos::mesh::getPacketLogCount()          // Entries in packet log
-slopos::mesh::getPacketLogEntry(i, out)    // Read one packet log entry
-slopos::mesh::pushPacketLog(src, rssi, snr, type) // Add packet log entry
-slopos::mesh::sendTrace(idx, &tag)         // Send trace route request
-slopos::mesh::findContactIndex(name)       // Find contact index by exact name
-slopos::mesh::hasTraceResult()             // Trace reply received?
-slopos::mesh::getTracePathLen()            // SNR/hop count in trace
-slopos::mesh::getTracePath(snrs, hashes)   // Get trace path data
-slopos::mesh::clearTraceResult()           // Reset trace state
-slopos::mesh::contactHasPath(idx)          // Does contact have a known path?
-slopos::mesh::sendPingNearby()              // Zero-hop ping for node discovery
-slopos::mesh::pingIsActive()                // Ping in progress?
-slopos::mesh::pingOnCooldown()              // Ping on cooldown?
-slopos::mesh::pingCooldownRemaining()       // Milliseconds until next ping allowed
-slopos::mesh::activePingRemaining()         // Milliseconds until current ping times out
-slopos::mesh::getPingResultCount()          // Number of ping responses received
-slopos::mesh::getPingResult(i)             // Read one ping response (name, RSSI)
-slopos::mesh::applyRadioParams(freq, bw, sf, cr, pwr, rx_gain) // Live radio param update (no NVS)
-slopos::mesh::revertRadioParams()          // Revert radio params to stored prefs
-slopos::mesh::getRemainingTxBudget()       // Duty cycle: remaining TX airtime in ms
-slopos::mesh::setDutyCycle(percent)        // Set duty cycle limit (0 = disabled)
-slopos::mesh::removeChannel(idx)           // Remove a joined channel by index
-slopos::mesh::getSignalHistoryCount()      // Number of RSSI/SNR history samples for sparkline
-slopos::mesh::getSignalHistoryRSSI(idx)    // RSSI by logical index (0 = oldest) for sparkline
-slopos::mesh::getSignalHistorySNR(idx)     // SNR by logical index (0 = oldest) for sparkline
-slopos::mesh::registerAckedMessage(name, ts) // Register DM for ACK delivery tracking
-slopos::mesh::isMessageAcked(name, ts)     // Check if a DM was acknowledged
-slopos::mesh::removeContact(name)           // Remove a contact by name
-slopos::mesh::resetPathTo(name)             // Reset route path to a contact
-slopos::mesh::getAckCounter()               // Incremented each registerAckedMessage call
+sigurdos::mesh::init(spiffs_ok)              // Boot — load identity, start radio
+sigurdos::mesh::loop()                       // Call from main loop
+sigurdos::mesh::sendMessage(name, text)      // Direct message
+sigurdos::mesh::sendChannelMessage(ch, text) // Group message
+sigurdos::mesh::addChannel(name, psk_b64)    // PSK channel
+sigurdos::mesh::addHashtagChannel(name)      // Hash-of-name channel
+sigurdos::mesh::joinPublicChannel()          // Join "Public" with default PSK
+sigurdos::mesh::exportContacts(out, max)     // Name list
+sigurdos::mesh::exportContactsFull(out, max) // Name + RSSI + last_seen
+sigurdos::mesh::exportChannels(out, max)     // Channel name list
+sigurdos::mesh::pollMessages(out, max)       // Non-blocking message fetch
+sigurdos::mesh::pendingMessageCount()        // Messages waiting in queue
+sigurdos::mesh::getQueueDropCount()           // Queue overflow drops since boot
+sigurdos::mesh::getUnreadMessageCount()       // Unread messages across all channels
+sigurdos::mesh::resetUnreadMessageCount()     // Reset unread counter
+sigurdos::mesh::setOwnName(name)             // Set this node's display name
+sigurdos::mesh::getOwnName()                 // Get this node's display name
+sigurdos::mesh::getNoiseFloor()              // Current noise floor dBm
+sigurdos::mesh::getLastRSSI()                // Last received message RSSI
+sigurdos::mesh::getLastSNR()                 // Last received message SNR
+sigurdos::mesh::getTotalTxAirtimeMs()         // Cumulative TX airtime in ms
+sigurdos::mesh::getTotalRxAirtimeMs()         // Cumulative RX airtime in ms
+sigurdos::mesh::getNumSentFlood()             // Flood messages sent
+sigurdos::mesh::getNumSentDirect()            // Direct messages sent
+sigurdos::mesh::getNumRecvFlood()             // Flood messages received
+sigurdos::mesh::getNumRecvDirect()            // Direct messages received
+sigurdos::mesh::resetPacketStats()            // Reset all packet counters
+sigurdos::mesh::getContactCount()            // Number of known contacts
+sigurdos::mesh::findContactIndexByName(name) // Find contact index by exact name match
+sigurdos::mesh::getChannelCount()            // Number of joined channels
+sigurdos::mesh::sendAdvert()                 // Broadcast advert
+sigurdos::mesh::getLastAdvertTime()          // Timestamp of last advert
+sigurdos::mesh::getLastAdvertSuccess()       // Whether last advert succeeded
+sigurdos::mesh::getLastAdvertUsedGps()       // Whether GPS data was included
+sigurdos::mesh::saveState()                  // Save contacts to NVS
+sigurdos::mesh::saveChannels()               // Save channels to NVS
+sigurdos::mesh::loadChannels()               // Restore channels from NVS
+sigurdos::mesh::saveContacts()               // Save contacts to NVS (Phase 2.6+)
+sigurdos::mesh::loadContacts()               // Restore contacts from NVS
+sigurdos::mesh::isContactFavourite(name)     // Check if contact is favourited
+sigurdos::mesh::setContactFavourite(n, fav)  // Set favourite flag
+sigurdos::mesh::shutdown()                   // Graceful radio + power off
+sigurdos::mesh::injectMessage(sender, ch, text)  // Simulate incoming (test only)
+sigurdos::mesh::getCurrentTime()             // RTC epoch seconds
+sigurdos::mesh::setSystemTime(epoch)         // Set RTC from UI
+sigurdos::mesh::getCurrentLocalDateTime()    // Breakdown: y/m/d/h/m
+sigurdos::mesh::makeEpoch(y, m, d, h, mn)    // Create epoch from components
+sigurdos::mesh::getPacketLogCount()          // Entries in packet log
+sigurdos::mesh::getPacketLogEntry(i, out)    // Read one packet log entry
+sigurdos::mesh::pushPacketLog(src, rssi, snr, type) // Add packet log entry
+sigurdos::mesh::sendTrace(idx, &tag)         // Send trace route request
+sigurdos::mesh::findContactIndex(name)       // Find contact index by exact name
+sigurdos::mesh::hasTraceResult()             // Trace reply received?
+sigurdos::mesh::getTracePathLen()            // SNR/hop count in trace
+sigurdos::mesh::getTracePath(snrs, hashes)   // Get trace path data
+sigurdos::mesh::clearTraceResult()           // Reset trace state
+sigurdos::mesh::contactHasPath(idx)          // Does contact have a known path?
+sigurdos::mesh::sendPingNearby()              // Zero-hop ping for node discovery
+sigurdos::mesh::pingIsActive()                // Ping in progress?
+sigurdos::mesh::pingOnCooldown()              // Ping on cooldown?
+sigurdos::mesh::pingCooldownRemaining()       // Milliseconds until next ping allowed
+sigurdos::mesh::activePingRemaining()         // Milliseconds until current ping times out
+sigurdos::mesh::getPingResultCount()          // Number of ping responses received
+sigurdos::mesh::getPingResult(i)             // Read one ping response (name, RSSI)
+sigurdos::mesh::applyRadioParams(freq, bw, sf, cr, pwr, rx_gain) // Live radio param update (no NVS)
+sigurdos::mesh::revertRadioParams()          // Revert radio params to stored prefs
+sigurdos::mesh::getRemainingTxBudget()       // Duty cycle: remaining TX airtime in ms
+sigurdos::mesh::setDutyCycle(percent)        // Set duty cycle limit (0 = disabled)
+sigurdos::mesh::removeChannel(idx)           // Remove a joined channel by index
+sigurdos::mesh::getSignalHistoryCount()      // Number of RSSI/SNR history samples for sparkline
+sigurdos::mesh::getSignalHistoryRSSI(idx)    // RSSI by logical index (0 = oldest) for sparkline
+sigurdos::mesh::getSignalHistorySNR(idx)     // SNR by logical index (0 = oldest) for sparkline
+sigurdos::mesh::registerAckedMessage(name, ts) // Register DM for ACK delivery tracking
+sigurdos::mesh::isMessageAcked(name, ts)     // Check if a DM was acknowledged
+sigurdos::mesh::removeContact(name)           // Remove a contact by name
+sigurdos::mesh::resetPathTo(name)             // Reset route path to a contact
+sigurdos::mesh::getAckCounter()               // Incremented each registerAckedMessage call
 // ── Generic request/response (Phase 4.1) ──
-slopos::mesh::sendRequest(dest, type)       // Send typed request to a node
-slopos::mesh::sendRequestWithData(d, dat, len) // Request with payload
-slopos::mesh::getResponseCount()            // Responses waiting
-slopos::mesh::getResponse(idx, &tag, &data, &len, &name) // Read response
-slopos::mesh::clearResponses()              // Clear response buffer
+sigurdos::mesh::sendRequest(dest, type)       // Send typed request to a node
+sigurdos::mesh::sendRequestWithData(d, dat, len) // Request with payload
+sigurdos::mesh::getResponseCount()            // Responses waiting
+sigurdos::mesh::getResponse(idx, &tag, &data, &len, &name) // Read response
+sigurdos::mesh::clearResponses()              // Clear response buffer
 // ── Status request (Phase 4.2) ──
-slopos::mesh::requestStatus(name)           // Request remote node status (battery, uptime, etc.)
-slopos::mesh::hasStatusResponse()           // Status reply received?
-slopos::mesh::getStatusResult(&st)          // Read NodeStatus struct
+sigurdos::mesh::requestStatus(name)           // Request remote node status (battery, uptime, etc.)
+sigurdos::mesh::hasStatusResponse()           // Status reply received?
+sigurdos::mesh::getStatusResult(&st)          // Read NodeStatus struct
 // ── Telemetry (Phase 4.3) ──
-slopos::mesh::requestTelemetry(name)        // Request CayenneLPP sensor data
-slopos::mesh::hasTelemetryResponse()        // Telemetry reply received?
-slopos::mesh::getTelemetryResult(&tr)       // Read TelemetryResult struct
+sigurdos::mesh::requestTelemetry(name)        // Request CayenneLPP sensor data
+sigurdos::mesh::hasTelemetryResponse()        // Telemetry reply received?
+sigurdos::mesh::getTelemetryResult(&tr)       // Read TelemetryResult struct
 // ── Path discovery (Phase 4.4) ──
-slopos::mesh::discoverPath(name)            // Flood-force route discovery, returns tag
-slopos::mesh::hasPathTo(name)               // Path known for this contact?
-slopos::mesh::getContactPathLen(name)       // Hop count to contact
+sigurdos::mesh::discoverPath(name)            // Flood-force route discovery, returns tag
+sigurdos::mesh::hasPathTo(name)               // Path known for this contact?
+sigurdos::mesh::getContactPathLen(name)       // Hop count to contact
 // ── Repeater/room login (Phase 4.5) ──
-slopos::mesh::sendLogin(name, password)     // Login to repeater/room
-slopos::mesh::sendLogout(name)              // Logout
-slopos::mesh::sendCommand(name, text)       // Admin command to repeater
-slopos::mesh::isLoggedIn(name)              // Currently logged in?
-slopos::mesh::getLoginStatus(name)          // LOGIN_STATUS_NONE/PENDING/OK/FAILED
-slopos::mesh::getLoginPermission(name)      // Permission level
-slopos::mesh::forceLoginState(n, s, p)      // Override login state (test)
+sigurdos::mesh::sendLogin(name, password)     // Login to repeater/room
+sigurdos::mesh::sendLogout(name)              // Logout
+sigurdos::mesh::sendCommand(name, text)       // Admin command to repeater
+sigurdos::mesh::isLoggedIn(name)              // Currently logged in?
+sigurdos::mesh::getLoginStatus(name)          // LOGIN_STATUS_NONE/PENDING/OK/FAILED
+sigurdos::mesh::getLoginPermission(name)      // Permission level
+sigurdos::mesh::forceLoginState(n, s, p)      // Override login state (test)
 // ── Room message fetch (Phase 4.6) ──
-slopos::mesh::sendRoomMsgFetchRequest(contact, channel) // Fetch room history
-slopos::mesh::getRoomMsgFetchCount()         // Entries in fetch result
-slopos::mesh::getRoomMsgFetchEntry(idx, &s, &t, &c, &ts) // Read fetch entry
-slopos::mesh::clearRoomMsgFetch()            // Clear fetch buffer
+sigurdos::mesh::sendRoomMsgFetchRequest(contact, channel) // Fetch room history
+sigurdos::mesh::getRoomMsgFetchCount()         // Entries in fetch result
+sigurdos::mesh::getRoomMsgFetchEntry(idx, &s, &t, &c, &ts) // Read fetch entry
+sigurdos::mesh::clearRoomMsgFetch()            // Clear fetch buffer
 // ── Anonymous messages (Phase 4.7) ──
-slopos::mesh::sendAnonMessage(pubkey_hex, text) // DM by public key (no contact needed)
+sigurdos::mesh::sendAnonMessage(pubkey_hex, text) // DM by public key (no contact needed)
 // ── Group data datagrams (Phase 4.8) ──
-slopos::mesh::sendGroupDataToChannel(ch_idx, type, data, len) // Send typed data to group
-slopos::mesh::getGroupDataRecvCount()         // Received group datagrams
-slopos::mesh::getGroupDataRecvEntry(idx, &type, &data, &len, &ch, &ts) // Read datagram
-slopos::mesh::clearGroupDataRecv()            // Clear datagram buffer
-// ── Test helpers (SLOPOS_REMOTE_TEST only) ──
-slopos::mesh::addTestRepeater(name)          // Inject fake repeater contact
-slopos::mesh::addTestRoomServer(name)        // Inject fake room server contact
+sigurdos::mesh::sendGroupDataToChannel(ch_idx, type, data, len) // Send typed data to group
+sigurdos::mesh::getGroupDataRecvCount()         // Received group datagrams
+sigurdos::mesh::getGroupDataRecvEntry(idx, &type, &data, &len, &ch, &ts) // Read datagram
+sigurdos::mesh::clearGroupDataRecv()            // Clear datagram buffer
+// ── Test helpers (SIGURDOS_REMOTE_TEST only) ──
+sigurdos::mesh::addTestRepeater(name)          // Inject fake repeater contact
+sigurdos::mesh::addTestRoomServer(name)        // Inject fake room server contact
 ```
 
 **Messages arrive** via `chat_screen_add_msg(channel, sender, text, is_self)`. The chat screen maintains per-channel message caches (8 messages each, 16 channels max).
@@ -381,41 +381,41 @@ Test modules:
 
 ```bash
 # Build firmware (release — no serial debug output)
-pio run -e SlopOS_TDeck
+pio run -e SigurdOS_TDeck
 
 # Debug build (full boot sequence + periodic diagnostics over serial)
-pio run -e SlopOS_TDeck_debug
+pio run -e SigurdOS_TDeck_debug
 
 # Trackball debug build (raw GPIO state visible)
-pio run -e SlopOS_TDeck_trackball_debug
+pio run -e SigurdOS_TDeck_trackball_debug
 
 # Per-feature debug builds — enable only one subsystem's debug output
-pio run -e SlopOS_TDeck_debug_display  # Display flush/invalidate/auto-off
-pio run -e SlopOS_TDeck_debug_mesh     # Mesh message rx/tx, radio init
-pio run -e SlopOS_TDeck_debug_ui       # UI boot steps, screen transitions
-pio run -e SlopOS_TDeck_debug_map      # Map tile loading, rendering
-pio run -e SlopOS_TDeck_debug_diag     # Periodic stats & system dumps
+pio run -e SigurdOS_TDeck_debug_display  # Display flush/invalidate/auto-off
+pio run -e SigurdOS_TDeck_debug_mesh     # Mesh message rx/tx, radio init
+pio run -e SigurdOS_TDeck_debug_ui       # UI boot steps, screen transitions
+pio run -e SigurdOS_TDeck_debug_map      # Map tile loading, rendering
+pio run -e SigurdOS_TDeck_debug_diag     # Periodic stats & system dumps
 
 # Debug build at prescribed frequency (e.g. 869.525 MHz / SF10 / 250 kHz)
-pio run -e SlopOS_TDeck_debug_869
+pio run -e SigurdOS_TDeck_debug_869
 
 # Run native tests (no hardware)
 pio test -e native_test -v
 
 # Remote test — test controller + SIMULATED mesh (no LoRa radio)
-pio run -e SlopOS_TDeck_remote_test
+pio run -e SigurdOS_TDeck_remote_test
 
 # Remote test WITH RADIO — test controller + full LoRa mesh
-pio run -e SlopOS_TDeck_remote_test_radio
+pio run -e SigurdOS_TDeck_remote_test_radio
 
-# MeshV2 build (BaseChatMesh subclass — Phase 0 migration, compile-time `-D SLOPOS_MESH_V2=1`)
-pio run -e SlopOS_TDeck_meshv2
+# MeshV2 build (BaseChatMesh subclass — Phase 0 migration, compile-time `-D SIGURDOS_MESH_V2=1`)
+pio run -e SigurdOS_TDeck_meshv2
 
 # Remote test with MeshV2
-pio run -e SlopOS_TDeck_remote_test_radio_meshv2
+pio run -e SigurdOS_TDeck_remote_test_radio_meshv2
 
 # Remote test with radio + prescribed frequency (e.g. 869.525 MHz / SF10 / 250 kHz)
-pio run -e SlopOS_TDeck_remote_test_radio_testfreq
+pio run -e SigurdOS_TDeck_remote_test_radio_testfreq
 ```
 
 ### Serial Debugging
@@ -447,40 +447,40 @@ s.close()
 "'
 ```
 
-The debug build (`SlopOS_TDeck_debug`) enables:
+The debug build (`SigurdOS_TDeck_debug`) enables:
 - Step-by-step boot logging (`[boot] step N: ...`)
 - Periodic heap/PSRAM/battery stats (`[stat]`)
 - Display flush tracking (`[flush] #N`)
 - Trackball pin states (`[pins]`)
-- On-demand debug dump via `slopos_debug_dump()`
+- On-demand debug dump via `sigurdos_debug_dump()`
 - Map tile discovery logging
 
-**Per-feature debug environments** (`SlopOS_TDeck_debug_display`, `_mesh`, `_ui`, `_map`, `_diag`) enable only one subsystem's debug output at a time. They share `debug_cfg.h` infrastructure which supports runtime feature toggle (`debug feat 0/1` in remote test mode) and a `feat_set_all_mask()` aggregator.
+**Per-feature debug environments** (`SigurdOS_TDeck_debug_display`, `_mesh`, `_ui`, `_map`, `_diag`) enable only one subsystem's debug output at a time. They share `debug_cfg.h` infrastructure which supports runtime feature toggle (`debug feat 0/1` in remote test mode) and a `feat_set_all_mask()` aggregator.
 
-The master `SLOPOS_DEBUG=1` flag enables all features simultaneously (backward compatible). Individual `-DSLOPOS_DEBUG_DISPLAY=1` etc. flags enable just that one feature, controlled at compile time by `#if SLOPOS_DEBUG_DISPLAY` guards throughout the codebase.
+The master `SIGURDOS_DEBUG=1` flag enables all features simultaneously (backward compatible). Individual `-DSIGURDOS_DEBUG_DISPLAY=1` etc. flags enable just that one feature, controlled at compile time by `#if SIGURDOS_DEBUG_DISPLAY` guards throughout the codebase.
 
-The release build (`SlopOS_TDeck`) suppresses all of these via `NDEBUG` and the absence of `SLOPOS_DEBUG=1`. Only critical errors and warnings print in release mode.
+The release build (`SigurdOS_TDeck`) suppresses all of these via `NDEBUG` and the absence of `SIGURDOS_DEBUG=1`. Only critical errors and warnings print in release mode.
 
 ### Remote Test Controller
 
-**⚠️ CRITICAL: Do NOT use this mode without explicit user consent.** This disables the LoRa radio and makes the device a serial-controlled input simulator. Only the user decides when to use this mode. Never switch to `SlopOS_TDeck_remote_test` build env unless the user asks you to or explicitly approves it.
+**⚠️ CRITICAL: Do NOT use this mode without explicit user consent.** This disables the LoRa radio and makes the device a serial-controlled input simulator. Only the user decides when to use this mode. Never switch to `SigurdOS_TDeck_remote_test` build env unless the user asks you to or explicitly approves it.
 
 Enables automated and manual testing over serial (USB CDC). No LoRa radio is initialised — all mesh messages are simulated via injection. The radio hardware is never touched.
 
 Build with:
 ```bash
-pio run -e SlopOS_TDeck_remote_test
+pio run -e SigurdOS_TDeck_remote_test
 ```
 
 Flash and connect (local):
 ```bash
-pio run -e SlopOS_TDeck_remote_test -t upload
+pio run -e SigurdOS_TDeck_remote_test -t upload
 pio device monitor -b 115200
 ```
 
 Flash and connect (remote via hardware gateway):
 ```bash
-scp .pio/build/SlopOS_TDeck_remote_test/firmware-merged.bin <gateway>:/tmp/
+scp .pio/build/SigurdOS_TDeck_remote_test/firmware-merged.bin <gateway>:/tmp/
 ssh <gateway> "esptool --chip esp32s3 --port <serial-port> --baud 921600 write-flash 0x0 /tmp/firmware-merged.bin && rm /tmp/firmware-merged.bin"
 ssh <gateway> "stty -F <serial-port> 115200 raw -echo && cat <serial-port>"
 ```
@@ -503,13 +503,13 @@ Once connected, the T-Deck shows a test controller banner. Type commands directl
 | `advert` | `advert` | Send self advert |
 | `sendmessage <name> <text>` | `sendmessage Bob Hello` | Send a direct message via mesh |
 
-Safety guarantees for `SlopOS_TDeck_remote_test`:
-- No LoRa radio initialised — `slopos::mesh::init()` is never called
+Safety guarantees for `SigurdOS_TDeck_remote_test`:
+- No LoRa radio initialised — `sigurdos::mesh::init()` is never called
 - All `sendMessage`, `sendChannelMessage`, `sendAdvert` return false (g_mesh is null)
 - Radio accessors (`getLastRSSI`, `getLastSNR`, `getNoiseFloor`) return dummy values
 - No SPI transactions ever reach the SX1262 hardware
 
-**⚠️ The `SlopOS_TDeck_remote_test_radio` env has NO such guarantees** — it initialises the full LoRa mesh (`SLOPOS_REMOTE_TEST_RADIO=1`) and actually transmits. Use only for bidirectional radio verification (T-Deck ↔ Heltec V3).
+**⚠️ The `SigurdOS_TDeck_remote_test_radio` env has NO such guarantees** — it initialises the full LoRa mesh (`SIGURDOS_REMOTE_TEST_RADIO=1`) and actually transmits. Use only for bidirectional radio verification (T-Deck ↔ Heltec V3).
 
 **⚠️ LIMITATION: Cannot test physical input hardware.** Remote test mode simulates trackball, keyboard, and touch programmatically — events are injected directly into the input queues. This means it **cannot** validate:
 - GPIO debounce timing, edge detection, or signal quality
@@ -530,9 +530,9 @@ Main + dev branch model:
 - Tags: `beta-0.1.XX` (zero-padded for correct sort: `beta-0.1.09` not `beta-0.1.9`). Current: `beta-0.1.37`
 
 **Release flow (maintainer only):**
-1. Update `SLOPOS_VERSION` in `tdeck_pins.h`
-2. `pio run -e SlopOS_TDeck`
-3. `cp .pio/build/SlopOS_TDeck/firmware-merged.bin firmware/firmware-merged.bin`
+1. Update `SIGURDOS_VERSION` in `tdeck_pins.h`
+2. `pio run -e SigurdOS_TDeck`
+3. `cp .pio/build/SigurdOS_TDeck/firmware-merged.bin firmware/firmware-merged.bin`
 4. Commit, tag, push, `gh release create`
 
 ---
@@ -570,7 +570,7 @@ On "Apply", validated values are written to the shared state and `go_back()` is 
 | SF label via `user_data` | The SF −/+ buttons use `(void*)sf_lbl` as event user_data, but `sf_lbl` is a stack-local variable in `radio_setup_screen_show`. While `sf_lbl` is alive for the screen's lifetime, the pointer is only valid as long as the widget exists — fragile if screen is recreated |
 | BW discrete stepping | BW uses a hardcoded float array and cycles through values via a loop with `x + 0.01f` tolerance — values near boundaries may not snap correctly due to float comparison |
 | `src/utils/` no longer empty | Now contains `utf8_util.h` — the empty placeholder was replaced by a real utility module for UTF-8 safe truncation |
-| `SLOPOS_RUNTIME_FEAT()` macro scope | The `debug_cfg.h` `SLOPOS_RUNTIME_FEAT()` macro only works under full `SLOPOS_DEBUG=1` build. In per-feature builds (e.g. `SLOPOS_DEBUG_MESH=1` alone), the macro expands to nothing — runtime `debug feat 0/1` toggle has no effect. Only compile-time `#if SLOPOS_DEBUG_MESH` guards control output. |
+| `SIGURDOS_RUNTIME_FEAT()` macro scope | The `debug_cfg.h` `SIGURDOS_RUNTIME_FEAT()` macro only works under full `SIGURDOS_DEBUG=1` build. In per-feature builds (e.g. `SIGURDOS_DEBUG_MESH=1` alone), the macro expands to nothing — runtime `debug feat 0/1` toggle has no effect. Only compile-time `#if SIGURDOS_DEBUG_MESH` guards control output. |
 | Emoji font pointer init ordering | `emoji_font.h` declares mutable globals `emoji_wrapped_montserrat_*` that are initialized to raw Montserrat before `emoji_font_setup()` runs. Any code accessing these font pointers during boot (before the setup function runs) gets un-wrapped fonts without emoji fallback glyphs. |
 | Navigation back-swipe state reset | `back_swipe_commit` is reset to 0 at the start of both `navigate_to()` and `go_back()`. If a screen transition is triggered mid-back-swipe (e.g. by a screen's constructor calling navigate internally), the two-swipe sequence is broken — the user must start over from zero Left events. |
 | Contacts screen strdup user_data | Contacts and Repeaters screens store `strdup(c.name)` as `lv_obj_set_user_data()` for click handlers. The heap copy is freed on `LV_EVENT_DELETE`. If a row is added or manually deleted without firing the delete event, the pointer leaks. |
@@ -578,12 +578,12 @@ On "Apply", validated values are written to the shared state and `go_back()` is 
 | Channel delete button hidden at n=1 | The Channels screen delete button is hidden when `n <= 1` — prevents deleting the last remaining channel. But `removeChannel()` is always callable from the API, so a test or code path that calls it directly could leave zero channels. |
 | Custom RF child-scan walk order | Apply button walks `lv_obj_get_child_cnt(scr)` looking for the first 5 textareas. The sort order depends on widget creation sequence — if any non-textarea child is inserted before the textareas, the count resets and the wrong textarea is picked up. Now guarded by a `found != 5` check, but the error path still uses the fragile `lv_obj_get_child_cnt(scr) - 2` label lookup. |
 | New: RX Gain and Duty Cycle saved on reboot | `s_rx_gain` and `s_duty_cycle` are saved in NVS only on "Save & Reboot". Navigating away from Radio Setup without pressing save discards these settings silently, same as freq/SF/etc. |
-| New: `SlopOS_TDeck_remote_test_radio` env | Full LoRa mesh + test controller. The `SLOPOS_REMOTE_TEST_RADIO=1` flag enables both the test controller serial commands AND the radio mesh. ⚠️ This env actually transmits — unlike `_remote_test` which never initializes the radio. |
-| New: SlopMeshV2 compile-time selection | `-D SLOPOS_MESH_V2=1` selects `SlopMeshV2` (BaseChatMesh subclass) instead of the original `SlopMesh`. Both classes coexist but only one mesh instance runs per build. The `SlopOS_TDeck_meshv2` env sets this flag — use the correct env when testing meshv2 features. |
+| New: `SigurdOS_TDeck_remote_test_radio` env | Full LoRa mesh + test controller. The `SIGURDOS_REMOTE_TEST_RADIO=1` flag enables both the test controller serial commands AND the radio mesh. ⚠️ This env actually transmits — unlike `_remote_test` which never initializes the radio. |
+| New: SlopMeshV2 compile-time selection | `-D SIGURDOS_MESH_V2=1` selects `SlopMeshV2` (BaseChatMesh subclass) instead of the original `SlopMesh`. Both classes coexist but only one mesh instance runs per build. The `SigurdOS_TDeck_meshv2` env sets this flag — use the correct env when testing meshv2 features. |
 | New: ACK tracking state is in-memory only | `registerAckedMessage`/`isMessageAcked` delivery state resets on every boot. No NVS persistence — ACK data is lost after power cycle. |
 | New: Custom vars SPIFFS no file locking | Custom variables at `/custom_vars.txt` (key=value lines) are read/written from terminal commands with no file locking. Concurrent `getvar`/`setvar`/`delvar` can intermix reads and writes, corrupting the file. Single-user terminal usage is safe but avoid concurrent access. |
 | New: Settings sub-screens are full navigable screens | SettingsRadio, SettingsGPS, SettingsDisplay, SettingsSystem are all in the `Screen` enum and use `navigate_to()` with slide animation — they have nav stack entries and can be gone back from. Each calls `prefs_get()` at entry to get fresh state. State changes in one sub-screen are not visible in another until the user exits and re-enters. |
-| New: Runtime theme system (6 presets, NVS persisted) | `theme.h` now has `slopos::theme::THEMES[6]` with presets (Default Cyan, Midnight Blue, Forest Green, Sunset Orange, Royal Purple, Amber Glow). `theme_apply(id)` writes to mutable inline vars (`BG_PRIMARY`, `ACCENT`, etc.). Theme ID stored in NVS via `p.theme_id`. Not all screens re-read theme vars on `theme_apply()` — some may need to be re-entered to pick up new colors. |
+| New: Runtime theme system (6 presets, NVS persisted) | `theme.h` now has `sigurdos::theme::THEMES[6]` with presets (Default Cyan, Midnight Blue, Forest Green, Sunset Orange, Royal Purple, Amber Glow). `theme_apply(id)` writes to mutable inline vars (`BG_PRIMARY`, `ACCENT`, etc.). Theme ID stored in NVS via `p.theme_id`. Not all screens re-read theme vars on `theme_apply()` — some may need to be re-entered to pick up new colors. |
 | New: Repeater login state is in-memory | `sendLogin()`/`sendLogout()` login state resets on every boot. Password can be saved to NVS via `NodePrefs.repeater_password` for auto-login on restart. |
 | New: Room message fetch is polling-based | `sendRoomMsgFetchRequest()` triggers a fetch; results are read via `getRoomMsgFetchCount()`/`getRoomMsgFetchEntry()`. Only one fetch result can be stored at a time — calling fetch again overwrites previous results. |
 | New: NodeStatus/Telemetry screens need mesh response | Both screens use `show_screen()` (not `navigate_to()`) and rely on `hasStatusResponse()`/`hasTelemetryResponse()` being set before entry. If no response arrives, they show a "waiting" message. `clearResponses()` is called after reading, so re-entering without a new request shows the waiting state. |
@@ -596,12 +596,12 @@ On "Apply", validated values are written to the shared state and `go_back()` is 
 
 All known issues are documented in `docs/KNOWN_ISSUES.md`. Most previously tracked issues have been **FIXED** (see git log for PR references). The remaining actionable item:
 
-- **Launcher Compatibility:** SlopOS doesn't work under bmorcelli/Launcher — would need a compatibility layer for peripheral re-init after handoff from the launcher
+- **Launcher Compatibility:** SigurdOS doesn't work under bmorcelli/Launcher — would need a compatibility layer for peripheral re-init after handoff from the launcher
 
 **Recently fixed (see `docs/KNOWN_ISSUES.md` for PR details):**
 - GPS NMEA checksum validation, Navigation history stack, Channel hash full compare, Contact expiry/eviction with LRU, Advert rate limiting at mesh layer, Null-termination on short payloads, LVGL tick starvation during TX, `lv_obj_del` in event handlers, Map screen static persistence, I2C bus speed race (400kHz touch), Trackball LEFT double-fire, `keyboard_consume_event` side effects, GT911 INT-pin-HIGH buffered event drop, TDeckBoard duplicate instances, Module static-init allocation ordering, Terminal unbounded labels, REPEATERS/PACKETS screen separation, GPS NMEA checksum, makeEpoch thread-safety, debug.h non-debug stubs, onboard restart flash write delay, screen dispatch code deduplication, SPI host pin contention, sendTrace indentation
-- **Previously synced:** Radio reception fix (SPI host moved to SPI2_HOST, channel hash full compare, auto-join Public), graceful shutdown from Settings, unread message badges on home screen, display brightness control, auto-backlight timeout, flood max hops setting, contact SNR display, TX/RX delay tuning in Settings, TX/RX airtime and packet statistics on Signal screen, GPS clock sync on first valid fix, Contact Detail screen (#180), Signal screen two-column layout (#183), iOS-style signal dots (#187), `setrf`/`reboot`/`advert` serial test commands (#189), channel deletion (#168/#169), NAV serial command (#35a7638), map canvas PSRAM allocation fix (#4a464f6), `SlopOS_TDeck_remote_test_radio` env (#195), ROADMAP.md (#197), beta-0.1.36 release, SlopMeshV2 migration (Phase 0, #223/#224), per-contact RSSI/SNR history with sparkline chart (#236), message search in chat (#234), message delivery status (ACK ticks) in chat bubbles (#232), custom variables key-value store via terminal commands (Phase 2.6), auto-add contact type config (Phase 2.3), GPS enable/read-interval controls (Phase 2.5), `sendmessage` test controller command, `SlopOS_TDeck_meshv2` and `SlopOS_TDeck_remote_test_radio_meshv2` build envs
-- **Since last sync:** Settings organized into category sub-menus (Phase 2.7, #246), runtime theme system with 6 presets + NVS persistence (#244), PendingAck bugfix + 4 unpersisted NodePrefs fields (#249), beta-0.1.37 release, generic binary-request framework (Phase 4.1, #251), status request with UI — battery/uptime/airtime from remote node (Phase 4.2, #253), telemetry request with CayenneLPP parsing (Phase 4.3), path discovery with flood-force routing (Phase 4.4), repeater/room login with admin commands (Phase 4.5, #259), room server message fetch (Phase 4.6, #263), anonymous message send/receive (Phase 4.7, #260), group data datagrams (Phase 4.8, #265), dedicated repeater detail screen with login flow (#257/#258), repeater login with password save and compact UI, NAV serial entries for settings submenus and new screens, `SlopOS_TDeck_remote_test_radio_testfreq` build env, `test_prefs` test module
+- **Previously synced:** Radio reception fix (SPI host moved to SPI2_HOST, channel hash full compare, auto-join Public), graceful shutdown from Settings, unread message badges on home screen, display brightness control, auto-backlight timeout, flood max hops setting, contact SNR display, TX/RX delay tuning in Settings, TX/RX airtime and packet statistics on Signal screen, GPS clock sync on first valid fix, Contact Detail screen (#180), Signal screen two-column layout (#183), iOS-style signal dots (#187), `setrf`/`reboot`/`advert` serial test commands (#189), channel deletion (#168/#169), NAV serial command (#35a7638), map canvas PSRAM allocation fix (#4a464f6), `SigurdOS_TDeck_remote_test_radio` env (#195), ROADMAP.md (#197), beta-0.1.36 release, SlopMeshV2 migration (Phase 0, #223/#224), per-contact RSSI/SNR history with sparkline chart (#236), message search in chat (#234), message delivery status (ACK ticks) in chat bubbles (#232), custom variables key-value store via terminal commands (Phase 2.6), auto-add contact type config (Phase 2.3), GPS enable/read-interval controls (Phase 2.5), `sendmessage` test controller command, `SigurdOS_TDeck_meshv2` and `SigurdOS_TDeck_remote_test_radio_meshv2` build envs
+- **Since last sync:** Settings organized into category sub-menus (Phase 2.7, #246), runtime theme system with 6 presets + NVS persistence (#244), PendingAck bugfix + 4 unpersisted NodePrefs fields (#249), beta-0.1.37 release, generic binary-request framework (Phase 4.1, #251), status request with UI — battery/uptime/airtime from remote node (Phase 4.2, #253), telemetry request with CayenneLPP parsing (Phase 4.3), path discovery with flood-force routing (Phase 4.4), repeater/room login with admin commands (Phase 4.5, #259), room server message fetch (Phase 4.6, #263), anonymous message send/receive (Phase 4.7, #260), group data datagrams (Phase 4.8, #265), dedicated repeater detail screen with login flow (#257/#258), repeater login with password save and compact UI, NAV serial entries for settings submenus and new screens, `SigurdOS_TDeck_remote_test_radio_testfreq` build env, `test_prefs` test module
 
 ---
 

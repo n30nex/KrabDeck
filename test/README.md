@@ -1,4 +1,4 @@
-# SlopOS T-Deck Test Suite
+# SigurdOS T-Deck Test Suite
 
 ## Running Tests
 

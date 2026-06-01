@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// This file is part of SlopOS-TDeck.
+// This file is part of SigurdOS.
 //
-// SlopOS-TDeck is free software: you can redistribute it and/or modify
+// SigurdOS is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// SlopOS-TDeck is distributed in the hope that it will be useful,
+// SigurdOS is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
+// along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
 
 /**
@@ -957,7 +957,7 @@ protected:
     TestResponseEntry _responses[MAX_RESPONSES];
     int _n_responses = 0;
 
-    // Matches SlopMeshV2::onContactResponse() logic
+    // Matches SigurdMeshV2::onContactResponse() logic
     void handle_response(const char* contact_name, const uint8_t* data, uint8_t len) {
         if (!data || len < 4) return;
         if (_n_responses < MAX_RESPONSES) {
@@ -1072,7 +1072,7 @@ TEST_F(ReqResponseTest, TagMatchingZeroIsValid) {
 
 TEST_F(ReqResponseTest, TagMatchClearsPendingRequest) {
     // Simulates the full flow: pending request is cleared when matching response arrives
-    // This mirrors the logic in SlopMeshV2::onContactResponse()
+    // This mirrors the logic in SigurdMeshV2::onContactResponse()
 
     // Simulate a pending request with tag 0x12345678
     struct PendingReq {

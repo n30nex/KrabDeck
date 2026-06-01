@@ -67,48 +67,48 @@ static uint32_t type_last_inject_ms = 0;
 // ── Screen name lookup ───────────────────────────────────
 struct ScreenEntry {
     const char* name;
-    slopos::ui::Screen screen;
+    sigurdos::ui::Screen screen;
 };
 
 static const ScreenEntry screen_table[] = {
-    {"home",        slopos::ui::Screen::Home},
-    {"chat",        slopos::ui::Screen::Chat},
-    {"contacts",    slopos::ui::Screen::Contacts},
-    {"channels",    slopos::ui::Screen::Channels},
-    {"network",     slopos::ui::Screen::Network},
-    {"heard",       slopos::ui::Screen::Heard},
-    {"map",         slopos::ui::Screen::Map},
-    {"advertise",   slopos::ui::Screen::Advertise},
-    {"settings",    slopos::ui::Screen::Settings},
-    {"trace",       slopos::ui::Screen::Trace},
-    {"terminal",    slopos::ui::Screen::Terminal},
-    {"signal",      slopos::ui::Screen::Signal},
-    {"radio",       slopos::ui::Screen::RadioSetup},
-    {"onboarding",      slopos::ui::Screen::Onboarding},
-    {"contactdetail",   slopos::ui::Screen::ContactDetail},
-    {"nodestatus",      slopos::ui::Screen::NodeStatus},
-    {"telemetry",       slopos::ui::Screen::Telemetry},
-    {"repeaters",       slopos::ui::Screen::Repeaters},
+    {"home",        sigurdos::ui::Screen::Home},
+    {"chat",        sigurdos::ui::Screen::Chat},
+    {"contacts",    sigurdos::ui::Screen::Contacts},
+    {"channels",    sigurdos::ui::Screen::Channels},
+    {"network",     sigurdos::ui::Screen::Network},
+    {"heard",       sigurdos::ui::Screen::Heard},
+    {"map",         sigurdos::ui::Screen::Map},
+    {"advertise",   sigurdos::ui::Screen::Advertise},
+    {"settings",    sigurdos::ui::Screen::Settings},
+    {"trace",       sigurdos::ui::Screen::Trace},
+    {"terminal",    sigurdos::ui::Screen::Terminal},
+    {"signal",      sigurdos::ui::Screen::Signal},
+    {"radio",       sigurdos::ui::Screen::RadioSetup},
+    {"onboarding",      sigurdos::ui::Screen::Onboarding},
+    {"contactdetail",   sigurdos::ui::Screen::ContactDetail},
+    {"nodestatus",      sigurdos::ui::Screen::NodeStatus},
+    {"telemetry",       sigurdos::ui::Screen::Telemetry},
+    {"repeaters",       sigurdos::ui::Screen::Repeaters},
 };
 
-static const char* screen_name(slopos::ui::Screen s) {
+static const char* screen_name(sigurdos::ui::Screen s) {
     for (auto& e : screen_table) {
         if (e.screen == s) return e.name;
     }
     return "unknown";
 }
 
-static slopos::ui::Screen screen_from_name(const char* name) {
+static sigurdos::ui::Screen screen_from_name(const char* name) {
     for (auto& e : screen_table) {
         if (strcmp(e.name, name) == 0) return e.screen;
     }
-    return slopos::ui::Screen::COUNT;  // invalid sentinel
+    return sigurdos::ui::Screen::COUNT;  // invalid sentinel
 }
 
 // ── Help text ────────────────────────────────────────────
 static void print_help() {
     Serial.println(F("╔══════════════════════════════════════╗"));
-    Serial.println(F("║  SlopOS Remote Test Controller      ║"));
+    Serial.println(F("║  SigurdOS Remote Test Controller      ║"));
     Serial.println(F("╠══════════════════════════════════════╣"));
     Serial.println(F("║  Commands:                          ║"));
     Serial.println(F("║  help        Show this help          ║"));
@@ -158,7 +158,7 @@ static void cmd_navigate(const char* arg) {
     if (strncmp(arg, "contactdetail ", 14) == 0) {
         const char* name = arg + 14;
         if (name[0]) {
-            slopos::ui::contact_detail_screen_show(name);
+            sigurdos::ui::contact_detail_screen_show(name);
             return;
         }
     }
@@ -167,49 +167,49 @@ static void cmd_navigate(const char* arg) {
         const char* name = arg + 15;
         if (name[0]) {
 
-            bool skip = (slopos::mesh::getLoginStatus(name) == 2);
-            slopos::ui::repeater_detail_screen_show(name, skip);
+            bool skip = (sigurdos::mesh::getLoginStatus(name) == 2);
+            sigurdos::ui::repeater_detail_screen_show(name, skip);
 
             return;
         }
     }
-    slopos::ui::Screen s = screen_from_name(arg);
-    if (s == slopos::ui::Screen::COUNT) {
+    sigurdos::ui::Screen s = screen_from_name(arg);
+    if (s == sigurdos::ui::Screen::COUNT) {
         Serial.printf("[test] unknown screen: %s\n", arg);
         return;
     }
-    slopos::ui::navigate_to(s);
+    sigurdos::ui::navigate_to(s);
     Serial.printf("[test] nav -> %s\n", arg);
 }
 
 static void cmd_back() {
-    if (slopos::ui::can_go_back()) {
-        slopos::ui::go_back();
+    if (sigurdos::ui::can_go_back()) {
+        sigurdos::ui::go_back();
         Serial.printf("[test] back -> %s\n",
-                      screen_name(slopos::ui::current_screen()));
+                      screen_name(sigurdos::ui::current_screen()));
     } else {
         Serial.println("[test] back: no navigation history");
     }
 }
 
 static void cmd_trackball(const char* arg) {
-    SlopOSTrackballEvent ev = SlopOSTrackballEvent::None;
-    if (strcmp(arg, "up") == 0)        ev = SlopOSTrackballEvent::Up;
-    else if (strcmp(arg, "down") == 0) ev = SlopOSTrackballEvent::Down;
-    else if (strcmp(arg, "left") == 0) ev = SlopOSTrackballEvent::Left;
-    else if (strcmp(arg, "right") == 0) ev = SlopOSTrackballEvent::Right;
+    SigurdOSTrackballEvent ev = SigurdOSTrackballEvent::None;
+    if (strcmp(arg, "up") == 0)        ev = SigurdOSTrackballEvent::Up;
+    else if (strcmp(arg, "down") == 0) ev = SigurdOSTrackballEvent::Down;
+    else if (strcmp(arg, "left") == 0) ev = SigurdOSTrackballEvent::Left;
+    else if (strcmp(arg, "right") == 0) ev = SigurdOSTrackballEvent::Right;
     else if (strcmp(arg, "click") == 0 || strcmp(arg, "c") == 0)
-        ev = SlopOSTrackballEvent::Click;
-    else if (strcmp(arg, "u") == 0)    ev = SlopOSTrackballEvent::Up;
-    else if (strcmp(arg, "d") == 0)    ev = SlopOSTrackballEvent::Down;
-    else if (strcmp(arg, "l") == 0)    ev = SlopOSTrackballEvent::Left;
-    else if (strcmp(arg, "r") == 0)    ev = SlopOSTrackballEvent::Right;
+        ev = SigurdOSTrackballEvent::Click;
+    else if (strcmp(arg, "u") == 0)    ev = SigurdOSTrackballEvent::Up;
+    else if (strcmp(arg, "d") == 0)    ev = SigurdOSTrackballEvent::Down;
+    else if (strcmp(arg, "l") == 0)    ev = SigurdOSTrackballEvent::Left;
+    else if (strcmp(arg, "r") == 0)    ev = SigurdOSTrackballEvent::Right;
 
-    if (ev == SlopOSTrackballEvent::None) {
+    if (ev == SigurdOSTrackballEvent::None) {
         Serial.printf("[test] tb: unknown direction \"%s\" (use up/down/left/right/click)\n", arg);
         return;
     }
-    slopos_trackball_inject(ev);
+    sigurdos_trackball_inject(ev);
     Serial.printf("[test] tb %s\n", arg);
 }
 
@@ -294,7 +294,7 @@ static void cmd_press(const char* key) {
         Serial.printf("[test] press: unknown key \"%s\" (use enter/backspace/esc/tab)\n", key);
         return;
     }
-    slopos_keyboard_inject(code);
+    sigurdos_keyboard_inject(code);
     Serial.printf("[test] press %s (0x%02X)\n", key, code);
     // Small delay to let LVGL process the keypress before reading focus
     delay(50);
@@ -349,7 +349,7 @@ static void cmd_inject(const char* args) {
         return;
     }
 
-    slopos::mesh::injectMessage(from, channel, text_buf);
+    sigurdos::mesh::injectMessage(from, channel, text_buf);
     if (channel && channel[0]) {
         Serial.printf("[test] injected channel msg from %s in #%s: %s\n",
                       from, channel, text_buf);
@@ -360,7 +360,7 @@ static void cmd_inject(const char* args) {
 
 static void cmd_screen() {
     Serial.printf("[test] current screen: %s\n",
-                  screen_name(slopos::ui::current_screen()));
+                  screen_name(sigurdos::ui::current_screen()));
 }
 
 static void cmd_status() {
@@ -372,13 +372,13 @@ static void cmd_status() {
 static void cmd_debug(const char* arg) {
     if (!arg || !arg[0]) {
         // No args: show current state
-        Serial.printf("[test] debug level: %u\n", (unsigned)slopos::debug::get_level());
+        Serial.printf("[test] debug level: %u\n", (unsigned)sigurdos::debug::get_level());
         Serial.printf("[test] features: display=%d mesh=%d ui=%d map=%d diag=%d\n",
-                      slopos::debug::feat_get_display() ? 1 : 0,
-                      slopos::debug::feat_get_mesh() ? 1 : 0,
-                      slopos::debug::feat_get_ui() ? 1 : 0,
-                      slopos::debug::feat_get_map() ? 1 : 0,
-                      slopos::debug::feat_get_diag() ? 1 : 0);
+                      sigurdos::debug::feat_get_display() ? 1 : 0,
+                      sigurdos::debug::feat_get_mesh() ? 1 : 0,
+                      sigurdos::debug::feat_get_ui() ? 1 : 0,
+                      sigurdos::debug::feat_get_map() ? 1 : 0,
+                      sigurdos::debug::feat_get_diag() ? 1 : 0);
         return;
     }
     // Skip leading whitespace
@@ -391,11 +391,11 @@ static void cmd_debug(const char* arg) {
         bool (*get)();
     };
     static const FeatEntry feat_table[] = {
-        {"display", slopos::debug::feat_set_display, slopos::debug::feat_get_display},
-        {"mesh",    slopos::debug::feat_set_mesh,    slopos::debug::feat_get_mesh},
-        {"ui",      slopos::debug::feat_set_ui,      slopos::debug::feat_get_ui},
-        {"map",     slopos::debug::feat_set_map,     slopos::debug::feat_get_map},
-        {"diag",    slopos::debug::feat_set_diag,    slopos::debug::feat_get_diag},
+        {"display", sigurdos::debug::feat_set_display, sigurdos::debug::feat_get_display},
+        {"mesh",    sigurdos::debug::feat_set_mesh,    sigurdos::debug::feat_get_mesh},
+        {"ui",      sigurdos::debug::feat_set_ui,      sigurdos::debug::feat_get_ui},
+        {"map",     sigurdos::debug::feat_set_map,     sigurdos::debug::feat_get_map},
+        {"diag",    sigurdos::debug::feat_set_diag,    sigurdos::debug::feat_get_diag},
     };
 
     char buf[64];
@@ -408,7 +408,7 @@ static void cmd_debug(const char* arg) {
     // Check for "level" sub-command
     if (strcmp(subcmd, "level") == 0) {
         if (!val_str) {
-            Serial.printf("[test] debug level: %u\n", (unsigned)slopos::debug::get_level());
+            Serial.printf("[test] debug level: %u\n", (unsigned)sigurdos::debug::get_level());
             return;
         }
         char* end;
@@ -418,7 +418,7 @@ static void cmd_debug(const char* arg) {
             Serial.println("[test] debug: usage: debug level <1|2|3>  (1=quiet, 2=normal, 3=verbose)");
             return;
         }
-        slopos::debug::set_level((uint8_t)level);
+        sigurdos::debug::set_level((uint8_t)level);
         return;
     }
 
@@ -444,7 +444,7 @@ static void cmd_debug(const char* arg) {
     // "all on" / "all off"
     if (strcmp(subcmd, "all") == 0 && val_str) {
         if ((val_str[0] == '0' || val_str[0] == '1') && val_str[1] == '\0') {
-            slopos::debug::feat_set_all_mask(val_str[0] != '0');
+            sigurdos::debug::feat_set_all_mask(val_str[0] != '0');
             Serial.printf("[test] debug all features: %s\n", val_str[0] != '0' ? "ON" : "OFF");
         } else {
             Serial.printf("[test] debug: invalid value \"%s\" for all (use 0 or 1)\n", val_str);
@@ -463,7 +463,7 @@ static void cmd_debug(const char* arg) {
             Serial.println("[test] debug: usage: debug <1|2|3> or debug <feature> <1|0>");
             return;
         }
-        slopos::debug::set_level((uint8_t)level);
+        sigurdos::debug::set_level((uint8_t)level);
         return;
     }
 
@@ -715,13 +715,13 @@ static void cmd_tap(const char* arg) {
         Serial.println("[test] tap: usage: tap <x> <y>");
         return;
     }
-    slopos_test_set_touch(x, y);
+    sigurdos_test_set_touch(x, y);
     Serial.printf("[test] tap %d %d\n", x, y);
 }
 
 static void cmd_backlight(const char* arg) {
     if (!arg || !arg[0]) {
-        Serial.printf("[test] backlight: %s\n", slopos_display_is_on() ? "on" : "off");
+        Serial.printf("[test] backlight: %s\n", sigurdos_display_is_on() ? "on" : "off");
         return;
     }
     int val = atoi(arg);
@@ -729,11 +729,11 @@ static void cmd_backlight(const char* arg) {
         Serial.println("[test] backlight: brightness must be 0-255");
         return;
     }
-    slopos_display_set_brightness((uint8_t)val);
+    sigurdos_display_set_brightness((uint8_t)val);
     if (val > 0) {
-        slopos_keyboard_set_brightness(slopos::prefs_get().kbd_backlight);
+        sigurdos_keyboard_set_brightness(sigurdos::prefs_get().kbd_backlight);
     } else {
-        slopos_keyboard_set_brightness(0);
+        sigurdos_keyboard_set_brightness(0);
     }
     Serial.printf("[test] backlight %d\n", val);
 }
@@ -767,7 +767,7 @@ static void cmd_sendchannel(const char* arg) {
     }
 
     // Validate channel exists by trying to send
-    bool ok = slopos::mesh::sendChannelMessage(channel, text);
+    bool ok = sigurdos::mesh::sendChannelMessage(channel, text);
     if (ok) {
         Serial.printf("[test] sendchannel OK: #%s sent %d chars\n", channel, (int)strlen(text));
     } else {
@@ -810,29 +810,29 @@ static void cmd_sendmessage(const char* arg) {
         return;
     }
 
-    uint32_t send_ts = slopos::mesh::sendMessage(name, text);
+    uint32_t send_ts = sigurdos::mesh::sendMessage(name, text);
     bool ok = (send_ts != 0);
     if (ok) {
 
         Serial.printf("[test] sendmessage OK: DM to %s sent %d chars\n", name, (int)strlen(text));
 
     } else {
-        send_ts = slopos::mesh::getCurrentTime();  // fallback for the simulated ACK even on failure
+        send_ts = sigurdos::mesh::getCurrentTime();  // fallback for the simulated ACK even on failure
     }
     // Always add local UI entry + simulated ACK for UI verification.
 
     // The UI's chat_screen_add_msg() internally calls getCurrentTime(); this
     // captures 'now' once so registerAckedMessage uses the same value.
     // TODO: add chat_screen_add_msg_with_ts() to accept an explicit timestamp.
-    uint32_t now = slopos::mesh::getCurrentTime();
+    uint32_t now = sigurdos::mesh::getCurrentTime();
 
     char dm_channel[64];
     snprintf(dm_channel, sizeof(dm_channel), "DM: %s", name);
-    const char* own = slopos::mesh::getOwnName();
-    slopos::ui::chat_screen_add_msg(dm_channel, own ? own : "self", text, true);
+    const char* own = sigurdos::mesh::getOwnName();
+    sigurdos::ui::chat_screen_add_msg(dm_channel, own ? own : "self", text, true);
     // Directly register a simulated ACK with the same timestamp the UI stored.
 
-    slopos::mesh::registerAckedMessage(name, now);
+    sigurdos::mesh::registerAckedMessage(name, now);
 
     Serial.println(ok ? "[test] (ACK simulated)" : "[test] (local only + ACK simulated)");
 }
@@ -843,7 +843,7 @@ static void cmd_opendm(const char* arg) {
         Serial.println("[test] opendm: usage: opendm <contact_name>");
         return;
     }
-    slopos::ui::chat_screen_open_dm(arg);
+    sigurdos::ui::chat_screen_open_dm(arg);
     Serial.printf("[test] opendm: opened DM with %s\n", arg);
 }
 
@@ -862,15 +862,15 @@ static void cmd_addchannel(const char* arg) {
         name[name_len] = '\0';
         const char* psk = space + 1;
         while (*psk == ' ') psk++;
-        bool ok = slopos::mesh::addChannel(name, psk);
+        bool ok = sigurdos::mesh::addChannel(name, psk);
         if (ok) {
             Serial.printf("[test] addchannel OK: #%s with PSK\n", name);
-            slopos::mesh::saveChannels();
+            sigurdos::mesh::saveChannels();
         }
         else Serial.printf("[test] addchannel FAILED: #%s\n", name);
     } else {
         // No PSK — try as hashtag channel
-        bool ok = slopos::mesh::addHashtagChannel(arg);
+        bool ok = sigurdos::mesh::addHashtagChannel(arg);
         if (ok) Serial.printf("[test] addchannel OK: hashtag #%s\n", arg);
         else Serial.printf("[test] addchannel FAILED: hashtag #%s\n", arg);
     }
@@ -943,7 +943,7 @@ static void cmd_setrf(const char* arg) {
         return;
     }
 
-    slopos::NodePrefs p = slopos::prefs_get();
+    sigurdos::NodePrefs p = sigurdos::prefs_get();
     p.freq = freq;
     p.sf = (uint8_t)sf;
     p.bw = bw;
@@ -952,7 +952,7 @@ static void cmd_setrf(const char* arg) {
     p.configured = true;
 
     if (prefs_save(p)) {
-        slopos::prefs_set(p);
+        sigurdos::prefs_set(p);
         Serial.println(F("[test] setrf: radio params saved to NVS"));
         Serial.printf("[test] setrf: freq=%.3f SF=%d BW=%.1f CR=%d TX=%d dBm\n",
                       freq, sf, bw, cr, tx_pwr);
@@ -972,7 +972,7 @@ static void cmd_reboot() {
 
 // ── Cmd: advert ───────────────────────────────────────────
 static void cmd_advert() {
-    bool ok = slopos::mesh::sendAdvert();
+    bool ok = sigurdos::mesh::sendAdvert();
     Serial.printf("[test] advert: %s\n", ok ? "sent" : "FAILED");
 }
 
@@ -1027,11 +1027,11 @@ static bool dispatch(const char* line) {
         cmd_addchannel(arg);
     } else if (strcmp(cmd, "addrepeater") == 0) {
         if (!arg) { Serial.println("[test] addrepeater: missing name"); return true; }
-        bool ok = slopos::mesh::addTestRepeater(arg);
+        bool ok = sigurdos::mesh::addTestRepeater(arg);
         Serial.printf("[test] addrepeater %s: %s\n", arg, ok ? "OK" : "FAILED");
     } else if (strcmp(cmd, "addroomserver") == 0) {
         if (!arg) { Serial.println("[test] addroomserver: missing name"); return true; }
-        bool ok = slopos::mesh::addTestRoomServer(arg);
+        bool ok = sigurdos::mesh::addTestRoomServer(arg);
         Serial.printf("[test] addroomserver %s: %s\n", arg, ok ? "OK" : "FAILED");
 
     } else if (strcmp(cmd, "login") == 0) {
@@ -1059,12 +1059,12 @@ static bool dispatch(const char* line) {
         }
         while (*pw_start == ' ') pw_start++;
         if (!pw_start[0]) { Serial.println("[test] login: need name and password"); return true; }
-        bool ok = slopos::mesh::sendLogin(name, pw_start);
+        bool ok = sigurdos::mesh::sendLogin(name, pw_start);
         Serial.printf("[test] login %s: %s\n", name, ok ? "OK" : "FAILED");
 
     } else if (strcmp(cmd, "setlogin") == 0) {
         if (!arg) { Serial.println("[test] setlogin: usage: setlogin <name>"); return true; }
-        slopos::mesh::forceLoginState(arg, 2, 1);  // LOGIN_OK + admin permission
+        sigurdos::mesh::forceLoginState(arg, 2, 1);  // LOGIN_OK + admin permission
         Serial.printf("[test] setlogin %s: OK\n", arg);
     } else if (strcmp(cmd, "screen") == 0) {
         cmd_screen();
@@ -1073,12 +1073,12 @@ static bool dispatch(const char* line) {
     } else if (strcmp(cmd, "debug") == 0) {
         cmd_debug(arg);
     } else if (strcmp(cmd, "term-log") == 0) {
-        slopos::ui::term_dump_log();
+        sigurdos::ui::term_dump_log();
     } else if (strcmp(cmd, "term-clear") == 0) {
-        slopos::ui::term_clear_log();
+        sigurdos::ui::term_clear_log();
     } else if (strcmp(cmd, "term-submit") == 0) {
         if (!arg) { Serial.println("[test] term-submit: missing command text"); return true; }
-        slopos::ui::term_submit(arg);
+        sigurdos::ui::term_submit(arg);
     } else if (strcmp(cmd, "emoji") == 0) {
         cmd_emoji();
     } else if (strcmp(cmd, "emoji-ac") == 0) {
@@ -1088,11 +1088,11 @@ static bool dispatch(const char* line) {
     } else if (strcmp(cmd, "acmd") == 0) {
         if (!arg) { Serial.println("[test] acmd: missing name"); return true; }
         Serial.printf("[test] acmd -> %s\n", arg);
-        slopos::ui::admin_cmd_show(arg);
+        sigurdos::ui::admin_cmd_show(arg);
     } else if (strcmp(cmd, "loginstat") == 0) {
         if (!arg) { Serial.println("[test] loginstat: missing name"); return true; }
-        uint8_t st = slopos::mesh::getLoginStatus(arg);
-        uint8_t perm = slopos::mesh::getLoginPermission(arg);
+        uint8_t st = sigurdos::mesh::getLoginStatus(arg);
+        uint8_t perm = sigurdos::mesh::getLoginPermission(arg);
         Serial.printf("[test] loginstat %s: status=%d perm=%d\n", arg, (int)st, (int)perm);
     } else if (strcmp(cmd, "tree") == 0) {
         cmd_tree();
@@ -1127,7 +1127,7 @@ static bool dispatch(const char* line) {
         }
         strncpy(channel, p[0] ? p : "0", sizeof(channel) - 1);
         channel[sizeof(channel) - 1] = '\0';
-        bool ok = slopos::mesh::sendRoomMsgFetchRequest(name, channel);
+        bool ok = sigurdos::mesh::sendRoomMsgFetchRequest(name, channel);
         Serial.printf("[test] fetchmsgs %s channel=%s: %s\n", name, channel, ok ? "OK" : "FAILED");
     } else if (strcmp(cmd, "setrf") == 0) {
         cmd_setrf(arg);
@@ -1143,11 +1143,11 @@ static bool dispatch(const char* line) {
 
 // ── Public API ───────────────────────────────────────────
 
-bool slopos_test_controller_exec(const char* cmd) {
+bool sigurdos_test_controller_exec(const char* cmd) {
     return dispatch(cmd);
 }
 
-void slopos_test_controller_init() {
+void sigurdos_test_controller_init() {
     initialized = true;
     cmd_pos = 0;
     cmd_buf[0] = '\0';
@@ -1155,20 +1155,20 @@ void slopos_test_controller_init() {
 
     Serial.println();
     Serial.println(F("╔══════════════════════════════════════╗"));
-    Serial.println(F("║  SlopOS Remote Test Controller      ║"));
+    Serial.println(F("║  SigurdOS Remote Test Controller      ║"));
     Serial.println(F("║  Type 'help' for available commands ║"));
     Serial.println(F("╚══════════════════════════════════════╝"));
     Serial.println();
 }
 
-void slopos_test_controller_loop() {
+void sigurdos_test_controller_loop() {
     if (!initialized) return;
 
     uint32_t now = millis();
 
     // Drain type queue: inject one character per loop iteration
     if (type_count > 0 && (now - type_last_inject_ms >= TYPE_CHUNK_DELAY)) {
-        slopos_keyboard_inject((uint8_t)type_buf[type_pos]);
+        sigurdos_keyboard_inject((uint8_t)type_buf[type_pos]);
         type_pos++;
         type_count--;
         type_last_inject_ms = now;
@@ -1201,9 +1201,9 @@ void slopos_test_controller_loop() {
 // ── Stub implementations for functions declared in screens.h ──
 // These are needed by the test controller dispatch table but only
 // meaningful when a real terminal screen is active.
-namespace slopos::ui {
+namespace sigurdos::ui {
 void term_dump_log()  { Serial.println("[term] dump: no terminal screen (test mode)"); }
 void term_clear_log() { Serial.println("[term] cleared (test mode)"); }
 void term_submit(const char* text) { Serial.printf("[term] submit: %s (test mode, ignored)\n", text); }
 lv_obj_t* term_get_input() { return nullptr; }
-} // namespace slopos::ui
+} // namespace sigurdos::ui

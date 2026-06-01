@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace slopos {
+namespace sigurdos {
 
 struct NodePrefs {
     char    node_name[32];
@@ -41,7 +41,7 @@ struct NodePrefs {
 
     // Sentinel defaults — radio will NOT transmit until user configures
     void set_defaults() {
-        strncpy(node_name, "SlopOS T-Deck", sizeof(node_name) - 1);
+        strncpy(node_name, "SigurdOS T-Deck", sizeof(node_name) - 1);
         node_name[sizeof(node_name) - 1] = '\0';
         freq = 0.0f;         // 0 = not configured
         bw   = 0.0f;
@@ -84,4 +84,4 @@ bool saveRepeaterPassword(const char* name, const char* password);
 bool loadRepeaterPassword(const char* name, char* password, size_t max_len);
 void removeRepeaterPassword(const char* name);
 
-} // namespace slopos
+} // namespace sigurdos

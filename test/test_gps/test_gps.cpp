@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// This file is part of SlopOS-TDeck.
+// This file is part of SigurdOS.
 //
-// SlopOS-TDeck is free software: you can redistribute it and/or modify
+// SigurdOS is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// SlopOS-TDeck is distributed in the hope that it will be useful,
+// SigurdOS is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
+// along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
 
 /**
@@ -357,33 +357,33 @@ protected:
     void SetUp() override {
         arduino_mock::reset();
         Serial1.mock_clear_rx();
-        slopos_gps_init();
+        sigurdos_gps_init();
     }
 
     void feed(const char* sentence) {
         Serial1.mock_queue_rx(sentence);
-        slopos_gps_loop();
+        sigurdos_gps_loop();
     }
 };
 
 TEST_F(GPSIntegrationTest, GGAWithEmptyCoordinateFieldsDoesNotShiftLaterFields) {
     feed("$GPGGA,123519,,,,,1,08,0.9,545.4,M,46.9,M,,*7E\n");
 
-    EXPECT_EQ(slopos_gps_hour(), 12);
-    EXPECT_EQ(slopos_gps_minute(), 35);
-    EXPECT_EQ(slopos_gps_second(), 19);
-    EXPECT_FLOAT_EQ(slopos_gps_latitude(), 0.0f);
-    EXPECT_FLOAT_EQ(slopos_gps_longitude(), 0.0f);
-    EXPECT_EQ(slopos_gps_fix_quality(), 1);
-    EXPECT_EQ(slopos_gps_satellites(), 8);
-    EXPECT_NEAR(slopos_gps_altitude_m(), 545.4f, 0.1f);
+    EXPECT_EQ(sigurdos_gps_hour(), 12);
+    EXPECT_EQ(sigurdos_gps_minute(), 35);
+    EXPECT_EQ(sigurdos_gps_second(), 19);
+    EXPECT_FLOAT_EQ(sigurdos_gps_latitude(), 0.0f);
+    EXPECT_FLOAT_EQ(sigurdos_gps_longitude(), 0.0f);
+    EXPECT_EQ(sigurdos_gps_fix_quality(), 1);
+    EXPECT_EQ(sigurdos_gps_satellites(), 8);
+    EXPECT_NEAR(sigurdos_gps_altitude_m(), 545.4f, 0.1f);
 }
 
 TEST_F(GPSIntegrationTest, RMCWithEmptySpeedKeepsHeadingInFieldEight) {
     feed("$GPRMC,123519,A,4807.038,N,01131.000,E,,084.4,230394,003.1,W*40\n");
 
-    EXPECT_FLOAT_EQ(slopos_gps_speed_kn(), 0.0f);
-    EXPECT_NEAR(slopos_gps_heading(), 84.4f, 0.1f);
+    EXPECT_FLOAT_EQ(sigurdos_gps_speed_kn(), 0.0f);
+    EXPECT_NEAR(sigurdos_gps_heading(), 84.4f, 0.1f);
 }
 
 } // anonymous namespace

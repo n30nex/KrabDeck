@@ -3,27 +3,27 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// This file is part of SlopOS-TDeck.
+// This file is part of SigurdOS.
 //
-// SlopOS-TDeck is free software: you can redistribute it and/or modify
+// SigurdOS is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 //
-// SlopOS-TDeck is distributed in the hope that it will be useful,
+// SigurdOS is distributed in the hope that it will be useful,
 // but WITHOUT ANY WARRANTY; without even the implied warranty of
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 //
 // You should have received a copy of the GNU General Public License
-// along with SlopOS-TDeck.  If not, see <https://www.gnu.org/licenses/>.
+// along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
 
 #include "../hal/trackball.h"
 #include <lvgl.h>
 #include <cstdint>
 
-namespace slopos::ui {
+namespace sigurdos::ui {
 
 // Create and show the chat screen
 void chat_screen_show();
@@ -38,7 +38,7 @@ void chat_screen_set_filter(int mode);
 void chat_screen_add_msg(const char* channel, const char* sender, const char* text, bool is_self);
 
 // Handle trackball events for the chat screen. Returns true if consumed.
-bool chat_screen_handle_trackball(SlopOSTrackballEvent event);
+bool chat_screen_handle_trackball(SigurdOSTrackballEvent event);
 
 // Return the chat input textarea object if the messaging view is active, else nullptr.
 lv_obj_t* chat_screen_get_input_field();
@@ -55,4 +55,4 @@ void chat_load_messages();
 // Call from the main UI loop (~1s interval).
 void chat_screen_refresh_acks();
 
-} // namespace slopos::ui
+} // namespace sigurdos::ui

@@ -42,15 +42,15 @@ The Map screen is invoked from the **MAP tile** on the home screen:
 │   └──────────┴──────────┘       │
 │                                  │
 ├──────────────────────────────────┤
-│ SlopOS T-Deck   ▂▄▆█       72%  │  ← bottom bar: device name, signal, battery
+│ SigurdOS T-Deck   ▂▄▆█       72%  │  ← bottom bar: device name, signal, battery
 └──────────────────────────────────┘
 ```
 
 **What it does:**
 1. Creates a full screen via `make_screen_full("Map")`
-2. Calls `slopos_map_init()` — allocates the 153KB draw buffer, discovers tiles
-3. Calls `slopos_map_reparent(scr)` — creates/attaches the LVGL canvas
-4. Calls `slopos_map_render()` — draws the initial tile grid
+2. Calls `sigurdos_map_init()` — allocates the 153KB draw buffer, discovers tiles
+3. Calls `sigurdos_map_reparent(scr)` — creates/attaches the LVGL canvas
+4. Calls `sigurdos_map_render()` — draws the initial tile grid
 5. Wires a transparent, clickable overlay for **drag-to-pan** (throttled to 200ms between renders)
 6. Adds **zoom buttons** (`+` and `-`, 32×32px, bottom-right, pixel-themed)
 7. Schedules a deferred render via `lv_timer_create(250ms)` to catch any late-widget layout
@@ -62,24 +62,24 @@ The Map screen is invoked from the **MAP tile** on the home screen:
 ### Initialization
 
 ```cpp
-void slopos_map_init();
-void slopos_map_reparent(lv_obj_t* new_parent);
-void slopos_map_deinit();
+void sigurdos_map_init();
+void sigurdos_map_reparent(lv_obj_t* new_parent);
+void sigurdos_map_deinit();
 ```
 
-1. **`slopos_map_init()`** — allocates the pixel draw buffer and discovers tiles:
+1. **`sigurdos_map_init()`** — allocates the pixel draw buffer and discovers tiles:
    - Draw buffer: `TFT_WIDTH × TFT_HEIGHT × 2` = **320 × 240 × 2 = 153,600 bytes** (RGB565)
    - Allocates from **DRAM** first (`MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT`), falls back to PSRAM
    - DRAM is preferred because LVGL canvas draw operations require CPU/DMA-accessible memory
    - Calls `load_metadata()` which runs tile discovery and parses `metadata.json`
    - Sets `initialized = true`
 
-2. **`slopos_map_reparent(new_parent)`** — creates or reparents the LVGL canvas:
+2. **`sigurdos_map_reparent(new_parent)`** — creates or reparents the LVGL canvas:
    - Creates `lv_canvas_create(new_parent)` with the real screen as parent (not `nullptr`, which in LVGL v9 would create a separate screen object)
    - Sets canvas size to `TFT_WIDTH × TFT_HEIGHT` and attaches the RGB565 pixel buffer
-   - Registers a `LV_EVENT_DELETE` callback on the parent to auto-call `slopos_map_deinit()`
+   - Registers a `LV_EVENT_DELETE` callback on the parent to auto-call `sigurdos_map_deinit()`
 
-3. **`slopos_map_deinit()`** — frees all resources:
+3. **`sigurdos_map_deinit()`** — frees all resources:
    - Frees each cache entry's pixel buffer via `map_free()`
    - Frees the canvas pixel buffer
    - Nulls pointers and resets `initialized = false`
@@ -94,7 +94,7 @@ The canvas pixel buffer is the **primary working surface** for all map rendering
 | Format | RGB565 (16-bit per pixel) |
 | Allocation priority | DRAM → PSRAM fallback |
 | Purpose | LVGL canvas pixel buffer, written directly by `draw_tile_from_cache()` |
-| Lifetime | Allocated in `slopos_map_init()`, freed in `slopos_map_deinit()` |
+| Lifetime | Allocated in `sigurdos_map_init()`, freed in `sigurdos_map_deinit()` |
 
 The `map_alloc()` / `map_free()` helpers attempt PSRAM first (for large allocations) with a DRAM fallback:
 
@@ -138,10 +138,10 @@ static int    zoom_level = 10;
 
 ### Rendering Pipeline
 
-`slopos_map_render()` is the core rendering function:
+`sigurdos_map_render()` is the core rendering function:
 
 ```
-slopos_map_render()
+sigurdos_map_render()
 ├── Guard: initialized && canvas && pixels
 ├── lv_canvas_fill_bg() — fill with ocean blue (#0f3460)
 ├── lv_canvas_init_layer()
@@ -210,15 +210,15 @@ TileCoverage {
 
 | Function | Description |
 |----------|-------------|
-| `slopos_map_set_view(lat, lon, zoom)` | Jump to a specific coordinate and zoom |
-| `slopos_map_get_lat()` | Get current center latitude |
-| `slopos_map_get_lon()` | Get current center longitude |
-| `slopos_map_get_zoom()` | Get current zoom level |
-| `slopos_map_pan(dx, dy)` | Pan by screen pixel delta (Web Mercator-aware) |
-| `slopos_map_zoom_in()` | Zoom in one level (clamped to coverage) |
-| `slopos_map_zoom_out()` | Zoom out one level (clamped to coverage) |
-| `slopos_map_pixel_to_latlon(px, py, &lat, &lon)` | Convert a screen pixel to lat/lon (for touch events) |
-| `slopos_map_tiles_available()` | Quick check if the current view has a tile on SD |
+| `sigurdos_map_set_view(lat, lon, zoom)` | Jump to a specific coordinate and zoom |
+| `sigurdos_map_get_lat()` | Get current center latitude |
+| `sigurdos_map_get_lon()` | Get current center longitude |
+| `sigurdos_map_get_zoom()` | Get current zoom level |
+| `sigurdos_map_pan(dx, dy)` | Pan by screen pixel delta (Web Mercator-aware) |
+| `sigurdos_map_zoom_in()` | Zoom in one level (clamped to coverage) |
+| `sigurdos_map_zoom_out()` | Zoom out one level (clamped to coverage) |
+| `sigurdos_map_pixel_to_latlon(px, py, &lat, &lon)` | Convert a screen pixel to lat/lon (for touch events) |
+| `sigurdos_map_tiles_available()` | Quick check if the current view has a tile on SD |
 
 **Pan delta math:**
 ```cpp
@@ -234,7 +234,7 @@ This properly handles Web Mercator's **non-linear latitude scaling** — screen 
 
 ### Debug Diagnostics
 
-When `SLOPOS_DEBUG_MAP` is defined (in `src/diagnostics/debug_cfg.h`), the map renderer outputs:
+When `SIGURDOS_DEBUG_MAP` is defined (in `src/diagnostics/debug_cfg.h`), the map renderer outputs:
 
 - **Serial debug logging** — each tile load hit/miss + path, render calls, discovery output
 - **Diagnostic overlay** — when no tiles load, shows a detailed status panel instead of the simple error message:
@@ -302,7 +302,7 @@ Evict:    find first nullptr slot, else LRU (lowest last_used)
 
 **Total map-related PSRAM usage:** ~677 KB (cache + canvas fallback + transient decode buffers)
 
-**Cache entry lifetime:** Entries are freed in `slopos_map_deinit()` or when the slot is evicted and overwritten (the caller frees `slot->pixels` before `map_alloc`-ing a new buffer).
+**Cache entry lifetime:** Entries are freed in `sigurdos_map_deinit()` or when the slot is evicted and overwritten (the caller frees `slot->pixels` before `map_alloc`-ing a new buffer).
 
 ### `uint64_t` Clock — Wrap Safety
 
@@ -417,7 +417,7 @@ Tiles that extend beyond screen edges are clipped per-pixel:
 
 The mountpoint is defined in `src/hal/sdcard.h`:
 ```cpp
-#define SLOPOS_SD_MOUNTPOINT "/sdcard"
+#define SIGURDOS_SD_MOUNTPOINT "/sdcard"
 ```
 
 ### Tile Format Requirements

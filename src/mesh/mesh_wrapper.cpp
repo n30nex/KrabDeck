@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// MeshCore protocol integration using SlopMesh (minimal Mesh subclass).
+// MeshCore protocol integration using SigurdMesh (minimal Mesh subclass).
 // MeshCore is MIT licensed (meshcore-dev/MeshCore).
 
 #include "mesh_wrapper.h"
@@ -9,8 +9,8 @@
 #include "hal/tdeck_pins.h"
 #include "hal/gps.h"
 #include "hal/prefs.h"
-#include "slop_mesh_v2.h"
-#include "slop_mesh.h"
+#include "sigurd_mesh_v2.h"
+#include "sigurd_mesh.h"
 #include "../diagnostics/debug_cfg.h"
 #include <helpers/sensors/LPPDataHelpers.h>
 
@@ -31,13 +31,13 @@
 #include <helpers/ArduinoHelpers.h>
 #include <helpers/StaticPoolPacketManager.h>
 
-using slopos::mesh::MeshMessage;
+using sigurdos::mesh::MeshMessage;
 
 // ════════════════════════════════════════════════════
 // Global objects
 // ════════════════════════════════════════════════════
 
-static slopos::TDeckBoard        board;
+static sigurdos::TDeckBoard        board;
 static SPIClass                  lora_spi(FSPI);
 static Module*                   lora_mod = nullptr;
 static CustomSX1262*             radio_module = nullptr;
@@ -49,12 +49,12 @@ static StdRNG                    fast_rng;
 static SimpleMeshTables          tables;
 static ArduinoMillis             millis_clock;
 static StaticPoolPacketManager   pkt_mgr(16);
-using slopos::mesh::SlopMeshV2;
-using mesh_impl_t = slopos::mesh::SlopMeshV2;
+using sigurdos::mesh::SigurdMeshV2;
+using mesh_impl_t = sigurdos::mesh::SigurdMeshV2;
 static mesh_impl_t*   g_mesh = nullptr;
 
 static bool initialized = false;
-static char own_name[32] = "SlopOS";
+static char own_name[32] = "SigurdOS";
 static uint32_t last_advert_time = 0;
 static bool     last_advert_success = false;
 static bool     last_advert_used_gps = false;
@@ -74,18 +74,18 @@ static uint32_t      msg_drop_count = 0;
 // reset to 0 when the chat screen is opened. Used by the home screen badge.
 static int           unread_count = 0;
 
-// Non-static overload for SlopMeshV2 — takes RSSI/SNR from caller context
-// (SlopMeshV2 has packet context when calling, while the static queue_push
+// Non-static overload for SigurdMeshV2 — takes RSSI/SNR from caller context
+// (SigurdMeshV2 has packet context when calling, while the static queue_push
 //  reads from radio_driver which may not reflect the correct packet.)
 // Defined with its qualified name to match the declaration in mesh_wrapper.h
-// (slopos::mesh) — SlopMeshV2 calls it as slopos::mesh::mesh_v2_queue_push().
-void slopos::mesh::mesh_v2_queue_push(const char* sender, const char* channel,
+// (sigurdos::mesh) — SigurdMeshV2 calls it as sigurdos::mesh::mesh_v2_queue_push().
+void sigurdos::mesh::mesh_v2_queue_push(const char* sender, const char* channel,
                          const char* text, int rssi, float snr) {
     if (!sender || !text) return;
     if (msg_count >= MAX_QUEUED) {
         msg_drop_count++;
-#if SLOPOS_DEBUG_MESH
-        SLOPOS_RUNTIME_FEAT(mesh) {
+#if SIGURDOS_DEBUG_MESH
+        SIGURDOS_RUNTIME_FEAT(mesh) {
         Serial.printf("[mesh] WARN: message queue full — dropping msg from %s (%lu dropped so far)\n",
                       sender, (unsigned long)msg_drop_count);
         }
@@ -105,9 +105,9 @@ void slopos::mesh::mesh_v2_queue_push(const char* sender, const char* channel,
     msg_head = (msg_head + 1) % MAX_QUEUED;
     msg_count++;
     const char* ptype = (channel && channel[0]) ? "CHANNEL" : "DM";
-    slopos::mesh::pushPacketLog(sender, rssi, snr, ptype);
-#if SLOPOS_DEBUG_MESH
-    SLOPOS_RUNTIME_FEAT(mesh) {
+    sigurdos::mesh::pushPacketLog(sender, rssi, snr, ptype);
+#if SIGURDOS_DEBUG_MESH
+    SIGURDOS_RUNTIME_FEAT(mesh) {
     Serial.printf("[mesh] MSG from %s%s%s: %s  (RSSI:%ddBm SNR:%.1fdB)\n",
                   sender, channel && channel[0] ? " in " : "",
                   channel && channel[0] ? channel : "", text, rssi, snr);
@@ -118,8 +118,8 @@ void slopos::mesh::mesh_v2_queue_push(const char* sender, const char* channel,
 static void queue_push(const char* sender, const char* channel, const char* text) {
     if (msg_count >= MAX_QUEUED) {
         msg_drop_count++;
-#if SLOPOS_DEBUG_MESH
-        SLOPOS_RUNTIME_FEAT(mesh) {
+#if SIGURDOS_DEBUG_MESH
+        SIGURDOS_RUNTIME_FEAT(mesh) {
         Serial.printf("[mesh] WARN: message queue full — dropping msg from %s (%lu dropped so far)\n",
                       sender ? sender : "?", (unsigned long)msg_drop_count);
         }
@@ -145,7 +145,7 @@ static void queue_push(const char* sender, const char* channel, const char* text
         int rssi = (int)radio_driver->getLastRSSI();
         float snr = radio_driver->getLastSNR();
         const char* ptype = (channel && channel[0]) ? "CHANNEL" : "DM";
-        slopos::mesh::pushPacketLog(sender, rssi, snr, ptype);
+        sigurdos::mesh::pushPacketLog(sender, rssi, snr, ptype);
     }
 }
 
@@ -158,20 +158,20 @@ static bool queue_pop(MeshMessage* out) {
 }
 
 // Forward declarations
-namespace slopos { namespace mesh { bool sendChannelMessage(const char* channel_name, const char* text); }}
+namespace sigurdos { namespace mesh { bool sendChannelMessage(const char* channel_name, const char* text); }}
 
 static void onMeshMessage(const char* sender, const char* channel, const char* text) {
     queue_push(sender, channel, text);
-#if SLOPOS_DEBUG
+#if SIGURDOS_DEBUG
     // Auto-reply in debug mode to test full duplex
     if (channel && channel[0]) {
         char reply[160];
         snprintf(reply, sizeof(reply), "%s: Roger that (%s)", own_name, text);
-        slopos::mesh::sendChannelMessage(channel, reply);
+        sigurdos::mesh::sendChannelMessage(channel, reply);
     }
 #endif
-#if SLOPOS_DEBUG_MESH
-    SLOPOS_RUNTIME_FEAT(mesh) {
+#if SIGURDOS_DEBUG_MESH
+    SIGURDOS_RUNTIME_FEAT(mesh) {
     int rssi = (int)radio_driver->getLastRSSI();
     float snr = radio_driver->getLastSNR();
     Serial.printf("[mesh] MSG from %s%s%s: %s  (RSSI:%ddBm SNR:%.1fdB)\n",
@@ -229,16 +229,16 @@ static int _acked_count = 0;
 static int _ack_counter = 0;   // bumped on each registerAckedMessage() — used by UI to detect new ACKs
 
 static uint32_t _last_telemetry_tag = 0;
-static slopos::mesh::TelemetryResult _cached_telemetry;
+static sigurdos::mesh::TelemetryResult _cached_telemetry;
 static bool _has_cached_telemetry = false;
 
 // ── Status request tracking (Phase 4.2) ───────
 static uint32_t _last_status_tag = 0;
-static slopos::mesh::NodeStatus _cached_status;
+static sigurdos::mesh::NodeStatus _cached_status;
 static bool _has_cached_status = false;
 
 // Parse a 56-byte RepeaterStats blob into NodeStatus struct
-static void parse_status_blob(const uint8_t* data, uint8_t len, slopos::mesh::NodeStatus* out) {
+static void parse_status_blob(const uint8_t* data, uint8_t len, sigurdos::mesh::NodeStatus* out) {
     if (!data || !out) return;
     memset(out, 0, sizeof(*out));
     uint8_t avail = len < NODE_STATUS_RESPONSE_SIZE ? len : NODE_STATUS_RESPONSE_SIZE;
@@ -274,7 +274,7 @@ static void parse_status_blob(const uint8_t* data, uint8_t len, slopos::mesh::No
 // Public API
 // ════════════════════════════════════════════════════
 
-namespace slopos {
+namespace sigurdos {
 namespace mesh {
 
 // ── Packet log ────────────────────────────────────
@@ -307,7 +307,7 @@ void registerAckedMessage(const char* dest, uint32_t ts) {
     _acked_head = (_acked_head + 1) % MAX_ACKED;
     if (_acked_count < MAX_ACKED) _acked_count++;
     _ack_counter++;
-#if SLOPOS_DEBUG_MESH
+#if SIGURDOS_DEBUG_MESH
     Serial.printf("[mesh] ACK for %s (ts=%lu) — %d total tracked\n", dest, (unsigned long)ts, _acked_count);
 #endif
 }
@@ -402,7 +402,7 @@ bool requestStatus(const char* dest_name) {
     bool ok = g_mesh->sendRequest(dest_name, REQ_TYPE_GET_STATUS);
     if (ok) {
         // Find the tag from the pending request table
-        for (int i = 0; i < SlopMeshV2::MAX_PENDING_REQUESTS; i++) {
+        for (int i = 0; i < SigurdMeshV2::MAX_PENDING_REQUESTS; i++) {
             if (g_mesh->_pending_reqs[i].in_use &&
                 strcmp(g_mesh->_pending_reqs[i].dest_name, dest_name) == 0) {
                 _last_status_tag = g_mesh->_pending_reqs[i].tag;
@@ -438,7 +438,7 @@ bool requestTelemetry(const char* dest_name) {
     if (!g_mesh || !dest_name || !dest_name[0]) return false;
     bool ok = g_mesh->sendRequest(dest_name, REQ_TYPE_GET_TELEMETRY_DATA);
     if (ok) {
-        for (int i = 0; i < SlopMeshV2::MAX_PENDING_REQUESTS; i++) {
+        for (int i = 0; i < SigurdMeshV2::MAX_PENDING_REQUESTS; i++) {
             if (g_mesh->_pending_reqs[i].in_use &&
                 strcmp(g_mesh->_pending_reqs[i].dest_name, dest_name) == 0) {
                 _last_telemetry_tag = g_mesh->_pending_reqs[i].tag;
@@ -565,8 +565,8 @@ void injectMessage(const char* sender, const char* channel, const char* text)
     } else {
         pushPacketLog(sender, -50, 8.0f, "CHANNEL");
     }
-#if SLOPOS_DEBUG_MESH
-    SLOPOS_RUNTIME_FEAT(mesh) {
+#if SIGURDOS_DEBUG_MESH
+    SIGURDOS_RUNTIME_FEAT(mesh) {
     Serial.printf("[test] injected msg from %s%s%s: %s\n",
                   sender, channel && channel[0] ? " in " : "",
                   channel && channel[0] ? channel : "", text);
@@ -588,7 +588,7 @@ bool init(bool spiffs_ok)
     fallback_clock.begin();
     rtc_clock.begin(Wire);
 
-#if !defined(SLOPOS_REMOTE_TEST) || defined(SLOPOS_REMOTE_TEST_RADIO)
+#if !defined(SIGURDOS_REMOTE_TEST) || defined(SIGURDOS_REMOTE_TEST_RADIO)
     // Delayed allocation of RadioLib Module and radio driver objects.
     // These were previously allocated at file scope (static init time),
     // before PSRAM was available. On ESP32 Arduino builds, a failed
@@ -616,14 +616,14 @@ bool init(bool spiffs_ok)
     initialized = true;
 
     // ── Radio configuration: use compile-time defaults if not configured ──
-    const slopos::NodePrefs& p = slopos::prefs_get();
+    const sigurdos::NodePrefs& p = sigurdos::prefs_get();
     float   freq     = p.configured ? p.freq  : LORA_FREQ;
     float   bw       = p.configured ? p.bw    : LORA_BW;
     int     sf       = p.configured ? p.sf    : LORA_SF;
     int     cr       = p.configured ? p.cr    : LORA_CR;
     int     tx_power = p.configured ? p.tx_power_dbm : LORA_TX_PWR;
 
-#if SLOPOS_DEBUG
+#if SIGURDOS_DEBUG
     // Debug builds: override NVS with compile-time radio defaults.
     // This ensures consistent behavior regardless of stale NVS values
     // from previous firmware versions or manual configuration.
@@ -636,18 +636,18 @@ bool init(bool spiffs_ok)
 #endif
 
     if (!p.configured) {
-#if SLOPOS_DEBUG_MESH
+#if SIGURDOS_DEBUG_MESH
         Serial.println("[mesh] Using compile-time defaults — open Settings to customize");
 #endif
     }
 
     // If still not configured (non-debug builds), keep SX1262 off.
-    // In debug builds, the SLOPOS_DEBUG block below saves configured=true
+    // In debug builds, the SIGURDOS_DEBUG block below saves configured=true
     // to NVS — but it can only do that if we don't early-return here.
     // Debug builds always init the radio with compile-time defaults.
-#if !SLOPOS_DEBUG
+#if !SIGURDOS_DEBUG
     {
-        const auto& cp = slopos::prefs_get();
+        const auto& cp = sigurdos::prefs_get();
         if (!cp.configured) {
             Serial.println("[mesh] Radio not configured — holding SX1262 in reset");
             pinMode(P_LORA_RESET, OUTPUT);
@@ -661,7 +661,7 @@ bool init(bool spiffs_ok)
     //     If BUSY pin is stuck HIGH from a previous crash, std_init() hangs
     //     in waitForBusyPin() → watchdog reset → infinite bootloop.
     //     Solution: assert RST LOW for 100µs, release, wait 10ms for TCXO.
-#if SLOPOS_DEBUG_MESH
+#if SIGURDOS_DEBUG_MESH
     Serial.println("[mesh] hard-resetting SX1262 via RST pin...");
 #endif
     pinMode(P_LORA_RESET, OUTPUT);
@@ -670,11 +670,11 @@ bool init(bool spiffs_ok)
     digitalWrite(P_LORA_RESET, HIGH);
     delay(10);  // TCXO stabilization + radio calibration
 
-#if SLOPOS_DEBUG_MESH
+#if SIGURDOS_DEBUG_MESH
     Serial.println("[mesh] initializing LoRa SPI bus...");
 #endif
     lora_spi.begin(P_LORA_SCLK, P_LORA_MISO, P_LORA_MOSI);
-#if SLOPOS_DEBUG_MESH
+#if SIGURDOS_DEBUG_MESH
     Serial.println("[mesh] calling radio_module->std_init()...");
 #endif
     if (!radio_module->std_init(&lora_spi)) {
@@ -693,7 +693,7 @@ bool init(bool spiffs_ok)
     if (p.rx_boosted_gain) {
         radio_driver->setRxBoostedGainMode(true);
     }
-#if SLOPOS_DEBUG_MESH
+#if SIGURDOS_DEBUG_MESH
     Serial.printf("[mesh] Radio: %.3f MHz / %.1f kHz / SF%d / CR4/%d / %d dBm\n",
                   freq, bw, sf, cr, tx_power);
 #endif
@@ -702,7 +702,7 @@ bool init(bool spiffs_ok)
 
     g_mesh = new mesh_impl_t(*radio_driver, millis_clock, fast_rng, rtc_clock, pkt_mgr, tables);
     if (!g_mesh) {
-        Serial.println("[mesh] ERROR: SlopMesh allocation failed");
+        Serial.println("[mesh] ERROR: SigurdMesh allocation failed");
         return false;
     }
     g_mesh->setMessageCallback(onMeshMessage);
@@ -742,14 +742,14 @@ bool init(bool spiffs_ok)
         saveChannels();
     }
 
-    // Debug builds: auto-join the #testingslopos test channel for RF testing on
+    // Debug builds: auto-join the #testingsigurdos test channel for RF testing on
     // 869.525/SF10/BW250/CR5. addChannelBool() is a no-op if already present.
-#if SLOPOS_DEBUG
-    g_mesh->addChannelBool("testingslopos", "Si/tjXzmnwmPBA43Fw4b3Q==");
+#if SIGURDOS_DEBUG
+    g_mesh->addChannelBool("testingsigurdos", "Si/tjXzmnwmPBA43Fw4b3Q==");
     saveChannels();
     // is fully operational without requiring Settings → Radio Setup.
     {
-        slopos::NodePrefs dp = slopos::prefs_get();
+        sigurdos::NodePrefs dp = sigurdos::prefs_get();
         if (!dp.configured) {
             dp.configured = true;
             dp.freq = LORA_FREQ;
@@ -757,7 +757,7 @@ bool init(bool spiffs_ok)
             dp.sf = LORA_SF;
             dp.cr = LORA_CR;
             dp.tx_power_dbm = LORA_TX_PWR;
-            slopos::prefs_set(dp);
+            sigurdos::prefs_set(dp);
             Serial.println("[mesh] DEBUG: forced configured=true for testing");
         }
     }
@@ -766,23 +766,23 @@ bool init(bool spiffs_ok)
     // Only broadcast advert if user has explicitly configured radio params.
     // Compile-time defaults may be illegal in some regions — transmit gating
     // prevents first-boot broadcasts until user opens Settings → Radio Setup.
-#if SLOPOS_DEBUG
-    g_mesh->broadcastAdvert(own_name, slopos::prefs_get().advert_type);
+#if SIGURDOS_DEBUG
+    g_mesh->broadcastAdvert(own_name, sigurdos::prefs_get().advert_type);
 #else
     if (p.configured) {
-        g_mesh->broadcastAdvert(own_name, slopos::prefs_get().advert_type);
+        g_mesh->broadcastAdvert(own_name, sigurdos::prefs_get().advert_type);
     }
 #endif
 
     initialized = true;
-#if SLOPOS_DEBUG_MESH
-    Serial.println("[mesh] SlopMesh initialized");
+#if SIGURDOS_DEBUG_MESH
+    Serial.println("[mesh] SigurdMesh initialized");
 #endif
     // Test entry to verify packet log works
     pushPacketLog("SYSTEM", 0, 0.0f, "BOOT");
     return true;
 #else
-    // Remote test without SLOPOS_REMOTE_TEST_RADIO: init SPI bus for SD card only, no LoRa radio
+    // Remote test without SIGURDOS_REMOTE_TEST_RADIO: init SPI bus for SD card only, no LoRa radio
     lora_spi.begin(P_LORA_SCLK, P_LORA_MISO, P_LORA_MOSI);
     initialized = true;
     return true;
@@ -805,7 +805,7 @@ void loop()
     // ── Periodic auto-advert ──────────────────────────────
     {
         static uint32_t last_auto_adv = 0;
-        uint8_t interval = slopos::prefs_get().advert_interval;
+        uint8_t interval = sigurdos::prefs_get().advert_interval;
         if (interval > 0) {
             uint32_t now = millis();
             uint32_t interval_ms = (uint32_t)interval * 30000u; // half-minutes
@@ -1005,7 +1005,7 @@ bool sendAdvert() {
         return false;
     }
 
-    bool has_fix = slopos_gps_has_fix();
+    bool has_fix = sigurdos_gps_has_fix();
     last_advert_time = getCurrentTime();
     last_advert_used_gps = has_fix;
 
@@ -1014,12 +1014,12 @@ bool sendAdvert() {
         return false;
     }
 
-    if (has_fix && slopos::prefs_get().share_location) {
+    if (has_fix && sigurdos::prefs_get().share_location) {
         g_mesh->broadcastAdvert(own_name,
-            slopos_gps_latitude(), slopos_gps_longitude(),
-            slopos::prefs_get().advert_type);
+            sigurdos_gps_latitude(), sigurdos_gps_longitude(),
+            sigurdos::prefs_get().advert_type);
     } else {
-        g_mesh->broadcastAdvert(own_name, slopos::prefs_get().advert_type);
+        g_mesh->broadcastAdvert(own_name, sigurdos::prefs_get().advert_type);
     }
 
     last_advert_success = true;
@@ -1152,7 +1152,7 @@ const PingResult* getPingResult(int i) {
 void saveChannels() {
     if (!g_mesh) return;
     Preferences nvs;
-    if (!nvs.begin("slopos", false)) return;
+    if (!nvs.begin("sigurdos", false)) return;
     int n = g_mesh->getChannelCount();
     nvs.putUChar("ch_cnt", (uint8_t)n);
     for (int i = 0; i < n; i++) {
@@ -1172,7 +1172,7 @@ void saveChannels() {
 void loadChannels() {
     if (!g_mesh) return;
     Preferences nvs;
-    if (!nvs.begin("slopos", true)) return;
+    if (!nvs.begin("sigurdos", true)) return;
     int n = nvs.getUChar("ch_cnt", 0);
     for (int i = 0; i < n; i++) {
         char key[16];
@@ -1284,7 +1284,7 @@ bool applyRadioParams(float freq, float bw, int sf, int cr, int tx_power, bool r
 
 bool revertRadioParams() {
     if (!radio_module || !radio_inited) return false;
-    const slopos::NodePrefs& p = slopos::prefs_get();
+    const sigurdos::NodePrefs& p = sigurdos::prefs_get();
     float freq = p.configured ? p.freq : LORA_FREQ;
     float bw   = p.configured ? p.bw   : LORA_BW;
     int   sf   = p.configured ? p.sf   : LORA_SF;
@@ -1400,7 +1400,7 @@ void setDutyCycle(uint8_t percent) {
     bool sendAnonMessage(const char* pubkey_hex, const char* text) {
         if (!g_mesh || !pubkey_hex || !text) return false;
         uint8_t pub_key[PUB_KEY_SIZE];
-        int n = SlopMeshV2::hexToBytes(pubkey_hex, pub_key, sizeof(pub_key));
+        int n = SigurdMeshV2::hexToBytes(pubkey_hex, pub_key, sizeof(pub_key));
         if (n != PUB_KEY_SIZE) return false;
         return g_mesh->sendAnonMessage(pub_key, text);
     }
@@ -1420,7 +1420,7 @@ void setDutyCycle(uint8_t percent) {
                                char* channel_out, int channel_sz,
                                uint32_t* timestamp_out) {
         if (!g_mesh) return false;
-        const ::slopos::mesh::SlopMeshV2::GroupDataEntry* e = g_mesh->getGroupDataEntry(index);
+        const ::sigurdos::mesh::SigurdMeshV2::GroupDataEntry* e = g_mesh->getGroupDataEntry(index);
         if (!e || !e->valid) return false;
         if (data_type_out) *data_type_out = e->data_type;
         if (data_len_out) *data_len_out = e->data_len;
@@ -1440,7 +1440,7 @@ void setDutyCycle(uint8_t percent) {
         if (g_mesh) g_mesh->clearGroupData();
     }
 
-#if defined(SLOPOS_REMOTE_TEST)
+#if defined(SIGURDOS_REMOTE_TEST)
     // ── Test repeater helper ──────────────────────────
     bool addTestRepeater(const char* name) {
         if (!g_mesh || !name || !name[0]) return false;
@@ -1508,8 +1508,8 @@ void clearCmdResponses() {
 
 // ── Hex-to-bytes helper ─────────────────────────
 int hexToBytes(const char* hex, uint8_t* out, int out_max) {
-    return SlopMeshV2::hexToBytes(hex, out, (size_t)out_max);
+    return SigurdMeshV2::hexToBytes(hex, out, (size_t)out_max);
 }
 
 } // namespace mesh
-} // namespace slopos
+} // namespace sigurdos

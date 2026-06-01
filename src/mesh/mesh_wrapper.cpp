@@ -1463,6 +1463,7 @@ void setDutyCycle(uint8_t percent) {
     }
 #endif
 
+
 // ── Command response ring buffer ────────────────
 struct CmdResponse {
     char name[32];
@@ -1503,6 +1504,7 @@ void clearCmdResponses() {
     _cmd_resp_head = 0;
     _cmd_resp_count = 0;
 }
+
 
 // ── Hex-to-bytes helper ─────────────────────────
 int hexToBytes(const char* hex, uint8_t* out, int out_max) {

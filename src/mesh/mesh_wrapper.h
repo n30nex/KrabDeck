@@ -250,6 +250,7 @@ uint8_t getLoginPermission(const char* name);
 uint8_t getLoginStatus(const char* name);
 void forceLoginState(const char* name, uint8_t status, uint8_t permission);
 
+
 // ── Command response ring buffer (for terminal UI) ──
 #define MAX_CMD_RESPONSES 16
 void pushCmdResponse(const char* name, const char* text);

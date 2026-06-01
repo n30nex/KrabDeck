@@ -125,7 +125,7 @@ static void print_help() {
     Serial.println(F("║  addroomserver <name>        Add test room server    ║"));
     Serial.println(F("║  login <name> <pw>            Login to room server      ║"));
     Serial.println(F("║  fetchmsgs <name> [chan]      Fetch room messages       ║"));
- origin/dev
+
     Serial.println(F("║  screen      Show current screen     ║"));
     Serial.println(F("║  status      Show device state       ║"));
     Serial.println(F("║  debug <level>  Set debug level (1=quiet, 2=normal, 3=verbose)║"));
@@ -169,7 +169,7 @@ static void cmd_navigate(const char* arg) {
 
             bool skip = (slopos::mesh::getLoginStatus(name) == 2);
             slopos::ui::repeater_detail_screen_show(name, skip);
- origin/dev
+
             return;
         }
     }
@@ -815,7 +815,7 @@ static void cmd_sendmessage(const char* arg) {
     if (ok) {
 
         Serial.printf("[test] sendmessage OK: DM to %s sent %d chars\n", name, (int)strlen(text));
- origin/dev
+
     } else {
         send_ts = slopos::mesh::getCurrentTime();  // fallback for the simulated ACK even on failure
     }
@@ -825,7 +825,7 @@ static void cmd_sendmessage(const char* arg) {
     // captures 'now' once so registerAckedMessage uses the same value.
     // TODO: add chat_screen_add_msg_with_ts() to accept an explicit timestamp.
     uint32_t now = slopos::mesh::getCurrentTime();
- origin/dev
+
     char dm_channel[64];
     snprintf(dm_channel, sizeof(dm_channel), "DM: %s", name);
     const char* own = slopos::mesh::getOwnName();
@@ -833,7 +833,7 @@ static void cmd_sendmessage(const char* arg) {
     // Directly register a simulated ACK with the same timestamp the UI stored.
 
     slopos::mesh::registerAckedMessage(name, now);
- origin/dev
+
     Serial.println(ok ? "[test] (ACK simulated)" : "[test] (local only + ACK simulated)");
 }
 
@@ -1061,7 +1061,7 @@ static bool dispatch(const char* line) {
         if (!pw_start[0]) { Serial.println("[test] login: need name and password"); return true; }
         bool ok = slopos::mesh::sendLogin(name, pw_start);
         Serial.printf("[test] login %s: %s\n", name, ok ? "OK" : "FAILED");
- origin/dev
+
     } else if (strcmp(cmd, "setlogin") == 0) {
         if (!arg) { Serial.println("[test] setlogin: usage: setlogin <name>"); return true; }
         slopos::mesh::forceLoginState(arg, 2, 1);  // LOGIN_OK + admin permission

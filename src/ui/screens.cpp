@@ -543,13 +543,6 @@ void contacts_screen_show()
         lv_obj_set_style_text_font(name_l, &lv_font_montserrat_12, 0);
         lv_obj_align(name_l, LV_ALIGN_LEFT_MID, 28, 0);
 
-        // Store a heap copy of the contact name as user_data so the event
-        // handler can find it without depending on widget child index order.
-        // Freed on LV_EVENT_DELETE to avoid leaking when the screen is
-        // discarded or the row is recycled.
-        char* name_dup = strdup(c.name);
-        lv_obj_set_user_data(row, name_dup);
-
         // RSSI
         char rssi_buf[12];
         snprintf(rssi_buf, sizeof(rssi_buf), "%ddBm", c.rssi);

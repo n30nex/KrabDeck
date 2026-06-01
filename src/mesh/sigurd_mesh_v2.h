@@ -916,7 +916,7 @@ public:
         uint8_t  acl_permissions;   // v7+ ACL byte
         uint8_t  status;            // LoginStatus
         uint32_t started_at_ms;     // when login was initiated (for timeout)
-        bool     in_use;
+        bool     in_use = false;
     };
     LoginEntry _login_entries[MAX_LOGIN_ENTRIES];
 

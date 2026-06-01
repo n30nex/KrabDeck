@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/SigurdOS_Banner.png" alt="SigurdOS Banner" width="100%">
+</p>
+
 # SigurdOS T-Deck
 
 **Status: Beta testing** — several users have flashed successfully. See [Known Issues](#known-issues) below.

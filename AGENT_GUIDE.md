@@ -7,8 +7,8 @@
 ## Quick Start
 
 ```bash
-git clone --recurse-submodules git@github.com:hermes-gadget/SlopOS-tdeck.git
-cd SlopOS-tdeck
+git clone --recurse-submodules git@github.com:hermes-gadget/SigurdOS-tdeck.git
+cd SigurdOS-tdeck
 
 # Run all native tests (no hardware, fast — do this repeatedly)
 pio test -e native_test -v

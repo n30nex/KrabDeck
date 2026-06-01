@@ -23,7 +23,7 @@ You are working on embedded C++ firmware. Mistakes here are expensive (they requ
 
 ### The non-negotiable loop for every task
 ```
-1. Find or open a GitHub issue on hermes-gadget/SlopOS-tdeck
+1. Find or open a GitHub issue on hermes-gadget/SigurdOS-tdeck
 2. git checkout dev && git pull origin dev
 3. git checkout -b <type>/<short-name>-<issue#>
 4. pio test -e native_test -v        # confirm baseline GREEN before you change anything

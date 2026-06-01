@@ -58,7 +58,7 @@ Full test documentation: [`test/README.md`](test/README.md)
 ## Architecture
 
 ```
-SlopOS-tdeck/
+SigurdOS-tdeck/
 ├── firmware/               ← Pre-built merged binaries (flash at 0x0)
 ├── lib/meshcore/           ← Git submodule: MeshCore protocol (routing, radio, encryption)
 ├── src/
@@ -157,8 +157,8 @@ No USB driver needed on macOS — the CP210x driver is built into the OS.
 ### Clone with submodule
 
 ```bash
-git clone --recurse-submodules https://github.com/hermes-gadget/SlopOS-tdeck.git
-cd SlopOS-tdeck
+git clone --recurse-submodules https://github.com/hermes-gadget/SigurdOS-tdeck.git
+cd SigurdOS-tdeck
 ```
 
 If `lib/meshcore/` is empty after clone, run:
@@ -219,20 +219,20 @@ All screens from the SigurdOS T-Deck UI, captured from a live device running the
 
 | Screen | Screenshot | Description |
 |--------|-----------|-------------|
-| **Home** | ![Home](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/home.png) | 4×3 icon grid launcher with CHATS, CONTACTS, REPEATERS, FINDER, PACKETS, MAP, ADVERTISE, SETTINGS, TRACE, TERMINAL, SETUP, SIGNAL. Top bar shows current channel, bottom bar shows device name + battery. |
-| **Onboarding** | ![Onboarding](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/onboarding.png) | First-boot setup wizard (3 steps) — configure node name, radio frequency, and spreading factor before the device is usable. |
-| **Chat** | ![Chat](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/chat.png) | Direct message view showing message bubbles between the user and a contact. Includes text input, sent/received messages with timestamps, and navigation to channel chats. |
-| **Contacts** | ![Contacts](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/contacts.png) | Lists companions (ADV_TYPE_CHAT) and room servers (ADV_TYPE_ROOM) that have been heard on the mesh. Tap a contact to send a direct message. |
-| **Repeaters** | ![Repeaters](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/repeaters.png) | Lists infrastructure relay nodes (ADV_TYPE_REPEATER) heard on the mesh. Repeaters extend network range and are filtered separately from contacts. |
-| **Finder** | ![Finder](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/network.png) | Ping Nearby interface — press the button to discover nodes on the local mesh. Shows ping results and known repeaters. |
-| **Heard / Packets** | ![Heard](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/heard.png) | Packet log showing all received mesh packets with timestamp, source, RSSI, SNR, and type columns. Useful for network diagnostics. |
-| **Map** | ![Map](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/map.png) | Offline tile map renderer showing node locations (from GPS) with pan and zoom. Renders PNG/JPEG tiles from SD card or PSRAM cache. |
-| **Advertise** | ![Advertise](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/advertise.png) | Send an advert (presence beacon) to the mesh so other nodes discover you. Shows advert type, cooldown, and last advertised timestamp. |
-| **Settings** | ![Settings](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/settings.png) | Device configuration: node name, radio params (frequency, SF, power, gain), display timeout, backlight, GPS toggle, and factory reset. |
-| **Trace** | ![Trace](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/trace.png) | Real-time routing trace showing packet paths through the mesh — source → hops → destination with per-hop RSSI/SNR. |
-| **Terminal** | ![Terminal](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/terminal.png) | Serial-style command interface for direct MeshCore CLI commands (e.g. `info`, `status`, `nodes`, `channels`). |
-| **Signal & SNR** | ![Signal](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/signal.png) | Signal diagnostics screen showing RSSI, SNR, noise floor, and packet success rate for the current radio configuration. |
-| **Radio Setup** | ![Radio](https://raw.githubusercontent.com/hermes-gadget/SlopOS-tdeck/dev/docs/screenshots/radio.png) | Advanced radio configuration: frequency band, spreading factor, coding rate, TX power, and RX gain boost. |
+| **Home** | ![Home](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/home.png) | 4×3 icon grid launcher with CHATS, CONTACTS, REPEATERS, FINDER, PACKETS, MAP, ADVERTISE, SETTINGS, TRACE, TERMINAL, SETUP, SIGNAL. Top bar shows current channel, bottom bar shows device name + battery. |
+| **Onboarding** | ![Onboarding](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/onboarding.png) | First-boot setup wizard (3 steps) — configure node name, radio frequency, and spreading factor before the device is usable. |
+| **Chat** | ![Chat](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/chat.png) | Direct message view showing message bubbles between the user and a contact. Includes text input, sent/received messages with timestamps, and navigation to channel chats. |
+| **Contacts** | ![Contacts](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/contacts.png) | Lists companions (ADV_TYPE_CHAT) and room servers (ADV_TYPE_ROOM) that have been heard on the mesh. Tap a contact to send a direct message. |
+| **Repeaters** | ![Repeaters](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/repeaters.png) | Lists infrastructure relay nodes (ADV_TYPE_REPEATER) heard on the mesh. Repeaters extend network range and are filtered separately from contacts. |
+| **Finder** | ![Finder](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/network.png) | Ping Nearby interface — press the button to discover nodes on the local mesh. Shows ping results and known repeaters. |
+| **Heard / Packets** | ![Heard](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/heard.png) | Packet log showing all received mesh packets with timestamp, source, RSSI, SNR, and type columns. Useful for network diagnostics. |
+| **Map** | ![Map](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/map.png) | Offline tile map renderer showing node locations (from GPS) with pan and zoom. Renders PNG/JPEG tiles from SD card or PSRAM cache. |
+| **Advertise** | ![Advertise](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/advertise.png) | Send an advert (presence beacon) to the mesh so other nodes discover you. Shows advert type, cooldown, and last advertised timestamp. |
+| **Settings** | ![Settings](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/settings.png) | Device configuration: node name, radio params (frequency, SF, power, gain), display timeout, backlight, GPS toggle, and factory reset. |
+| **Trace** | ![Trace](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/trace.png) | Real-time routing trace showing packet paths through the mesh — source → hops → destination with per-hop RSSI/SNR. |
+| **Terminal** | ![Terminal](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/terminal.png) | Serial-style command interface for direct MeshCore CLI commands (e.g. `info`, `status`, `nodes`, `channels`). |
+| **Signal & SNR** | ![Signal](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/signal.png) | Signal diagnostics screen showing RSSI, SNR, noise floor, and packet success rate for the current radio configuration. |
+| **Radio Setup** | ![Radio](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/radio.png) | Advanced radio configuration: frequency band, spreading factor, coding rate, TX power, and RX gain boost. |
 
 ## License
 

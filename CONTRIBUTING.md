@@ -6,8 +6,8 @@ bug reports, feature requests, and code contributions.
 ## Quick Start
 
 ```bash
-git clone --recurse-submodules https://github.com/hermes-gadget/SlopOS-tdeck.git
-cd SlopOS-tdeck
+git clone --recurse-submodules https://github.com/hermes-gadget/SigurdOS-tdeck.git
+cd SigurdOS-tdeck
 pio test -e native_test -v
 ```
 
@@ -32,7 +32,7 @@ tolerated.
 
 ## Reporting Bugs
 
-1. Search [open issues](https://github.com/hermes-gadget/SlopOS-tdeck/issues)
+1. Search [open issues](https://github.com/hermes-gadget/SigurdOS-tdeck/issues)
    first — your bug may already be known.
 2. If not found, open a new issue with:
    - A clear, descriptive title

@@ -162,4 +162,37 @@ const char* getIP() {
 }
 
 }  // namespace ota
+
+// ── WiFi Site Survey ─────────────────────────────────────
+namespace wifi_scan {
+
+int scan(APInfo* out, int max_aps) {
+    if (!out || max_aps <= 0) return 0;
+
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect();
+    delay(100);  // let radio settle
+
+    int n = WiFi.scanNetworks(false, false);  // async=false, show_hidden=false
+    if (n <= 0) {
+        WiFi.mode(WIFI_OFF);
+        return 0;
+    }
+
+    // Collect results, cap at buffer size
+    if (n > max_aps) n = max_aps;
+    for (int i = 0; i < n; i++) {
+        strncpy(out[i].ssid, WiFi.SSID(i).c_str(), sizeof(out[i].ssid) - 1);
+        out[i].ssid[sizeof(out[i].ssid) - 1] = '\0';
+        out[i].rssi      = WiFi.RSSI(i);
+        out[i].channel   = WiFi.channel(i);
+        out[i].encrypted = (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
+    }
+
+    WiFi.scanDelete();
+    WiFi.mode(WIFI_OFF);
+    return n;
+}
+
+}  // namespace wifi_scan
 }  // namespace sigurdos

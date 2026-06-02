@@ -30,4 +30,21 @@ bool isActive();
 const char* getIP();
 
 }  // namespace ota
+
+// ── WiFi Site Survey ─────────────────────────────────────
+namespace wifi_scan {
+
+struct APInfo {
+    char ssid[33];
+    int  rssi;
+    int  channel;
+    bool encrypted;
+};
+
+// Scan nearby WiFi access points. Returns count of found APs
+// (max 30). Caller provides buffer; results sorted by RSSI
+// (strongest first). WiFi is left in WIFI_OFF after scan.
+int scan(APInfo* out, int max_aps);
+
+}  // namespace wifi_scan
 }  // namespace sigurdos

@@ -49,6 +49,7 @@ void settings_system_show();
 void telemetry_screen_show();
 void node_stats_screen_show();
 void node_status_screen_show();
+void wifi_networks_screen_show();
 
 // Highlight the current screen's back button border for back-swipe visual feedback.
 // Passing true sets a 2px accent border; false reverts to the default divider border.

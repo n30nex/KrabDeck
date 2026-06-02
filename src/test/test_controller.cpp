@@ -90,6 +90,7 @@ static const ScreenEntry screen_table[] = {
     {"telemetry",       sigurdos::ui::Screen::Telemetry},
     {"repeaters",       sigurdos::ui::Screen::Repeaters},
     {"system",          sigurdos::ui::Screen::SettingsSystem},
+    {"wifinetworks",    sigurdos::ui::Screen::WiFiNetworks},
     {"nodestats",       sigurdos::ui::Screen::NodeStats},
 };
 

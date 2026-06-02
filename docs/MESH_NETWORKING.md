@@ -2,7 +2,7 @@
 
 **SigurdOS-TDeck's mesh networking layer — architecture, protocol integration, and feature reference.**
 
-The firmware implements a full MeshCore protocol stack on the LilyGo T-Deck (ESP32-S3 + SX1262 LoRa radio). The mesh layer is built around `SlopMesh`, a minimal `mesh::Mesh` subclass, with a clean wrapper API (`mesh_wrapper.h/cpp`) that the LVGL UI and terminal interface consume.
+The firmware implements a full MeshCore protocol stack on the LilyGo T-Deck (ESP32-S3 + SX1262 LoRa radio). The mesh layer is built around `SigurdMeshV2`, a `BaseChatMesh` subclass, with a clean wrapper API (`mesh_wrapper.h/cpp`) that the LVGL UI and terminal interface consume.
 
 ---
 
@@ -12,7 +12,7 @@ The firmware implements a full MeshCore protocol stack on the LilyGo T-Deck (ESP
 - [Class Hierarchy & Initialisation](#class-hierarchy--initialisation)
   - [Init Sequence](#init-sequence)
   - [Init Order Dependency with SPI Bus](#init-order-dependency-with-spi-bus)
-- [SlopMesh — Core Mesh Subclass](#slopmesh--core-mesh-subclass)
+- [SigurdMeshV2 — Core Mesh Subclass](#sigurdmeshv2--core-mesh-subclass)
   - [Dependency Injection](#dependency-injection)
   - [Virtual Overrides](#virtual-overrides)
 - [Channel-Based Messaging](#channel-based-messaging)
@@ -67,9 +67,9 @@ The firmware implements a full MeshCore protocol stack on the LilyGo T-Deck (ESP
 └────────────────────┬────────────────────────────────────┘
                      │ owns
 ┌────────────────────▼────────────────────────────────────┐
-│                    SlopMesh (slop_mesh.h)                 │
-│   mesh::Mesh subclass: routing, channels, crypto,         │
-│   contact list, trace, ping, packet logging               │
+│                    SigurdMeshV2 (sigurd_mesh_v2.h)                 │
+│   BaseChatMesh subclass: routing, channels, crypto,       │
+│   contacts, requests/responses, trace, control packets    │
 └────────────────────┬────────────────────────────────────┘
                      │ inherits
 ┌────────────────────▼────────────────────────────────────┐
@@ -114,8 +114,8 @@ main.cpp
        ├─ radio_module.setCodingRate(cr)
        ├─ radio_module.setOutputPower(tx_power)
        ├─ fast_rng.begin(radio_module.random(...))
-       ├─ new SlopMesh(...)                   [line 242]
-       │    └─ SlopMesh::SlopMesh(...)       [slop_mesh.h:421-431]
+       ├─ new SigurdMeshV2(...)                   [line 242]
+       │    └─ SigurdMeshV2::SigurdMeshV2(...)       [sigurd_mesh_v2.h:421-431]
        │         ├─ _own_name[0] = '\0'
        │         ├─ _prefs.set_defaults()
        │         └─ All contacts out_path = OUT_PATH_UNKNOWN
@@ -152,14 +152,14 @@ The mesh init **must happen after display init** (display init is at step 5 in m
 
 ---
 
-## SlopMesh — Core Mesh Subclass
+## SigurdMeshV2 — Core Mesh Subclass
 
-`SlopMesh` (defined in `src/mesh/slop_mesh.h`) is a subclass of `mesh::Mesh` from the MeshCore library. It overrides virtual callbacks to integrate SigurdOS-specific behaviour: contact storage, channel management, path learning, trace route, ping nearby, and packet logging.
+`SigurdMeshV2` (defined in `src/mesh/sigurd_mesh_v2.h`) is a `BaseChatMesh` subclass from the MeshCore library. It overrides the BaseChatMesh hooks that integrate SigurdOS-specific behaviour: contact/channel storage, request/response handling, path learning, trace route, Ping Nearby, Node Discovery, ACK tracking, packet logging, and handheld UI bridges.
 
 ### Dependency Injection
 
 ```
-SlopMesh(::mesh::Radio& r,           // CustomSX1262Wrapper wrapper
+SigurdMeshV2(::mesh::Radio& r,           // CustomSX1262Wrapper wrapper
          ::mesh::MillisecondClock& ms, // ArduinoMillis
          ::mesh::RNG& rng,            // StdRNG (seeded from radio)
          ::mesh::RTCClock& rtc,       // AutoDiscoverRTCClock (DS3231 or ESP32)
@@ -177,26 +177,26 @@ static StdRNG                    fast_rng;
 static SimpleMeshTables          tables;
 static ArduinoMillis             millis_clock;
 static StaticPoolPacketManager   pkt_mgr(16);
-static sigurdos::mesh::SlopMesh*   g_mesh = nullptr;
+static sigurdos::mesh::SigurdMeshV2*   g_mesh = nullptr;
 ```
 
 ### Virtual Overrides
 
 | Virtual Method | Override | Purpose |
 |---------------|----------|---------|
-| `searchPeersByHash(hash)` | `slop_mesh.h:82` | Match incoming packet's public key hash against contact list; populates `_matchIdxs` |
-| `getPeerSharedSecret(dest, peer_idx)` | `slop_mesh.h:91` | Return shared secret for a matched contact index |
-| `onPeerDataRecv(pkt, type, idx, secret, data, len)` | `slop_mesh.h:97` | Handle incoming DM/REQ/RESPONSE payloads |
-| `onAdvertRecv(pkt, id, timestamp, app_data, len)` | `slop_mesh.h:124` | Discover or update contacts from advert broadcasts |
-| `searchChannelsByHash(hash, out, max)` | `slop_mesh.h:181` | Look up group channels by their 32-byte hash |
-| `onGroupDataRecv(pkt, type, ch, data, len)` | `slop_mesh.h:209` | Handle incoming group channel messages |
-| `onAnonDataRecv(pkt, secret, sender, data, len)` | `slop_mesh.h:242` | Handle anonymous (no prior advert) messages |
-| `onPeerPathRecv(pkt, idx, secret, path, len, extra_type, extra, extra_len)` | `slop_mesh.h:258` | Learn a direct path from a peer response |
-| `onPathRecv(pkt, sender, path, len, extra_type, extra, extra_len)` | `slop_mesh.h:272` | Learn a path from a flood-routed path packet |
-| `onTraceRecv(pkt, tag, auth, flags, snrs, hashes, len)` | `slop_mesh.h:307` | Store trace route result |
-| `onControlDataRecv(pkt)` | `slop_mesh.h:324` | Handle PING/PONG control packets |
-| `onRawDataRecv(pkt)` | `slop_mesh.h:393` | Stub — reserved for future use |
-| `logRx(pkt, ...)` | `slop_mesh.h:398` | Log every received packet to the circular packet log |
+| `searchPeersByHash(hash)` | `sigurd_mesh_v2.h:82` | Match incoming packet's public key hash against contact list; populates `_matchIdxs` |
+| `getPeerSharedSecret(dest, peer_idx)` | `sigurd_mesh_v2.h:91` | Return shared secret for a matched contact index |
+| `onPeerDataRecv(pkt, type, idx, secret, data, len)` | `sigurd_mesh_v2.h:97` | Handle incoming DM/REQ/RESPONSE payloads |
+| `onAdvertRecv(pkt, id, timestamp, app_data, len)` | `sigurd_mesh_v2.h:124` | Discover or update contacts from advert broadcasts |
+| `searchChannelsByHash(hash, out, max)` | `sigurd_mesh_v2.h:181` | Look up group channels by their 32-byte hash |
+| `onGroupDataRecv(pkt, type, ch, data, len)` | `sigurd_mesh_v2.h:209` | Handle incoming group channel messages |
+| `onAnonDataRecv(pkt, secret, sender, data, len)` | `sigurd_mesh_v2.h:242` | Handle anonymous (no prior advert) messages |
+| `onPeerPathRecv(pkt, idx, secret, path, len, extra_type, extra, extra_len)` | `sigurd_mesh_v2.h:258` | Learn a direct path from a peer response |
+| `onPathRecv(pkt, sender, path, len, extra_type, extra, extra_len)` | `sigurd_mesh_v2.h:272` | Learn a path from a flood-routed path packet |
+| `onTraceRecv(pkt, tag, auth, flags, snrs, hashes, len)` | `sigurd_mesh_v2.h:307` | Store trace route result |
+| `onControlDataRecv(pkt)` | `sigurd_mesh_v2.h:324` | Handle PING/PONG control packets |
+| `onRawDataRecv(pkt)` | `sigurd_mesh_v2.h:393` | Stub — reserved for future use |
+| `logRx(pkt, ...)` | `sigurd_mesh_v2.h:398` | Log every received packet to the circular packet log |
 
 ---
 
@@ -213,7 +213,7 @@ channel_name → SHA-256 → channel_secret (16 bytes)
 channel_secret → SHA-256 → channel_hash (32 bytes)
 ```
 
-The `addHashtagChannel()` method (`slop_mesh.h:556`) normalises the input:
+The `addHashtagChannel()` method (`sigurd_mesh_v2.h:556`) normalises the input:
 - Trims leading whitespace
 - Prepends `#` if absent
 - Strips trailing whitespace/newlines
@@ -222,7 +222,7 @@ The `addHashtagChannel()` method (`slop_mesh.h:556`) normalises the input:
 
 ### PSK Channels
 
-PSK (Pre-Shared Key) channels are added with `addChannel(name, psk_base64)` (`slop_mesh.h:522`). The PSK is provided as a Base64-encoded string (either 16 or 32 bytes after decode). The channel hash is the SHA-256 of the decoded PSK.
+PSK (Pre-Shared Key) channels are added with `addChannel(name, psk_base64)` (`sigurd_mesh_v2.h:522`). The PSK is provided as a Base64-encoded string (either 16 or 32 bytes after decode). The channel hash is the SHA-256 of the decoded PSK.
 
 The default Public channel PSK is `izOH6cXN6mrJ5e26oRXNcg==` (16 bytes after decode), joined via `joinPublicChannel()`.
 
@@ -236,11 +236,11 @@ Channels are stored in a fixed-size `SlopChannel[8]` array. There is no eviction
 
 ### Channel Hash Lookup
 
-When a group message arrives over the radio, MeshCore calls `searchChannelsByHash(hash, out, max)` (`slop_mesh.h:181`). The implementation does a linear scan over the `_channels` array, comparing the 32-byte `channel.hash` field using `memcmp`. Returns all matching channels (typically one).
+When a group message arrives over the radio, MeshCore calls `searchChannelsByHash(hash, out, max)` (`sigurd_mesh_v2.h:181`). The implementation does a linear scan over the `_channels` array, comparing the 32-byte `channel.hash` field using `memcmp`. Returns all matching channels (typically one).
 
 ### Sending Group Messages
 
-`sendGroupText(channel_idx, text)` (`slop_mesh.h:597`) builds a payload in the **BaseChatMesh-compatible wire format**:
+`sendGroupText(channel_idx, text)` (`sigurd_mesh_v2.h:597`) builds a payload in the **BaseChatMesh-compatible wire format**:
 
 ```
 [4-byte LE RTC timestamp][1-byte text_type=0]["<sender_name>: <message>\0"]
@@ -253,7 +253,7 @@ When a group message arrives over the radio, MeshCore calls `searchChannelsByHas
 
 ### Receiving Group Messages
 
-`onGroupDataRecv` (`slop_mesh.h:209`) processes `PAYLOAD_TYPE_GRP_TXT` packets:
+`onGroupDataRecv` (`sigurd_mesh_v2.h:209`) processes `PAYLOAD_TYPE_GRP_TXT` packets:
 1. Validates payload length > 5 bytes
 2. Null-terminates the data
 3. Skips the 5-byte header (timestamp + text_type)
@@ -269,7 +269,7 @@ Direct messages are peer-to-peer encrypted messages sent from one specific node 
 
 ### Send Path
 
-`sendTextTo(dest_name, text)` (`slop_mesh.h:450`):
+`sendTextTo(dest_name, text)` (`sigurd_mesh_v2.h:450`):
 
 1. Linear scan contacts for matching `dest_name`
 2. Build payload: `[4-byte LE timestamp][1-byte flags=0][null-terminated text]`
@@ -279,7 +279,7 @@ Direct messages are peer-to-peer encrypted messages sent from one specific node 
 
 ### Receive Path
 
-`onPeerDataRecv(pkt, type, sender_idx, secret, data, len)` (`slop_mesh.h:97`):
+`onPeerDataRecv(pkt, type, sender_idx, secret, data, len)` (`sigurd_mesh_v2.h:97`):
 
 1. Only accepts `PAYLOAD_TYPE_TXT_MSG`, `PAYLOAD_TYPE_REQ`, and `PAYLOAD_TYPE_RESPONSE`
 2. Skips the 5-byte header (timestamp + flags) for TXT_MSG, or uses raw data for REQ/RESPONSE
@@ -306,7 +306,7 @@ Nodes announce their presence by broadcasting **advert packets** (flood-routed, 
 - **Type** — always `ADV_TYPE_CHAT` (1) currently
 - **Optional GPS coordinates** — latitude and longitude if a GPS fix is available
 
-`s broadcastAdvert(name)` and `broadcastAdvert(name, lat, lon)` (`slop_mesh.h:480-494`) build the advert using MeshCore's `AdvertDataBuilder` and flood-routing.
+`s broadcastAdvert(name)` and `broadcastAdvert(name, lat, lon)` (`sigurd_mesh_v2.h:480-494`) build the advert using MeshCore's `AdvertDataBuilder` and flood-routing.
 
 ### 10-Second Cooldown
 
@@ -318,13 +318,13 @@ if (last_advert_ms != 0 && now_ms - last_advert_ms < 10000)
     return false;  // Rate-limited
 ```
 
-This cooldown is enforced at the wrapper level (not in `SlopMesh`) so it protects against both UI-triggered and programmatic (Terminal command) advert calls. The UI also enforces a visual cooldown via button state.
+This cooldown is enforced at the wrapper level (not in `SigurdMeshV2`) so it protects against both UI-triggered and programmatic (Terminal command) advert calls. The UI also enforces a visual cooldown via button state.
 
 Adverts are **only broadcast on boot** if the user has explicitly configured radio parameters via Settings → Radio Setup. Compile-time defaults do not trigger a boot advert, preventing accidental transmissions on potentially illegal frequencies.
 
 ### Contact List (64-entry LRU)
 
-`onAdvertRecv(pkt, id, timestamp, app_data, len)` (`slop_mesh.h:124`):
+`onAdvertRecv(pkt, id, timestamp, app_data, len)` (`sigurd_mesh_v2.h:124`):
 
 1. **Parse** advert using `AdvertDataParser` to extract the node name. Falls back to `"node_<pub_key[0]>"` hex format if no name.
 2. **Deduplicate** — linear scan for matching `Identity`; if found, update `last_seen`, `last_rssi`, and name.
@@ -332,10 +332,10 @@ Adverts are **only broadcast on boot** if the user has explicitly configured rad
 4. **LRU eviction** — if the list is full (`_nContacts >= SLOP_MAX_CONTACTS`), evict the contact with the **oldest** `last_seen` timestamp. The evicted slot is overwritten in-place.
 
 ```cpp
-static constexpr int SLOP_MAX_CONTACTS = 64;  // slop_mesh.h:22
+static constexpr int SLOP_MAX_CONTACTS = 64;  // sigurd_mesh_v2.h:22
 ```
 
-Each `SlopContact` stores:
+Each BaseChatMesh `ContactInfo` plus SigurdOS wrapper metadata stores:
 
 | Field | Size | Description |
 |-------|------|-------------|
@@ -349,7 +349,7 @@ Each `SlopContact` stores:
 
 ### Anonymous Data Reception
 
-`onAnonDataRecv` (`slop_mesh.h:242`) handles messages from nodes that have never sent an advert. The sender is identified by a generated name `"anon_<pub_key[0]>"` (first byte of public key as hex). This allows receiving messages from unknown nodes but provides no return-path — there is currently no way to send back to an anonymous node.
+`onAnonDataRecv` (`sigurd_mesh_v2.h:242`) handles messages from nodes that have never sent an advert. The sender is identified by a generated name `"anon_<pub_key[0]>"` (first byte of public key as hex). This allows receiving messages from unknown nodes but provides no return-path — there is currently no way to send back to an anonymous node.
 
 ---
 
@@ -359,7 +359,7 @@ The Ping Nearby feature actively discovers nodes within immediate radio range (o
 
 ### Protocol
 
-The implementation (`slop_mesh.h:642-678`, `onControlDataRecv` at line 324) uses zero-hop raw control packets:
+The implementation (`sigurd_mesh_v2.h:642-678`, `onControlDataRecv` at line 324) uses zero-hop raw control packets:
 
 ```
 1. Initiator sends:  "PING:<8-hex-tag>"       (via sendZeroHop)
@@ -415,11 +415,11 @@ Instantiated as a static global in `mesh_wrapper.cpp:42`:
 static SimpleMeshTables tables;
 ```
 
-Passed to the `SlopMesh` constructor and forwarded to `mesh::Mesh`'s constructor. `SimpleMeshTables` is the reference routing table implementation — it maintains a matrix of known paths between nodes using the MeshCore path-discovery protocol.
+Passed to the `SigurdMeshV2` constructor and forwarded to `mesh::Mesh`'s constructor. `SimpleMeshTables` is the reference routing table implementation — it maintains a matrix of known paths between nodes using the MeshCore path-discovery protocol.
 
 ### Peer Path Callbacks
 
-When a direct message or response is received from a peer, MeshCore may include a return path. `onPeerPathRecv` (`slop_mesh.h:258`) stores this path:
+When a direct message or response is received from a peer, MeshCore may include a return path. `onPeerPathRecv` (`sigurd_mesh_v2.h:258`) stores this path:
 
 ```cpp
 _contacts[idx].out_path_len = Packet::copyPath(_contacts[idx].out_path, path, path_len);
@@ -429,7 +429,7 @@ MeshCore then automatically sends a reciprocal return path back to the peer.
 
 ### Flood Path Callbacks
 
-When a path-discovery packet arrives via flood routing, `onPathRecv` (`slop_mesh.h:272`) matches the sender identity against the contact list and stores the path:
+When a path-discovery packet arrives via flood routing, `onPathRecv` (`sigurd_mesh_v2.h:272`) matches the sender identity against the contact list and stores the path:
 
 ```cpp
 _contacts[i].out_path_len = Packet::copyPath(_contacts[i].out_path, path, path_len);
@@ -445,7 +445,7 @@ The Trace feature sends a probe packet along a known direct path to a contact an
 
 ### Sending a Trace
 
-`sendTrace(contact_idx, tag)` (`slop_mesh.h:292`):
+`sendTrace(contact_idx, tag)` (`sigurd_mesh_v2.h:292`):
 
 1. Validates contact index and that a direct path exists (`out_path_len != OUT_PATH_UNKNOWN`)
 2. Creates a trace packet via `createTrace(tag, 0, 0)`
@@ -456,7 +456,7 @@ The wrapper layer (`mesh_wrapper.cpp:512`) maintains a monotonic `trace_tag_coun
 
 ### Receiving a Trace Result
 
-`onTraceRecv(pkt, tag, auth_code, flags, path_snrs, path_hashes, path_len)` (`slop_mesh.h:307`):
+`onTraceRecv(pkt, tag, auth_code, flags, path_snrs, path_hashes, path_len)` (`sigurd_mesh_v2.h:307`):
 
 1. Stores the result in `_last_trace_*` fields
 2. Sets `_has_trace_result = true`
@@ -477,7 +477,7 @@ Every received and transmitted radio packet is logged to a circular buffer, powe
 
 ### RX Logging (`logRx`)
 
-`logRx` (`slop_mesh.h:398`) is called by MeshCore's dispatcher for each incoming packet. It classifies the packet type and records RSSI and SNR:
+`logRx` (`sigurd_mesh_v2.h:398`) is called by MeshCore's dispatcher for each incoming packet. It classifies the packet type and records RSSI and SNR:
 
 | Payload Type | Log Label |
 |-------------|-----------|
@@ -623,7 +623,7 @@ AutoDiscoverRTCClock
 
 - MeshCore synchronises time across the network automatically via protocol messages
 - Time can be set manually via Terminal commands or programmatically via `setSystemTime()`
-- GPS time sync is not yet implemented (see `docs/MISSING_FEATURES.md`)
+- GPS time sync is implemented in `hal/gps.cpp` once a valid fix/date is available (`sigurdos_gps_time_synced()`).
 
 ---
 
@@ -725,7 +725,7 @@ onPeerDataRecv / onGroupDataRecv / onAnonDataRecv
 
 | File | Purpose |
 |------|---------|
-| `src/mesh/slop_mesh.h` | Core `SlopMesh` class — all virtual overrides, path learning, trace, ping, packet logging |
+| `src/mesh/sigurd_mesh_v2.h` | Core `SigurdMeshV2` class — all virtual overrides, path learning, trace, ping, packet logging |
 | `src/mesh/mesh_wrapper.h` | Public API declarations — structs, function signatures |
 | `src/mesh/mesh_wrapper.cpp` | Implementation — init, loop, message queue, persistence, adverts, contacts, channels, time |
 | `lib/meshcore/` | MeshCore library (git submodule) — protocol implementation, Mesh base class, routing |
@@ -742,6 +742,6 @@ onPeerDataRecv / onGroupDataRecv / onAnonDataRecv
 | [`FEATURES_OVERVIEW.md`](FEATURES_OVERVIEW.md) | High-level feature catalog — all 12 home screen tiles and system capabilities |
 | [`CHAT_SCREEN.md`](CHAT_SCREEN.md) | Chat screen UI — channel tabs, DM conversations, message history |
 | [`TERMINAL.md`](TERMINAL.md) | Terminal commands — mesh diagnostics, advert, trace, ping, inject |
-| [`MISSING_FEATURES.md`](MISSING_FEATURES.md) | MeshCore protocol features not yet implemented — roadmap reference |
+| [`MISSING_FEATURES.md`](MISSING_FEATURES.md) | Companion parity audit — implemented, declined, and out-of-scope MeshCore deltas |
 | [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) | Tracked bugs, limitations, and workarounds |
 | [`AGENTS.md`](../AGENTS.md) | Full architecture guide — hardware, UI conventions, boot sequence |

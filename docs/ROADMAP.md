@@ -43,10 +43,10 @@ UI layer (src/ui/*)                ← screens, never touches MeshCore directly
 mesh_wrapper.h  (sigurdos::mesh::*)   ← THE SEAM. Public API the UI depends on.
       │  wraps
       ▼
-SlopMesh  (src/mesh/slop_mesh.h)    ← our subclass of MeshCore
+SigurdMeshV2  (src/mesh/sigurd_mesh_v2.h) ← BaseChatMesh subclass
       │  extends
       ▼
-::mesh::Mesh  (lib/meshcore/)       ← upstream library
+BaseChatMesh / ::mesh::Mesh  (lib/meshcore/) ← upstream library
 ```
 **Golden rule: keep the `mesh_wrapper.h` public API stable.** The UI is insulated by it. If you change mesh internals, translate back to the existing wrapper structs (`sigurdos::mesh::ContactInfo`, `MeshMessage`, etc.) so screens don't change. This seam is what makes large refactors (see Phase 0) survivable.
 
@@ -54,7 +54,7 @@ SlopMesh  (src/mesh/slop_mesh.h)    ← our subclass of MeshCore
 - **ACK value is NOT a CRC-32.** It is the first 4 bytes of SHA-256 over a recipient-pubkey-dependent buffer. Computing a CRC will *never* match. (`MISSING_FEATURES.md` → "Message delivery status".)
 - **Channel hash matching uses ONE byte** in the packet header, not the full hash. `searchChannelsByHash` compares `hash[0]` only — matching upstream `BaseChatMesh`. ~11% collision on 8 channels is expected; do not "fix" it to a full memcmp or you break interop.
 - **`strncpy` does not null-terminate** when the source is too long. Always `dest[n-1] = '\0'`.
-- **UTF-8 truncation** can split a 4-byte emoji mid-codepoint → invalid UTF-8 over the mesh. Use `sigurdos::utf8_truncate_bytes()` (already used in `slop_mesh.h`).
+- **UTF-8 truncation** can split a 4-byte emoji mid-codepoint → invalid UTF-8 over the mesh. Use `sigurdos::utf8_truncate_bytes()` (already used in `sigurd_mesh_v2.h`).
 - **`lv_obj_del` inside an event handler** must be `lv_obj_del_async()`.
 - **`lv_scr_load_anim(..., true)`** deletes the old screen + all children; register `LV_EVENT_DELETE` to null any globals pointing into it.
 - **Stack arrays as LVGL `user_data`** dangle on click. Use `static` arrays.
@@ -65,7 +65,7 @@ SlopMesh  (src/mesh/slop_mesh.h)    ← our subclass of MeshCore
 ### Where things live (verified paths)
 | Concern | File |
 |---------|------|
-| Mesh subclass | `src/mesh/slop_mesh.h` |
+| Mesh subclass | `src/mesh/sigurd_mesh_v2.h` |
 | Wrapper / public API | `src/mesh/mesh_wrapper.cpp` / `.h` |
 | Persisted settings | `src/hal/prefs.cpp` / `.h` (`struct NodePrefs`, `prefs_get/set/save`) |
 | GPS NMEA | `src/hal/gps.cpp` / `.h` |
@@ -82,17 +82,15 @@ SlopMesh  (src/mesh/slop_mesh.h)    ← our subclass of MeshCore
 
 ---
 
-## Phase 0 — Migrate `SlopMesh` onto `BaseChatMesh` (foundational — do before Phase 4) ✅ COMPLETED
+## Phase 0 — Migrate mesh core onto `BaseChatMesh` ✅ COMPLETED
 
-**Status: ✅ Done.** PR #223 (V2 behind flag), PR #224 (cutover: V2 as default). All parity items pass.
+**Status: ✅ Done.** PR #223 introduced the V2 implementation behind a flag; PR #224 cut over to `SigurdMeshV2` as the default. The old pre-BaseChatMesh mesh implementation path has been removed; current mesh internals live in `src/mesh/sigurd_mesh_v2.h` and are constructed through `mesh_wrapper.cpp`.
 
-**This is the decided architectural direction.** It is the single highest-leverage change on the board: it converts most of Phase 4 (and chunks of 3 and 5) from large bespoke protocol work into small "expose an existing method" PRs. **Do not start any Phase 4 feature until this migration has cut over.**
+**This architectural direction is complete and is now the baseline.** Current roadmap items should use the `mesh_wrapper.h` seam and `SigurdMeshV2`/`BaseChatMesh` APIs rather than reimplementing raw MeshCore protocol plumbing.
 
-> **Agent note:** This is large and risky. Do it incrementally behind a flag, prove parity before deleting anything, and expect several PRs — not one. If anything in this section is unclear, stop and ask the user rather than guessing.
+### Why we did it
 
-### Why we're doing it
-
-`SlopMesh` currently extends `::mesh::Mesh` directly — a deliberately minimal subclass. One layer up in the *same* library sits `BaseChatMesh` ([`lib/meshcore/src/helpers/BaseChatMesh.h`](https://github.com/meshcore-dev/MeshCore/blob/main/src/helpers/BaseChatMesh.h)), which the reference companion radio uses. It already implements, correctly and tested:
+The previous mesh class extended `::mesh::Mesh` directly — a deliberately minimal subclass. One layer up in the *same* library sits `BaseChatMesh` ([`lib/meshcore/src/helpers/BaseChatMesh.h`](https://github.com/meshcore-dev/MeshCore/blob/main/src/helpers/BaseChatMesh.h)), which the reference companion radio uses. It already implements, correctly and tested:
 
 - `sendMessage()` **with ACK tracking** (`expected_ack`), `processAck()`
 - `sendLogin()`, `sendCommandData()` (remote repeater/room admin), connection keep-alive sessions
@@ -103,19 +101,20 @@ SlopMesh  (src/mesh/slop_mesh.h)    ← our subclass of MeshCore
 
 **Almost the entire Phase 4 is already written inside `BaseChatMesh`.** Building those on raw `Mesh` would mean reimplementing them by hand — repeatedly hitting the traps listed above. Inheriting `BaseChatMesh` gets them for free.
 
-> **This is NOT a "MeshCore version" change.** We are on current MeshCore (v1.15.0). `Mesh` and `BaseChatMesh` both ship in it. We are moving `SlopMesh` up one *layer* of subclassing — no submodule bump required.
+> **This was NOT a "MeshCore version" change.** SigurdOS stayed on the current MeshCore submodule; `SigurdMeshV2` moved the project up one layer to `BaseChatMesh` without a submodule bump.
 
 ### Why the blast radius is small
 
-The cost is concentrated in **one place**: adopting `BaseChatMesh`'s `ContactInfo[MAX_CONTACTS]` and `ChannelDetails` models in place of our `SlopContact`/`SlopChannel`, and implementing its ~12 pure-virtual hooks. Because the UI only ever sees `sigurdos::mesh::ContactInfo` (the wrapper struct in `mesh_wrapper.h`), the change is contained to **`slop_mesh.h` + `mesh_wrapper.cpp`** — translate `BaseChatMesh::ContactInfo` → the wrapper struct and **the UI layer does not change at all.** That seam is exactly why this migration is survivable.
+The blast radius stayed concentrated in **one place**: `SigurdMeshV2` adopts `BaseChatMesh`'s `ContactInfo` and `ChannelDetails` models and `mesh_wrapper.cpp` translates those into the wrapper structs used by the UI. The UI only sees `sigurdos::mesh::ContactInfo`, `MeshMessage`, etc., so screens remain insulated from MeshCore internals.
 
-### Migration plan — spike, prove parity, then cut over (never big-bang)
+### Completed migration checklist
 
-1. **Spike branch.** Create `SlopMeshV2 : public BaseChatMesh` alongside the existing `SlopMesh`. Implement the pure virtuals (`onMessageRecv`, `onChannelMessageRecv`, `onDiscoveredContact`, `processAck`, `onContactResponse`, `onCommandDataRecv`, `onSignedMessageRecv`, `calcFloodTimeoutMillisFor`, `calcDirectTimeoutMillisFor`, `onSendTimeout`, `onContactRequest`). Use [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) as a complete reference implementation of every one of these.
-2. **Define `MAX_CONTACTS` and `MAX_GROUP_CHANNELS`** via build flags (`BaseChatMesh` reads them; defaults are 32 / undefined). Match or exceed today's `SLOP_MAX_CONTACTS = 64` / `SLOP_MAX_CHANNELS = 8`.
-3. **Persistence.** `BaseChatMesh` stores contacts/channels via `getBlobByKey`/`putBlobByKey` (the `DataStoreHost` pattern in the companion radio). Wire these to NVS/SPIFFS. **Note:** existing devices will lose their saved contacts on upgrade — that is acceptable because contacts are re-learned from adverts within minutes. Identity is stored separately and must be preserved.
-4. **Keep the wrapper API byte-identical.** `mesh_wrapper.cpp` translates `BaseChatMesh::ContactInfo` → `sigurdos::mesh::ContactInfo`. Do not change any signature in `mesh_wrapper.h`.
-5. **Parity checklist — prove ALL of these pass before cutover** (native tests + hardware/remote-test):
+The migration is complete; this checklist is retained as historical context and regression guidance. Current work should not recreate a parallel mesh class.
+
+1. `SigurdMeshV2 : public BaseChatMesh` is the production mesh implementation.
+2. `mesh_wrapper.cpp` constructs `SigurdMeshV2` and keeps the UI-facing API stable.
+3. Contact/channel persistence, identity persistence, ACK handling, requests/responses, path learning, command data, signed messages, timeouts, and contact request/response hooks are implemented through the BaseChatMesh path.
+4. **Regression checklist** (native tests + hardware/remote-test):
    - [x] DM send + receive (`test_mesh_messaging`)
    - [x] Channel text send + receive (hashtag + PSK channels)
    - [x] Advert parse → contact added with name/type/location/RSSI/SNR
@@ -124,10 +123,9 @@ The cost is concentrated in **one place**: adopting `BaseChatMesh`'s `ContactInf
    - [x] Ping Nearby (control PING/PONG)
    - [x] Duty-cycle factor override still applied
    - [x] Channel persistence across reboot
-6. **Cutover.** Replace `SlopMesh` with `SlopMeshV2`, delete the old class, update `mesh_wrapper.cpp` construction. Run the full suite again.
-7. **Then** proceed to Phase 4 — each feature is now mostly wrapper plumbing + UI.
+6. The legacy mesh class was removed; `SigurdMeshV2` is the only active mesh subclass.
 
-> **Sequencing tip:** the Phase 1 quick wins below are independent of this migration and make good warm-up PRs while the migration is being planned/reviewed. Everything in Phase 4, and the ACK work in Phase 3, waits for cutover.
+> **Sequencing note:** Phase 0 is no longer blocking anything; Phases 1–6 below are complete for accepted scope.
 
 ---
 
@@ -205,7 +203,7 @@ The cost is concentrated in **one place**: adopting `BaseChatMesh`'s `ContactInf
 > **Status: ✅ All 3 items done.** See overview below for the specific PRs.
 
 ### 3.1 — Message delivery status (ACK ticks) — M ✅
-- **Status:** Done. PendingAck ring buffer in SlopMeshV2, `processAck()` matches 4-byte SHA-256 ACK against pending outgoing DMs. `isMessageAcked()` bridge to UI. ✓ indicator in self-sent chat bubbles.
+- **Status:** Done. PendingAck ring buffer in SigurdMeshV2, `processAck()` matches 4-byte SHA-256 ACK against pending outgoing DMs. `isMessageAcked()` bridge to UI. ✓ indicator in self-sent chat bubbles.
 - **PR:** #232.
 
 ### 3.2 — Message search — M ✅
@@ -213,7 +211,7 @@ The cost is concentrated in **one place**: adopting `BaseChatMesh`'s `ContactInf
 - **PR:** #234.
 
 ### 3.3 — Per-contact RSSI/SNR history graph — L ✅
-- **Status:** Done. 64-entry circular buffer per-contact in SlopMeshV2, `lv_chart` line sparkline on Signal screen showing RSSI trend.
+- **Status:** Done. 64-entry circular buffer per-contact in SigurdMeshV2, `lv_chart` line sparkline on Signal screen showing RSSI trend.
 - **PR:** #236.
 
 ---
@@ -265,34 +263,40 @@ The cost is concentrated in **one place**: adopting `BaseChatMesh`'s `ContactInf
 
 ## Phase 5 — Identity, UI & security
 
-### 5.1 — Contact locations on Map — M
-- **Upstream ref:** MISSING_FEATURES → "Contact locations on Map screen". Coordinates already in `SlopContact` (`has_location`/`latitude`/`longitude`). Render labelled markers on the map canvas; tap → contact detail. Pure UI + map math.
+### 5.1 — Contact locations on Map — M ✅
+- **Status:** Done. Map overlays contact-location markers from `ContactInfo::has_location` / `latitude` / `longitude`; marker taps open Contact Detail.
+- **PR:** #321 (Closes #302).
 
 ### 5.2 — Factory reset — S ✅
 - **Status:** Done. "Factory reset" action on the Settings → System screen (double-confirm) → `mesh::factoryReset()` clears NVS prefs + contacts + channels, regenerates identity, delays for flash, then reboots.
 - **PR:** #275 (issue #274).
 
-### 5.3 — Identity backup (export/import) — M
-- **Upstream ref:** MISSING_FEATURES → "Identity backup". Export the private key (hex/QR); import re-keys the node. **Hard part:** on import, every contact's shared secret must be recomputed (`calcSharedSecret`). See [`src/helpers/IdentityStore.h`](https://github.com/meshcore-dev/MeshCore/blob/main/src/helpers/IdentityStore.h).
+### 5.3 — Identity backup (export/import) — M ✅
+- **Status:** Done. Terminal `exportkey` / `importkey <hex>` commands back up and restore the node identity.
+- **PR:** #320 (Closes #303).
 
-### 5.4 — QR code generation + URI import — L / M
-- **Upstream ref:** MISSING_FEATURES → "QR code generation", "QR code / URI import". Add a tiny MIT QR encoder (~2 KB; check GPL-3.0 compatibility — a rejection trigger if not). Post-migration, `BaseChatMesh::exportContact`/`importContact` produce the payloads. URI scheme: `meshcore://contact/add?...` / `meshcore://channel/add?...`.
+### 5.4 — QR code generation + URI import — L / M ✅
+- **Status:** Done. Terminal `import meshcore://...` handles contact/channel URI import; Contact Detail and Channel Settings can render shareable QR codes via `src/app/qr_show.cpp`.
+- **PRs:** #322 (URI import), #328 (QR generation).
 
 ### 5.5 — Node stats query — S ✅
 - **Status:** Done. Node Stats diagnostics panel surfacing sent/recv flood+direct counters, airtime totals, and duplicate/drop counts. Reachable from navigation (`nodestats` nav entry).
 - **PR:** #277 (issue #276).
 
-### 5.6 — Universal trackball back-swipe — M
-- **Upstream ref:** MISSING_FEATURES → "Universal trackball back-swipe". Also KNOWN_ISSUES. Extract the swipe handler from `chat_screen.cpp` into `navigation.cpp`; apply to all screens; resolve conflicts with screens that use left-swipe themselves (two-swipe-commit pattern suggested).
+### 5.6 — Universal trackball back-swipe — M ✅
+- **Status:** Done. `navigation.cpp` implements the two-swipe-commit back gesture for non-Home/non-Chat screens; Chat keeps its channel-list left-swipe behaviour.
 
-### 5.7 — Device admin PIN — M
-- **Upstream ref:** MISSING_FEATURES → "Device admin password / PIN". Optional hashed PIN in NVS; prompt on Settings/Terminal entry with a grace period.
+### 5.7 — Device admin PIN — M ✅
+- **Status:** Done. `NodePrefs::device_pin` persists a 4–6 digit PIN; Settings → System exposes set/change; Settings/Terminal entry prompts when enabled.
+- **PR:** #326.
 
-### 5.8 — ACL / contact permissions — L
-- **Upstream ref:** MISSING_FEATURES → "ACL / contact permissions". `perm` field on contacts; promote in contact detail; gate sensitive actions. Levels in [`src/helpers/ClientACL.h`](https://github.com/meshcore-dev/MeshCore/blob/main/src/helpers/ClientACL.h).
+### 5.8 — ACL / contact permissions — L ✅
+- **Status:** Done. `ContactInfo::perm` plus `setContactPerm()` / `getContactPerm()` wrappers; Contact Detail displays ACL role and provides promote/demote controls.
+- **Issue:** #310.
 
-### 5.9 — Message signing — S (niche)
-- **Upstream ref:** MISSING_FEATURES → "Message signing". Port the streaming sign API; Terminal command. Low priority for a handheld.
+### 5.9 — Message signing — S (niche) ✅
+- **Status:** Done. Terminal `sign <data>` signs arbitrary text with the node identity.
+- **PR:** #317 (Closes #307).
 
 ### 5.10 — OTA firmware update — L ✅ DONE
 
@@ -302,42 +306,31 @@ The cost is concentrated in **one place**: adopting `BaseChatMesh`'s `ContactInf
 
 ## Phase 6 — Companion parity gaps (audit 2026-06-01)
 
-> **Status: open.** New companion-firmware deltas found auditing SigurdOS against `lib/meshcore/examples/companion_radio/` (`FIRMWARE_VER_CODE 12` / v1.15.0). Every item here is **companion-relevant** — infrastructure-only deltas (region / flood-scope routing, allowed-repeat-freq, path-hash-mode, BLE-modem) are deliberately excluded, as are the transport/handshake-only codes (`CMD_APP_START`, `CMD_DEVICE_QEURY`, `CMD_SYNC_NEXT_MESSAGE`) that only exist for a phone-tethered modem. These are not yet catalogued in the protected [`MISSING_FEATURES.md`](MISSING_FEATURES.md), so they cite upstream companion source directly; fold them into that file in a separate protected-file PR. Do them as independent small PRs.
+> **Status: complete.** The companion-firmware deltas found in the 2026-06-01 audit have been implemented or explicitly declined. Infrastructure-only deltas (region / flood-scope routing, allowed-repeat-freq, path-hash-mode, BLE-modem) remain documented for reference but outside the standalone handheld scope.
 
-### 6.1 — Multi-ACK reliability toggle — S
-- **What:** The companion can send extra redundant ACK transmissions for direct messages to improve delivery on lossy links. SigurdOS does not override the hook, so it always sends the minimum, and there is no setting.
-- **What's needed:** Add `multi_acks` (0/1) to `NodePrefs`; override `getExtraAckTransmitCount()` in `SigurdMeshV2` to return it; add a Settings toggle.
-- **Upstream ref:** [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) — `getExtraAckTransmitCount()` returns `_prefs.multi_acks`; `CMD_SET_OTHER_PARAMS` (38) sets it. [`NodePrefs.h`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/NodePrefs.h) — `multi_acks`.
+### 6.1 — Multi-ACK reliability toggle — S ✅
+- **Status:** Done. `NodePrefs::multi_acks`, Settings toggle, and `SigurdMeshV2::getExtraAckTransmitCount()` are wired.
 
-### 6.2 — Message-arrival notification (buzzer) + quiet toggle — M
-- **What:** The companion beeps the buzzer on message arrival and exposes a `buzzer_quiet` mute. SigurdOS defines `PIN_BUZZER` (GPIO 46) in `tdeck_pins.h` but never drives it — there is no audible notification at all, and no mute setting.
-- **What's needed:** A small buzzer HAL (active-low on GPIO 46) + mock + test; beep on incoming DM/channel message; a `buzzer_quiet` pref and a Settings "Notification sound ON/OFF" toggle.
-- **Upstream ref:** [`NodePrefs.h`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/NodePrefs.h) — `buzzer_quiet`; companion UI calls `buzzer.quiet(_node_prefs->buzzer_quiet)`.
+### 6.2 — Message-arrival notification (buzzer) + quiet toggle — M ✅
+- **Status:** Done. Buzzer HAL, incoming-message beep, `buzzer_quiet` pref, and Settings "Notification sound" toggle are implemented.
 
-### 6.3 — Client-repeat mode (companion also relays) — M
-- **What:** The companion can optionally relay/forward packets while remaining a chat node (`client_repeat`). SigurdOS has no packet-forwarding path and no toggle; the `advert_type` pref exists in `NodePrefs` but has no UI. (Full node-type-as-repeater is infrastructure — out of scope; this is only the companion's opportunistic-relay flag.)
-- **What's needed:** Add `client_repeat` to `NodePrefs`; gate forwarding on it in `SigurdMeshV2`; an "Advanced" Settings toggle. Relaying raises airtime — respect the duty-cycle budget.
-- **Upstream ref:** MISSING_FEATURES → "Node type selection" (broader, infra-leaning context). [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) — forwarding gated on `_prefs.client_repeat != 0`. [`NodePrefs.h`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/NodePrefs.h) — `client_repeat`.
+### 6.3 — Client-repeat mode (companion also relays) — M ✅
+- **Status:** Done. `NodePrefs::client_repeat`, Settings toggle, and `SigurdMeshV2` forwarding gate are implemented.
+- **PR:** #319 (issue #306).
 
-### 6.4 — Answer inbound telemetry + telemetry-mode policy — M
-- **What:** Completes the answer side of **4.3**. The companion replies to an inbound `REQ_TYPE_GET_TELEMETRY_DATA` with its own CayenneLPP telemetry (battery, optionally location/environment), gated by per-category policy (`telemetry_mode_base`/`_loc`/`_env`: deny / allow-by-flags / allow-all). SigurdOS's `onContactRequest()` is a stub returning `0`.
-- **What's needed:** Implement `SigurdMeshV2::onContactRequest()` to build a CayenneLPP reply with `addVoltage(TELEM_CHANNEL_SELF, battery)`; add `telemetry_mode_*` prefs + a Settings policy control.
-- **Upstream ref:** MISSING_FEATURES → "Telemetry queries (remote + self, CayenneLPP)" (answer-side bullet). [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) — `onContactRequest()` answers `REQ_TYPE_GET_TELEMETRY_DATA`; `TELEM_MODE_DENY/ALLOW_FLAGS/ALLOW_ALL` in [`NodePrefs.h`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/NodePrefs.h).
+### 6.4 — Answer inbound telemetry + telemetry-mode policy — M ✅
+- **Status:** Done. `SigurdMeshV2::onContactRequest()` answers `REQ_TYPE_GET_TELEMETRY_DATA` with CayenneLPP battery/GPS data where available.
+- **PR:** #318 (issue #301).
 
-### 6.5 — Advert path query (diagnostic) — S *(niche)*
-- **What:** Report the network path an advert took to reach this node (per-pubkey advert-path table). A useful diagnostic; SigurdOS keeps no advert-path table and exposes nothing.
-- **What's needed:** Track recent advert paths keyed by pubkey prefix; surface the path for a contact on Contact Detail or the Signal/Trace screen.
-- **Upstream ref:** [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) — `CMD_GET_ADVERT_PATH` (42) / `RESP_CODE_ADVERT_PATH`; the `advert_paths[]` table.
+### 6.5 — Advert path query (diagnostic) — S *(niche)* ✅
+- **Status:** Done. `SigurdMeshV2` tracks inbound advert paths and Contact Detail displays path/hop count.
+- **PRs:** #316 (hop count), #324 (advert path).
 
-### 6.6 — Storage usage display — S *(niche)*
-- **What:** The companion reports filesystem storage used/total alongside battery. SigurdOS shows battery but never surfaces flash/SD usage — `hal/sdcard.cpp` already computes SD capacity/free, so the data exists; only the display is missing.
-- **What's needed:** Add used/total (SPIFFS + SD) to the Node Stats panel (5.5) or a storage line on Settings → System.
-- **Upstream ref:** [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) — `CMD_GET_BATT_AND_STORAGE` (20) / `RESP_CODE_BATT_AND_STORAGE` (battery mV + used/total KB).
+### 6.6 — Storage usage display — S *(niche)* ✅
+- **Status:** Done. Settings → System shows internal/SD storage usage where available.
 
-### 6.7 — Reboot action — S *(low value)*
-- **What:** A plain "Reboot". Largely covered already — Radio Setup has "Save & Reboot", Factory Reset reboots, and `tdeck_board.h` has `reboot()`. Listed for completeness against `CMD_REBOOT`.
-- **What's needed:** Optionally a dedicated "Reboot" button on Settings → System next to Factory Reset (flush pending saves, ~100 ms delay, `esp_restart()`).
-- **Upstream ref:** [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) — `CMD_REBOOT` (19, guarded by a literal `"reboot"` payload).
+### 6.7 — Reboot action — S *(low value)* ✅
+- **Status:** Done. Settings → System includes a dedicated Reboot action with confirmation.
 
 ---
 
@@ -356,14 +349,14 @@ The cost is concentrated in **one place**: adopting `BaseChatMesh`'s `ContactInf
 |        └────────► Phase 3 (messaging polish) ── ✅ COMPLETED
 |                               │
 |                               ▼
-|                           Phase 5 (identity/UI/security/OTA)
+|                           Phase 5 (identity/UI/security/OTA) ── ✅ COMPLETED
 |                               │
 |                               ▼
-|                           Phase 6 (companion parity gaps)
+|                           Phase 6 (companion parity gaps) ───── ✅ COMPLETED
 ```
 
-- **Phases 0–4 ✅** are complete (4.3 has an outstanding answer-side, tracked as 6.4).
-- **Phase 5 & 6** are the remaining work. Items within them are independent unless a dependency is noted — do them as separate small PRs.
+- **Phases 0–6 ✅** are complete for the currently accepted companion-handheld scope.
+- Declined/out-of-scope items remain documented in `MISSING_FEATURES.md` for reference, but are not active roadmap work.
 
 ## Final reminders for the agent
 

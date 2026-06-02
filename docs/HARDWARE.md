@@ -619,7 +619,7 @@ Radio parameters are configurable at runtime via NVS (`NodePrefs`):
      → LoRa SPI bus init
      → SX1262 hard reset + std_init
      → Radio config from prefs or defaults
-     → MeshCore SlopMesh init
+     → MeshCore SigurdMeshV2 init
 8. sigurdos::ui::init()
 9. sigurdos_sdcard_init()
 10. sigurdos_map_init()

@@ -23,7 +23,7 @@ The companion radio (`MyMesh`) extends **`BaseChatMesh`** ([`src/helpers/BaseCha
 
 **SigurdOS's `SigurdMeshV2` now also extends `BaseChatMesh`** (`src/mesh/sigurd_mesh_v2.h`). The migration off the old raw `::mesh::Mesh` subclass is **complete**. It therefore *inherits* those helpers, which is why most of the Infrastructure / Protocol features below are now implemented as thin **wrapper + UI** work rather than bespoke protocol code. Contacts use `BaseChatMesh`'s `::ContactInfo` (with `out_path` / `out_path_len`); the UI is insulated behind `sigurdos::mesh::ContactInfo` in `mesh_wrapper.h`.
 
-> **Historical note:** earlier revisions of this document described a `SlopMesh` class extending `::mesh::Mesh` *directly* (`src/mesh/slop_mesh.h`) and warned that the `BaseChatMesh` helpers were "absent". That predates the migration and no longer applies — the class is now `SigurdMeshV2` in `src/mesh/sigurd_mesh_v2.h`.
+> **Historical note:** earlier revisions of this document described a legacy mesh class extending `::mesh::Mesh` *directly* and warned that the `BaseChatMesh` helpers were "absent". That predates the migration and no longer applies — the class is now `SigurdMeshV2` in `src/mesh/sigurd_mesh_v2.h`.
 
 ---
 
@@ -69,11 +69,9 @@ A companion logs into a repeater or room server with a password, receiving a per
 
 ### Telemetry queries (remote + self, CayenneLPP) — M
 
-> **⚠️ Partially implemented** — the *remote query* is done: `requestTelemetry()` (`mesh_wrapper.h`) sends `REQ_TYPE_GET_TELEMETRY_DATA` and decodes the CayenneLPP reply (voltage, temp, humidity, lat-lon). The *answer side* is **missing**: `SigurdMeshV2::onContactRequest()` (`sigurd_mesh_v2.h`) is a skeleton that returns `0`, so the T-Deck never reports its own battery/sensors over the mesh, and there is no per-category response policy.
+> **✅ Implemented** — `requestTelemetry()` (`mesh_wrapper.h`) sends `REQ_TYPE_GET_TELEMETRY_DATA` and decodes CayenneLPP replies (voltage, temp, humidity, lat-lon). `SigurdMeshV2::onContactRequest()` now answers inbound telemetry requests with local battery voltage and GPS data when available (PR #318 / issue #301).
 
 MeshCore carries sensor telemetry in CayenneLPP format. `CMD_SEND_TELEMETRY_REQ` queries a remote node's telemetry (battery voltage, environment sensors, GPS); a length-4 self-request returns the device's own telemetry.
-
-**What's needed:** Implement `onContactRequest()` to answer `REQ_TYPE_GET_TELEMETRY_DATA` with a `CayenneLPP` reply (`addVoltage(TELEM_CHANNEL_SELF, …)`, optionally location/environment). Add the `telemetry_mode_base`/`telemetry_mode_loc`/`telemetry_mode_env` policy fields (deny / allow-by-flags / allow-all) to gate what is shared.
 
 **MeshCore reference:**
 - [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) — `CMD_SEND_TELEMETRY_REQ` (39): remote variant calls `sendRequest(*recipient, REQ_TYPE_GET_TELEMETRY_DATA, …)`; `len==4` self variant fills a `CayenneLPP telemetry` with `addVoltage(TELEM_CHANNEL_SELF, …)` + `sensors.querySensors()` and pushes `PUSH_CODE_TELEMETRY_RESPONSE`; `onContactRequest()` answers `REQ_TYPE_GET_TELEMETRY_DATA`
@@ -182,11 +180,17 @@ Direct-encrypted REQ (0x00) / RESPONSE (0x01) share the TEXT/PATH wire format (d
 
 ### Control packets (PAYLOAD_TYPE_CONTROL 0x0B) — L
 
-> **⚠️ Partially implemented** — `SigurdMeshV2::onControlDataRecv` (`sigurd_mesh_v2.h`) implements a SigurdOS-specific PING/PONG over zero-hop control packets (the Finder "Ping Nearby" feature). No *other* control sub-types (capability query, neighbour hello, sub-mesh management) are handled.
+> **✅ Implemented for companion use.** `SigurdMeshV2::onControlDataRecv` handles:
+> - SigurdOS zero-hop Finder PING/PONG (`PING:<tag>` / `PONG:<tag>:<name>:<rssi>`)
+> - Node Discovery Protocol interoperability requests (`0x80` / `0x81`) and responses (`0x90 | node_type`) for MeshCore repeaters/sensors, including type filtering, echoed tag, SNR×4, and full or prefix pubkey response.
+>
+> Generic `CMD_SEND_CONTROL_DATA` passthrough remains a companion-serial API concept; SigurdOS implements the on-device control behaviours relevant to the handheld.
 
 The library only dispatches control packets for direct-routed, previously-unseen, zero-hop packets where `payload[0] & 0x80` is set; subtypes are application-defined.
 
-**What's needed:** Design which control sub-types SigurdOS should answer. Note the companion radio exposes this generically via `CMD_SEND_CONTROL_DATA` / `PUSH_CODE_CONTROL_DATA`.
+**Code references:**
+- `src/mesh/sigurd_mesh_v2.h` — PING/PONG plus Node Discovery request/response handling in `onControlDataRecv()`
+- `src/mesh/mesh_wrapper.h` / `.cpp` — Finder Ping Nearby API
 
 **MeshCore reference:**
 - [`src/Packet.h`](https://github.com/meshcore-dev/MeshCore/blob/main/src/Packet.h) — `#define PAYLOAD_TYPE_CONTROL 0x0B`
@@ -312,9 +316,7 @@ Companion nodes can broadcast periodic adverts so they stay discoverable. Option
 
 ### Contact locations on Map screen — M
 
-The Map screen shows offline tiles and own GPS position but not other nodes. Contacts already carry `has_location` / `latitude` / `longitude` (advert parsing is done, surfaced via `sigurdos::mesh::ContactInfo`) — the data is available, only the rendering is missing.
-
-**What's needed:** Render labelled contact markers on the map canvas; update on new adverts; tap a marker → contact detail.
+> **✅ Implemented** — the Map screen overlays contact-location markers for contacts with `has_location`/`latitude`/`longitude`, re-renders them with the tile canvas, and taps route to Contact Detail. Marker pooling lives in `src/app/map_renderer.cpp`; the UI bridge calls `sigurdos_map_render_contacts()` from `src/ui/screens.cpp`.
 
 *(No additional MeshCore reference — the coordinates are already parsed.)*
 
@@ -335,9 +337,9 @@ The list previously had LRU eviction only when full; the user can now manually r
 
 ### Identity backup — export / import private key — M
 
-The node's identity *is* its private key — losing it means losing your address on the mesh, and there is no recovery. The companion exposes `CMD_EXPORT_PRIVATE_KEY` / `CMD_IMPORT_PRIVATE_KEY` so a user can back up and restore identity. SigurdOS has no export, import, or backup of its identity.
+> **✅ Implemented** — Terminal commands `exportkey` and `importkey <hex>` export/import the node private key via `mesh_wrapper.cpp` identity helpers. Import persists the key and reinitialises identity state; use this for backup/restore of the mesh address.
 
-**What's needed:** A "Back up identity" action (export hex/QR) and an "Import identity" path (re-key the node). Handle the re-key carefully — contacts' shared secrets must be recomputed.
+The node's identity *is* its private key — losing it means losing your address on the mesh, and there is no recovery. The companion exposes `CMD_EXPORT_PRIVATE_KEY` / `CMD_IMPORT_PRIVATE_KEY` for the same concept.
 
 **MeshCore reference:**
 - [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) — `CMD_EXPORT_PRIVATE_KEY` (23) → `RESP_CODE_PRIVATE_KEY`; `CMD_IMPORT_PRIVATE_KEY` (24)
@@ -347,9 +349,9 @@ The node's identity *is* its private key — losing it means losing your address
 
 ### QR code generation for contact/channel sharing — L
 
-MeshCore uses a deep-link URI scheme for sharing (`meshcore://contact/add?name=…&public_key=<64hex>&type=<1-4>` and `meshcore://channel/add?name=…&secret=<hex32>`). The 320×240 display can show a QR; a tiny MIT-licensed QR encoder (~2 KB) fits.
+> **✅ Implemented** — `src/app/qr_show.cpp` uses ricmoo's MIT QRCode library to render QR payloads on an LVGL canvas. Contact Detail has "Share via QR" for `meshcore://contact/add?...`; Channel Settings rows have QR buttons for `meshcore://channel/add?...`.
 
-**What's needed:** Add a QR library (check GPL-3.0 compatibility — a rejection trigger if not). "Share" buttons on Contact Detail and Channels. Render to an LVGL canvas.
+MeshCore uses a deep-link URI scheme for sharing (`meshcore://contact/add?name=…&public_key=<64hex>&type=<1-4>` and `meshcore://channel/add?name=…&secret=<hex32>`).
 
 **MeshCore reference:**
 - [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) — `CMD_SHARE_CONTACT` (16) / `CMD_EXPORT_CONTACT` (17) handlers produce the binary the URI encodes (name + 32-byte pubkey + type byte)
@@ -358,9 +360,9 @@ MeshCore uses a deep-link URI scheme for sharing (`meshcore://contact/add?name=�
 
 ### QR code / URI import for contacts and channels — M
 
-The inverse: accept a `meshcore://…` URI by keyboard (no camera) in an "Add by URI" dialog or Terminal command.
+> **✅ Implemented** — Terminal command `import meshcore://...` accepts contact and channel deep links. `mesh_wrapper.cpp` parses query-parameter contact/channel URIs and the raw hex business-card contact format, then persists imported contacts/channels.
 
-**What's needed:** A URI parser; a Terminal `add contact meshcore://…` command; optionally a dedicated Add Contact screen.
+The inverse of QR sharing is keyboard entry/paste of a `meshcore://…` URI; SigurdOS exposes this through Terminal rather than a camera.
 
 **MeshCore reference:**
 - [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) — `CMD_IMPORT_CONTACT` (18) handler shows the binary contact format
@@ -432,9 +434,9 @@ Previously the 8-slot list filled with no eviction.
 
 ### Message signing — S *(niche)*
 
-`CMD_SIGN_START` / `CMD_SIGN_DATA` / `CMD_SIGN_FINISH` sign arbitrary data with the node's private key (for signed announcements / authenticated messages). SigurdOS does not expose signing.
+> **✅ Implemented** — Terminal command `sign <data>` signs arbitrary text with the node identity via `mesh_wrapper.cpp` signing helpers and prints the signature result. This covers the handheld diagnostic/use-on-demand case without adding a dedicated UI screen.
 
-**What's needed:** Port the streaming-sign API; expose via Terminal command. Low priority for the handheld use case.
+`CMD_SIGN_START` / `CMD_SIGN_DATA` / `CMD_SIGN_FINISH` are the companion serial streaming API for the same underlying private-key signing capability.
 
 **MeshCore reference:**
 - [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) — `CMD_SIGN_START` (33) / `CMD_SIGN_DATA` (34) / `CMD_SIGN_FINISH` (35); `RESP_CODE_SIGN_START` / `RESP_CODE_SIGNATURE`; `onSignedMessageRecv()` (receive side)
@@ -469,9 +471,9 @@ Previously the 8-slot list filled with no eviction.
 
 ### Client-repeat mode (companion also relays) — M
 
-A companion can optionally relay/forward packets while staying a chat node — the `client_repeat` flag. This is the *companion* version of repeating (opportunistic relay), distinct from full repeater node-type (see "Node type selection" above). SigurdOS has no packet-forwarding path, no `client_repeat` pref, and no toggle.
+> **✅ Implemented** — `NodePrefs::client_repeat` persists the opportunistic relay flag, Settings exposes a "Client repeat" toggle, and `SigurdMeshV2` gates forwarding via `client_repeat != 0`. This is the *companion* version of repeating, distinct from full repeater node-type.
 
-**What's needed:** Add `client_repeat` to `NodePrefs`; gate forwarding on it in `SigurdMeshV2`; an "Advanced" Settings toggle. Relaying raises airtime — respect the duty-cycle budget.
+Relaying raises airtime; keep this user-controlled and off by default.
 
 **MeshCore reference:**
 - [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) — forwarding gated on `_prefs.client_repeat != 0`; `CMD_SET_TUNING_PARAMS` carries the repeat flag
@@ -512,9 +514,9 @@ The companion `CMD_GET_STATS` returns a typed stats blob.
 
 ### Advert path query (diagnostic) — S *(niche)*
 
-`CMD_GET_ADVERT_PATH` reports the network path an advert took to reach this node (a per-pubkey `advert_paths[]` table). A useful diagnostic for understanding routing; SigurdOS keeps no advert-path table and exposes nothing.
+> **✅ Implemented** — `SigurdMeshV2` tracks a 16-entry advert-path table keyed by contact/pubkey prefix and exposes inbound advert hop count. Contact Detail now shows path state with hop count (e.g. direct vs multi-hop) alongside the existing outbound direct-path status.
 
-**What's needed:** Track recent advert paths keyed by pubkey prefix; surface the path for a contact on Contact Detail or the Signal/Trace screen.
+`CMD_GET_ADVERT_PATH` reports the network path an advert took to reach this node in the companion protocol; SigurdOS surfaces the handheld-relevant path visibility in Contact Detail.
 
 **MeshCore reference:**
 - [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) — `CMD_GET_ADVERT_PATH` (42) / `RESP_CODE_ADVERT_PATH`; the `advert_paths[]` table and `AdvertPath` struct
@@ -523,9 +525,9 @@ The companion `CMD_GET_STATS` returns a typed stats blob.
 
 ### Storage usage display — S *(niche)*
 
-`CMD_GET_BATT_AND_STORAGE` returns battery millivolts **plus filesystem storage used/total (KB)**. SigurdOS shows battery but never surfaces flash/SD usage — `hal/sdcard.cpp` already computes SD capacity/free, so the data exists; only the display is missing.
+> **✅ Implemented** — Settings → System shows storage usage for internal flash/SPIFFS and SD card where available. It reuses existing HAL/storage helpers and keeps the readout in the system settings area rather than adding a separate diagnostics panel.
 
-**What's needed:** Add used/total (SPIFFS + SD) to the Node Stats panel or a storage line on Settings → System.
+`CMD_GET_BATT_AND_STORAGE` returns battery millivolts **plus filesystem storage used/total (KB)** in the companion protocol.
 
 **MeshCore reference:**
 - [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) — `CMD_GET_BATT_AND_STORAGE` (20) / `RESP_CODE_BATT_AND_STORAGE` (battery mV + used/total KB via `_store->getStorageUsedKb()` / `getStorageTotalKb()`)
@@ -562,9 +564,9 @@ The companion `CMD_GET_STATS` returns a typed stats blob.
 
 ### ACL / contact permissions — L
 
-MeshCore defines permission levels (guest / read-only / read-write / admin). SigurdOS treats all contacts identically.
+> **✅ Implemented** — contact permissions are surfaced through `ContactInfo::perm`, `setContactPerm()` / `getContactPerm()` wrappers, and Contact Detail promote/demote controls. The UI displays MeshCore ACL role levels (guest/read-only/read-write/admin) and allows changing them per contact.
 
-**What's needed:** Add a `perm` field to the contact model; promote contacts in Contact Detail; gate sensitive actions behind permission checks.
+MeshCore defines permission levels (guest / read-only / read-write / admin).
 
 **MeshCore reference:**
 - [`src/helpers/ClientACL.h`](https://github.com/meshcore-dev/MeshCore/blob/main/src/helpers/ClientACL.h) / [`ClientACL.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/src/helpers/ClientACL.cpp) — the ACL store; permission levels `PERM_ACL_GUEST` (0), `PERM_ACL_READ_ONLY` (1), `PERM_ACL_READ_WRITE` (2), `PERM_ACL_ADMIN` (3), `PERM_ACL_ROLE_MASK`, and `isAdmin()`
@@ -573,9 +575,9 @@ MeshCore defines permission levels (guest / read-only / read-write / admin). Sig
 
 ### Device admin password / PIN — M
 
-No password protects Settings or Terminal — anyone with physical access can change radio params, read messages, or alter identity. The companion stores a device PIN (`CMD_SET_DEVICE_PIN`) and an admin password.
+> **✅ Implemented** — `NodePrefs::device_pin` persists a 4–6 digit PIN in NVS. Settings → System exposes "Device PIN: Set/Change", and Settings/Terminal entry is protected by a PIN prompt when enabled.
 
-**What's needed:** An optional hashed PIN in NVS; prompt on Settings/Terminal entry, with a grace period after recent activity.
+No password protects Settings or Terminal unless the user enables this PIN; the companion stores a device PIN (`CMD_SET_DEVICE_PIN`) and an admin password.
 
 **MeshCore reference:**
 - [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) — `CMD_SET_DEVICE_PIN` (37) handler
@@ -602,11 +604,9 @@ No password protects Settings or Terminal — anyone with physical access can ch
 
 ### Reboot action — S *(low value)*
 
-> **Largely covered.** SigurdOS already reboots via "Save & Reboot" in Radio Setup and after a Factory Reset, and `tdeck_board.h` has `reboot()`. A dedicated standalone "Reboot" button is the only gap.
+> **✅ Implemented** — Settings → System includes a dedicated "Reboot" action with confirmation, alongside the existing Radio Setup "Save & Reboot" and post-factory-reset reboot paths (PR #314 / issue #313).
 
 `CMD_REBOOT` simply restarts the device.
-
-**What's needed:** Optionally a dedicated "Reboot" button on Settings → System next to Factory Reset (flush pending saves, ~100 ms delay, `esp_restart()`).
 
 **MeshCore reference:**
 - [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) — `CMD_REBOOT` (19, guarded by a literal `"reboot"` payload)

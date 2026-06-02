@@ -74,10 +74,12 @@ SigurdOS-tdeck/
 │   │   ├── keyboard.cpp/h  ← I2C keyboard (ESP32-C3 MCU)
 │   │   ├── gps.cpp/h       ← NMEA GPS parser (Serial1)
 │   │   ├── sdcard.cpp/h    ← microSD card (SPI, shared bus)
-│   │   └── prefs.cpp/h     ← NVS preferences (radio config, identity)
+│   │   ├── prefs.cpp/h     ← NVS preferences (radio config, identity, WiFi OTA)
+│   │   ├── wifi_ota.cpp/h  ← AP-mode OTA upload server
+│   │   └── github_ota.cpp/h ← GitHub-release OTA downloader
 │   ├── mesh/
 │   │   ├── mesh_wrapper.cpp/h  ← SX1262 radio init, RTC, mesh API
-│   │   └── slop_mesh.h     ← SlopMesh : mesh::Mesh subclass
+│   │   └── sigurd_mesh_v2.h ← SigurdMeshV2 : BaseChatMesh subclass
 │   ├── app/
 │   │   └── map_renderer.cpp/h  ← Offline map tile renderer (PNG/JPEG, PSRAM canvas)
 │   ├── fonts/

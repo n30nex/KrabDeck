@@ -35,6 +35,7 @@ This document catalogs every feature in the firmware — the 12-grid home screen
   - [RTC & System Time](#rtc--system-time)
   - [SPIFFS Persistence](#spiffs-persistence)
   - [Web Flasher Support](#web-flasher-support)
+  - [OTA Firmware Update](#ota-firmware-update)
   - [Remote Test Controller](#remote-test-controller)
 - [Hardware Features](#hardware-features)
   - [ST7789 Display](#st7789-display)
@@ -74,40 +75,40 @@ Full multi-channel chat with message bubbles, channel tabs, and text input. Supp
 **Sources:** [`src/ui/chat_screen.cpp`](../src/ui/chat_screen.cpp), [`src/ui/chat_screen.h`](../src/ui/chat_screen.h)
 
 ### 2. CONTACTS
-List of discovered mesh nodes (up to 64) with LRU eviction. Shows contact names and RSSI. Tapping opens a direct message conversation.
-**Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp), [`src/mesh/slop_mesh.h`](../src/mesh/slop_mesh.h)
+List of discovered mesh nodes (up to 64) with LRU eviction. Shows contact names, RSSI, location/path metadata, ACL permission role, QR sharing, telemetry action, and promote/demote controls in Contact Detail.
+**Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp), [`src/mesh/mesh_wrapper.h`](../src/mesh/mesh_wrapper.h), [`src/mesh/sigurd_mesh_v2.h`](../src/mesh/sigurd_mesh_v2.h), [`src/app/qr_show.cpp`](../src/app/qr_show.cpp)
 
 ### 3. REPEATERS
 Network / signal view showing nearby nodes sorted by signal strength. Routes to the Network screen.
 **Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp)
 
 ### 4. FINDER
-Active node discovery via zero-hop "Ping Nearby" (TTL=1 CONTROL packets). Collects PONG responses over a 3-second window. Shows responders with RSSI. 30-second cooldown between pings.
-**Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp), [`src/mesh/slop_mesh.h`](../src/mesh/slop_mesh.h) (lines 65–390), [`docs/KNOWN_ISSUES.md`](KNOWN_ISSUES.md#finder)
+Active node discovery via zero-hop "Ping Nearby" (TTL=1 CONTROL packets). Collects PONG responses over a 3-second window, shows responders with RSSI, enforces a 30-second cooldown, and answers MeshCore Node Discovery Protocol requests (`0x80`/`0x90`) for repeater/sensor interoperability.
+**Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp), [`src/mesh/sigurd_mesh_v2.h`](../src/mesh/sigurd_mesh_v2.h), [`src/mesh/mesh_wrapper.h`](../src/mesh/mesh_wrapper.h)
 
 ### 5. PACKETS
 Heard packets log — a running list of all received radio packets with timestamp, source, RSSI, SNR, and packet type (ADVERT, DM, GRP, TRACE, etc.).
 **Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp), [`src/mesh/mesh_wrapper.h`](../src/mesh/mesh_wrapper.h) (lines 27–33, 77–79)
 
 ### 6. MAP
-Offline map view using PNG tiles from SD card. Renders a tile grid on an LVGL canvas with pan and zoom. Uses PSRAM-backed tile cache (LRU, 4 entries, 64-bit timestamps). Shows own GPS position.
-**Sources:** [`src/app/map_renderer.cpp`](../src/app/map_renderer.cpp), [`src/app/map_renderer.h`](../src/app/map_renderer.h), [`src/app/tile_cache.h`](../src/app/tile_cache.h)
+Offline map view using PNG tiles from SD card. Renders a tile grid on an LVGL canvas with pan and zoom, uses PSRAM-backed tile cache, shows own GPS position, and overlays tappable contact-location markers.
+**Sources:** [`src/app/map_renderer.cpp`](../src/app/map_renderer.cpp), [`src/app/map_renderer.h`](../src/app/map_renderer.h), [`src/app/tile_cache.h`](../src/app/tile_cache.h), [`src/ui/screens.cpp`](../src/ui/screens.cpp)
 
 ### 7. ADVERTISE
 Send a manual mesh advert broadcast to announce your node's presence on the network. Optionally includes GPS coordinates if a fix is available.
 **Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp), [`src/mesh/mesh_wrapper.h`](../src/mesh/mesh_wrapper.h) (lines 61–64)
 
 ### 8. SETTINGS
-Device configuration screen. Node name, radio parameters, about/version info. Access to Radio Setup (frequency, bandwidth, SF, CR, TX power) and Custom RF config.
-**Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp), [`src/hal/prefs.h`](../src/hal/prefs.h)
+Device configuration screen. Includes node/radio status, Radio Setup/Custom RF, keyboard/chat/display toggles, client repeat, multi-ACK, device PIN, WiFi credentials, AP OTA upload, GitHub OTA download, storage display, reboot, shutdown, factory reset, and version info.
+**Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp), [`src/hal/prefs.h`](../src/hal/prefs.h), [`src/hal/wifi_ota.cpp`](../src/hal/wifi_ota.cpp), [`src/hal/github_ota.cpp`](../src/hal/github_ota.cpp)
 
 ### 9. TRACE
 Network trace route — sends a trace packet along a known path to a contact and displays the per-hop SNR and node hashes returned.
-**Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp), [`src/mesh/mesh_wrapper.h`](../src/mesh/mesh_wrapper.h) (lines 86–91), [`src/mesh/slop_mesh.h`](../src/mesh/slop_mesh.h) (lines 292–316)
+**Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp), [`src/mesh/mesh_wrapper.h`](../src/mesh/mesh_wrapper.h), [`src/mesh/sigurd_mesh_v2.h`](../src/mesh/sigurd_mesh_v2.h)
 
 ### 10. TERMINAL
-Serial-like terminal screen for raw text I/O. Accepts keyboard input, displays sent/received text. Max 64 lines with oldest-line pruning. Includes `dump`, `clear`, inject logs.
-**Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp), [`src/ui/screens.h`](../src/ui/screens.h) (lines 29–33)
+Serial-like terminal screen for diagnostics and utility commands. Includes `help`, status/advert/ping, message signing (`sign <data>`), identity backup (`exportkey`/`importkey`), URI import (`import meshcore://...`), fetch/group-data commands, custom vars, and log clearing.
+**Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp), [`src/ui/screens.h`](../src/ui/screens.h), [`src/mesh/mesh_wrapper.h`](../src/mesh/mesh_wrapper.h)
 
 ### 11. SETUP
 First-boot onboarding wizard. Guides the user through node name, radio configuration, and channel setup before first use. Saves prefs and reboots when complete.
@@ -136,13 +137,16 @@ Signal diagnostics screen showing current RSSI, noise floor, SNR, and signal qua
 - **Direct messages** (peer-to-peer encrypted) with path-aware routing (direct or flood)
 - **Group channels** — hashtag channels with shared PSK (up to 8 channels)
 - **Automatic contact discovery** via advert broadcasts (max 64 contacts, LRU eviction)
-- **Path learning** — learns and stores outbound paths for direct routing
+- **Path learning** — learns and stores outbound/inbound advert paths; Contact Detail shows direct/hop count status
 - **Trace route** — per-hop SNR and node hash reporting
 - **Ping Nearby** — zero-hop active discovery with tagged PING/PONG exchange
+- **Node Discovery Protocol** — answers MeshCore `0x80`/`0x81` discovery requests with `0x90|node_type` responses
+- **Telemetry request/answer** — request remote CayenneLPP telemetry and answer inbound telemetry requests with local battery/GPS data
+- **Client repeat + multi-ACK** — optional opportunistic relay and redundant ACK transmission settings
 - **Packet logging** — per-packet RX log with type, RSSI, SNR
 - **RTC time sync** — mesh-synchronised clock for message timestamps
 - **Advert broadcast** — manual send with optional GPS coordinates
-**Sources:** [`src/mesh/mesh_wrapper.cpp`](../src/mesh/mesh_wrapper.cpp), [`src/mesh/mesh_wrapper.h`](../src/mesh/mesh_wrapper.h), [`src/mesh/slop_mesh.h`](../src/mesh/slop_mesh.h), [`lib/meshcore/`](../lib/meshcore/)
+**Sources:** [`src/mesh/mesh_wrapper.cpp`](../src/mesh/mesh_wrapper.cpp), [`src/mesh/mesh_wrapper.h`](../src/mesh/mesh_wrapper.h), [`src/mesh/sigurd_mesh_v2.h`](../src/mesh/sigurd_mesh_v2.h), [`lib/meshcore/`](../lib/meshcore/)
 
 ### Screen Navigation
 - **Screen enum** with 14 screen IDs (Home, Chat, Contacts, Channels, Network, Heard, Map, Advertise, Settings, Trace, Terminal, Signal, RadioSetup, Onboarding)
@@ -157,7 +161,7 @@ Signal diagnostics screen showing current RSSI, noise floor, SNR, and signal qua
 - **Discord-inspired dark palette** — deep black `#0F0F0F` background, cyan `#00BFFF` accents
 - **Color constants** — 7 background levels, 7 accent colors, 4 text colors, channel colors
 - **Style helpers** — `apply_dark_bg()`, `apply_pixel_card()`, `apply_pixel_btn()`, `apply_pixel_btn_outline()`, `apply_pixel_input()`, `apply_pixel_badge()`, `apply_topbar_icon_btn()`
-- **Signal bars** — `create_signal_bars()` draws 1–5 blocky bar widgets, bottom-aligned, growing left to right
+- **Signal dots** — `create_signal_dots()` draws an iOS-style 5-dot RSSI indicator in the top bar (cyan filled dots for active, muted outlines for inactive)
 - **Focus style** — yellow accent border for keyboard/trackball focus state
 - **Zero radius** on all elements, 2px minimum borders
 **Sources:** [`src/ui/theme.h`](../src/ui/theme.h), [`test/test_theme/`](../test/test_theme/)
@@ -178,7 +182,7 @@ Signal diagnostics screen showing current RSSI, noise floor, SNR, and signal qua
 **Sources:** [`src/fonts/emoji_font.h`](../src/fonts/emoji_font.h), [`src/fonts/emoji_font_setup.cpp`](../src/fonts/emoji_font_setup.cpp), [`src/fonts/emoji_data.h`](../src/fonts/emoji_data.h)
 
 ### NVS Preferences
-- **NodePrefs struct** — persisted in ESP32 NVS: node name, frequency, bandwidth, SF, CR, TX power, keyboard backlight, message cap, configured flag
+- **NodePrefs struct** — persisted in ESP32 NVS: node/radio config, keyboard backlight, message cap, node type, multi-ACK, buzzer quiet, client repeat, device PIN, and WiFi credentials for GitHub OTA
 - **load/save/exists** API — `prefs_load()`, `prefs_save()`, `prefs_exists()`
 - **Safe defaults** — radio defaults to unconfigured (0 values) so device won't transmit until explicitly set
 - **Global accessor** — `prefs_get()` / `prefs_set()` for runtime read/write
@@ -215,6 +219,13 @@ Signal diagnostics screen showing current RSSI, noise floor, SNR, and signal qua
 - **Manifest JSON** — versioned metadata for `flasher.meshcore.io` custom firmware installer
 - **4-partition flash layout** — bootloader (0x0000), partitions (0x8000), boot_app0 (0xe000), firmware (0x10000)
 **Sources:** [`webflasher/manifest.json`](../webflasher/manifest.json), [`firmware/README.md`](../firmware/README.md), [`webflasher/`](../webflasher/)
+
+### OTA Firmware Update
+- **AP upload OTA** — Settings → System → "OTA Update" starts a `SigurdOS-OTA` WiFi AP and upload page at `192.168.4.1`.
+- **GitHub pull OTA** — Settings → System → "OTA from GitHub" joins saved WiFi, downloads `firmware.bin` from the latest GitHub release, streams to `Update.write()`, and reboots on success.
+- **WiFi credentials** — Settings → System → "WiFi: ..." persists SSID/password in NVS.
+- **Dual OTA partitioning** — `default_16MB.csv` provides two app slots for safe OTA updates.
+**Sources:** [`src/hal/wifi_ota.cpp`](../src/hal/wifi_ota.cpp), [`src/hal/github_ota.cpp`](../src/hal/github_ota.cpp), [`src/ui/screens.cpp`](../src/ui/screens.cpp), [`platformio.ini`](../platformio.ini)
 
 ### Remote Test Controller
 - **`SIGURDOS_REMOTE_TEST` build mode** — disables LoRa radio, enables simulated input
@@ -361,6 +372,6 @@ See [`test/README.md`](../test/README.md) for full documentation.
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Contribution workflow, PR checklist, coding standards |
 | [`docs/KNOWN_ISSUES.md`](KNOWN_ISSUES.md) | Tracked bugs, fixes, and workarounds |
 | [`docs/MAP_SCREEN.md`](MAP_SCREEN.md) | Map screen and tile cache system documentation |
-| [`docs/MISSING_FEATURES.md`](MISSING_FEATURES.md) | MeshCore protocol features not yet implemented, with effort estimates |
+| [`docs/MISSING_FEATURES.md`](MISSING_FEATURES.md) | Companion parity audit: implemented, declined, and out-of-scope MeshCore deltas |
 | [`test/README.md`](../test/README.md) | Test suite structure, mock guidelines, running tests |
 | [`firmware/README.md`](../firmware/README.md) | Flash instructions, binary layout, web flasher |

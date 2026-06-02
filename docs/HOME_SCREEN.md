@@ -11,7 +11,7 @@ The Home screen is SigurdOS's main launcher — a 4×3 icon grid that provides a
 | `src/ui/home_screen.h` | Public API — `home_screen_create()`, `home_screen_show()`, `home_screen_handle_trackball()`, runtime update functions (battery, time, signal, channels) |
 | `src/ui/home_screen.cpp` | Full implementation (~502 lines) — top bar, bottom bar, adaptive icon grid, tile creation, selection rendering, trackball handler |
 | `src/ui/responsive.h` | Display-size-agnostic layout constants — `TOP_BAR_H`, `BOT_BAR_H`, `CONTENT_H`, `compute_grid()`, `HASHTAG_LABEL_W()` |
-| `src/ui/theme.h` | Pixel theme colours, helpers — `apply_dark_bg()`, `create_signal_bars()`, `rssi_to_bars()` |
+| `src/ui/theme.h` | Pixel theme colours, helpers — `apply_dark_bg()`, `create_signal_dots()`, `rssi_to_bars()` |
 | `src/ui/navigation.cpp` | Screen routing — `navigate_to(Screen)` dispatches to the target screen when a tile is activated |
 
 ---
@@ -75,7 +75,7 @@ Created by `create_bottom_bar()` at line 247 of `home_screen.cpp`. Slightly shor
 | Element | Position | Details |
 |---------|----------|---------|
 | **Device name** | Left-aligned (x=4) | From `mesh::getOwnName()`, `montserrat_10`, `TEXT_SECONDARY` (`#949BA4`) |
-| **Signal bars** | Center (x=-20) | 5-block pixel signal indicator from `create_signal_bars()` in `theme.h`. Each bar is a zero-radius rectangle growing taller from left to right (4, 8, 12, 16, 20px). Active bars = `ACCENT` cyan, inactive = `BG_INPUT` dark. Updated via `home_screen_update_signal()` which calls `rssi_to_bars()` |
+| **Signal dots** | Center (x=-20) | iOS-style 5-dot RSSI indicator from `create_signal_dots()` in `theme.h`. Active dots are `ACCENT` cyan filled; inactive dots are `TEXT_MUTED` outlines. Updated via `home_screen_update_signal()` which calls `rssi_to_bars()` |
 | **Battery percentage** | Right-aligned (x=-4) | Initially `"--%"`, updated via `home_screen_update_battery()`. `montserrat_10`, `ACCENT` cyan normally, turns `ACCENT_RED` (`#ED4245`) below 20% |
 
 Styling: `BG_SECONDARY` (`#181818`) background, zero padding, zero border width.
@@ -128,7 +128,7 @@ Each tile is created by `create_icon_tile()` at line 282 of `home_screen.cpp`:
 
 ### Badge (CHATS Tile)
 
-Only the CHATS tile has the `badge = true` flag. This creates a small **10×10px red square** in the top-right corner of the tile to indicate unread messages or activity. The badge is currently always present — dynamic unread-count logic on the home screen badge is not yet implemented (unread handling exists per-channel in the Chat screen itself).
+Only the CHATS tile has `badge = true`. This creates an **18×12px red unread counter** in the top-right corner of the tile. `home_screen_update_badges()` reads `sigurdos::mesh::getUnreadMessageCount()`, hides the badge when the count is zero, and shows a capped numeric count (`99` max) when unread messages exist. Opening Chat resets the mesh unread counter.
 
 ---
 

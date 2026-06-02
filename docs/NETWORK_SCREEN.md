@@ -11,7 +11,7 @@ The Network screen (internally called **Finder**) is SigurdOS's node discovery a
 | `src/ui/screens.cpp` | Implementation — `finder_screen_show()` at line 566 |
 | `src/ui/screens.h` | Public API — `finder_screen_show()` declaration |
 | `src/mesh/mesh_wrapper.h` / `.cpp` | Ping API — `sendPingNearby()`, `pingIsActive()`, `pingOnCooldown()`, `pingCooldownRemaining()`, `getPingResultCount()`, `getPingResult()` |
-| `src/mesh/slop_mesh.h` / `.cpp` | Protocol implementation — `sendPingNearby()`, `onControlDataRecv()` for PING/PONG handling |
+| `src/mesh/sigurd_mesh_v2.h` | BaseChatMesh subclass — `sendPingNearby()`, `onControlDataRecv()` for PING/PONG and Node Discovery handling |
 
 ---
 
@@ -55,7 +55,7 @@ Initiator                    Responder(s)
 
 **Tag matching:** Each ping generates a unique tag (`now ^ (intptr_t)this`) to prevent stale or cross-session PONGs from being accepted. The tag is formatted as an 8-digit hex string and embedded in both the PING and PONG payloads.
 
-### Key Constants (from `slop_mesh.h`)
+### Key Constants (from `sigurd_mesh_v2.h`)
 
 | Constant | Value | Description |
 |----------|-------|-------------|
@@ -168,7 +168,7 @@ This signals that the radio is active and awaiting incoming adverts or a manual 
    - Empty: adds a single "Listening..." placeholder
 6. Calls `show_screen(scr)` with slide-in animation.
 
-### Message Handling (`onControlDataRecv` in `slop_mesh.h`)
+### Message Handling (`onControlDataRecv` in `sigurd_mesh_v2.h`)
 
 | Event | Action |
 |-------|--------|

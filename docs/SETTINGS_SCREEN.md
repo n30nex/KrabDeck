@@ -38,7 +38,26 @@ The Settings screen provides a tappable list of device status indicators and con
 | `src/hal/sdcard.h` | `sigurdos_sdcard_mounted()` — SD card status check |
 | `src/hal/gps.h` | `sigurdos_gps_has_fix()` — GPS fix status check |
 | `src/hal/keyboard.h` | `sigurdos_keyboard_set_brightness()`, `sigurdos_keyboard_set_default_brightness()` |
+| `src/hal/wifi_ota.h` / `.cpp` | AP-mode OTA upload server (`SigurdOS-OTA`, `192.168.4.1`) |
+| `src/hal/github_ota.h` / `.cpp` | STA-mode GitHub OTA downloader and progress state machine |
 | `src/ui/chat_screen.cpp` | `chat_screen_get_message_cap()`, `chat_screen_set_message_cap()` |
+
+---
+
+## Recently Added System Rows
+
+The live Settings screen has grown beyond the original status/configuration rows above. Current user-facing rows added by recent PRs include:
+
+| Row | Purpose | Persistence / backend |
+|-----|---------|-----------------------|
+| `Client repeat: ON/OFF` | Enables opportunistic companion relay mode | `NodePrefs::client_repeat`, `SigurdMeshV2` forwarding gate |
+| `Multi ACKs: ON/OFF` | Sends extra redundant ACK transmissions on lossy links | `NodePrefs::multi_acks`, `getExtraAckTransmitCount()` |
+| `Device PIN: Set/Change` | Protects Settings and Terminal entry | `NodePrefs::device_pin`, PIN prompt helpers in `screens.cpp` |
+| `WiFi: <ssid>/Not set` | Stores home WiFi credentials for GitHub OTA | `NodePrefs::wifi_ssid`, `wifi_password` |
+| `OTA Update` | Starts AP-mode upload OTA | `sigurdos::ota::start()` (`SigurdOS-OTA`, `192.168.4.1`) |
+| `OTA from GitHub` | Downloads latest release `firmware.bin` and flashes it | `sigurdos::github_ota::startGitHubUpdate()` |
+| Storage readouts | Shows internal/SD storage state where available | Storage helpers in `screens.cpp` / SD HAL |
+| `Shut down` / `Reboot` / `Factory reset` | Power and reset controls with confirmation | board/reset helpers plus mesh persistence cleanup |
 
 ---
 

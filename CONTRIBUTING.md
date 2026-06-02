@@ -229,7 +229,7 @@ pio run -e SigurdOS_TDeck_debug
 Verify in the boot log:
 - No `FATAL` or `CRASH` or `PANIC` errors
 - All `[boot] step N:` messages appear in sequence
-- `[mesh] SlopMesh initialized` confirms radio init
+- `[mesh] SigurdMeshV2 initialized` confirms radio init
 - `[boot] === SigurdOS T-Deck ready ===` at the end
 
 ## Design Guide

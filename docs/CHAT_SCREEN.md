@@ -72,7 +72,7 @@ Each row in the list shows:
 #### Bottom Bar
 
 - **Device name** (left) — from `mesh::getOwnName()`
-- **Signal bars** (center) — 5-block pixel signal indicator from `create_signal_bars()` in `theme.h`
+- **Signal dots** (center) — iOS-style 5-dot RSSI indicator from `create_signal_dots()` in `theme.h`
 - **Battery %** (right) — turns red below 20%
 
 #### Add Channel Dialog

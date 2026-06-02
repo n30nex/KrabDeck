@@ -27,6 +27,7 @@ namespace ui {
 void init();
 void loop();
 bool handle_trackball_event(SigurdOSTrackballEvent event);
+void update_wifi_status();
 
 } // namespace ui
 } // namespace sigurdos

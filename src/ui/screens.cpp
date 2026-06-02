@@ -64,6 +64,9 @@ static constexpr uint32_t ADVERT_COOLDOWN_SECONDS = 10;
 // Back button reference for back-swipe visual feedback
 static lv_obj_t* s_back_btn = nullptr;
 
+// WiFi status icon in bottom bar
+static lv_obj_t* g_wifi_icon = nullptr;
+
 // ── Device PIN forward declarations ────────────────────
 static bool pin_grace_active();
 static void pin_entry_show(Screen target_screen);
@@ -239,6 +242,16 @@ static lv_obj_t* make_screen_full(const char* title)
     lv_obj_set_style_text_font(dev, &lv_font_montserrat_10, 0);
     lv_obj_align(dev, LV_ALIGN_LEFT_MID, 4, 0);
 
+    // WiFi status icon (next to battery)
+    {
+        lv_obj_t* wifi = lv_label_create(bot);
+        lv_label_set_text(wifi, LV_SYMBOL_WIFI);
+        lv_obj_set_style_text_font(wifi, &lv_font_montserrat_10, 0);
+        lv_obj_align(wifi, LV_ALIGN_RIGHT_MID, -52, 0);
+        g_wifi_icon = wifi;
+        update_wifi_status();  // set initial state
+    }
+
     // Battery % (right, snapshot)
     {
         char batt[8];
@@ -263,9 +276,28 @@ static lv_obj_t* make_screen_full(const char* title)
     return scr;
 }
 
+
 static void show_screen(lv_obj_t* scr)
 {
     lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_LEFT, 200, 0, true);
+}
+
+// ── WiFi status icon in bottom bar ──────────────────────
+
+void update_wifi_status() {
+    if (!g_wifi_icon) return;
+    bool connected = sigurdos::wifi_sta::isConnected();
+    if (connected) {
+        int rssi = sigurdos::wifi_sta::getRSSI();
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%s %d", LV_SYMBOL_WIFI, rssi);
+        lv_label_set_text(g_wifi_icon, buf);
+        lv_obj_set_style_text_color(g_wifi_icon,
+            lv_color_hex(rssi > -60 ? ACCENT_GREEN : ACCENT), 0);
+        lv_obj_clear_flag(g_wifi_icon, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(g_wifi_icon, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 // ════════════════════════════════════════════════════════
@@ -6469,7 +6501,7 @@ static void wifi_do_scan(lv_timer_t* timer) {
                 
                 lv_obj_add_event_cb(save_btn, [](lv_event_t* ev) {
                     lv_obj_t* dlg = lv_obj_get_parent((lv_obj_t*)lv_event_get_target(ev));
-                    // Find textarea and title label
+                    // Find textarea and network label
                     lv_obj_t* ta = nullptr;
                     lv_obj_t* net_lbl = nullptr;
                     uint32_t cnt = lv_obj_get_child_cnt(dlg);
@@ -6477,19 +6509,36 @@ static void wifi_do_scan(lv_timer_t* timer) {
                         lv_obj_t* c = lv_obj_get_child(dlg, i);
                         if (lv_obj_check_type(c, &lv_textarea_class)) { ta = c; }
                         else if (net_lbl == nullptr && lv_obj_check_type(c, &lv_label_class)) {
-                            // second label is the network name
                             if (i > 1) net_lbl = c;
                         }
                     }
                     if (ta && net_lbl) {
                         const char* label_text = lv_label_get_text(net_lbl);
                         const char* ssid = label_text + 9; // skip "Network: "
+                        const char* pw = lv_textarea_get_text(ta);
                         auto p = sigurdos::prefs_get();
                         strncpy(p.wifi_ssid, ssid, sizeof(p.wifi_ssid) - 1);
                         p.wifi_ssid[sizeof(p.wifi_ssid) - 1] = '\0';
-                        strncpy(p.wifi_password, lv_textarea_get_text(ta), sizeof(p.wifi_password) - 1);
+                        strncpy(p.wifi_password, pw, sizeof(p.wifi_password) - 1);
                         p.wifi_password[sizeof(p.wifi_password) - 1] = '\0';
                         sigurdos::prefs_set(p);
+
+                        // Attempt connection
+                        bool ok = sigurdos::wifi_sta::connect(ssid, pw);
+                        // Show result briefly then close
+                        lv_obj_t* title = lv_obj_get_child(dlg, 0);
+                        if (title) {
+                            lv_label_set_text(title, ok ? "Connected!" : "Connection failed");
+                            lv_obj_set_style_text_color(title,
+                                lv_color_hex(ok ? ACCENT_GREEN : ACCENT_RED), 0);
+                        }
+                        // Auto-dismiss after 2 seconds
+                        lv_timer_t* t = lv_timer_create([](lv_timer_t* timer) {
+                            lv_obj_del_async((lv_obj_t*)lv_timer_get_user_data(timer));
+                            lv_timer_del(timer);
+                        }, ok ? 1500 : 2500, dlg);
+                        lv_timer_set_repeat_count(t, 1);
+                        return;  // don't immediately dismiss
                     }
                     lv_obj_del_async(dlg);
                 }, LV_EVENT_CLICKED, nullptr);

@@ -195,4 +195,67 @@ int scan(APInfo* out, int max_aps) {
 }
 
 }  // namespace wifi_scan
+
+// ── WiFi STA Client ──────────────────────────────────────
+namespace wifi_sta {
+
+static bool s_connected = false;
+static int  s_rssi = 0;
+
+bool connect(const char* ssid, const char* password) {
+    if (!ssid || !ssid[0]) return false;
+
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+
+    // Wait up to 15 seconds for connection
+    unsigned long start = millis();
+    while (millis() - start < 15000) {
+        if (WiFi.status() == WL_CONNECTED) {
+            s_connected = true;
+            s_rssi = WiFi.RSSI();
+            Serial.printf("[wifi-sta] connected to %s (%d dBm)\n", ssid, s_rssi);
+            return true;
+        }
+        delay(200);
+    }
+
+    WiFi.disconnect();
+    WiFi.mode(WIFI_OFF);
+    s_connected = false;
+    s_rssi = 0;
+    Serial.printf("[wifi-sta] failed to connect to %s\n", ssid);
+    return false;
+}
+
+void disconnect() {
+    if (s_connected) {
+        WiFi.disconnect();
+    }
+    WiFi.mode(WIFI_OFF);
+    s_connected = false;
+    s_rssi = 0;
+}
+
+bool isConnected() {
+    // Double-check with hardware in case of unexpected disconnect
+    if (s_connected && WiFi.status() != WL_CONNECTED) {
+        s_connected = false;
+        s_rssi = 0;
+    }
+    return s_connected;
+}
+
+int getRSSI() {
+    if (isConnected()) {
+        s_rssi = WiFi.RSSI();
+    }
+    return s_rssi;
+}
+
+void loop() {
+    // Maintain connection tracking — no-op if not connected
+}
+
+}  // namespace wifi_sta
 }  // namespace sigurdos

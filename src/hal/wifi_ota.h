@@ -47,4 +47,25 @@ struct APInfo {
 int scan(APInfo* out, int max_aps);
 
 }  // namespace wifi_scan
+
+// ── WiFi STA Client ──────────────────────────────────────
+namespace wifi_sta {
+
+// Connect to an access point. Blocks up to 15s for connection.
+// Returns true if connected (WL_CONNECTED).
+bool connect(const char* ssid, const char* password);
+
+// Disconnect and turn WiFi off.
+void disconnect();
+
+// Returns true if currently connected.
+bool isConnected();
+
+// Returns RSSI in dBm, or 0 if not connected.
+int getRSSI();
+
+// Call periodically from main loop to maintain connection.
+void loop();
+
+}  // namespace wifi_sta
 }  // namespace sigurdos

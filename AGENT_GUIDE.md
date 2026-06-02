@@ -45,15 +45,14 @@ src/
 │   ├── gps.cpp/h          # GPS NMEA parser
 │   └── sdcard.cpp/h       # SD card init, status, path helpers
 ├── mesh/
-│   ├── slop_mesh.h        # Mesh subclass — routing, channels, message handling
-│   ├── slop_mesh_v2.h     # MeshV2 (BaseChatMesh) — Phase 0 migration, RSSI/SNR history, ACK tracking
-│   └── mesh_wrapper.cpp/h # Public API for the UI layer
+│   ├── sigurd_mesh_v2.h    # MeshV2 (BaseChatMesh) — routing, channels, message handling, RSSI/SNR history, ACK tracking. V1 class removed (#290).
+│   └── mesh_wrapper.cpp/h  # Public API for the UI layer
 ├── ui/
 │   ├── theme.h            # Colors, pixel helpers (apply_pixel_*)
 │   ├── responsive.h       # Display-size-agnostic layout helpers
 │   ├── home_screen.cpp/h  # 4x3 icon grid, top/bottom bars, battery/signal/time
 │   ├── chat_screen.cpp/h  # Channels, DM, message bubbles
-│   ├── screens.cpp/h      # Heard, Contacts, Contact Detail, Map, Settings, Trace, Terminal, Signal, Channels, Finder, Advertise, Radio Setup, Custom RF, Telemetry, Node Status
+│   ├── screens.cpp/h      # Heard, Contacts, Contact Detail, Map, Settings, Trace, Terminal, Signal, Channels, Finder, Advertise, Radio Setup, Custom RF, Telemetry, Node Status, Node Stats
 │   ├── onboarding_screen.cpp/h  # First-boot setup wizard
 │   ├── navigation.cpp/h   # Screen routing with slide transitions, universal back-swipe
 │   └── ui.cpp/h           # Splash→Home transition, main loop updates
@@ -75,9 +74,12 @@ src/
 │   └── test_controller.cpp/h  # Serial-driven test harness — inject events, nav, type, screen capture
 ├── utils/                 # Utility modules
 │   └── utf8_util.h       # UTF-8 safe truncation (emoji-aware byte cutting)
-└── lib/
-    ├── meshcore/            # Git submodule → MeshCore (at repo root)
-    └── lodepng/             # PNG decode library (zlib license, PSRAM allocators)
+```
+`lib/` (at repo root, not under `src/`):
+- `meshcore/` — Git submodule → MeshCore
+- `lodepng/` — PNG decode library (zlib license, PSRAM allocators)
+- `base64/` — Base64 encode/decode header
+```
 ```
 
 ---
@@ -152,28 +154,30 @@ Use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 
 | Icon | Symbol | Use on screen |
 |------|--------|-------------|
-| CHATS | `LV_SYMBOL_ENVELOPE` | Chat |
+| CHATS | `LV_SYMBOL_ENVELOPE` | Chat (channels, with unread badge) |
+| DMs | `LV_SYMBOL_FILE` | Chat (DMs only filter) |
+| ROOMS | `LV_SYMBOL_DIRECTORY` | Contacts (room servers only filter) |
 | CONTACTS | `LV_SYMBOL_CALL` | Contacts |
-| REPEATERS | `LV_SYMBOL_WIFI` | Heard (network) |
-| FINDER | `LV_SYMBOL_EYE_OPEN` | Network |
-| PACKETS | `LV_SYMBOL_LIST` | Heard (packet log) |
+| REPEATERS | `LV_SYMBOL_WIFI` | Repeaters (relay nodes) |
+| ADVERTISE | `LV_SYMBOL_BELL` | Advertise |
 | MAP | `LV_SYMBOL_GPS` | Map |
-| ADVERTISE | `LV_SYMBOL_AUDIO` | Advertise |
-| SETTINGS | `LV_SYMBOL_SETTINGS` | Settings |
-| TRACE | `LV_SYMBOL_SHUFFLE` | Trace |
 | TERMINAL | `LV_SYMBOL_KEYBOARD` | Terminal |
-| SETUP | `LV_SYMBOL_SETTINGS` | Onboarding |
+| PACKETS | `LV_SYMBOL_LIST` | Heard (packet log) |
+| SETTINGS | `LV_SYMBOL_SETTINGS` | Settings |
+| SETUP | `LV_SYMBOL_HOME` | Onboarding |
 | SIGNAL | `LV_SYMBOL_BARS` | Signal |
+| FINDER | `LV_SYMBOL_EYE_OPEN` | Network (not on home grid) |
+| TRACE | `LV_SYMBOL_SHUFFLE` | Trace (not on home grid) |
 
 ### All Screens
 
 | # | Screen | Source | Status |
 |---|--------|--------|--------|
 | 0 | Splash | `ui.cpp` | ✅ |
-| 1 | Home (4x3 grid, 12 tiles, unread badge on CHATS) | `home_screen.cpp` | ✅ |
-| 2 | Chat (channels + DM, message search bar, ACK delivery ticks) | `chat_screen.cpp` | ✅ |
+| 1 | Home (4x3 grid, 12 tiles: CHATS/DMs/ROOMS/CONTACTS/REPEATERS/ADVERTISE/MAP/TERMINAL/PACKETS/SETTINGS/SETUP/SIGNAL. Unread badge on CHATS. DMs filters chat→DM; ROOMS filters contacts→rooms.) | `home_screen.cpp` | ✅ |
+| 2 | Chat (channels + DM, message search bar, ACK delivery ticks, filterable: all/channels/DMs, 149-byte input cap with counter) | `chat_screen.cpp` | ✅ |
 | 3 | Contacts (alphabetical, tap→DM, filtered to CHAT/ROOM types, RSSI+SNR per contact) | `screens.cpp` | ✅ |
-| 4 | Channels (list + create #hashtag/PSK) | `screens.cpp` | ✅ |
+| 4 | Channels (list + create #hashtag/PSK, delete with confirmation dialog) | `screens.cpp` | ✅ |
 | 5 | Finder / Network (Ping Nearby, nearby nodes list) | `screens.cpp` | ✅ |
 | 6 | Packets / Heard (packet log, 50 entries, 5-column TIME/SOURCE/RSSI/SNR/TYPE headers) | `screens.cpp` | ✅ |
 | 7 | Map (touch pan, auto-center, PSRAM tile cache) | `screens.cpp` | ✅ |
@@ -189,6 +193,7 @@ Use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 | 16 | Contact Detail (full contact info: type, RSSI, SNR, last seen, path, location, RSSI sparkline, DM + Trace buttons, Request Status + Telemetry buttons) | `screens.cpp` | ✅ |
 | 17 | Telemetry (request & display CayenneLPP sensor data — voltage, temperature from remote nodes) | `screens.cpp` | ✅ |
 | 18 | Node Status (request & display remote node stats — battery, uptime, airtime, packet counters) | `screens.cpp` | ✅ |
+| 19 | Node Stats (local node packet counters: sent/received flood+direct, TX/RX airtime, duty cycle budget, ACK counter) | `screens.cpp` | ✅ |
 | — | Custom RF (sub-screen of Radio Setup — Freq, SF, BW, CR, Pwr text inputs with Apply) | `screens.cpp` | ✅ |
 | — | SettingsRadio (Radio/Mesh sub-screen — radio params, bandwidth/SF/tuning, duty cycle, RX gain) | `screens.cpp` | ✅ |
 | — | SettingsGPS (GPS/Location sub-screen — GPS enable toggle, read interval, location sharing) | `screens.cpp` | ✅ |
@@ -206,7 +211,7 @@ MeshCore is a submodule at `lib/meshcore/`. The UI never touches MeshCore direct
 ```cpp
 sigurdos::mesh::init(spiffs_ok)              // Boot — load identity, start radio
 sigurdos::mesh::loop()                       // Call from main loop
-sigurdos::mesh::sendMessage(name, text)      // Direct message
+sigurdos::mesh::sendMessage(name, text)      // Direct message — returns uint32_t epoch timestamp for ACK tracking (0 on failure)
 sigurdos::mesh::sendChannelMessage(ch, text) // Group message
 sigurdos::mesh::addChannel(name, psk_b64)    // PSK channel
 sigurdos::mesh::addHashtagChannel(name)      // Hash-of-name channel
@@ -246,6 +251,7 @@ sigurdos::mesh::loadContacts()               // Restore contacts from NVS
 sigurdos::mesh::isContactFavourite(name)     // Check if contact is favourited
 sigurdos::mesh::setContactFavourite(n, fav)  // Set favourite flag
 sigurdos::mesh::shutdown()                   // Graceful radio + power off
+sigurdos::mesh::factoryReset()               // Factory reset — wipe all NVS + SPIFFS
 sigurdos::mesh::injectMessage(sender, ch, text)  // Simulate incoming (test only)
 sigurdos::mesh::getCurrentTime()             // RTC epoch seconds
 sigurdos::mesh::setSystemTime(epoch)         // Set RTC from UI
@@ -306,7 +312,11 @@ sigurdos::mesh::sendCommand(name, text)       // Admin command to repeater
 sigurdos::mesh::isLoggedIn(name)              // Currently logged in?
 sigurdos::mesh::getLoginStatus(name)          // LOGIN_STATUS_NONE/PENDING/OK/FAILED
 sigurdos::mesh::getLoginPermission(name)      // Permission level
-sigurdos::mesh::forceLoginState(n, s, p)      // Override login state (test)
+sigurdos::mesh::forceLoginState(n, s, p)      // Override login state (always available)
+// ── Command response ring buffer (for admin terminal) ──
+sigurdos::mesh::pushCmdResponse(n, t)         // Push response to ring buffer (MAX_CMD_RESPONSES=16)
+sigurdos::mesh::pollCmdResponse(n_out, ns, t_out, ts) // Poll next response
+sigurdos::mesh::clearCmdResponses()           // Clear all responses
 // ── Room message fetch (Phase 4.6) ──
 sigurdos::mesh::sendRoomMsgFetchRequest(contact, channel) // Fetch room history
 sigurdos::mesh::getRoomMsgFetchCount()         // Entries in fetch result
@@ -335,7 +345,7 @@ sigurdos::mesh::addTestRoomServer(name)        // Inject fake room server contac
 
 ## Testing
 
-**Current test count: 323** (322 passed, 1 skipped for native_test).
+**Current test count: 324** (323 passed, 1 skipped for native_test).
 
 ```bash
 pio test -e native_test -v       # All tests (no hardware)
@@ -490,7 +500,7 @@ Once connected, the T-Deck shows a test controller banner. Type commands directl
 | Command | Example | Description |
 |---------|---------|-------------|
 | `help` | `help` | Show command list |
-| `nav chat` | `nav chat` | Navigate to screen (home/chat/contacts/channels/network/heard/map/settings/terminal/radio/trace/signal/advertise/onboarding/contactdetail/telemetry/nodestatus/s-radio/s-gps/s-display/s-system) |
+| `nav chat` | `nav chat` | Navigate to screen (home/chat/contacts/channels/network/heard/map/settings/terminal/radio/trace/signal/advertise/onboarding/contactdetail/telemetry/nodestatus/nodestats/s-radio/s-gps/s-display/s-system) |
 | `back` | `back` | Go back in nav stack |
 | `tb up` | `tb click` | Simulate trackball (up/down/left/right/click, or u/d/l/r/c) |
 | `type hello` | `type Hello World` | Type text — queued and injected one char per loop cycle |
@@ -502,6 +512,10 @@ Once connected, the T-Deck shows a test controller banner. Type commands directl
 | `reboot` | `reboot` | Reboot the device |
 | `advert` | `advert` | Send self advert |
 | `sendmessage <name> <text>` | `sendmessage Bob Hello` | Send a direct message via mesh |
+| `factoryreset` / `wipe` | `factoryreset` | Factory reset — clear all NVS + SPIFFS (requires confirmation) |
+| `acmd <name> <text>` | `acmd Repeater1 status` | Send admin command to repeater |
+| `login <name> [password]` | `login Repeater1 secret123` | Login to repeater/room server |
+| `loginstat <name>` | `loginstat Repeater1` | Show login status for a repeater |
 
 Safety guarantees for `SigurdOS_TDeck_remote_test`:
 - No LoRa radio initialised — `sigurdos::mesh::init()` is never called
@@ -527,7 +541,7 @@ If the issue involves physical input hardware (trackball, keyboard, touch, butto
 Main + dev branch model:
 - `dev` — integration branch. All PRs merge here.
 - `main` — stable releases only.
-- Tags: `beta-0.1.XX` (zero-padded for correct sort: `beta-0.1.09` not `beta-0.1.9`). Current: `beta-0.1.37`
+- Tags: `beta-0.1.XX` (zero-padded for correct sort: `beta-0.1.09` not `beta-0.1.9`). Current: `beta-0.1.38`
 
 **Release flow (maintainer only):**
 1. Update `SIGURDOS_VERSION` in `tdeck_pins.h`
@@ -579,7 +593,7 @@ On "Apply", validated values are written to the shared state and `go_back()` is 
 | Custom RF child-scan walk order | Apply button walks `lv_obj_get_child_cnt(scr)` looking for the first 5 textareas. The sort order depends on widget creation sequence — if any non-textarea child is inserted before the textareas, the count resets and the wrong textarea is picked up. Now guarded by a `found != 5` check, but the error path still uses the fragile `lv_obj_get_child_cnt(scr) - 2` label lookup. |
 | New: RX Gain and Duty Cycle saved on reboot | `s_rx_gain` and `s_duty_cycle` are saved in NVS only on "Save & Reboot". Navigating away from Radio Setup without pressing save discards these settings silently, same as freq/SF/etc. |
 | New: `SigurdOS_TDeck_remote_test_radio` env | Full LoRa mesh + test controller. The `SIGURDOS_REMOTE_TEST_RADIO=1` flag enables both the test controller serial commands AND the radio mesh. ⚠️ This env actually transmits — unlike `_remote_test` which never initializes the radio. |
-| New: SlopMeshV2 compile-time selection | `-D SIGURDOS_MESH_V2=1` selects `SlopMeshV2` (BaseChatMesh subclass) instead of the original `SlopMesh`. Both classes coexist but only one mesh instance runs per build. The `SigurdOS_TDeck_meshv2` env sets this flag — use the correct env when testing meshv2 features. |
+| New: SigurdMeshV2 compile-time selection | `-D SIGURDOS_MESH_V2=1` selects `SigurdMeshV2` (BaseChatMesh subclass). The V1 `SigurdMesh` class has been removed (#290) — only V2 remains. The `SigurdOS_TDeck_meshv2` env sets this flag — but since V1 is gone, `-D SIGURDOS_MESH_V2=1` is essentially always active and the env distinction may be removed. |
 | New: ACK tracking state is in-memory only | `registerAckedMessage`/`isMessageAcked` delivery state resets on every boot. No NVS persistence — ACK data is lost after power cycle. |
 | New: Custom vars SPIFFS no file locking | Custom variables at `/custom_vars.txt` (key=value lines) are read/written from terminal commands with no file locking. Concurrent `getvar`/`setvar`/`delvar` can intermix reads and writes, corrupting the file. Single-user terminal usage is safe but avoid concurrent access. |
 | New: Settings sub-screens are full navigable screens | SettingsRadio, SettingsGPS, SettingsDisplay, SettingsSystem are all in the `Screen` enum and use `navigate_to()` with slide animation — they have nav stack entries and can be gone back from. Each calls `prefs_get()` at entry to get fresh state. State changes in one sub-screen are not visible in another until the user exits and re-enters. |
@@ -589,6 +603,15 @@ On "Apply", validated values are written to the shared state and `go_back()` is 
 | New: NodeStatus/Telemetry screens need mesh response | Both screens use `show_screen()` (not `navigate_to()`) and rely on `hasStatusResponse()`/`hasTelemetryResponse()` being set before entry. If no response arrives, they show a "waiting" message. `clearResponses()` is called after reading, so re-entering without a new request shows the waiting state. |
 | New: Group data datagrams are one-shot poll | `getGroupDataRecvCount()` / `getGroupDataRecvEntry()` / `clearGroupDataRecv()` follow the same polling pattern as room message fetch. No persistent storage — data is lost on each `clearGroupDataRecv()`. |
 | New: TODO in test_controller — chat_screen_add_msg_with_ts() | `test_controller.cpp` has a `// TODO: add chat_screen_add_msg_with_ts() to accept an explicit timestamp.` — the `inject` command cannot set custom timestamps on simulated incoming messages. All injected messages use the current system time. |
+| New: sendMessage returns uint32_t timestamp | `sendMessage()` now returns the epoch-second timestamp used for ACK tracking (instead of `bool`). The UI must store this returned value and pass it to `isMessageAcked()`. Returns 0 on failure. |
+| New: Home screen icon grid restructured | 12-tile grid now has: CHATS, DMs, ROOMS, CONTACTS, REPEATERS, ADVERTISE, MAP, TERMINAL, PACKETS, SETTINGS, SETUP, SIGNAL. FINDER and TRACE removed from home grid (still navigable via nav commands). DMs filters chat to DMs only; ROOMS filters contacts to ADV_TYPE_ROOM only. |
+| New: factoryReset() wipes everything | `factoryReset()` clears all NVS keys and SPIFFS via `nvs_flash_erase()` + SPIFFS format — no confirmation prompt at the mesh layer. UI must gate behind user confirmation. Accessible from Settings System screen and `factoryreset`/`wipe` test controller commands. |
+| New: Command response ring buffer | `pushCmdResponse(name, text)` stores responses from admin commands in a 16-entry circular buffer. No persistent storage — data is lost on `clearCmdResponses()` or buffer wrap. Single-consumer polling via `pollCmdResponse()`. |
+| New: forceLoginState always available | Previously guarded behind `#if SIGURDOS_REMOTE_TEST`, `forceLoginState()` is now unconditionally available — can be called from any code path, not just tests. |
+| New: Namespace rebrand slopos → sigurdos | All code now uses `namespace sigurdos` instead of `namespace slopos`. Mesh classes renamed: `SlopMesh` → `SigurdMesh` (now deleted), `SlopMeshV2` → `SigurdMeshV2`. Filenames: only `sigurd_mesh_v2.h` remains. Build env names unchanged (`SigurdOS_TDeck`). |
+| New: Chat input capped at 149 bytes | Chat textarea is limited to 149 bytes with a live byte counter display (#288, #291). Messages over 149 bytes are rejected before send. |
+| New: Channel deletion has confirmation dialog | The Channels screen now shows a confirmation dialog before deleting a channel (#287, #289). The `removeChannel()` API call is still immediate — the dialog only gates the UI path. |
+| New: V1 mesh class removed | `sigurd_mesh.h` (the original `SigurdMesh` V1 class) was deleted (#286, #290). Only `SigurdMeshV2` via `sigurd_mesh_v2.h` remains. Any code path still referencing the V1 class will fail to compile. |
 
 ---
 
@@ -602,6 +625,7 @@ All known issues are documented in `docs/KNOWN_ISSUES.md`. Most previously track
 - GPS NMEA checksum validation, Navigation history stack, Channel hash full compare, Contact expiry/eviction with LRU, Advert rate limiting at mesh layer, Null-termination on short payloads, LVGL tick starvation during TX, `lv_obj_del` in event handlers, Map screen static persistence, I2C bus speed race (400kHz touch), Trackball LEFT double-fire, `keyboard_consume_event` side effects, GT911 INT-pin-HIGH buffered event drop, TDeckBoard duplicate instances, Module static-init allocation ordering, Terminal unbounded labels, REPEATERS/PACKETS screen separation, GPS NMEA checksum, makeEpoch thread-safety, debug.h non-debug stubs, onboard restart flash write delay, screen dispatch code deduplication, SPI host pin contention, sendTrace indentation
 - **Previously synced:** Radio reception fix (SPI host moved to SPI2_HOST, channel hash full compare, auto-join Public), graceful shutdown from Settings, unread message badges on home screen, display brightness control, auto-backlight timeout, flood max hops setting, contact SNR display, TX/RX delay tuning in Settings, TX/RX airtime and packet statistics on Signal screen, GPS clock sync on first valid fix, Contact Detail screen (#180), Signal screen two-column layout (#183), iOS-style signal dots (#187), `setrf`/`reboot`/`advert` serial test commands (#189), channel deletion (#168/#169), NAV serial command (#35a7638), map canvas PSRAM allocation fix (#4a464f6), `SigurdOS_TDeck_remote_test_radio` env (#195), ROADMAP.md (#197), beta-0.1.36 release, SlopMeshV2 migration (Phase 0, #223/#224), per-contact RSSI/SNR history with sparkline chart (#236), message search in chat (#234), message delivery status (ACK ticks) in chat bubbles (#232), custom variables key-value store via terminal commands (Phase 2.6), auto-add contact type config (Phase 2.3), GPS enable/read-interval controls (Phase 2.5), `sendmessage` test controller command, `SigurdOS_TDeck_meshv2` and `SigurdOS_TDeck_remote_test_radio_meshv2` build envs
 - **Since last sync:** Settings organized into category sub-menus (Phase 2.7, #246), runtime theme system with 6 presets + NVS persistence (#244), PendingAck bugfix + 4 unpersisted NodePrefs fields (#249), beta-0.1.37 release, generic binary-request framework (Phase 4.1, #251), status request with UI — battery/uptime/airtime from remote node (Phase 4.2, #253), telemetry request with CayenneLPP parsing (Phase 4.3), path discovery with flood-force routing (Phase 4.4), repeater/room login with admin commands (Phase 4.5, #259), room server message fetch (Phase 4.6, #263), anonymous message send/receive (Phase 4.7, #260), group data datagrams (Phase 4.8, #265), dedicated repeater detail screen with login flow (#257/#258), repeater login with password save and compact UI, NAV serial entries for settings submenus and new screens, `SigurdOS_TDeck_remote_test_radio_testfreq` build env, `test_prefs` test module
+- **Currently synced:** Home screen DMs/ROOMS filter icons (#269), admin command terminal with live response polling, fav-toggle fix for login view, repeater login UI improvements (#266), RX boost preference test (#267), Phase 4 complete (4.1-4.8), Claude Code review fixes (#273), factory reset from Settings System + `factoryreset`/`wipe` test commands (#274), beta-0.1.38 release, remaining SlopOS ref cleanup, namespace rebrand (`slopos` → `sigurdos`, file renames), orphaned strdup fix in contacts_screen_show, LoginEntry::in_use default fix, meshcore submodule remote sync, V1 mesh class removal (#290), chat 149-byte cap (#291), channel delete confirmation dialog (#289), NodeStats screen (#288)
 
 ---
 

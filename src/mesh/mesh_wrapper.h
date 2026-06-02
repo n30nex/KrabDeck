@@ -15,6 +15,13 @@
 #define ADV_TYPE_ROOM      3
 #define ADV_TYPE_SENSOR    4
 
+// ACL permission levels for contacts (stored in ContactInfo.perm and
+// persisted in the contacts file). Packed into ContactInfo::flags bits 1-2.
+#define PERM_ACL_GUEST      0
+#define PERM_ACL_READ_ONLY  1
+#define PERM_ACL_READ_WRITE 2
+#define PERM_ACL_ADMIN      3
+
 namespace sigurdos {
 namespace mesh {
 
@@ -33,6 +40,7 @@ struct MeshMessage {
 struct ContactInfo {
     char name[32];
     uint8_t type;  // ADV_TYPE_* (ADV_TYPE_CHAT=companion, ADV_TYPE_REPEATER, ADV_TYPE_ROOM, etc.)
+    uint8_t perm;  // PERM_ACL_* (0=guest, 1=read-only, 2=read-write, 3=admin), default 0
     bool has_location;
     float latitude;
     float longitude;
@@ -164,6 +172,8 @@ void setDutyCycle(uint8_t percent);
 // ── Contact management extensions ────────────
 bool removeContact(const char* name);
 bool resetPathTo(const char* name);
+bool setContactPerm(const char* name, uint8_t perm);
+int  getContactPerm(const char* name);
 
 // ── Channel management extensions ────────────
 bool removeChannel(int idx);

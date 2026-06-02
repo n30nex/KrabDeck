@@ -1324,6 +1324,78 @@ void contact_detail_screen_show(const char* contact_name)
 
     }
 
+    // ── Local ACL display ──────────────────────────
+    {
+        int acl_perm = sigurdos::mesh::getContactPerm(contact_name);
+        const char* perm_names[] = {"Guest", "Read-Only", "Read-Write", "Admin"};
+        const char* perm_str = (acl_perm >= 0 && acl_perm <= 3) ? perm_names[acl_perm] : "None";
+        char acl_buf[32];
+        snprintf(acl_buf, sizeof(acl_buf), "%s", perm_str);
+        uint32_t acl_color = (acl_perm >= PERM_ACL_READ_WRITE) ? ACCENT_GREEN : TEXT_SECONDARY;
+        add_row("Local ACL", acl_buf, acl_color);
+    }
+
+    // ── ACL promote/demote buttons ─────────────────
+    {
+        lv_obj_t* acl_row = lv_obj_create(scr);
+        lv_obj_set_size(acl_row, CONTENT_W, 22);
+        lv_obj_align(acl_row, LV_ALIGN_BOTTOM_LEFT, 0, -(BOT_BAR_H + DIVIDER_H + 60));
+        lv_obj_set_style_bg_opa(acl_row, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(acl_row, 0, 0);
+        lv_obj_set_flex_flow(acl_row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(acl_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+        lv_obj_t* demote_btn = lv_btn_create(acl_row);
+        lv_obj_set_size(demote_btn, 70, 20);
+        lv_obj_set_style_bg_color(demote_btn, lv_color_hex(ACCENT_RED), 0);
+        lv_obj_set_style_radius(demote_btn, 0, 0);
+        lv_obj_t* demote_lbl = lv_label_create(demote_btn);
+        lv_label_set_text(demote_lbl, "\u25BC Demote");
+        lv_obj_center(demote_lbl);
+        lv_obj_set_style_text_color(demote_lbl, lv_color_hex(BG_PRIMARY), 0);
+        lv_obj_set_style_text_font(demote_lbl, &lv_font_montserrat_10, 0);
+        char* acl_demote = strdup(contact_name);
+        lv_obj_set_user_data(demote_btn, acl_demote);
+        lv_obj_add_event_cb(demote_btn, [](lv_event_t* e) {
+            const char* name = (const char*)lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(e));
+            if (name) {
+                int cur = sigurdos::mesh::getContactPerm(name);
+                if (cur < 0) cur = PERM_ACL_GUEST;
+                int next = (cur == PERM_ACL_GUEST) ? PERM_ACL_GUEST : cur - 1;
+                sigurdos::mesh::setContactPerm(name, next);
+                sigurdos::ui::contact_detail_screen_show(name);
+            }
+        }, LV_EVENT_CLICKED, nullptr);
+        lv_obj_add_event_cb(demote_btn, [](lv_event_t* e) {
+            free(lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(e)));
+        }, LV_EVENT_DELETE, nullptr);
+
+        lv_obj_t* promote_btn = lv_btn_create(acl_row);
+        lv_obj_set_size(promote_btn, 70, 20);
+        lv_obj_set_style_bg_color(promote_btn, lv_color_hex(ACCENT_GREEN), 0);
+        lv_obj_set_style_radius(promote_btn, 0, 0);
+        lv_obj_t* promote_lbl = lv_label_create(promote_btn);
+        lv_label_set_text(promote_lbl, "\u25B2 Promote");
+        lv_obj_center(promote_lbl);
+        lv_obj_set_style_text_color(promote_lbl, lv_color_hex(BG_PRIMARY), 0);
+        lv_obj_set_style_text_font(promote_lbl, &lv_font_montserrat_10, 0);
+        char* acl_promote = strdup(contact_name);
+        lv_obj_set_user_data(promote_btn, acl_promote);
+        lv_obj_add_event_cb(promote_btn, [](lv_event_t* e) {
+            const char* name = (const char*)lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(e));
+            if (name) {
+                int cur = sigurdos::mesh::getContactPerm(name);
+                if (cur < 0) cur = PERM_ACL_GUEST;
+                int next = (cur >= PERM_ACL_ADMIN) ? PERM_ACL_ADMIN : cur + 1;
+                sigurdos::mesh::setContactPerm(name, next);
+                sigurdos::ui::contact_detail_screen_show(name);
+            }
+        }, LV_EVENT_CLICKED, nullptr);
+        lv_obj_add_event_cb(promote_btn, [](lv_event_t* e) {
+            free(lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(e)));
+        }, LV_EVENT_DELETE, nullptr);
+    }
+
     bool is_room_type = (target->type == ADV_TYPE_ROOM || target->type == ADV_TYPE_REPEATER);
 
     // ── Action button row ───────────────────────────

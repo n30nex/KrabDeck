@@ -893,6 +893,8 @@ int exportContactsFull(ContactInfo* out, int max) {
             strncpy(out[n].name, c->name, 31);
             out[n].name[31] = '\0';
             out[n].type = c->type;
+            // Extract perm from MeshCore ContactInfo::flags bits 1-2
+            out[n].perm = (c->flags >> 1) & 0x03;
             // MeshCore's ContactInfo stores GPS as int32 (1e6 fixed-point) and
             // carries no per-contact RSSI/SNR — pull signal from the side-channel.
             out[n].has_location = (c->gps_lat != 0 || c->gps_lon != 0);
@@ -1214,6 +1216,8 @@ void saveContacts() {
         f.write(c.id.pub_key, PUB_KEY_SIZE);  // 32 bytes
         f.write((uint8_t*)c.name, 32);         // 32 bytes
         f.write(&c.type, 1);                    // 1 byte
+        uint8_t perm = (c.flags >> 1) & 0x03;  // extract from flags bits 1-2
+        f.write(&perm, 1);                      // perm byte
     }
     f.close();
 }
@@ -1235,6 +1239,11 @@ void loadContacts() {
         if (f.read(c.id.pub_key, PUB_KEY_SIZE) != PUB_KEY_SIZE) break;
         if (f.read((uint8_t*)c.name, 32) != 32) break;
         if (f.read(&c.type, 1) != 1) break;
+        // Read perm byte (format: [count:4][pub_key:32][name:32][type:1][perm:1])
+        uint8_t perm_byte = 0;
+        if (f.read(&perm_byte, 1) != 1) break;
+        // Pack perm into flags bits 1-2, preserving bit 0 (favourite)
+        c.flags = (c.flags & 0x01) | ((perm_byte & 0x03) << 1);
         c.name[31] = '\0';
         c.out_path_len = OUT_PATH_UNKNOWN;
         c.shared_secret_valid = false;
@@ -1364,6 +1373,34 @@ void setDutyCycle(uint8_t percent) {
         int idx = findContactIndex(name);
         if (idx < 0) return false;
         return g_mesh->resetPathTo(idx);
+    }
+
+    bool setContactPerm(const char* name, uint8_t perm) {
+        if (!g_mesh || !name) return false;
+        ::ContactInfo tmp;
+        for (int i = 0; i < g_mesh->getNumContacts(); i++) {
+            if (g_mesh->getContactByIdx((uint32_t)i, tmp) && strcmp(tmp.name, name) == 0) {
+                // Get writable pointer to the actual MeshCore ContactInfo
+                ::ContactInfo* live = g_mesh->lookupContactByPubKey(tmp.id.pub_key, PUB_KEY_SIZE);
+                if (!live) return false;
+                // Pack perm into flags bits 1-2, preserving bit 0 (favourite)
+                live->flags = (live->flags & 0x01) | ((perm & 0x03) << 1);
+                saveContacts();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    int getContactPerm(const char* name) {
+        if (!g_mesh || !name) return -1;
+        ::ContactInfo tmp;
+        for (int i = 0; i < g_mesh->getNumContacts(); i++) {
+            if (g_mesh->getContactByIdx((uint32_t)i, tmp) && strcmp(tmp.name, name) == 0) {
+                return (tmp.flags >> 1) & 0x03;
+            }
+        }
+        return -1;
     }
 
     // ── Channel management extensions ────────────

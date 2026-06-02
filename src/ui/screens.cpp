@@ -6509,7 +6509,7 @@ static void wifi_do_scan(lv_timer_t* timer) {
                         lv_obj_t* c = lv_obj_get_child(dlg, i);
                         if (lv_obj_check_type(c, &lv_textarea_class)) { ta = c; }
                         else if (net_lbl == nullptr && lv_obj_check_type(c, &lv_label_class)) {
-                            if (i > 1) net_lbl = c;
+                            if (i > 0) net_lbl = c;
                         }
                     }
                     if (!ta || !net_lbl) {

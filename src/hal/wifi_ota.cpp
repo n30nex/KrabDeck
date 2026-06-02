@@ -4,6 +4,7 @@
 // WiFi OTA implementation — WebServer-based firmware upload.
 
 #include "wifi_ota.h"
+#include "prefs.h"
 #include <WiFi.h>
 #include <WebServer.h>
 #include <Update.h>
@@ -287,16 +288,17 @@ void disconnect() {
 }
 
 bool isConnected() {
-    // If we think we're connected but hardware says otherwise, update
-    if (s_connected || s_status == Status::Connected) {
-        if (WiFi.status() != WL_CONNECTED) {
-            s_connected = false;
-            s_rssi = 0;
-            s_status = Status::Idle;
-        } else {
-            s_connected = true;
-            s_status = Status::Connected;
-        }
+    // Always check hardware — never rely solely on internal state.
+    // External code (github_ota, WiFi.begin from another path) can
+    // change the radio state without going through our state machine.
+    bool hw = (WiFi.status() == WL_CONNECTED);
+    if (hw) {
+        s_connected = true;
+        s_status = Status::Connected;
+    } else if (s_connected || s_status == Status::Connected) {
+        s_connected = false;
+        s_rssi = 0;
+        s_status = Status::Idle;
     }
     return s_connected;
 }
@@ -309,13 +311,38 @@ int getRSSI() {
 }
 
 void loop() {
-    // Detect unexpected disconnects and update state
-    if ((s_connected || s_status == Status::Connected) &&
-        WiFi.status() != WL_CONNECTED) {
+    // Always sync internal state with hardware (handles external
+    // reconnections, e.g. github_ota reusing an existing STA link).
+    bool hw = (WiFi.status() == WL_CONNECTED);
+
+    if (hw && !s_connected && s_status != Status::Connecting) {
+        // Hardware is connected but we didn't know — external reconnect.
+        s_connected = true;
+        s_rssi = WiFi.RSSI();
+        s_status = Status::Connected;
+        Serial.printf("[wifi-sta] reconnected externally (%d dBm)\n", s_rssi);
+    } else if (!hw && (s_connected || s_status == Status::Connected)) {
+        // Was connected, now not.
         s_connected = false;
         s_rssi = 0;
         s_status = Status::Idle;
         Serial.printf("[wifi-sta] disconnected\n");
+    }
+
+    // ── Auto-reconnect ──────────────────────────────────────
+    // If we have saved credentials and aren't connected/connecting,
+    // periodically attempt to reconnect (every 30 seconds).
+    if (!s_connected && s_status != Status::Connecting) {
+        static unsigned long last_reconnect = 0;
+        if (millis() - last_reconnect > 30000) {
+            last_reconnect = millis();
+            const NodePrefs& p = sigurdos::prefs_get();
+            if (p.wifi_ssid[0]) {
+                Serial.printf("[wifi-sta] auto-reconnecting to %s...\n",
+                              p.wifi_ssid);
+                beginConnect(p.wifi_ssid, p.wifi_password);
+            }
+        }
     }
 }
 

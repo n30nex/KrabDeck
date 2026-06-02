@@ -117,6 +117,14 @@ void setup()
 #if SIGURDOS_DEBUG_UI
     Serial.println("[boot] === SigurdOS T-Deck ready ===");
 #endif
+
+    // Auto-connect WiFi if credentials are saved
+    {
+        const sigurdos::NodePrefs& p = sigurdos::prefs_get();
+        if (p.wifi_ssid[0]) {
+            sigurdos::wifi_sta::beginConnect(p.wifi_ssid, p.wifi_password);
+        }
+    }
 }
 
 void loop()

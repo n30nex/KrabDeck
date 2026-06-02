@@ -6,6 +6,7 @@
 
 #include "github_ota.h"
 #include "prefs.h"
+#include "wifi_ota.h"
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
@@ -71,8 +72,8 @@ static void fail(const char* msg) {
     Serial.printf("[gh-ota] FAIL: %s\n", msg);
     setStatus(GitHubOTAState::Failed, 0, "Failed", msg);
     cleanupConnection();
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
+    // Don't destroy the WiFi connection — wifi_sta manages it.
+    // If the user was connected before OTA, they should stay connected.
     s_active = false;
 }
 
@@ -97,8 +98,15 @@ bool startGitHubUpdate() {
 
     setStatus(GitHubOTAState::Connecting, 0, "Connecting to WiFi...");
 
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(p.wifi_ssid, p.wifi_password);
+    // If wifi_sta is already connected, don't call WiFi.begin() again —
+    // the brief disconnect glitch would kill the WiFi icon.
+    // loop() will see WL_CONNECTED immediately and fast-path through.
+    if (!sigurdos::wifi_sta::isConnected()) {
+        WiFi.mode(WIFI_STA);
+        WiFi.begin(p.wifi_ssid, p.wifi_password);
+    } else {
+        Serial.printf("[gh-ota] Reusing existing WiFi connection\n");
+    }
 
     Serial.printf("[gh-ota] Connecting to WiFi: %s\n", p.wifi_ssid);
     return true;
@@ -117,6 +125,8 @@ void loop() {
     if (st == GitHubOTAState::Connecting) {
         static unsigned long connect_start = millis();
         if (WiFi.status() == WL_CONNECTED) {
+            // WiFi ready (either just connected, or was already connected
+            // via wifi_sta — we re-used the existing link).
             Serial.printf("[gh-ota] WiFi connected. IP: %s\n",
                           WiFi.localIP().toString().c_str());
             setStatus(GitHubOTAState::Downloading, 0,

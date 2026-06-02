@@ -265,9 +265,7 @@ Per-type bitmask: `AUTO_ADD_CHAT` (0x02), `AUTO_ADD_REPEATER` (0x04), `AUTO_ADD_
 
 ### Multi-ACK reliability toggle — S
 
-The companion can send **extra redundant ACK transmissions** for direct messages, improving delivery on lossy links at the cost of a little airtime. The count comes from `NodePrefs::multi_acks` (0/1) via the `getExtraAckTransmitCount()` hook. SigurdOS does not override this hook, so it always sends the minimum, and there is no setting (no `multi_acks` field in `NodePrefs`).
-
-**What's needed:** Add `multi_acks` (0/1) to `NodePrefs`; override `getExtraAckTransmitCount()` in `SigurdMeshV2` to return it; add a Settings toggle.
+> **✅ Implemented** — `multi_acks` in `NodePrefs` + `getExtraAckTransmitCount()` override in `SigurdMeshV2` + a Settings toggle in Radio Setup (PR #296). Kept here for the upstream reference.
 
 **MeshCore reference:**
 - [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) — `getExtraAckTransmitCount()` returns `_prefs.multi_acks`; `CMD_SET_OTHER_PARAMS` (38) sets it
@@ -461,9 +459,7 @@ Previously the 8-slot list filled with no eviction.
 
 ### Node type selection — M
 
-The node's `advert_type` field exists in `NodePrefs` (default `ADV_TYPE_CHAT`) and is read at boot, but there is **no Settings UI** to change it. A fixed T-Deck might advertise as repeater/room. Note: non-CHAT types change forwarding behaviour (companions don't relay by default) — a significant protocol change. (The companion's *opportunistic relay* flag is tracked separately as "Client-repeat mode" below.)
-
-**What's needed:** An "Advanced" Settings node-type selector writing `NodePrefs::advert_type`; for repeater mode, enable the relay path and raise advert frequency.
+> **✅ Implemented** — Settings → Radio/Mesh node type selector writing `NodePrefs::advert_type` (Chat / Repeater / Room Server / Sensor), with Tx-power bump for infrastructure types (PR #298). Kept here for the upstream reference.
 
 **MeshCore reference:**
 - [`src/helpers/AdvertDataHelpers.h`](https://github.com/meshcore-dev/MeshCore/blob/main/src/helpers/AdvertDataHelpers.h) — `ADV_TYPE_CHAT` (1), `ADV_TYPE_REPEATER` (2), `ADV_TYPE_ROOM` (3), `ADV_TYPE_SENSOR` (4); `AdvertDataBuilder` takes type as first arg
@@ -485,9 +481,7 @@ A companion can optionally relay/forward packets while staying a chat node — t
 
 ### Message-arrival notification buzzer + quiet toggle — M
 
-The companion beeps the buzzer on message arrival and exposes a `buzzer_quiet` mute. SigurdOS defines `PIN_BUZZER` (GPIO 46) in `tdeck_pins.h` but **never drives it** — there is no buzzer HAL, no audible notification, and no `buzzer_quiet` pref.
-
-**What's needed:** A small buzzer HAL (active-low on GPIO 46) + mock + test; beep on incoming DM/channel message; a `buzzer_quiet` pref and a Settings "Notification sound ON/OFF" toggle.
+> **✅ Implemented** — Buzzer HAL (`src/hal/buzzer.cpp`), activation on incoming DM/channel messages in `ui.cpp`, `buzzer_quiet` pref in `NodePrefs`, and a Settings → Display "Notification sound" toggle (PR #300). Kept here for the upstream reference.
 
 **MeshCore reference:**
 - [`examples/companion_radio/NodePrefs.h`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/NodePrefs.h) — `buzzer_quiet`; companion UI calls `buzzer.quiet(_node_prefs->buzzer_quiet)`
@@ -649,4 +643,4 @@ A niche build target for running under `bmorcelli/Launcher`. Not relevant to the
 
 ---
 
-*Last reviewed: 2026-06-02 against companion firmware v1.15.0 (`FIRMWARE_VER_CODE 12`, [`examples/companion_radio/`](https://github.com/meshcore-dev/MeshCore/tree/main/examples/companion_radio)) and against the current code on `dev`. Status of every entry was verified in-tree, not from changelogs. Currently ✅ implemented: repeater login, status request, path discovery, reset-path, binary-request framework, ACK display, group data, anonymous send, direct REQ/RESPONSE, RX gain, duty cycle, auto-add config, custom vars, location-share policy, GPS enable/interval, periodic auto-advert, contact removal, room fetch, channel removal, message timestamps, message search, RSSI/SNR graph, factory reset, keyboard backlight, message-cap, node stats, terminal help, zero-hop ping, universal back-swipe, graceful shutdown. ⚠️ partial: telemetry (remote-query only; answer side missing), control packets (PING/PONG only). Still missing: telemetry answer-side, contact-on-map, identity backup, QR gen/import, message signing, node-type selector UI, multi-ACK toggle, client-repeat, buzzer notify, advert-path query, storage display, ACL, device PIN, OTA, dedicated reboot. ❌ declined: multipart, raw custom payloads, temporary radio config. Bugs in implemented features are tracked in `KNOWN_ISSUES.md`.*
+*Last reviewed: 2026-06-02 against companion firmware v1.15.0 (`FIRMWARE_VER_CODE 12`, [`examples/companion_radio/`](https://github.com/meshcore-dev/MeshCore/tree/main/examples/companion_radio)) and against the current code on `dev`. Status of every entry was verified in-tree, not from changelogs. Currently ✅ implemented: repeater login, status request, path discovery, reset-path, binary-request framework, ACK display, group data, anonymous send, direct REQ/RESPONSE, RX gain, duty cycle, auto-add config, custom vars, location-share policy, GPS enable/interval, periodic auto-advert, contact removal, room fetch, channel removal, message timestamps, message search, RSSI/SNR graph, factory reset, keyboard backlight, message-cap, node stats, terminal help, zero-hop ping, universal back-swipe, graceful shutdown, multi-ACK toggle, node-type selector, buzzer notify. ⚠️ partial: telemetry (remote-query only; answer side missing), control packets (PING/PONG only). Still missing: telemetry answer-side, contact-on-map, identity backup, QR gen/import, message signing, client-repeat, advert-path query, storage display, ACL, device PIN, OTA, dedicated reboot. ❌ declined: multipart, raw custom payloads, temporary radio config. Bugs in implemented features are tracked in `KNOWN_ISSUES.md`.*

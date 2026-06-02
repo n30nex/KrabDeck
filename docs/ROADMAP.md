@@ -294,8 +294,9 @@ The cost is concentrated in **one place**: adopting `BaseChatMesh`'s `ContactInf
 ### 5.9 — Message signing — S (niche)
 - **Upstream ref:** MISSING_FEATURES → "Message signing". Port the streaming sign API; Terminal command. Low priority for a handheld.
 
-### 5.10 — OTA firmware update — L
-- **Upstream ref:** MISSING_FEATURES → "OTA firmware update". OTA partition layout in `platformio.ini`; WiFi or BLE download (neither initialised today); UI progress. Transfer uses ESP-IDF `esp_ota_ops.h`. Biggest single item — do last.
+### 5.10 — OTA firmware update — L ✅ DONE
+
+- **Implemented:** Two OTA paths — WiFi AP upload (`screens.cpp` "OTA Update") and GitHub download via STA WiFi (`github_ota.h`). Dual OTA partition table active. See MISSING_FEATURES → "OTA firmware update".
 
 ---
 

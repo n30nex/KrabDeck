@@ -27,6 +27,7 @@
 #include "../hal/battery.h"
 #include "../hal/sdcard.h"
 #include "../hal/wifi_ota.h"
+#include "../hal/github_ota.h"
 #include "../hal/gps.h"
 #include "../hal/prefs.h"
 #include "../hal/display.h"
@@ -4405,6 +4406,111 @@ void settings_system_show()
         row++;
     }
 
+    // WiFi SSID / Password (for GitHub OTA)
+    {
+        const char* ssid_label = p.wifi_ssid[0]
+            ? p.wifi_ssid : "Not set";
+        snprintf(buf, sizeof(buf), "  WiFi: %s", ssid_label);
+        lv_obj_t* btn_wifi = lv_list_add_btn(list, LV_SYMBOL_WIFI, buf);
+        lv_obj_set_style_bg_color(btn_wifi, lv_color_hex(row % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
+        lv_obj_set_style_bg_opa(btn_wifi, LV_OPA_COVER, 0);
+        lv_obj_set_style_text_color(btn_wifi, lv_color_hex(TEXT_PRIMARY), 0);
+        lv_obj_add_event_cb(btn_wifi, [](lv_event_t* e) {
+            lv_obj_t* scr = lv_obj_get_screen((lv_obj_t*)lv_event_get_target(e));
+            auto dlg_sz = dialog_size(280, 210);
+            lv_obj_t* dlg = lv_obj_create(scr);
+            lv_obj_set_size(dlg, dlg_sz.w, dlg_sz.h);
+            lv_obj_center(dlg);
+            lv_obj_set_style_bg_color(dlg, lv_color_hex(BG_SECONDARY), 0);
+            lv_obj_set_style_radius(dlg, 0, 0);
+            lv_obj_set_style_border_width(dlg, 2, 0);
+            lv_obj_set_style_border_color(dlg, lv_color_hex(DIVIDER), 0);
+            lv_obj_set_style_pad_all(dlg, 8, 0);
+
+            lv_obj_t* title = lv_label_create(dlg);
+            lv_label_set_text(title, "WiFi Setup");
+            lv_obj_set_style_text_color(title, lv_color_hex(TEXT_PRIMARY), 0);
+            lv_obj_set_style_text_font(title, &lv_font_montserrat_12, 0);
+            lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 4);
+
+            // SSID
+            lv_obj_t* ssid_lbl = lv_label_create(dlg);
+            lv_label_set_text(ssid_lbl, "SSID:");
+            lv_obj_set_style_text_color(ssid_lbl, lv_color_hex(TEXT_SECONDARY), 0);
+            lv_obj_set_style_text_font(ssid_lbl, &lv_font_montserrat_10, 0);
+            lv_obj_align(ssid_lbl, LV_ALIGN_TOP_LEFT, 8, 28);
+
+            lv_obj_t* ssid_ta = lv_textarea_create(dlg);
+            lv_obj_set_size(ssid_ta, 240, 28);
+            lv_obj_align(ssid_ta, LV_ALIGN_TOP_MID, 0, 48);
+            lv_textarea_set_one_line(ssid_ta, true);
+            lv_textarea_set_max_length(ssid_ta, 32);
+            lv_textarea_set_text(ssid_ta, sigurdos::prefs_get().wifi_ssid);
+            apply_pixel_input(ssid_ta);
+
+            // Password
+            lv_obj_t* pw_lbl = lv_label_create(dlg);
+            lv_label_set_text(pw_lbl, "Password:");
+            lv_obj_set_style_text_color(pw_lbl, lv_color_hex(TEXT_SECONDARY), 0);
+            lv_obj_set_style_text_font(pw_lbl, &lv_font_montserrat_10, 0);
+            lv_obj_align(pw_lbl, LV_ALIGN_TOP_LEFT, 8, 88);
+
+            lv_obj_t* pw_ta = lv_textarea_create(dlg);
+            lv_obj_set_size(pw_ta, 240, 28);
+            lv_obj_align(pw_ta, LV_ALIGN_TOP_MID, 0, 108);
+            lv_textarea_set_password_mode(pw_ta, true);
+            lv_textarea_set_one_line(pw_ta, true);
+            lv_textarea_set_max_length(pw_ta, 63);
+            lv_textarea_set_text(pw_ta, sigurdos::prefs_get().wifi_password);
+            apply_pixel_input(pw_ta);
+
+            // Save
+            lv_obj_t* save_btn = lv_btn_create(dlg);
+            lv_obj_set_size(save_btn, 80, 26);
+            lv_obj_align(save_btn, LV_ALIGN_BOTTOM_RIGHT, -8, -8);
+            apply_pixel_btn(save_btn);
+            lv_obj_t* save_lbl = lv_label_create(save_btn);
+            lv_label_set_text(save_lbl, "Save");
+            lv_obj_center(save_lbl);
+            lv_obj_add_event_cb(save_btn, [](lv_event_t* ev) {
+                lv_obj_t* dlg = (lv_obj_t*)lv_event_get_user_data(ev);
+                // Find the textareas by walking children
+                lv_obj_t* ta_ssid = nullptr;
+                lv_obj_t* ta_pw = nullptr;
+                uint32_t child_count = lv_obj_get_child_cnt(dlg);
+                for (uint32_t i = 0; i < child_count; i++) {
+                    lv_obj_t* c = lv_obj_get_child(dlg, i);
+                    if (lv_obj_check_type(c, &lv_textarea_class)) {
+                        if (!ta_ssid) ta_ssid = c;
+                        else { ta_pw = c; break; }
+                    }
+                }
+                if (ta_ssid && ta_pw) {
+                    auto p = sigurdos::prefs_get();
+                    strncpy(p.wifi_ssid, lv_textarea_get_text(ta_ssid), sizeof(p.wifi_ssid) - 1);
+                    p.wifi_ssid[sizeof(p.wifi_ssid) - 1] = '\0';
+                    strncpy(p.wifi_password, lv_textarea_get_text(ta_pw), sizeof(p.wifi_password) - 1);
+                    p.wifi_password[sizeof(p.wifi_password) - 1] = '\0';
+                    sigurdos::prefs_set(p);
+                }
+                lv_obj_del_async(dlg);
+            }, LV_EVENT_CLICKED, dlg);
+
+            // Cancel
+            lv_obj_t* cancel_btn = lv_btn_create(dlg);
+            lv_obj_set_size(cancel_btn, 80, 26);
+            lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_LEFT, 8, -8);
+            apply_pixel_btn_outline(cancel_btn);
+            lv_obj_t* cancel_lbl = lv_label_create(cancel_btn);
+            lv_label_set_text(cancel_lbl, "Cancel");
+            lv_obj_center(cancel_lbl);
+            lv_obj_add_event_cb(cancel_btn, [](lv_event_t* ev) {
+                lv_obj_del_async(lv_obj_get_parent((lv_obj_t*)lv_event_get_target(ev)));
+            }, LV_EVENT_CLICKED, nullptr);
+        }, LV_EVENT_CLICKED, nullptr);
+        row++;
+    }
+
     // OTA firmware update (WiFi AP + web upload)
     lv_obj_t* btn_ota = lv_list_add_btn(list, LV_SYMBOL_WIFI, "  OTA Update");
     lv_obj_set_style_bg_color(btn_ota, lv_color_hex(ACCENT), 0);
@@ -4451,6 +4557,101 @@ void settings_system_show()
         lv_obj_center(cl);
         lv_obj_add_event_cb(close_btn, [](lv_event_t* ev) {
             lv_obj_del_async(lv_obj_get_parent((lv_obj_t*)lv_event_get_target(ev)));
+        }, LV_EVENT_CLICKED, nullptr);
+    }, LV_EVENT_CLICKED, nullptr);
+
+    // OTA from GitHub (WiFi STA + download)
+    lv_obj_t* btn_gh_ota = lv_list_add_btn(list, LV_SYMBOL_DOWNLOAD, "  OTA from GitHub");
+    lv_obj_set_style_bg_color(btn_gh_ota, lv_color_hex(ACCENT), 0);
+    lv_obj_set_style_text_color(btn_gh_ota, lv_color_hex(BG_PRIMARY), 0);
+    lv_obj_add_event_cb(btn_gh_ota, [](lv_event_t* e) {
+        lv_obj_t* scr = lv_obj_get_screen((lv_obj_t*)lv_event_get_target(e));
+        auto dlg_sz = dialog_size(280, 160);
+        lv_obj_t* dlg = lv_obj_create(scr);
+        lv_obj_set_size(dlg, dlg_sz.w, dlg_sz.h);
+        lv_obj_center(dlg);
+        lv_obj_set_style_bg_color(dlg, lv_color_hex(BG_SECONDARY), 0);
+        lv_obj_set_style_border_color(dlg, lv_color_hex(ACCENT), 0);
+        lv_obj_set_style_border_width(dlg, 2, 0);
+        lv_obj_set_style_radius(dlg, 0, 0);
+        lv_obj_set_style_pad_all(dlg, 8, 0);
+
+        lv_obj_t* title = lv_label_create(dlg);
+        lv_label_set_text(title, "GitHub OTA Update");
+        lv_obj_set_style_text_color(title, lv_color_hex(ACCENT), 0);
+        lv_obj_set_style_text_font(title, &lv_font_montserrat_12, 0);
+        lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 4);
+
+        lv_obj_t* status_lbl = lv_label_create(dlg);
+        lv_label_set_text(status_lbl, "Starting...");
+        lv_obj_set_style_text_color(status_lbl, lv_color_hex(TEXT_PRIMARY), 0);
+        lv_obj_set_style_text_font(status_lbl, &lv_font_montserrat_10, 0);
+        lv_obj_align(status_lbl, LV_ALIGN_CENTER, 0, -10);
+
+        lv_obj_t* bar = lv_bar_create(dlg);
+        lv_obj_set_size(bar, 240, 14);
+        lv_obj_align(bar, LV_ALIGN_CENTER, 0, 20);
+        lv_bar_set_range(bar, 0, 100);
+        lv_bar_set_value(bar, 0, LV_ANIM_OFF);
+        lv_obj_set_style_bg_color(bar, lv_color_hex(BG_INPUT), 0);
+        lv_obj_set_style_radius(bar, 0, 0);
+        lv_obj_set_style_bg_color(bar, lv_color_hex(ACCENT), LV_PART_INDICATOR);
+
+        // Start the update
+        if (!sigurdos::github_ota::startGitHubUpdate()) {
+            lv_label_set_text(status_lbl, sigurdos::github_ota::getStatus().error_msg);
+            lv_obj_set_style_text_color(status_lbl, lv_color_hex(ACCENT_RED), 0);
+        }
+
+        // Polling timer — finds label/bar from dialog children each tick
+        lv_timer_t* poll_timer = lv_timer_create([](lv_timer_t* t) {
+            lv_obj_t* dlg = (lv_obj_t*)lv_timer_get_user_data(t);
+            if (!dlg) { lv_timer_del(t); return; }
+
+            const auto& st = sigurdos::github_ota::getStatus();
+            // Find status label (second label) and bar
+            lv_obj_t* lbl = nullptr;
+            lv_obj_t* prog_bar = nullptr;
+            int label_count = 0;
+            uint32_t cnt = lv_obj_get_child_cnt(dlg);
+            for (uint32_t i = 0; i < cnt; i++) {
+                lv_obj_t* c = lv_obj_get_child(dlg, i);
+                if (lv_obj_check_type(c, &lv_label_class)) {
+                    label_count++;
+                    if (label_count == 2) lbl = c;  // second label = status
+                }
+                if (lv_obj_check_type(c, &lv_bar_class)) {
+                    prog_bar = c;
+                }
+            }
+            if (lbl) {
+                lv_label_set_text(lbl, st.status_msg);
+                if (st.state == sigurdos::github_ota::GitHubOTAState::Failed) {
+                    lv_obj_set_style_text_color(lbl, lv_color_hex(ACCENT_RED), 0);
+                }
+            }
+            if (prog_bar) {
+                lv_bar_set_value(prog_bar, st.progress_pct, LV_ANIM_ON);
+            }
+            if (st.state == sigurdos::github_ota::GitHubOTAState::Success ||
+                st.state == sigurdos::github_ota::GitHubOTAState::Failed) {
+                lv_timer_del(t);
+            }
+        }, 500, dlg);
+
+        // Close button
+        lv_obj_t* close_btn = lv_btn_create(dlg);
+        lv_obj_set_size(close_btn, 80, 24);
+        lv_obj_align(close_btn, LV_ALIGN_BOTTOM_MID, 0, -4);
+        lv_obj_set_style_bg_color(close_btn, lv_color_hex(BG_INPUT), 0);
+        lv_obj_set_style_radius(close_btn, 0, 0);
+        lv_obj_t* cl = lv_label_create(close_btn);
+        lv_label_set_text(cl, "Close");
+        lv_obj_center(cl);
+        lv_obj_add_event_cb(close_btn, [](lv_event_t* ev) {
+            lv_obj_t* dlg = lv_obj_get_parent((lv_obj_t*)lv_event_get_target(ev));
+            sigurdos::github_ota::cancel();
+            lv_obj_del_async(dlg);
         }, LV_EVENT_CLICKED, nullptr);
     }, LV_EVENT_CLICKED, nullptr);
 

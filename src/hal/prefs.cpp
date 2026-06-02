@@ -51,6 +51,11 @@ bool prefs_load(NodePrefs& p) {
     p.autoadd_max_hops = nvs.getUChar("autoadd_mh", 0);
     p.client_repeat = nvs.getUChar("clirep", 0);
     p.device_pin = nvs.getULong("dev_pin", 0);
+    // WiFi credentials (GitHub OTA)
+    size_t ssid_len = nvs.getString("wifi_ssid", p.wifi_ssid, sizeof(p.wifi_ssid));
+    if (ssid_len == 0) p.wifi_ssid[0] = '\0';
+    size_t pw_len = nvs.getString("wifi_pw", p.wifi_password, sizeof(p.wifi_password));
+    if (pw_len == 0) p.wifi_password[0] = '\0';
 
     nvs.end();
     return true;
@@ -89,6 +94,8 @@ bool prefs_save(const NodePrefs& p) {
     nvs.putUChar("autoadd_mh", p.autoadd_max_hops);
     nvs.putUChar("clirep", p.client_repeat);
     nvs.putULong("dev_pin", p.device_pin);
+    nvs.putString("wifi_ssid", p.wifi_ssid);
+    nvs.putString("wifi_pw", p.wifi_password);
 
     nvs.end();
     return true;

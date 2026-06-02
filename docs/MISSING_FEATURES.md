@@ -587,12 +587,16 @@ No password protects Settings or Terminal — anyone with physical access can ch
 
 ### OTA firmware update — L
 
-MeshCore supports `start ota` over BLE/serial. SigurdOS requires a USB cable + flashing tool.
+> **✅ Implemented.** SigurdOS supports two OTA paths:
+> 1. **WiFi AP upload** — T-Deck creates a `SigurdOS-OTA` hotspot; connect from a phone/laptop and upload `firmware.bin` via the web page at `192.168.4.1`. Uses `WebServer` + Arduino `Update` class.
+> 2. **GitHub download** — T-Deck connects to your home WiFi (STA mode, credentials saved in Settings), downloads the latest `firmware.bin` from `https://github.com/hermes-gadget/SigurdOS-tdeck/releases/latest/download/`, and flashes via `Update`. Shows a progress bar on screen.
+>
+> Dual OTA partition table (`default_16MB.csv`, 6.4 MB per slot) configured in `platformio.ini`.
 
-**What's needed:** An OTA partition layout in `platformio.ini`; a download mechanism (WiFi or BLE — both present on ESP32-S3, neither initialised); a UI progress indicator. Transfer uses ESP-IDF `esp_ota_ops.h` (outside MeshCore). The biggest single item.
-
-**MeshCore reference:**
-- [`src/helpers/CommonCLI.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/src/helpers/CommonCLI.cpp) — `handleCommand()` `start ota` branch (when OTA mode is triggered + pre-OTA cleanup)
+**Code references:**
+- `src/hal/wifi_ota.cpp` — AP-mode web upload
+- `src/hal/github_ota.cpp` — STA-mode HTTPS download from GitHub releases
+- `src/ui/screens.cpp` — "OTA Update" and "OTA from GitHub" buttons in Settings → System
 
 ---
 
@@ -643,4 +647,4 @@ A niche build target for running under `bmorcelli/Launcher`. Not relevant to the
 
 ---
 
-*Last reviewed: 2026-06-02 against companion firmware v1.15.0 (`FIRMWARE_VER_CODE 12`, [`examples/companion_radio/`](https://github.com/meshcore-dev/MeshCore/tree/main/examples/companion_radio)) and against the current code on `dev`. Status of every entry was verified in-tree, not from changelogs. Currently ✅ implemented: repeater login, status request, path discovery, reset-path, binary-request framework, ACK display, group data, anonymous send, direct REQ/RESPONSE, RX gain, duty cycle, auto-add config, custom vars, location-share policy, GPS enable/interval, periodic auto-advert, contact removal, channel removal, room fetch, message timestamps, message search, RSSI/SNR graph, factory reset, keyboard backlight, message-cap, node stats, terminal help, zero-hop ping, universal back-swipe, graceful shutdown, multi-ACK toggle, node-type selector, buzzer notify, telemetry answer-side, contact-on-map, identity backup, message signing, client-repeat, storage display, dedicated reboot, QR/URI import, QR generation, advert-path query, device PIN, ACL permissions, OTA update, Node Discovery Protocol. ❌ declined: multipart, raw custom payloads, temporary radio config. Bugs in implemented features are tracked in `KNOWN_ISSUES.md`.*
+*Last reviewed: 2026-06-02 against companion firmware v1.15.0 (`FIRMWARE_VER_CODE 12`, [`examples/companion_radio/`](https://github.com/meshcore-dev/MeshCore/tree/main/examples/companion_radio)) and against the current code on `dev`. Status of every entry was verified in-tree, not from changelogs. Currently ✅ implemented: repeater login, status request, path discovery, reset-path, binary-request framework, ACK display, group data, anonymous send, direct REQ/RESPONSE, RX gain, duty cycle, auto-add config, custom vars, location-share policy, GPS enable/interval, periodic auto-advert, contact removal, channel removal, room fetch, message timestamps, message search, RSSI/SNR graph, factory reset, keyboard backlight, message-cap, node stats, terminal help, zero-hop ping, universal back-swipe, graceful shutdown, multi-ACK toggle, node-type selector, buzzer notify, telemetry answer-side, contact-on-map, identity backup, message signing, client-repeat, storage display, dedicated reboot, QR/URI import, QR generation, advert-path query, device PIN, ACL permissions, OTA update (AP + GitHub), Node Discovery Protocol. ❌ declined: multipart, raw custom payloads, temporary radio config. Bugs in implemented features are tracked in `KNOWN_ISSUES.md`.*

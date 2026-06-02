@@ -4,16 +4,6 @@ This document tracks currently open known issues, bugs, and missing features in 
 
 ---
 
-## UI / Dialogs
-
-### Factory-reset confirmation "Cancel" deletes its dialog synchronously inside the click handler
-
-On the Settings → System screen, the factory-reset confirmation dialog's **Cancel** button calls `lv_obj_del()` directly on the dialog from inside its own `LV_EVENT_CLICKED` handler (`screens.cpp:4184` — `lv_obj_del(lv_obj_get_parent(lv_event_get_target(ev)))`). Deleting the object whose event is currently being dispatched is a use-after-free: after the handler returns, the LVGL event/indev machinery may still dereference the freed object (gesture state, bubbling, `act->obj`). This is the exact trap called out in the gotchas table ("`lv_obj_del` in handler → use `lv_obj_del_async()`"). Every other dialog-close in the codebase already uses the async form (e.g. `screens.cpp:661, 697, 865, 1085, 1118, 2588, 2970`), so this one site is an inconsistency as well as a latent crash.
-
-**What's needed:** Change the Cancel handler at `screens.cpp:4184` to `lv_obj_del_async(...)`. Audit the file for any other synchronous `lv_obj_del()` reachable from an event callback (the message-list prune in `chat_screen.cpp:1864` is fine — it runs from the message-add path, not an event handler).
-
----
-
 ## Mesh / Code Health
 
 ### Dead V1 mesh class (`sigurd_mesh.h`) still compiled in after the Phase 0 cutover

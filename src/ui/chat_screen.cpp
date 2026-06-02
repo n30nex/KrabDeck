@@ -509,7 +509,7 @@ static void populate_channel_rows(lv_obj_t* list) {
             format_time(tbuf, sizeof(tbuf), ch_meta[i].timestamp);
             lv_obj_t* ts = lv_label_create(row);
             lv_label_set_text(ts, tbuf);
-            lv_obj_set_style_text_color(ts, lv_color_hex(TEXT_MUTED), 0);
+            lv_obj_set_style_text_color(ts, lv_color_hex(TEXT_SECONDARY), 0);
             lv_obj_set_style_text_font(ts, emoji_wrapped_montserrat_10, 0);
             // Account for delete button width (28px + gap) when visible
             bool has_del = dyn_count > 1;
@@ -719,7 +719,7 @@ static lv_obj_t* make_chat_list_screen()
     lv_obj_t* back_icon = lv_label_create(ch_back_btn);
     lv_label_set_text(back_icon, LV_SYMBOL_LEFT);
     lv_obj_set_style_text_color(back_icon,
-        lv_color_hex(can_go_back() ? ACCENT : TEXT_MUTED), 0);
+        lv_color_hex(can_go_back() ? ACCENT : TEXT_SECONDARY), 0);
     lv_obj_set_style_text_font(back_icon, emoji_wrapped_montserrat_12, 0);
     lv_obj_center(back_icon);
 
@@ -944,7 +944,7 @@ static void show_search_bar()
         // Search icon label
         lv_obj_t* icon = lv_label_create(search_bar);
         lv_label_set_text(icon, LV_SYMBOL_REFRESH);
-        lv_obj_set_style_text_color(icon, lv_color_hex(TEXT_MUTED), 0);
+        lv_obj_set_style_text_color(icon, lv_color_hex(TEXT_SECONDARY), 0);
         lv_obj_set_style_text_font(icon, emoji_wrapped_montserrat_12, 0);
         lv_obj_align(icon, LV_ALIGN_LEFT_MID, 6, 0);
 
@@ -1007,7 +1007,7 @@ static void show_search_bar()
     // Resize message list to accommodate search bar overlay
     if (msg_list) {
         lv_obj_set_y(msg_list, TOP_H + DIVIDER_H + 30);
-        lv_obj_set_height(msg_list, MSG_LIST_H - 30);
+        lv_obj_set_height(msg_list, MSG_LIST_H - 31);
     }
     lv_group_t* g = lv_group_get_default();
     if (g && search_input) lv_group_focus_obj(search_input);
@@ -1200,7 +1200,7 @@ static lv_obj_t* create_bubble(lv_obj_t* parent, const char* sender,
     lv_obj_t* ts = lv_label_create(header);
     lv_label_set_text(ts, time_buf);
     lv_obj_set_style_text_color(ts,
-        is_self ? lv_color_hex(0xffffff) : lv_color_hex(TEXT_MUTED), 0);
+        is_self ? lv_color_hex(0xffffff) : lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_set_style_text_font(ts, emoji_wrapped_montserrat_10, 0);
 
     lv_obj_t* msg_text = lv_label_create(bubble);
@@ -1276,7 +1276,7 @@ static void render_active_messages()
             // No matches — show "No results" message
             lv_obj_t* no_results = lv_label_create(msg_list);
             lv_label_set_text(no_results, "No matching messages");
-            lv_obj_set_style_text_color(no_results, lv_color_hex(TEXT_MUTED), 0);
+            lv_obj_set_style_text_color(no_results, lv_color_hex(TEXT_SECONDARY), 0);
             lv_obj_set_style_text_font(no_results, emoji_wrapped_montserrat_12, 0);
             lv_obj_center(no_results);
         }
@@ -1508,7 +1508,7 @@ static void create_input_bar()
     byte_counter = lv_label_create(input_field);
     lv_label_set_text(byte_counter, "149");
     lv_obj_set_style_text_font(byte_counter, emoji_wrapped_montserrat_10, 0);
-    lv_obj_set_style_text_color(byte_counter, lv_color_hex(TEXT_MUTED), 0);
+    lv_obj_set_style_text_color(byte_counter, lv_color_hex(TEXT_SECONDARY), 0);
     lv_obj_align(byte_counter, LV_ALIGN_RIGHT_MID, -2, 0);
 
     // Emoji button — opens emoji picker dialog

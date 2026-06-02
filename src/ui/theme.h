@@ -34,7 +34,7 @@ constexpr uint32_t MSG_INCOMING = 0x3a4560;
 // ── Text (always fixed for readability) ──────────────────
 constexpr uint32_t TEXT_PRIMARY   = 0xf2f3f5;
 constexpr uint32_t TEXT_SECONDARY = 0x949ba4;
-constexpr uint32_t TEXT_MUTED     = 0x6b7078;
+constexpr uint32_t TEXT_MUTED     = 0x9098a2;  // AA-readable on dark/input surfaces
 constexpr uint32_t TEXT_LINK      = 0x00aff4;
 
 // ── Themeable channel colors ─────────────────────────────
@@ -132,7 +132,7 @@ inline lv_obj_t* create_signal_dots(lv_obj_t* parent, int rssi)
         } else {
             lv_obj_set_style_bg_opa(dot, LV_OPA_TRANSP, 0);
             lv_obj_set_style_border_width(dot, 2, 0);
-            lv_obj_set_style_border_color(dot, lv_color_hex(TEXT_MUTED), 0);
+            lv_obj_set_style_border_color(dot, lv_color_hex(TEXT_SECONDARY), 0);
         }
         lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
         lv_obj_remove_flag(dot, LV_OBJ_FLAG_CLICKABLE);

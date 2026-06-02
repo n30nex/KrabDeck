@@ -575,8 +575,8 @@ static void cmd_capture() {
 
     uint32_t w = (uint32_t)lv_display_get_horizontal_resolution(disp);
     uint32_t h = (uint32_t)lv_display_get_vertical_resolution(disp);
-    uint32_t stride = w * 2;
-    uint32_t total_bytes = w * h * 2;
+    uint32_t stride = lv_draw_buf_width_to_stride(w, LV_COLOR_FORMAT_RGB565);
+    uint32_t total_bytes = stride * h;
 
     uint8_t* snap_buf = (uint8_t*)heap_caps_malloc(total_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!snap_buf) {

@@ -270,6 +270,7 @@ static void build_step3()
         lv_obj_set_style_border_width(btn, 0, 0);
         auto* tl = lv_label_create(btn);
         lv_label_set_text(tl, freqs[i].label);
+        lv_obj_set_style_text_color(tl, lv_color_hex(TEXT_PRIMARY), 0);
         lv_obj_set_style_text_font(tl, &lv_font_montserrat_10, 0);
         lv_obj_center(tl);
         s_freq_btns[i] = btn;

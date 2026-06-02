@@ -6,6 +6,7 @@
 
 #pragma once
 #include <cstdint>
+#include <cstddef>
 
 // Node type identifiers from MeshCore adverts — kept local so UI code can filter.
 #define ADV_TYPE_NONE      0
@@ -304,6 +305,17 @@ void clearGroupDataRecv();
 // Sign arbitrary data with this node's private key.
 // Returns number of bytes written to sig_out (SIGNATURE_SIZE=64 on success, 0 on failure).
 int signMessage(const char* data, uint8_t* sig_out);
+
+// ── Identity backup (export/import) ──
+// Export the node's Ed25519 private key as a hex string (128 hex chars = 64 bytes).
+// Returns true on success. hex_out must be at least 129 characters.
+bool exportIdentity(char* hex_out, size_t hex_sz);
+
+// Import a 128-hex-char Ed25519 private key (64 bytes), re-keying the node.
+// The public key is recomputed from the private key. The identity is saved to
+// SPIFFS and the node should be rebooted to reload contacts with new identity.
+// Returns true on success if the key is valid.
+bool importIdentity(const char* hex_privkey);
 
 } // namespace mesh
 } // namespace sigurdos

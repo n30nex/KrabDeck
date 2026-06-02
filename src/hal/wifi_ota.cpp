@@ -190,7 +190,12 @@ int scan(APInfo* out, int max_aps) {
     }
 
     WiFi.scanDelete();
-    WiFi.mode(WIFI_OFF);
+    // Keep WiFi in STA mode so beginConnect() doesn't have to
+    // re-initialize the MAC/BB/RF from cold (WIFI_OFF→STA has
+    // a known ESP32-S3 power-up erratum that can cause silent
+    // WiFi.begin() failure without sufficient settling time).
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect();
     return n;
 }
 
@@ -209,7 +214,9 @@ void beginConnect(const char* ssid, const char* password) {
         s_status = Status::Failed;
         return;
     }
+    // WiFi should already be in STA mode from the scan, but ensure it.
     WiFi.mode(WIFI_STA);
+    delay(100);  // let MAC/BB/RF settle after potential mode switch (ESP32-S3 erratum)
     WiFi.begin(ssid, password);
     s_status = Status::Connecting;
     s_conn_start = millis();

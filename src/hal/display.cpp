@@ -277,6 +277,49 @@ static void lvgl_kb_cb(lv_indev_t* indev, lv_indev_data_t* data)
             }
         }
 
+        // For printable characters, ensure focus is on a textarea.
+        // The trackball (ENCODER indev) can accidentally move group
+        // focus to a button — if focus isn't a textarea, find one
+        // on the active screen and refocus it so keystrokes land.
+        if (key > 0x20 && key != 0x7F) {  // printable ASCII
+            lv_group_t* g = lv_group_get_default();
+            lv_obj_t* focused = g ? lv_group_get_focused(g) : nullptr;
+            if (!focused || !lv_obj_check_type(focused, &lv_textarea_class)) {
+                // Focus lost — walk the screen tree for any textarea
+                lv_obj_t* act_scr = lv_scr_act();
+                if (act_scr) {
+                    uint32_t cnt = lv_obj_get_child_cnt(act_scr);
+                    for (uint32_t i = 0; i < cnt; i++) {
+                        lv_obj_t* c = lv_obj_get_child(act_scr, i);
+                        // Check direct child
+                        if (lv_obj_check_type(c, &lv_textarea_class)) {
+                            lv_group_focus_obj(c);
+                            break;
+                        }
+                        // Check grandchildren (textareas in dialogs)
+                        uint32_t gc = lv_obj_get_child_cnt(c);
+                        for (uint32_t j = 0; j < gc; j++) {
+                            lv_obj_t* gc_obj = lv_obj_get_child(c, j);
+                            if (lv_obj_check_type(gc_obj, &lv_textarea_class)) {
+                                lv_group_focus_obj(gc_obj);
+                                goto found;
+                            }
+                            // Check great-grandchildren
+                            uint32_t ggc = lv_obj_get_child_cnt(gc_obj);
+                            for (uint32_t k = 0; k < ggc; k++) {
+                                lv_obj_t* ggc_obj = lv_obj_get_child(gc_obj, k);
+                                if (lv_obj_check_type(ggc_obj, &lv_textarea_class)) {
+                                    lv_group_focus_obj(ggc_obj);
+                                    goto found;
+                                }
+                            }
+                        }
+                    }
+                    found:;
+                }
+            }
+        }
+
         if (key == 0x08) data->key = LV_KEY_BACKSPACE;
         else if (key == 0x0D) data->key = LV_KEY_ENTER;
         else if (key == 0x09) data->key = LV_KEY_NEXT;

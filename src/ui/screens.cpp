@@ -6517,12 +6517,18 @@ static void wifi_do_scan(lv_timer_t* timer) {
                         return;
                     }
                     const char* label_text = lv_label_get_text(net_lbl);
-                    const char* ssid = label_text + 9; // skip "Network: "
+                    // Copy SSID out of LVGL's internal buffer immediately —
+                    // the label pointer could become invalid if the dialog
+                    // is modified before WiFi.begin() consumes it.
+                    char ssid_buf[33];
+                    const char* src = label_text + 9; // skip "Network: "
+                    strncpy(ssid_buf, src, sizeof(ssid_buf) - 1);
+                    ssid_buf[sizeof(ssid_buf) - 1] = '\0';
                     const char* pw = lv_textarea_get_text(ta);
 
                     // Save credentials to prefs
                     auto p = sigurdos::prefs_get();
-                    strncpy(p.wifi_ssid, ssid, sizeof(p.wifi_ssid) - 1);
+                    strncpy(p.wifi_ssid, ssid_buf, sizeof(p.wifi_ssid) - 1);
                     p.wifi_ssid[sizeof(p.wifi_ssid) - 1] = '\0';
                     strncpy(p.wifi_password, pw, sizeof(p.wifi_password) - 1);
                     p.wifi_password[sizeof(p.wifi_password) - 1] = '\0';
@@ -6547,7 +6553,7 @@ static void wifi_do_scan(lv_timer_t* timer) {
                     }
 
                     // Start async WiFi connection
-                    sigurdos::wifi_sta::beginConnect(ssid, pw);
+                    sigurdos::wifi_sta::beginConnect(ssid_buf, pw);
 
                     // Poll connection status every 300ms
                     lv_timer_t* poll = lv_timer_create([](lv_timer_t* timer) {

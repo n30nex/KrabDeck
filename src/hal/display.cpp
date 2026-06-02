@@ -264,12 +264,17 @@ static void lvgl_kb_cb(lv_indev_t* indev, lv_indev_data_t* data)
     sigurdos_keyboard_scan();   // force a fresh poll (catches first key after focus)
     int key = sigurdos_keyboard_get_key();
     if (key > 0 && sigurdos_keyboard_consume_event()) {
-        // Always route keyboard input to the chat textarea when the chat
-        // messaging view is active, so the text box stays ready to type in.
+        // Route keyboard input to the chat textarea only when the chat
+        // screen is the active screen — never steal focus from other
+        // textareas (WiFi password dialog, etc.).
         lv_obj_t* chat_input = sigurdos::ui::chat_screen_get_input_field();
-        if (chat_input) {
-            lv_group_t* g = lv_group_get_default();
-            if (g) lv_group_focus_obj(chat_input);
+        if (chat_input && lv_obj_is_valid(chat_input)) {
+            lv_obj_t* chat_scr = lv_obj_get_screen(chat_input);
+            lv_obj_t* act_scr = lv_scr_act();
+            if (chat_scr == act_scr) {
+                lv_group_t* g = lv_group_get_default();
+                if (g) lv_group_focus_obj(chat_input);
+            }
         }
 
         if (key == 0x08) data->key = LV_KEY_BACKSPACE;

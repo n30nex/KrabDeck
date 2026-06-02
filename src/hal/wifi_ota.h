@@ -51,8 +51,23 @@ int scan(APInfo* out, int max_aps);
 // ── WiFi STA Client ──────────────────────────────────────
 namespace wifi_sta {
 
+enum class Status {
+    Idle,
+    Connecting,
+    Connected,
+    Failed
+};
+
+// Start connecting to an access point. Returns immediately.
+// Poll with getStatus() to check progress.
+void beginConnect(const char* ssid, const char* password);
+
+// Returns current connection status.
+Status getStatus();
+
 // Connect to an access point. Blocks up to 15s for connection.
 // Returns true if connected (WL_CONNECTED).
+// Prefer beginConnect() + timer polling for UI responsiveness.
 bool connect(const char* ssid, const char* password);
 
 // Disconnect and turn WiFi off.

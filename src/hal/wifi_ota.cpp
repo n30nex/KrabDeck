@@ -199,8 +199,49 @@ int scan(APInfo* out, int max_aps) {
 // ── WiFi STA Client ──────────────────────────────────────
 namespace wifi_sta {
 
-static bool s_connected = false;
-static int  s_rssi = 0;
+static bool     s_connected   = false;
+static int      s_rssi        = 0;
+static Status   s_status      = Status::Idle;
+static unsigned long s_conn_start = 0;
+
+void beginConnect(const char* ssid, const char* password) {
+    if (!ssid || !ssid[0]) {
+        s_status = Status::Failed;
+        return;
+    }
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+    s_status = Status::Connecting;
+    s_conn_start = millis();
+    s_connected = false;
+    s_rssi = 0;
+    Serial.printf("[wifi-sta] connecting to %s...\n", ssid);
+}
+
+Status getStatus() {
+    if (s_status != Status::Connecting) return s_status;
+
+    if (WiFi.status() == WL_CONNECTED) {
+        s_status = Status::Connected;
+        s_connected = true;
+        s_rssi = WiFi.RSSI();
+        Serial.printf("[wifi-sta] connected! (%d dBm)\n", s_rssi);
+        return Status::Connected;
+    }
+
+    // Timeout after 15 seconds
+    if (millis() - s_conn_start > 15000) {
+        WiFi.disconnect();
+        WiFi.mode(WIFI_OFF);
+        s_status = Status::Failed;
+        s_connected = false;
+        s_rssi = 0;
+        Serial.printf("[wifi-sta] connection timed out\n");
+        return Status::Failed;
+    }
+
+    return Status::Connecting;
+}
 
 bool connect(const char* ssid, const char* password) {
     if (!ssid || !ssid[0]) return false;
@@ -229,19 +270,26 @@ bool connect(const char* ssid, const char* password) {
 }
 
 void disconnect() {
-    if (s_connected) {
+    if (s_connected || s_status == Status::Connecting) {
         WiFi.disconnect();
     }
     WiFi.mode(WIFI_OFF);
     s_connected = false;
     s_rssi = 0;
+    s_status = Status::Idle;
 }
 
 bool isConnected() {
-    // Double-check with hardware in case of unexpected disconnect
-    if (s_connected && WiFi.status() != WL_CONNECTED) {
-        s_connected = false;
-        s_rssi = 0;
+    // If we think we're connected but hardware says otherwise, update
+    if (s_connected || s_status == Status::Connected) {
+        if (WiFi.status() != WL_CONNECTED) {
+            s_connected = false;
+            s_rssi = 0;
+            s_status = Status::Idle;
+        } else {
+            s_connected = true;
+            s_status = Status::Connected;
+        }
     }
     return s_connected;
 }
@@ -254,7 +302,14 @@ int getRSSI() {
 }
 
 void loop() {
-    // Maintain connection tracking — no-op if not connected
+    // Detect unexpected disconnects and update state
+    if ((s_connected || s_status == Status::Connected) &&
+        WiFi.status() != WL_CONNECTED) {
+        s_connected = false;
+        s_rssi = 0;
+        s_status = Status::Idle;
+        Serial.printf("[wifi-sta] disconnected\n");
+    }
 }
 
 }  // namespace wifi_sta

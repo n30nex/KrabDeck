@@ -6512,35 +6512,83 @@ static void wifi_do_scan(lv_timer_t* timer) {
                             if (i > 1) net_lbl = c;
                         }
                     }
-                    if (ta && net_lbl) {
-                        const char* label_text = lv_label_get_text(net_lbl);
-                        const char* ssid = label_text + 9; // skip "Network: "
-                        const char* pw = lv_textarea_get_text(ta);
-                        auto p = sigurdos::prefs_get();
-                        strncpy(p.wifi_ssid, ssid, sizeof(p.wifi_ssid) - 1);
-                        p.wifi_ssid[sizeof(p.wifi_ssid) - 1] = '\0';
-                        strncpy(p.wifi_password, pw, sizeof(p.wifi_password) - 1);
-                        p.wifi_password[sizeof(p.wifi_password) - 1] = '\0';
-                        sigurdos::prefs_set(p);
-
-                        // Attempt connection
-                        bool ok = sigurdos::wifi_sta::connect(ssid, pw);
-                        // Show result briefly then close
-                        lv_obj_t* title = lv_obj_get_child(dlg, 0);
-                        if (title) {
-                            lv_label_set_text(title, ok ? "Connected!" : "Connection failed");
-                            lv_obj_set_style_text_color(title,
-                                lv_color_hex(ok ? ACCENT_GREEN : ACCENT_RED), 0);
-                        }
-                        // Auto-dismiss after 2 seconds
-                        lv_timer_t* t = lv_timer_create([](lv_timer_t* timer) {
-                            lv_obj_del_async((lv_obj_t*)lv_timer_get_user_data(timer));
-                            lv_timer_del(timer);
-                        }, ok ? 1500 : 2500, dlg);
-                        lv_timer_set_repeat_count(t, 1);
-                        return;  // don't immediately dismiss
+                    if (!ta || !net_lbl) {
+                        lv_obj_del_async(dlg);
+                        return;
                     }
-                    lv_obj_del_async(dlg);
+                    const char* label_text = lv_label_get_text(net_lbl);
+                    const char* ssid = label_text + 9; // skip "Network: "
+                    const char* pw = lv_textarea_get_text(ta);
+
+                    // Save credentials to prefs
+                    auto p = sigurdos::prefs_get();
+                    strncpy(p.wifi_ssid, ssid, sizeof(p.wifi_ssid) - 1);
+                    p.wifi_ssid[sizeof(p.wifi_ssid) - 1] = '\0';
+                    strncpy(p.wifi_password, pw, sizeof(p.wifi_password) - 1);
+                    p.wifi_password[sizeof(p.wifi_password) - 1] = '\0';
+                    sigurdos::prefs_set(p);
+
+                    // Disable buttons during connection attempt
+                    lv_obj_add_state((lv_obj_t*)lv_event_get_target(ev), LV_STATE_DISABLED);
+                    // Also disable cancel button (last btn child)
+                    for (int32_t i = (int32_t)cnt - 1; i >= 0; i--) {
+                        lv_obj_t* c = lv_obj_get_child(dlg, i);
+                        if (lv_obj_has_flag(c, LV_OBJ_FLAG_CLICKABLE)) {
+                            lv_obj_add_state(c, LV_STATE_DISABLED);
+                            break;
+                        }
+                    }
+
+                    // Show connecting feedback
+                    lv_obj_t* title = lv_obj_get_child(dlg, 0);
+                    if (title) {
+                        lv_label_set_text(title, "Connecting...");
+                        lv_obj_set_style_text_color(title, lv_color_hex(ACCENT), 0);
+                    }
+
+                    // Start async WiFi connection
+                    sigurdos::wifi_sta::beginConnect(ssid, pw);
+
+                    // Poll connection status every 300ms
+                    lv_timer_t* poll = lv_timer_create([](lv_timer_t* timer) {
+                        lv_obj_t* dlg = (lv_obj_t*)lv_timer_get_user_data(timer);
+                        if (!lv_obj_is_valid(dlg)) {
+                            lv_timer_del(timer);
+                            return;
+                        }
+                        auto status = sigurdos::wifi_sta::getStatus();
+                        lv_obj_t* title = lv_obj_get_child(dlg, 0);
+                        if (status == sigurdos::wifi_sta::Status::Connected) {
+                            if (title) {
+                                lv_label_set_text(title, "Connected!");
+                                lv_obj_set_style_text_color(title,
+                                    lv_color_hex(ACCENT_GREEN), 0);
+                            }
+                            lv_timer_del(timer);
+                            // Auto-dismiss after 1.5s
+                            lv_timer_t* t = lv_timer_create([](lv_timer_t* t2) {
+                                lv_obj_t* d = (lv_obj_t*)lv_timer_get_user_data(t2);
+                                if (lv_obj_is_valid(d)) lv_obj_del_async(d);
+                                lv_timer_del(t2);
+                            }, 1500, dlg);
+                            lv_timer_set_repeat_count(t, 1);
+                        } else if (status == sigurdos::wifi_sta::Status::Failed) {
+                            if (title) {
+                                lv_label_set_text(title, "Connection failed");
+                                lv_obj_set_style_text_color(title,
+                                    lv_color_hex(ACCENT_RED), 0);
+                            }
+                            lv_timer_del(timer);
+                            // Auto-dismiss after 2.5s
+                            lv_timer_t* t = lv_timer_create([](lv_timer_t* t2) {
+                                lv_obj_t* d = (lv_obj_t*)lv_timer_get_user_data(t2);
+                                if (lv_obj_is_valid(d)) lv_obj_del_async(d);
+                                lv_timer_del(t2);
+                            }, 2500, dlg);
+                            lv_timer_set_repeat_count(t, 1);
+                        }
+                        // else still Connecting — keep polling
+                    }, 300, dlg);
                 }, LV_EVENT_CLICKED, nullptr);
                 
                 // Cancel button
@@ -6554,6 +6602,8 @@ static void wifi_do_scan(lv_timer_t* timer) {
                 lv_obj_center(cancel_lbl);
                 lv_group_add_obj(lv_group_get_default(), cancel_btn);
                 lv_obj_add_event_cb(cancel_btn, [](lv_event_t* ev) {
+                    // Abort any in-progress connection
+                    sigurdos::wifi_sta::disconnect();
                     lv_obj_del_async(lv_obj_get_parent((lv_obj_t*)lv_event_get_target(ev)));
                 }, LV_EVENT_CLICKED, nullptr);
                 

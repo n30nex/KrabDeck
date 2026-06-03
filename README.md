@@ -15,7 +15,7 @@ Full credit to the MeshCore Dev team! I won't ever accept any money or donations
 ## Test Suite
 
 ```bash
-# Run all 294 tests on native platform (no hardware needed)
+# Run all 332 tests on native platform (no hardware needed) (1 skipped, 331 passed)
 pio test -e native_test -v
 
 # Run a specific test module
@@ -25,16 +25,19 @@ pio test -e native_test -f test_battery -v
 | Test Module | Tests | What's Covered |
 |-------------|-------|----------------|
 | `test_build` | 7 | All headers compile together, cross-module API consistency |
+| `test_battery` | 16 | Battery level monitoring, ADC reading, voltage conversion, percentage calculation |
 | `test_chat_truncation` | 10 | Chat message truncation, long text handling |
 | `test_emoji` | 22 | Emoji font rendering, fallback logic, sizing |
 | `test_gps` | 26 | NMEA parsing, coordinate conversion, fix detection |
 | `test_home_screen` | 16 | Home screen layout, icon grid, status bars |
 | `test_keyboard` | 20 | Matrix scan, keymap, debounce, ghost detection, LVGL mapping |
+| `test_layout` | 4 | Adaptive layout helpers, responsive grid calculations, screen size adjustments |
 | `test_map` | 25 | Tile math (lat/lon→tile), zoom levels, bounding box |
 | `test_mesh_messaging` | 43 | Message queue, send/receive, channel ops, contact export |
 | `test_mesh_wrapper` | 18 | API signatures, return value ranges, unread count init |
 | `test_navigation` | 22 | Forward/back with history stack, deep nav chains, all pairs |
 | `test_pins` | 9 | GPIO ranges, SPI/I2C bus conflicts, duplicate detection, LoRa params |
+| `test_prefs` | 3 | NVS preferences, radio config persistence, identity storage, save/load |
 | `test_sdcard` | 15 | SPI init, mount, read/write, directory listing, edge cases |
 | `test_terminal` | 7 | Terminal buffer management, command parsing |
 | `test_theme` | 7 | Color darkness, vibrancy, distinctness, readability hierarchy |
@@ -64,6 +67,8 @@ SigurdOS-tdeck/
 ├── src/
 │   ├── main.cpp            ← Boot sequence (board → display → mesh → UI)
 │   ├── lv_conf.h           ← LVGL v9 config (16-bit, partial render)
+│   ├── utils/
+│   │   └── utf8_util.h     ← UTF-8 string utilities (validation, truncation)
 │   ├── hal/
 │   │   ├── tdeck_pins.h    ← Complete T-Deck pinout + version string
 │   │   ├── tdeck_board.h   ← TDeckBoard :: mesh::MainBoard
@@ -74,6 +79,7 @@ SigurdOS-tdeck/
 │   │   ├── keyboard.cpp/h  ← I2C keyboard (ESP32-C3 MCU)
 │   │   ├── gps.cpp/h       ← NMEA GPS parser (Serial1)
 │   │   ├── sdcard.cpp/h    ← microSD card (SPI, shared bus)
+│   │   ├── buzzer.cpp/h    ← Active-low buzzer control (GPIO 46)
 │   │   ├── prefs.cpp/h     ← NVS preferences (radio config, identity, WiFi OTA)
 │   │   ├── wifi_ota.cpp/h  ← AP-mode OTA upload server
 │   │   └── github_ota.cpp/h ← GitHub-release OTA downloader
@@ -81,9 +87,14 @@ SigurdOS-tdeck/
 │   │   ├── mesh_wrapper.cpp/h  ← SX1262 radio init, RTC, mesh API
 │   │   └── sigurd_mesh_v2.h ← SigurdMeshV2 : BaseChatMesh subclass
 │   ├── app/
-│   │   └── map_renderer.cpp/h  ← Offline map tile renderer (PNG/JPEG, PSRAM canvas)
+│   │   ├── map_renderer.cpp/h  ← Offline map tile renderer (PNG/JPEG, PSRAM canvas)
+│   │   ├── tile_cache.cpp/h    ← Tile caching layer (LRU, PSRAM)
+│   │   └── qr_show.cpp/h       ← QR code display for contact sharing
 │   ├── fonts/
-│   │   └── emoji_font_setup.cpp/h  ← Emoji font fallback
+│   │   ├── emoji_font.c/h       ← Emoji font glyph definitions
+│   │   ├── emoji_font_setup.cpp ← LVGL emoji font integration
+│   │   ├── emoji_data.cpp/h     ← Emoji unicode character tables
+│   │   └── emoji_images/        ← Emoji picker image assets
 │   └── ui/
 │       ├── theme.h         ← Discord-inspired dark palette
 │       ├── responsive.h    ← Adaptive layout helpers (bars, grids, dialogs)
@@ -95,7 +106,7 @@ SigurdOS-tdeck/
 │       └── ui.cpp/h        ← Splash → Home transition
 ├── boards/t-deck.json      ← PlatformIO board definition
 ├── platformio.ini          ← Build config (ESP32-S3 + LVGL + MeshCore)
-├── test/                   ← Unit test directory (17 modules, 294 tests)
+├── test/                   ← Unit test directory (19 modules, 332 tests)
 ```
 
 ## Build & Flash
@@ -221,7 +232,7 @@ All screens from the SigurdOS T-Deck UI, captured from a live device running the
 
 | Screen | Screenshot | Description |
 |--------|-----------|-------------|
-| **Home** | ![Home](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/home.png) | 4×3 icon grid launcher with CHATS, CONTACTS, REPEATERS, FINDER, PACKETS, MAP, ADVERTISE, SETTINGS, TRACE, TERMINAL, SETUP, SIGNAL. Top bar shows current channel, bottom bar shows device name + battery. |
+| **Home** | ![Home](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/home.png) | 4×3 icon grid launcher with CHATS, DMs, ROOMS, CONTACTS, REPEATERS, ADVERTISE, MAP, TERMINAL, PACKETS, SETTINGS, SETUP, SIGNAL. Top bar shows current channel, bottom bar shows device name + battery. |
 | **Onboarding** | ![Onboarding](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/onboarding.png) | First-boot setup wizard (3 steps) — configure node name, radio frequency, and spreading factor before the device is usable. |
 | **Chat** | ![Chat](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/chat.png) | Direct message view showing message bubbles between the user and a contact. Includes text input, sent/received messages with timestamps, and navigation to channel chats. |
 | **Contacts** | ![Contacts](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/contacts.png) | Lists companions (ADV_TYPE_CHAT) and room servers (ADV_TYPE_ROOM) that have been heard on the mesh. Tap a contact to send a direct message. |
@@ -235,6 +246,10 @@ All screens from the SigurdOS T-Deck UI, captured from a live device running the
 | **Terminal** | ![Terminal](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/terminal.png) | Serial-style command interface for direct MeshCore CLI commands (e.g. `info`, `status`, `nodes`, `channels`). |
 | **Signal & SNR** | ![Signal](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/signal.png) | Signal diagnostics screen showing RSSI, SNR, noise floor, and packet success rate for the current radio configuration. |
 | **Radio Setup** | ![Radio](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/radio.png) | Advanced radio configuration: frequency band, spreading factor, coding rate, TX power, and RX gain boost. |
+| **WiFiNetworks** | *No screenshot* | WiFi network scanning and connection management for OTA updates and diagnostics. |
+| **NodeStats** | *No screenshot* | Node statistics display showing uptime, memory usage, packet counts, and mesh health. |
+| **Telemetry** | *No screenshot* | Environmental telemetry readouts (temperature, humidity, pressure) from sensor-equipped mesh nodes. |
+| **NodeStatus** | *No screenshot* | Node status overview showing connection state, last heard, and signal quality indicators. |
 
 ## License
 

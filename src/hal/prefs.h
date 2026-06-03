@@ -60,7 +60,7 @@ struct NodePrefs {
         auto_off_timeout = 30;
         chat_msg_cap = 200;
         flood_max_hops = 0;  // 0 = no limit
-        share_location = true;
+        share_location = false;  // location OFF by default (privacy-first)
         rx_delay_base = 10.0f;      // default RX delay base (matching MeshCore companion default)
         tx_delay_factor = 1.0f;     // default TX flood delay factor
         direct_tx_delay_factor = 1.0f; // default TX direct delay factor

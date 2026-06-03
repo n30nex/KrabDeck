@@ -34,7 +34,7 @@ bool prefs_load(NodePrefs& p) {
     p.auto_off_timeout = nvs.getUShort("auto_off", 30);
     p.chat_msg_cap  = nvs.getUShort("chat_cap", 200);
     p.flood_max_hops = nvs.getUChar("flood_mh", 0);
-    p.share_location = nvs.getBool("sh_loc", true);
+    p.share_location = nvs.getBool("sh_loc", false);
     p.rx_delay_base  = nvs.getFloat("rx_del", 10.0f);
     p.tx_delay_factor = nvs.getFloat("tx_del", 1.0f);
     p.direct_tx_delay_factor = nvs.getFloat("dir_tx", 1.0f);

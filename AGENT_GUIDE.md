@@ -43,6 +43,9 @@ src/
 │   ├── trackball.cpp/h    # 5-direction trackball (debounce, event queue)
 │   ├── prefs.cpp/h        # NodePrefs persisted in NVS (freq, SF, power, etc.)
 │   ├── gps.cpp/h          # GPS NMEA parser
+│   ├── buzzer.cpp/h       # Buzzer notifications (short/double beep, active-low GPIO 46)
+│   ├── wifi_ota.cpp/h     # WiFi AP OTA firmware update + site survey (APInfo struct, scan)
+│   ├── github_ota.cpp/h   # GitHub-release OTA download (WiFi STA, async, status/progress)
 │   └── sdcard.cpp/h       # SD card init, status, path helpers
 ├── mesh/
 │   ├── sigurd_mesh_v2.h    # MeshV2 (BaseChatMesh) — routing, channels, message handling, RSSI/SNR history, ACK tracking. V1 class removed (#290).
@@ -193,7 +196,8 @@ Use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 | 16 | Contact Detail (full contact info: type, RSSI, SNR, last seen, path, location, RSSI sparkline, DM + Trace buttons, Request Status + Telemetry buttons) | `screens.cpp` | ✅ |
 | 17 | Telemetry (request & display CayenneLPP sensor data — voltage, temperature from remote nodes) | `screens.cpp` | ✅ |
 | 18 | Node Status (request & display remote node stats — battery, uptime, airtime, packet counters) | `screens.cpp` | ✅ |
-| 19 | Node Stats (local node packet counters: sent/received flood+direct, TX/RX airtime, duty cycle budget, ACK counter) | `screens.cpp` | ✅ |
+| 19 | WiFiNetworks (WiFi AP OTA firmware update + site survey, scan & display nearby access points, GitHub release OTA download) | `screens.cpp` | ✅ |
+| 20 | Node Stats (local node packet counters: sent/received flood+direct, TX/RX airtime, duty cycle budget, ACK counter) | `screens.cpp` | ✅ |
 | — | Custom RF (sub-screen of Radio Setup — Freq, SF, BW, CR, Pwr text inputs with Apply) | `screens.cpp` | ✅ |
 | — | SettingsRadio (Radio/Mesh sub-screen — radio params, bandwidth/SF/tuning, duty cycle, RX gain) | `screens.cpp` | ✅ |
 | — | SettingsGPS (GPS/Location sub-screen — GPS enable toggle, read interval, location sharing) | `screens.cpp` | ✅ |
@@ -345,7 +349,7 @@ sigurdos::mesh::addTestRoomServer(name)        // Inject fake room server contac
 
 ## Testing
 
-**Current test count: 324** (323 passed, 1 skipped for native_test).
+**Current test count: 332** (331 passed, 1 skipped for native_test).
 
 ```bash
 pio test -e native_test -v       # All tests (no hardware)
@@ -359,6 +363,7 @@ Test modules:
 | `test_gps` | GPS NMEA sentence parsing |
 | `test_touch` | GT911 touch coordinate transforms |
 | `test_keyboard` | Keyboard I2C protocol, key mode |
+| `test_layout` | Layout regression tests for Contact Detail and Signal screens (no-overlap assertions for fixed 320×240 T-Deck) |
 | `test_mesh_wrapper` | Mesh wrapper API stubs |
 | `test_trackball` | Trackball debounce, event queue |
 | `test_theme` | Theme color constants and helpers |

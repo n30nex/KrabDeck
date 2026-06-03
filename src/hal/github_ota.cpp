@@ -72,8 +72,12 @@ static void fail(const char* msg) {
     Serial.printf("[gh-ota] FAIL: %s\n", msg);
     setStatus(GitHubOTAState::Failed, 0, "Failed", msg);
     cleanupConnection();
-    // Don't destroy the WiFi connection — wifi_sta manages it.
-    // If the user was connected before OTA, they should stay connected.
+    // Force a clean disconnect to reset any stale LWIP socket state
+    // after HTTP client deletion, but keep WiFi in STA mode so
+    // wifi_sta retains control (don't use WIFI_OFF — that would
+    // permanently break wifi_sta's state tracking).
+    WiFi.disconnect(true);
+    delay(10);
     s_active = false;
 }
 

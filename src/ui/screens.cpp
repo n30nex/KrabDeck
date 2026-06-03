@@ -6793,6 +6793,11 @@ void screens_clear_back_btn()
     s_back_btn = nullptr;
 }
 
+void screens_clear_wifi_icon()
+{
+    g_wifi_icon = nullptr;
+}
+
 // ════════════════════════════════════════════════════════
 // Device PIN protection
 // ════════════════════════════════════════════════════════

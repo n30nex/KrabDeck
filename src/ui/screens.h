@@ -57,6 +57,9 @@ void update_wifi_status();
 void highlight_back_button(bool show);
 
 // Clear the saved back-button reference (call when switching to a screen without
-// a back button, e.g. Home, Chat, Onboarding).
+// Called by home_screen (and others) to null dangling pointer refs.
 void screens_clear_back_btn();
+// Null the WiFi icon pointer so update_wifi_status() doesn't
+// dereference a freed label after screen transitions.
+void screens_clear_wifi_icon();
 } // namespace sigurdos::ui

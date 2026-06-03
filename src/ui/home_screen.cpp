@@ -371,6 +371,7 @@ static void build_home_screen(lv_scr_load_anim_t anim, uint32_t duration)
     hashtag_label = nullptr;
     badge_obj     = nullptr;
     screens_clear_back_btn();
+    screens_clear_wifi_icon();
     time_label    = nullptr;
     batt_label    = nullptr;
     for (int i = 0; i < ICON_COUNT; i++) icon_tiles[i] = nullptr;
@@ -386,6 +387,8 @@ static void build_home_screen(lv_scr_load_anim_t anim, uint32_t duration)
         scr = top_bar = bottom_bar = grid = nullptr;
         time_label = batt_label = hashtag_label = badge_obj = nullptr;
         for (int i = 0; i < ICON_COUNT; i++) icon_tiles[i] = nullptr;
+        screens_clear_back_btn();
+        screens_clear_wifi_icon();
     }, LV_EVENT_DELETE, nullptr);
 
     create_top_bar();

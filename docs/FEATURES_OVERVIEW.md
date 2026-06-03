@@ -11,14 +11,14 @@ This document catalogs every feature in the firmware — the 12-grid home screen
 - [Overview](#overview)
 - [Home Screen — 12-Grid Tiles](#home-screen--12-grid-tiles)
   - [CHATS](#1-chats)
-  - [CONTACTS](#2-contacts)
-  - [REPEATERS](#3-repeaters)
-  - [FINDER](#4-finder)
-  - [PACKETS](#5-packets)
-  - [MAP](#6-map)
-  - [ADVERTISE](#7-advertise)
-  - [SETTINGS](#8-settings)
-  - [TRACE](#9-trace)
+  - [DMs](#2-dms)
+  - [ROOMS](#3-rooms)
+  - [CONTACTS](#4-contacts)
+  - [REPEATERS](#5-repeaters)
+  - [PACKETS](#6-packets)
+  - [MAP](#7-map)
+  - [ADVERTISE](#8-advertise)
+  - [SETTINGS](#9-settings)
   - [TERMINAL](#10-terminal)
   - [SETUP](#11-setup)
   - [SIGNAL](#12-signal)
@@ -74,37 +74,37 @@ See [`src/ui/home_screen.cpp`](../src/ui/home_screen.cpp), [`src/ui/home_screen.
 Full multi-channel chat with message bubbles, channel tabs, and text input. Supports hashtag channels and direct messages. Loads and persists per-channel message history from SPIFFS.
 **Sources:** [`src/ui/chat_screen.cpp`](../src/ui/chat_screen.cpp), [`src/ui/chat_screen.h`](../src/ui/chat_screen.h)
 
-### 2. CONTACTS
+### 2. DMs
+Direct Messages tab within the Chat screen.
+**Map:** `Screen::Chat`
+
+### 3. ROOMS
+Room servers tab.
+**Map:** `Screen::Contacts`
+
+### 4. CONTACTS
 List of discovered mesh nodes (up to 64) with LRU eviction. Shows contact names, RSSI, location/path metadata, ACL permission role, QR sharing, telemetry action, and promote/demote controls in Contact Detail.
 **Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp), [`src/mesh/mesh_wrapper.h`](../src/mesh/mesh_wrapper.h), [`src/mesh/sigurd_mesh_v2.h`](../src/mesh/sigurd_mesh_v2.h), [`src/app/qr_show.cpp`](../src/app/qr_show.cpp)
 
-### 3. REPEATERS
+### 5. REPEATERS
 Network / signal view showing nearby nodes sorted by signal strength. Routes to the Network screen.
 **Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp)
 
-### 4. FINDER
-Active node discovery via zero-hop "Ping Nearby" (TTL=1 CONTROL packets). Collects PONG responses over a 3-second window, shows responders with RSSI, enforces a 30-second cooldown, and answers MeshCore Node Discovery Protocol requests (`0x80`/`0x90`) for repeater/sensor interoperability.
-**Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp), [`src/mesh/sigurd_mesh_v2.h`](../src/mesh/sigurd_mesh_v2.h), [`src/mesh/mesh_wrapper.h`](../src/mesh/mesh_wrapper.h)
-
-### 5. PACKETS
+### 6. PACKETS
 Heard packets log — a running list of all received radio packets with timestamp, source, RSSI, SNR, and packet type (ADVERT, DM, GRP, TRACE, etc.).
 **Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp), [`src/mesh/mesh_wrapper.h`](../src/mesh/mesh_wrapper.h) (lines 27–33, 77–79)
 
-### 6. MAP
+### 7. MAP
 Offline map view using PNG tiles from SD card. Renders a tile grid on an LVGL canvas with pan and zoom, uses PSRAM-backed tile cache, shows own GPS position, and overlays tappable contact-location markers.
 **Sources:** [`src/app/map_renderer.cpp`](../src/app/map_renderer.cpp), [`src/app/map_renderer.h`](../src/app/map_renderer.h), [`src/app/tile_cache.h`](../src/app/tile_cache.h), [`src/ui/screens.cpp`](../src/ui/screens.cpp)
 
-### 7. ADVERTISE
+### 8. ADVERTISE
 Send a manual mesh advert broadcast to announce your node's presence on the network. Optionally includes GPS coordinates if a fix is available.
 **Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp), [`src/mesh/mesh_wrapper.h`](../src/mesh/mesh_wrapper.h) (lines 61–64)
 
-### 8. SETTINGS
+### 9. SETTINGS
 Device configuration screen. Includes node/radio status, Radio Setup/Custom RF, keyboard/chat/display toggles, client repeat, multi-ACK, device PIN, WiFi credentials, AP OTA upload, GitHub OTA download, storage display, reboot, shutdown, factory reset, and version info.
 **Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp), [`src/hal/prefs.h`](../src/hal/prefs.h), [`src/hal/wifi_ota.cpp`](../src/hal/wifi_ota.cpp), [`src/hal/github_ota.cpp`](../src/hal/github_ota.cpp)
-
-### 9. TRACE
-Network trace route — sends a trace packet along a known path to a contact and displays the per-hop SNR and node hashes returned.
-**Sources:** [`src/ui/screens.cpp`](../src/ui/screens.cpp), [`src/mesh/mesh_wrapper.h`](../src/mesh/mesh_wrapper.h), [`src/mesh/sigurd_mesh_v2.h`](../src/mesh/sigurd_mesh_v2.h)
 
 ### 10. TERMINAL
 Serial-like terminal screen for diagnostics and utility commands. Includes `help`, status/advert/ping, message signing (`sign <data>`), identity backup (`exportkey`/`importkey`), URI import (`import meshcore://...`), fetch/group-data commands, custom vars, and log clearing.
@@ -149,7 +149,7 @@ Signal diagnostics screen showing current RSSI, noise floor, SNR, and signal qua
 **Sources:** [`src/mesh/mesh_wrapper.cpp`](../src/mesh/mesh_wrapper.cpp), [`src/mesh/mesh_wrapper.h`](../src/mesh/mesh_wrapper.h), [`src/mesh/sigurd_mesh_v2.h`](../src/mesh/sigurd_mesh_v2.h), [`lib/meshcore/`](../lib/meshcore/)
 
 ### Screen Navigation
-- **Screen enum** with 14 screen IDs (Home, Chat, Contacts, Channels, Network, Heard, Map, Advertise, Settings, Trace, Terminal, Signal, RadioSetup, Onboarding)
+- **Screen enum** with 24 screen IDs (Home, Chat, Contacts, Channels, Network, Heard, Map, Advertise, Settings, Trace, Terminal, Signal, RadioSetup, Repeaters, Onboarding, ContactDetail, SettingsRadio, SettingsGPS, SettingsDisplay, SettingsSystem, NodeStats, Telemetry, NodeStatus, WiFiNetworks)
 - **Slide transitions** — configurable `lv_scr_load_anim` with direction and duration
 - **Back stack** — linear stack (drops oldest when full, no wrapping), with `can_go_back()` and `go_back()`
 - **Universal back-swipe** — two-swipe commit pattern: first Left neutralises, second Left triggers back
@@ -179,7 +179,11 @@ Signal diagnostics screen showing current RSSI, noise floor, SNR, and signal qua
 - **Montserrat wrappers** — 8 size variants (10–28px) with emoji fallback registered
 - **Fallback registration** — `emoji_font_register_fallback()` callable once at init
 - **Indexed access** — `emoji_font_get_count()` / `emoji_font_get_by_index()` for enumeration
-**Sources:** [`src/fonts/emoji_font.h`](../src/fonts/emoji_font.h), [`src/fonts/emoji_font_setup.cpp`](../src/fonts/emoji_font_setup.cpp), [`src/fonts/emoji_data.h`](../src/fonts/emoji_data.h)
+**Sources:** [`src/fonts/emoji_font.h`](../src/fonts/emoji_font.h), [`src/fonts/emoji_font_setup.cpp`](../src/fonts/emoji_font_setup.cpp), [`src/fonts/emoji_data.cpp`](../src/fonts/emoji_data.cpp), [`src/fonts/emoji_data.h`](../src/fonts/emoji_data.h), [`src/fonts/emoji_font.c`](../src/fonts/emoji_font.c), [`src/fonts/emoji_images/emoji_picker_images.h`](../src/fonts/emoji_images/emoji_picker_images.h), [`src/fonts/emoji_images/emoji_picker_index.h`](../src/fonts/emoji_images/emoji_picker_index.h)
+
+### UTF-8 Utilities
+- **`utf8_truncate()`** — byte-level truncation that avoids splitting multi-byte codepoints
+**Sources:** [`src/utils/utf8_util.h`](../src/utils/utf8_util.h)
 
 ### NVS Preferences
 - **NodePrefs struct** — persisted in ESP32 NVS: node/radio config, keyboard backlight, message cap, node type, multi-ACK, buzzer quiet, client repeat, device PIN, and WiFi credentials for GitHub OTA
@@ -312,8 +316,8 @@ Signal diagnostics screen showing current RSSI, noise floor, SNR, and signal qua
 
 ### Buzzer
 - **Pin:** GPIO 46 (active low)
-- Pin is defined in the HAL pinout but no active software driver module exists yet.
-**Sources:** [`src/hal/tdeck_pins.h`](../src/hal/tdeck_pins.h) (line 107)
+- Driver with beep functions.
+**Sources:** [`src/hal/buzzer.cpp`](../src/hal/buzzer.cpp), [`src/hal/buzzer.h`](../src/hal/buzzer.h)
 
 ### Peripheral Power
 - **Control:** GPIO 10 — `PIN_PERIPH_PWR`
@@ -341,7 +345,7 @@ A dedicated app-level feature bridging the display, SD card, and GPS systems.
 
 ## Test Suite
 
-While not a user-facing feature, the comprehensive test suite (171+ tests across 13 modules) validates every subsystem:
+While not a user-facing feature, the comprehensive test suite (332 tests (1 skipped, 331 passed) across 19 modules) validates every subsystem:
 
 | Module | Tests | What's Covered |
 |--------|-------|----------------|
@@ -353,11 +357,17 @@ While not a user-facing feature, the comprehensive test suite (171+ tests across
 | `test_map` | 14 | Tile math (lat/lon→tile), zoom levels, bounding box |
 | `test_mesh_wrapper` | 13 | API signatures, return ranges, unread count init |
 | `test_navigation` | 12 | Forward/back, history stack, deep nav chains, all pairs |
+| `test_home_screen` | 12 | Home grid layout, tile rendering, top/bottom bars |
 | `test_gps` | 12 | NMEA parsing, coordinate conversion, fix detection |
 | `test_trackball` | 9 | Direction debounce, deadtime, click detection, idle calibration |
 | `test_pins` | 9 | GPIO ranges, SPI/I2C bus conflicts, duplication, LoRa params |
+| `test_layout` | 9 | Responsive layout helpers, column distribution, dialog sizing |
 | `test_theme` | 7 | Color darkness, vibrancy, distinctness, readability hierarchy |
+| `test_prefs` | 7 | NVS load/save, defaults, edge cases |
 | `test_build` | 7 | All headers compile together, cross-module API consistency |
+| `test_terminal` | 6 | Terminal command parsing, execution, edge cases |
+| `test_emoji` | 5 | Emoji font fallback, index access, rendering |
+| `test_chat_truncation` | 4 | Message truncation, UTF-8 safety, boundary conditions |
 
 See [`test/README.md`](../test/README.md) for full documentation.
 
@@ -369,9 +379,20 @@ See [`test/README.md`](../test/README.md) for full documentation.
 |----------|-------------|
 | [`README.md`](../README.md) | Project overview, quick start, hardware table |
 | [`AGENTS.md`](../AGENTS.md) | Full architecture guide, conventions, pitfalls (agent context) |
+| [`AGENT_GUIDE.md`](../AGENT_GUIDE.md) | Agent onboarding and context reference |
+| [`CLAUDE.md`](../CLAUDE.md) | Claude Code agent context (mirror of AGENTS.md) |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Contribution workflow, PR checklist, coding standards |
 | [`docs/KNOWN_ISSUES.md`](KNOWN_ISSUES.md) | Tracked bugs, fixes, and workarounds |
+| [`docs/CHAT_SCREEN.md`](CHAT_SCREEN.md) | Chat screen UI and messaging documentation |
+| [`docs/HARDWARE.md`](HARDWARE.md) | Hardware pinout, peripherals, and configuration |
+| [`docs/HOME_SCREEN.md`](HOME_SCREEN.md) | Home screen layout and tile system documentation |
 | [`docs/MAP_SCREEN.md`](MAP_SCREEN.md) | Map screen and tile cache system documentation |
+| [`docs/MESH_NETWORKING.md`](MESH_NETWORKING.md) | Mesh networking protocol and features documentation |
 | [`docs/MISSING_FEATURES.md`](MISSING_FEATURES.md) | Companion parity audit: implemented, declined, and out-of-scope MeshCore deltas |
+| [`docs/NETWORK_SCREEN.md`](NETWORK_SCREEN.md) | Network screen documentation |
+| [`docs/ROADMAP.md`](ROADMAP.md) | Development roadmap and planned features |
+| [`docs/SETTINGS_SCREEN.md`](SETTINGS_SCREEN.md) | Settings screen documentation |
+| [`docs/SIGNAL_SCREEN.md`](SIGNAL_SCREEN.md) | Signal diagnostics screen documentation |
+| [`docs/TERMINAL.md`](TERMINAL.md) | Terminal screen documentation |
 | [`test/README.md`](../test/README.md) | Test suite structure, mock guidelines, running tests |
 | [`firmware/README.md`](../firmware/README.md) | Flash instructions, binary layout, web flasher |

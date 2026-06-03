@@ -30,7 +30,7 @@ esptool.py --chip esp32s3 --port /dev/ttyACM0 --baud 921600 \
 pio run -e SigurdOS_TDeck -t upload
 ```
 
-## Flash with web flasher (flasher.meshcore.io)
+## Flash with web flasher (flasher.sigurdos.dev)
 
 Use the **Custom Firmware** option and upload `sigurdos-tdeck-merged.bin`.  
 The flasher will flash the merged binary at offset 0x0.
@@ -42,6 +42,6 @@ The flasher will flash the merged binary at offset 0x0.
 | 0x0000 | Bootloader |
 | 0x8000 | Partition table |
 | 0xe000 | Boot app0 |
-| 0x10000 | SigurdOS firmware (`beta-0.1.30`) |
+| 0x10000 | SigurdOS firmware (`beta-0.1.39`) |
 
 Flash the merged binary at offset 0x0 — it contains everything needed to boot.

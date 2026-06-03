@@ -3,7 +3,7 @@
 ## Running Tests
 
 ```bash
-# Run all 323 tests on native platform (no hardware needed)
+# Run all 332 tests (331 passed, 1 skipped) on native platform (no hardware needed)
 pio test -e native_test -v
 
 # Run specific test file
@@ -31,6 +31,7 @@ test/
 ├── test_gps/                  # NMEA parsing, coordinate conversion, fix detection
 ├── test_home_screen/          # Home screen layout, icon grid, status bars
 ├── test_keyboard/             # Matrix scan, keymap, debounce, ghost detection
+├── test_layout/               # Layout regression tests, widget overlap detection
 ├── test_map/                  # Tile math (lat/lon→tile), zoom levels
 ├── test_mesh_messaging/       # Message queue, send/receive, channel ops
 ├── test_mesh_wrapper/         # Mesh API contract, return value ranges
@@ -48,12 +49,14 @@ test/
 
 | Module | Tests | Coverage |
 |--------|-------|----------|
+| Battery | 5 | ADC mV→% conversion, voltage divider math, edge cases |
 | Build integration | 7 | Header inclusion, API existence, cross-module consistency |
 | Chat truncation | 10 | Message truncation at max length, edge cases |
 | Emoji | 22 | Emoji font rendering, fallback, sizing |
 | GPS | 26 | NMEA parsing, coordinate conversion, fix detection |
 | Home screen | 16 | Layout, icon grid, status bar interactions |
 | Keyboard | 21 | Matrix scan, keymap, debounce, ghost detection, LVGL mapping |
+| Layout | 4 | Screen layout regression tests, widget overlap, row spacing |
 | Map renderer | 25 | Tile math (lat/lon→tile), zoom levels, bounding box |
 | Mesh messaging | 64 | Message queue, send/receive, channel ops, contact export |
 | Mesh wrapper | 22 | API signatures, return ranges, unread count init |

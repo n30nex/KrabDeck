@@ -4443,6 +4443,7 @@ void settings_system_show()
         lv_obj_t* btn_wifi = lv_list_add_btn(list, LV_SYMBOL_WIFI, buf);
         lv_obj_set_style_bg_color(btn_wifi, lv_color_hex(row % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
         lv_obj_set_style_bg_opa(btn_wifi, LV_OPA_COVER, 0);
+        lv_obj_set_style_text_color(btn_wifi, lv_color_hex(TEXT_PRIMARY), 0);
         lv_obj_add_event_cb(btn_wifi, [](lv_event_t*) {
             navigate_to(Screen::WiFiNetworks);
         }, LV_EVENT_CLICKED, nullptr);
@@ -4451,8 +4452,9 @@ void settings_system_show()
 
     // OTA firmware update (WiFi AP + web upload)
     lv_obj_t* btn_ota = lv_list_add_btn(list, LV_SYMBOL_WIFI, "  OTA Update");
-    lv_obj_set_style_bg_color(btn_ota, lv_color_hex(ACCENT), 0);
-    lv_obj_set_style_text_color(btn_ota, lv_color_hex(BG_PRIMARY), 0);
+    lv_obj_set_style_bg_color(btn_ota, lv_color_hex(row % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
+    lv_obj_set_style_bg_opa(btn_ota, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_color(btn_ota, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_add_event_cb(btn_ota, [](lv_event_t* e) {
         lv_obj_t* scr_ota = lv_obj_get_screen((lv_obj_t*)lv_event_get_target(e));
         auto dlg_sz = dialog_size(260, 120);
@@ -4497,11 +4499,13 @@ void settings_system_show()
             lv_obj_del_async(lv_obj_get_parent((lv_obj_t*)lv_event_get_target(ev)));
         }, LV_EVENT_CLICKED, nullptr);
     }, LV_EVENT_CLICKED, nullptr);
+    row++;
 
     // OTA from GitHub (WiFi STA + download)
     lv_obj_t* btn_gh_ota = lv_list_add_btn(list, LV_SYMBOL_DOWNLOAD, "  OTA from GitHub");
-    lv_obj_set_style_bg_color(btn_gh_ota, lv_color_hex(ACCENT), 0);
-    lv_obj_set_style_text_color(btn_gh_ota, lv_color_hex(BG_PRIMARY), 0);
+    lv_obj_set_style_bg_color(btn_gh_ota, lv_color_hex(row % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
+    lv_obj_set_style_bg_opa(btn_gh_ota, LV_OPA_COVER, 0);
+    lv_obj_set_style_text_color(btn_gh_ota, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_add_event_cb(btn_gh_ota, [](lv_event_t* e) {
         lv_obj_t* scr = lv_obj_get_screen((lv_obj_t*)lv_event_get_target(e));
         auto dlg_sz = dialog_size(280, 160);
@@ -4592,6 +4596,7 @@ void settings_system_show()
             lv_obj_del_async(dlg);
         }, LV_EVENT_CLICKED, nullptr);
     }, LV_EVENT_CLICKED, nullptr);
+    row++;
 
     // Shut down
     lv_obj_t* btn_shutdown = lv_list_add_btn(list, LV_SYMBOL_POWER, "  Shut down");
@@ -4962,6 +4967,7 @@ void settings_screen_show()
     // Category helpers — compact row with accent icon
     struct Cat { const char* icon; const char* label; Screen target; };
     Cat cats[] = {
+        {LV_SYMBOL_WIFI,    "WiFi",             Screen::WiFiNetworks},
         {LV_SYMBOL_WIFI,    "Radio / Mesh",     Screen::SettingsRadio},
         {LV_SYMBOL_GPS,     "GPS / Location",   Screen::SettingsGPS},
         {LV_SYMBOL_IMAGE,   "Display / UI",     Screen::SettingsDisplay},
@@ -4969,7 +4975,7 @@ void settings_screen_show()
         {LV_SYMBOL_SETTINGS,"Node Stats",       Screen::NodeStats},
     };
 
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 6; i++) {
         lv_obj_t* btn = lv_list_add_btn(list, cats[i].icon, cats[i].label);
         lv_obj_set_style_bg_color(btn, lv_color_hex(i % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
         lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);

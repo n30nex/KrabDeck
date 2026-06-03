@@ -538,9 +538,8 @@ If the issue involves physical input hardware (trackball, keyboard, touch, butto
 
 ## Versioning & Release
 
-Main + dev branch model:
-- `dev` — integration branch. All PRs merge here.
-- `main` — stable releases only.
+Single `dev` branch model:
+- `dev` — integration branch. All PRs merge here. There is no `main` branch; releases are tagged directly on `dev`.
 - Tags: `beta-0.1.XX` (zero-padded for correct sort: `beta-0.1.09` not `beta-0.1.9`). Current: `beta-0.1.38`
 
 **Release flow (maintainer only):**

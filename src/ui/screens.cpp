@@ -1012,7 +1012,7 @@ static void show_admin_cmd_dialog(const char* contact_name)
                                     const char* mid = full + 1500;
                                     while (*mid && *mid != '\n') mid++;
                                     if (*mid) mid++;
-                                    char mid_copy[2048];
+                                    static char mid_copy[2048];  // static to avoid 2KB on LVGL timer stack
                                     size_t copy_len = strlen(mid);
                                     if (copy_len >= sizeof(mid_copy)) copy_len = sizeof(mid_copy) - 1;
                                     memcpy(mid_copy, mid, copy_len);

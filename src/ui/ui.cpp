@@ -133,7 +133,7 @@ void loop()
         static uint32_t last_msg_poll = 0;
         if (millis() - last_msg_poll > 1000) {
             last_msg_poll = millis();
-            sigurdos::mesh::MeshMessage msgs[4];
+            static sigurdos::mesh::MeshMessage msgs[4];  // static to avoid ~1300B stack in loop()
             int n = sigurdos::mesh::pollMessages(msgs, 4);
             bool got_new = (n > 0);
             for (int i = 0; i < n; i++) {

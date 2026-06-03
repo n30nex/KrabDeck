@@ -73,10 +73,9 @@ static void fail(const char* msg) {
     setStatus(GitHubOTAState::Failed, 0, "Failed", msg);
     cleanupConnection();
     // Force a clean disconnect to reset any stale LWIP socket state
-    // after HTTP client deletion, but keep WiFi in STA mode so
-    // wifi_sta retains control (don't use WIFI_OFF — that would
-    // permanently break wifi_sta's state tracking).
-    WiFi.disconnect(true);
+    // after HTTP client deletion. Use disconnect() without args to
+    // clean LWIP without turning WiFi OFF (wifi_sta manages the mode).
+    WiFi.disconnect();
     delay(10);
     s_active = false;
 }
@@ -238,7 +237,7 @@ void loop() {
             size_t to_read = avail;
             if (to_read > DOWNLOAD_CHUNK) to_read = DOWNLOAD_CHUNK;
 
-            uint8_t buf[DOWNLOAD_CHUNK];
+            static uint8_t buf[DOWNLOAD_CHUNK];  // static to avoid 4KB stack allocation
             size_t read = stream->readBytes(buf, to_read);
             if (read == 0) break;
 

@@ -117,6 +117,14 @@ void setup()
 #if SIGURDOS_DEBUG_UI
     Serial.println("[boot] === SigurdOS T-Deck ready ===");
 #endif
+
+    // Auto-connect WiFi if credentials are saved
+    {
+        const sigurdos::NodePrefs& p = sigurdos::prefs_get();
+        if (p.wifi_ssid[0]) {
+            sigurdos::wifi_sta::beginConnect(p.wifi_ssid, p.wifi_password);
+        }
+    }
 }
 
 void loop()
@@ -136,6 +144,8 @@ void loop()
     sigurdos_display_loop();
     sigurdos::ota::loop();         // WiFi OTA web server
     sigurdos::github_ota::loop();  // GitHub OTA downloader
+    sigurdos::wifi_sta::loop();    // WiFi STA maintenance
+    sigurdos::ui::update_wifi_status();  // bottom bar WiFi icon
     {   // GPS enabled + interval gate
         static uint32_t last_gps_poll = 0;
         const sigurdos::NodePrefs& gp = sigurdos::prefs_get();

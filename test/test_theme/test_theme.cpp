@@ -23,6 +23,7 @@
  */
 #include <gtest/gtest.h>
 #include <cstdint>
+#include <cmath>
 
 // Include the actual theme header (compile-time constant validation)
 #include "ui/theme.h"
@@ -78,6 +79,31 @@ TEST_F(ThemeTest, MutedTextIsDimmerThanPrimary) {
     };
     EXPECT_GT(brightness(TEXT_PRIMARY), brightness(TEXT_SECONDARY));
     EXPECT_GT(brightness(TEXT_SECONDARY), brightness(TEXT_MUTED));
+}
+
+TEST_F(ThemeTest, MutedTextHasReadableDarkSurfaceContrast) {
+    using namespace sigurdos::theme;
+    auto channel = [](uint8_t v) -> double {
+        double c = v / 255.0;
+        return c <= 0.03928 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4);
+    };
+    auto luminance = [&](uint32_t c) -> double {
+        return 0.2126 * channel((c >> 16) & 0xFF)
+             + 0.7152 * channel((c >> 8) & 0xFF)
+             + 0.0722 * channel(c & 0xFF);
+    };
+    auto contrast = [&](uint32_t a, uint32_t b) -> double {
+        double la = luminance(a);
+        double lb = luminance(b);
+        double hi = la > lb ? la : lb;
+        double lo = la > lb ? lb : la;
+        return (hi + 0.05) / (lo + 0.05);
+    };
+
+    EXPECT_GE(contrast(TEXT_MUTED, BG_PRIMARY), 4.5);
+    EXPECT_GE(contrast(TEXT_MUTED, BG_SECONDARY), 4.5);
+    EXPECT_GE(contrast(TEXT_MUTED, BG_TERTIARY), 4.5);
+    EXPECT_GE(contrast(TEXT_MUTED, BG_INPUT), 4.5);
 }
 
 // ── All constants are non-zero ──────────────────────────

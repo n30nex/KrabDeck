@@ -93,7 +93,7 @@ static lv_display_t* lv_disp = nullptr;
 // Full-screen PSRAM buffer: 320×240×2 = 153,600 bytes.
 // Full rendering mode flushes the entire frame in one go,
 // which eliminates the multiple tear lines caused by partial flushes.
-static lv_color_t* draw_buf = nullptr;
+static uint8_t* draw_buf = nullptr;
 
 // ── Debug: expose last flush area for diagnostics ────────
 #if SIGURDOS_DEBUG_DISPLAY
@@ -178,19 +178,40 @@ static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px
 #endif
     uint32_t w = area->x2 - area->x1 + 1;
     uint32_t h = area->y2 - area->y1 + 1;
-    static constexpr uint32_t BYTES_PER_PX = 2;  // LV_COLOR_DEPTH=16, RGB565
-    uint32_t row_bytes = w * BYTES_PER_PX;
-    uint32_t stride = ((row_bytes + LV_DRAW_BUF_STRIDE_ALIGN - 1) /
-                       LV_DRAW_BUF_STRIDE_ALIGN) * LV_DRAW_BUF_STRIDE_ALIGN;
+    const lv_color_format_t cf = lv_display_get_color_format(disp);
+    const uint32_t bpp = lv_color_format_get_size(cf);
+    uint32_t row_bytes = w * bpp;
+    uint32_t stride = lv_draw_buf_width_to_stride(w, cf);
 
     tft.startWrite();
     tft.setAddrWindow(area->x1, area->y1, w, h);
-    if (stride == row_bytes) {
+    if (cf == LV_COLOR_FORMAT_RGB565 && stride == row_bytes) {
         tft.writePixels((lgfx::rgb565_t*)px_map, w * h);
-    } else {
+    } else if (cf == LV_COLOR_FORMAT_RGB565) {
         uint8_t* line = px_map;
         for (uint32_t i = 0; i < h; i++) {
             tft.writePixels((lgfx::rgb565_t*)line, w);
+            line += stride;
+        }
+    } else {
+        // Safety fallback if LVGL is built with a non-RGB565 native format:
+        // convert each row to RGB565 before writing to the ST7789.
+        static lgfx::rgb565_t line565[TFT_WIDTH];
+        uint8_t* line = px_map;
+        for (uint32_t y = 0; y < h; y++) {
+            for (uint32_t x = 0; x < w; x++) {
+                uint8_t r = 0, g = 0, b = 0;
+                const uint8_t* px = line + x * bpp;
+                if (cf == LV_COLOR_FORMAT_RGB888 && bpp >= 3) {
+                    r = px[0]; g = px[1]; b = px[2];
+                } else if (cf == LV_COLOR_FORMAT_XRGB8888 && bpp >= 4) {
+                    r = px[1]; g = px[2]; b = px[3];
+                } else {
+                    r = g = b = px[0];
+                }
+                line565[x] = lgfx::color565(r, g, b);
+            }
+            tft.writePixels(line565, w);
             line += stride;
         }
     }
@@ -243,12 +264,60 @@ static void lvgl_kb_cb(lv_indev_t* indev, lv_indev_data_t* data)
     sigurdos_keyboard_scan();   // force a fresh poll (catches first key after focus)
     int key = sigurdos_keyboard_get_key();
     if (key > 0 && sigurdos_keyboard_consume_event()) {
-        // Always route keyboard input to the chat textarea when the chat
-        // messaging view is active, so the text box stays ready to type in.
+        // Route keyboard input to the chat textarea only when the chat
+        // screen is the active screen — never steal focus from other
+        // textareas (WiFi password dialog, etc.).
         lv_obj_t* chat_input = sigurdos::ui::chat_screen_get_input_field();
-        if (chat_input) {
+        if (chat_input && lv_obj_is_valid(chat_input)) {
+            lv_obj_t* chat_scr = lv_obj_get_screen(chat_input);
+            lv_obj_t* act_scr = lv_scr_act();
+            if (chat_scr == act_scr) {
+                lv_group_t* g = lv_group_get_default();
+                if (g) lv_group_focus_obj(chat_input);
+            }
+        }
+
+        // For printable characters, ensure focus is on a textarea.
+        // The trackball (ENCODER indev) can accidentally move group
+        // focus to a button — if focus isn't a textarea, find one
+        // on the active screen and refocus it so keystrokes land.
+        if (key > 0x20 && key != 0x7F) {  // printable ASCII
             lv_group_t* g = lv_group_get_default();
-            if (g) lv_group_focus_obj(chat_input);
+            lv_obj_t* focused = g ? lv_group_get_focused(g) : nullptr;
+            if (!focused || !lv_obj_check_type(focused, &lv_textarea_class)) {
+                // Focus lost — walk the screen tree for any textarea
+                lv_obj_t* act_scr = lv_scr_act();
+                if (act_scr) {
+                    uint32_t cnt = lv_obj_get_child_cnt(act_scr);
+                    for (uint32_t i = 0; i < cnt; i++) {
+                        lv_obj_t* c = lv_obj_get_child(act_scr, i);
+                        // Check direct child
+                        if (lv_obj_check_type(c, &lv_textarea_class)) {
+                            lv_group_focus_obj(c);
+                            break;
+                        }
+                        // Check grandchildren (textareas in dialogs)
+                        uint32_t gc = lv_obj_get_child_cnt(c);
+                        for (uint32_t j = 0; j < gc; j++) {
+                            lv_obj_t* gc_obj = lv_obj_get_child(c, j);
+                            if (lv_obj_check_type(gc_obj, &lv_textarea_class)) {
+                                lv_group_focus_obj(gc_obj);
+                                goto found;
+                            }
+                            // Check great-grandchildren
+                            uint32_t ggc = lv_obj_get_child_cnt(gc_obj);
+                            for (uint32_t k = 0; k < ggc; k++) {
+                                lv_obj_t* ggc_obj = lv_obj_get_child(gc_obj, k);
+                                if (lv_obj_check_type(ggc_obj, &lv_textarea_class)) {
+                                    lv_group_focus_obj(ggc_obj);
+                                    goto found;
+                                }
+                            }
+                        }
+                    }
+                    found:;
+                }
+            }
         }
 
         if (key == 0x08) data->key = LV_KEY_BACKSPACE;
@@ -321,31 +390,39 @@ bool sigurdos_display_init()
     lv_init();
     lv_tick_set_cb(sigurdos_display_millis);
     lv_disp = lv_display_create(TFT_WIDTH, TFT_HEIGHT);
+    lv_display_set_color_format(lv_disp, LV_COLOR_FORMAT_RGB565);
     lv_display_set_flush_cb(lv_disp, lvgl_flush_cb);
 
-    draw_buf = (lv_color_t*)heap_caps_malloc(
-        TFT_WIDTH * TFT_HEIGHT * sizeof(lv_color_t),
-        MALLOC_CAP_SPIRAM);
+    const lv_color_format_t cf = lv_display_get_color_format(lv_disp);
+    const uint32_t full_stride = lv_draw_buf_width_to_stride(TFT_WIDTH, cf);
+    const uint32_t full_buf_bytes = full_stride * TFT_HEIGHT;
+
+    draw_buf = (uint8_t*)heap_caps_malloc(full_buf_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (draw_buf) {
         lv_display_set_buffers(lv_disp, draw_buf, nullptr,
-                               TFT_WIDTH * TFT_HEIGHT * sizeof(lv_color_t),
+                               full_buf_bytes,
                                LV_DISPLAY_RENDER_MODE_FULL);
     } else {
         // Fallback: partial mode with a smaller DRAM buffer
-        // Allocate dynamically so the ~51 KB is only reserved when PSRAM fails,
+        // Allocate dynamically so the memory is only reserved when PSRAM fails,
         // not permanently in BSS/DRAM on every boot.
-        lv_color_t* fallback_buf = (lv_color_t*)heap_caps_malloc(
-            TFT_WIDTH * 80 * sizeof(lv_color_t),
+        const uint32_t partial_buf_bytes = full_stride * 80;
+        uint8_t* fallback_buf = (uint8_t*)heap_caps_malloc(
+            partial_buf_bytes,
             MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
         if (fallback_buf) {
             lv_display_set_buffers(lv_disp, fallback_buf, nullptr,
-                                   TFT_WIDTH * 80 * sizeof(lv_color_t),
+                                   partial_buf_bytes,
                                    LV_DISPLAY_RENDER_MODE_PARTIAL);
         } else {
             // Emergency fallback: tiny DRAM buffer — at least LVGL can render
-            static lv_color_t emergency_buf[TFT_WIDTH * 20];
+            static uint8_t emergency_buf[TFT_WIDTH * 20 * 2];
+            uint32_t emergency_bytes = full_stride * 20;
+            if (emergency_bytes > sizeof(emergency_buf)) {
+                emergency_bytes = sizeof(emergency_buf);
+            }
             lv_display_set_buffers(lv_disp, emergency_buf, nullptr,
-                                   TFT_WIDTH * 20 * sizeof(lv_color_t),
+                                   emergency_bytes,
                                    LV_DISPLAY_RENDER_MODE_PARTIAL);
             Serial.printf("[disp] WARNING: using emergency draw buffer\n");
         }
@@ -579,33 +656,27 @@ void sigurdos_display_capture_framebuffer()
 
     uint32_t w = TFT_WIDTH;
     uint32_t h = TFT_HEIGHT;
-    uint32_t stride = w * sizeof(lv_color_t);
-    uint32_t total_bytes = w * h * sizeof(lv_color_t);
+    uint32_t stride = lv_draw_buf_width_to_stride(w, LV_COLOR_FORMAT_RGB565);
+    uint32_t total_bytes = stride * h;
 
-    // If we have a PSRAM draw buffer, snapshot directly; otherwise allocate temp.
-    uint8_t* snap_buf = nullptr;
-    bool own_buf = false;
+    // Capture a stable LVGL snapshot instead of dumping the live draw buffer.
+    // The live full-screen PSRAM buffer can contain stale regions between
+    // refreshes; snapshot renders the active object tree into a clean buffer.
+    uint8_t* snap_buf = (uint8_t*)heap_caps_malloc(total_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!snap_buf) {
+        snap_buf = (uint8_t*)heap_caps_malloc(total_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+    if (!snap_buf) {
+        Serial.println("[capture] ERROR: no memory");
+        return;
+    }
 
-    if (draw_buf) {
-        snap_buf = (uint8_t*)draw_buf;
-    } else {
-        snap_buf = (uint8_t*)heap_caps_malloc(total_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        if (!snap_buf) {
-            snap_buf = (uint8_t*)malloc(total_bytes);
-        }
-        if (snap_buf) {
-            own_buf = true;
-            lv_draw_buf_t snap_db;
-            lv_draw_buf_init(&snap_db, w, h, LV_COLOR_FORMAT_RGB565, stride, snap_buf, total_bytes);
-            if (lv_snapshot_take_to_draw_buf(lv_scr_act(), LV_COLOR_FORMAT_RGB565, &snap_db) != LV_RES_OK) {
-                Serial.println("[capture] ERROR: snapshot failed");
-                free(snap_buf);
-                return;
-            }
-        } else {
-            Serial.println("[capture] ERROR: no memory");
-            return;
-        }
+    lv_draw_buf_t snap_db;
+    lv_draw_buf_init(&snap_db, w, h, LV_COLOR_FORMAT_RGB565, stride, snap_buf, total_bytes);
+    if (lv_snapshot_take_to_draw_buf(lv_scr_act(), LV_COLOR_FORMAT_RGB565, &snap_db) != LV_RES_OK) {
+        Serial.println("[capture] ERROR: snapshot failed");
+        heap_caps_free(snap_buf);
+        return;
     }
 
     Serial.printf("[capture] W=%lu H=%lu S=%lu\n",
@@ -631,8 +702,6 @@ void sigurdos_display_capture_framebuffer()
         }
     }
 
-    if (own_buf) {
-        free(snap_buf);
-    }
+    heap_caps_free(snap_buf);
     Serial.println("[capture] END");
 }

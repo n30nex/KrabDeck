@@ -47,6 +47,7 @@ enum class Screen {
     NodeStats,
     Telemetry,
     NodeStatus,
+    WiFiNetworks,
     COUNT
 };
 

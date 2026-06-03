@@ -30,4 +30,57 @@ bool isActive();
 const char* getIP();
 
 }  // namespace ota
+
+// ── WiFi Site Survey ─────────────────────────────────────
+namespace wifi_scan {
+
+struct APInfo {
+    char ssid[33];
+    int  rssi;
+    int  channel;
+    bool encrypted;
+};
+
+// Scan nearby WiFi access points. Returns count of found APs
+// (max 30). Caller provides buffer; results sorted by RSSI
+// (strongest first). WiFi is left in WIFI_OFF after scan.
+int scan(APInfo* out, int max_aps);
+
+}  // namespace wifi_scan
+
+// ── WiFi STA Client ──────────────────────────────────────
+namespace wifi_sta {
+
+enum class Status {
+    Idle,
+    Connecting,
+    Connected,
+    Failed
+};
+
+// Start connecting to an access point. Returns immediately.
+// Poll with getStatus() to check progress.
+void beginConnect(const char* ssid, const char* password);
+
+// Returns current connection status.
+Status getStatus();
+
+// Connect to an access point. Blocks up to 15s for connection.
+// Returns true if connected (WL_CONNECTED).
+// Prefer beginConnect() + timer polling for UI responsiveness.
+bool connect(const char* ssid, const char* password);
+
+// Disconnect and turn WiFi off.
+void disconnect();
+
+// Returns true if currently connected.
+bool isConnected();
+
+// Returns RSSI in dBm, or 0 if not connected.
+int getRSSI();
+
+// Call periodically from main loop to maintain connection.
+void loop();
+
+}  // namespace wifi_sta
 }  // namespace sigurdos

@@ -40,6 +40,30 @@ constexpr int CONTENT_H  = DISPLAY_H - CONTENT_Y - DIVIDER_H - BOT_BAR_H - SAFE_
 constexpr int CONTENT_X  = SAFE_LEFT;
 constexpr int CONTENT_W  = DISPLAY_W - SAFE_LEFT - SAFE_RIGHT;
 
+// ── Fixed bottom-row offsets ─────────────────────────────
+// LVGL bottom alignment uses offsets from the screen bottom. These helpers
+// keep stacked fixed rows above the bottom bar from covering each other or the
+// scrollable content area.
+constexpr int bottom_stack_offset(int row_index, int prev_row_h = 30, int gap = 4) {
+    return row_index * (prev_row_h + gap);
+}
+
+constexpr int bottom_aligned_top(int row_h, int offset_from_content_bottom) {
+    return DISPLAY_H - (BOT_BAR_H + DIVIDER_H + offset_from_content_bottom) - row_h;
+}
+
+constexpr int contact_acl_offset(bool is_room_type, bool room_logged_in) {
+    return room_logged_in ? 132 : (is_room_type ? 98 : 128);
+}
+
+constexpr int contact_qr_offset(bool is_room_type, bool room_logged_in) {
+    return room_logged_in ? 102 : (is_room_type ? 68 : 98);
+}
+
+constexpr int contact_bottom_reserved(bool is_room_type, bool room_logged_in) {
+    return CONTENT_H - ((bottom_aligned_top(22, contact_acl_offset(is_room_type, room_logged_in)) - 2) - CONTENT_Y);
+}
+
 // ── Hashtag label width — available space in top bar ─────
 // Leaves room for hamburger icon (left) and time label (right).
 inline int HASHTAG_LABEL_W() {

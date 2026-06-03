@@ -4,6 +4,7 @@
 // WiFi OTA implementation — WebServer-based firmware upload.
 
 #include "wifi_ota.h"
+#include "prefs.h"
 #include <WiFi.h>
 #include <WebServer.h>
 #include <Update.h>
@@ -162,4 +163,188 @@ const char* getIP() {
 }
 
 }  // namespace ota
+
+// ── WiFi Site Survey ─────────────────────────────────────
+namespace wifi_scan {
+
+int scan(APInfo* out, int max_aps) {
+    if (!out || max_aps <= 0) return 0;
+
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect();
+    delay(100);  // let radio settle
+
+    int n = WiFi.scanNetworks(false, false);  // async=false, show_hidden=false
+    if (n <= 0) {
+        WiFi.mode(WIFI_OFF);
+        return 0;
+    }
+
+    // Collect results, cap at buffer size
+    if (n > max_aps) n = max_aps;
+    for (int i = 0; i < n; i++) {
+        strncpy(out[i].ssid, WiFi.SSID(i).c_str(), sizeof(out[i].ssid) - 1);
+        out[i].ssid[sizeof(out[i].ssid) - 1] = '\0';
+        out[i].rssi      = WiFi.RSSI(i);
+        out[i].channel   = WiFi.channel(i);
+        out[i].encrypted = (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
+    }
+
+    WiFi.scanDelete();
+    // Keep WiFi in STA mode so beginConnect() doesn't have to
+    // re-initialize the MAC/BB/RF from cold (WIFI_OFF→STA has
+    // a known ESP32-S3 power-up erratum that can cause silent
+    // WiFi.begin() failure without sufficient settling time).
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect();
+    return n;
+}
+
+}  // namespace wifi_scan
+
+// ── WiFi STA Client ──────────────────────────────────────
+namespace wifi_sta {
+
+static bool     s_connected   = false;
+static int      s_rssi        = 0;
+static Status   s_status      = Status::Idle;
+static unsigned long s_conn_start = 0;
+
+void beginConnect(const char* ssid, const char* password) {
+    if (!ssid || !ssid[0]) {
+        s_status = Status::Failed;
+        return;
+    }
+    // WiFi should already be in STA mode from the scan, but ensure it.
+    WiFi.mode(WIFI_STA);
+    delay(100);  // let MAC/BB/RF settle after potential mode switch (ESP32-S3 erratum)
+    WiFi.begin(ssid, password);
+    s_status = Status::Connecting;
+    s_conn_start = millis();
+    s_connected = false;
+    s_rssi = 0;
+    Serial.printf("[wifi-sta] connecting to %s...\n", ssid);
+}
+
+Status getStatus() {
+    if (s_status != Status::Connecting) return s_status;
+
+    if (WiFi.status() == WL_CONNECTED) {
+        s_status = Status::Connected;
+        s_connected = true;
+        s_rssi = WiFi.RSSI();
+        Serial.printf("[wifi-sta] connected! (%d dBm)\n", s_rssi);
+        return Status::Connected;
+    }
+
+    // Timeout after 15 seconds
+    if (millis() - s_conn_start > 15000) {
+        WiFi.disconnect();
+        WiFi.mode(WIFI_OFF);
+        s_status = Status::Failed;
+        s_connected = false;
+        s_rssi = 0;
+        Serial.printf("[wifi-sta] connection timed out\n");
+        return Status::Failed;
+    }
+
+    return Status::Connecting;
+}
+
+bool connect(const char* ssid, const char* password) {
+    if (!ssid || !ssid[0]) return false;
+
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, password);
+
+    // Wait up to 15 seconds for connection
+    unsigned long start = millis();
+    while (millis() - start < 15000) {
+        if (WiFi.status() == WL_CONNECTED) {
+            s_connected = true;
+            s_rssi = WiFi.RSSI();
+            Serial.printf("[wifi-sta] connected to %s (%d dBm)\n", ssid, s_rssi);
+            return true;
+        }
+        delay(200);
+    }
+
+    WiFi.disconnect();
+    WiFi.mode(WIFI_OFF);
+    s_connected = false;
+    s_rssi = 0;
+    Serial.printf("[wifi-sta] failed to connect to %s\n", ssid);
+    return false;
+}
+
+void disconnect() {
+    if (s_connected || s_status == Status::Connecting) {
+        WiFi.disconnect();
+    }
+    WiFi.mode(WIFI_OFF);
+    s_connected = false;
+    s_rssi = 0;
+    s_status = Status::Idle;
+}
+
+bool isConnected() {
+    // Always check hardware — never rely solely on internal state.
+    // External code (github_ota, WiFi.begin from another path) can
+    // change the radio state without going through our state machine.
+    bool hw = (WiFi.status() == WL_CONNECTED);
+    if (hw) {
+        s_connected = true;
+        s_status = Status::Connected;
+    } else if (s_connected || s_status == Status::Connected) {
+        s_connected = false;
+        s_rssi = 0;
+        s_status = Status::Idle;
+    }
+    return s_connected;
+}
+
+int getRSSI() {
+    if (isConnected()) {
+        s_rssi = WiFi.RSSI();
+    }
+    return s_rssi;
+}
+
+void loop() {
+    // Always sync internal state with hardware (handles external
+    // reconnections, e.g. github_ota reusing an existing STA link).
+    bool hw = (WiFi.status() == WL_CONNECTED);
+
+    if (hw && !s_connected && s_status != Status::Connecting) {
+        // Hardware is connected but we didn't know — external reconnect.
+        s_connected = true;
+        s_rssi = WiFi.RSSI();
+        s_status = Status::Connected;
+        Serial.printf("[wifi-sta] reconnected externally (%d dBm)\n", s_rssi);
+    } else if (!hw && (s_connected || s_status == Status::Connected)) {
+        // Was connected, now not.
+        s_connected = false;
+        s_rssi = 0;
+        s_status = Status::Idle;
+        Serial.printf("[wifi-sta] disconnected\n");
+    }
+
+    // ── Auto-reconnect ──────────────────────────────────────
+    // If we have saved credentials and aren't connected/connecting,
+    // periodically attempt to reconnect (every 30 seconds).
+    if (!s_connected && s_status != Status::Connecting) {
+        static unsigned long last_reconnect = 0;
+        if (millis() - last_reconnect > 30000) {
+            last_reconnect = millis();
+            const NodePrefs& p = sigurdos::prefs_get();
+            if (p.wifi_ssid[0]) {
+                Serial.printf("[wifi-sta] auto-reconnecting to %s...\n",
+                              p.wifi_ssid);
+                beginConnect(p.wifi_ssid, p.wifi_password);
+            }
+        }
+    }
+}
+
+}  // namespace wifi_sta
 }  // namespace sigurdos

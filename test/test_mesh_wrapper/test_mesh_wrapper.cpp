@@ -27,6 +27,7 @@
 #include <gtest/gtest.h>
 #include "Arduino.h"
 #include <cstdint>
+#include <cstdio>
 
 // Include our mesh wrapper header (uses mocks for MeshCore)
 #include "mesh/mesh_wrapper.h"
@@ -220,7 +221,50 @@ TEST_F(MeshWrapperTest, NodeStatsCounterSignatures) {
     SUCCEED();
 }
 
-// ── Identity backup API surface ──
+// ACK tracking bridge
+
+TEST_F(MeshWrapperTest, AckCounterIncrementsOnRegister) {
+    int before = sigurdos::mesh::getAckCounter();
+
+    sigurdos::mesh::registerAckedMessage("AckNodeCounter353", 353001);
+
+    EXPECT_EQ(sigurdos::mesh::getAckCounter(), before + 1);
+}
+
+TEST_F(MeshWrapperTest, AckMatchingRequiresExactDestinationAndTimestamp) {
+    sigurdos::mesh::registerAckedMessage("AckNodeExact353", 353010);
+
+    EXPECT_TRUE(sigurdos::mesh::isMessageAcked("AckNodeExact353", 353010));
+    EXPECT_FALSE(sigurdos::mesh::isMessageAcked("AckNodeExact353", 353011));
+    EXPECT_FALSE(sigurdos::mesh::isMessageAcked("AckNodeOther353", 353010));
+    EXPECT_FALSE(sigurdos::mesh::isMessageAcked(nullptr, 353010));
+}
+
+TEST_F(MeshWrapperTest, NullAckDestinationDoesNotIncrementCounter) {
+    int before = sigurdos::mesh::getAckCounter();
+
+    sigurdos::mesh::registerAckedMessage(nullptr, 353020);
+
+    EXPECT_EQ(sigurdos::mesh::getAckCounter(), before);
+    EXPECT_FALSE(sigurdos::mesh::isMessageAcked(nullptr, 353020));
+}
+
+TEST_F(MeshWrapperTest, AckRingEvictsOldestEntry) {
+    static constexpr int kAckCapacity = 32;
+    static constexpr uint32_t kBaseTimestamp = 353100;
+
+    for (int i = 0; i <= kAckCapacity; i++) {
+        char dest[32];
+        snprintf(dest, sizeof(dest), "AckRing353_%02d", i);
+        sigurdos::mesh::registerAckedMessage(dest, kBaseTimestamp + i);
+    }
+
+    EXPECT_FALSE(sigurdos::mesh::isMessageAcked("AckRing353_00", kBaseTimestamp));
+    EXPECT_TRUE(sigurdos::mesh::isMessageAcked("AckRing353_01", kBaseTimestamp + 1));
+    EXPECT_TRUE(sigurdos::mesh::isMessageAcked("AckRing353_32", kBaseTimestamp + 32));
+}
+
+// Identity backup API surface
 
 TEST_F(MeshWrapperTest, ExportIdentitySignature) {
     using export_fn = bool (*)(char*, size_t);

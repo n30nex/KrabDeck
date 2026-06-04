@@ -100,6 +100,50 @@ void mock_push_packet(const char* source, int rssi, float snr, const char* type)
 
 void mock_clear_packets() { mock_pkt_count = 0; }
 
+// ACK tracking bridge
+static constexpr int MOCK_MAX_ACKED = 32;
+struct MockAckedMsg {
+    char dest[32];
+    uint32_t timestamp;
+};
+
+static MockAckedMsg mock_acked_msgs[MOCK_MAX_ACKED];
+static int mock_acked_head = 0;
+static int mock_acked_count = 0;
+static int mock_ack_counter = 0;
+
+void registerAckedMessage(const char* dest_name, uint32_t timestamp) {
+    if (!dest_name) return;
+
+    MockAckedMsg& a = mock_acked_msgs[mock_acked_head];
+    strncpy(a.dest, dest_name, sizeof(a.dest) - 1);
+    a.dest[sizeof(a.dest) - 1] = '\0';
+    a.timestamp = timestamp;
+
+    mock_acked_head = (mock_acked_head + 1) % MOCK_MAX_ACKED;
+    if (mock_acked_count < MOCK_MAX_ACKED) mock_acked_count++;
+    mock_ack_counter++;
+}
+
+bool isMessageAcked(const char* dest_name, uint32_t timestamp) {
+    if (!dest_name) return false;
+
+    int i = mock_acked_head;
+    for (int c = 0; c < mock_acked_count; c++) {
+        i--;
+        if (i < 0) i = MOCK_MAX_ACKED - 1;
+        if (mock_acked_msgs[i].timestamp == timestamp &&
+            strcmp(mock_acked_msgs[i].dest, dest_name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int getAckCounter() {
+    return mock_ack_counter;
+}
+
 // ── Test helpers ─────────────────────────────────
 
 void mock_push_message(const char* sender, const char* text) {

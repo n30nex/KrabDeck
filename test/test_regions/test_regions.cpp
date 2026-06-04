@@ -113,6 +113,42 @@ TEST(RegionsTest, SpiffsFileSizeWithEightRegions) {
     EXPECT_EQ(full_sz, 380u);
 }
 
+TEST(RegionsTest, RegionFileLoadCountRejectsShortHeader) {
+    EXPECT_EQ(sigurdos::mesh::detail::regionFileLoadCount(1, 3, 1), 0);
+}
+
+TEST(RegionsTest, RegionFileLoadCountRejectsZeroStoredCount) {
+    EXPECT_EQ(sigurdos::mesh::detail::regionFileLoadCount(
+                  0, sigurdos::mesh::detail::REGION_FILE_HEADER_SIZE, 1),
+              0);
+}
+
+TEST(RegionsTest, RegionFileLoadCountRejectsTruncatedPayload) {
+    const size_t one_region_file =
+        sigurdos::mesh::detail::REGION_FILE_HEADER_SIZE +
+        sizeof(sigurdos::mesh::SigurdRegion);
+
+    EXPECT_EQ(sigurdos::mesh::detail::regionFileLoadCount(2, one_region_file, 2), 0);
+}
+
+TEST(RegionsTest, RegionFileLoadCountAllowsCallerLimitedCompleteFile) {
+    const size_t four_region_file =
+        sigurdos::mesh::detail::REGION_FILE_HEADER_SIZE +
+        4 * sizeof(sigurdos::mesh::SigurdRegion);
+
+    EXPECT_EQ(sigurdos::mesh::detail::regionFileLoadCount(4, four_region_file, 2), 2);
+}
+
+TEST(RegionsTest, RegionFileLoadCountRejectsStoredCountAboveProjectLimit) {
+    const size_t oversized_file =
+        sigurdos::mesh::detail::REGION_FILE_HEADER_SIZE +
+        (SIGURD_MAX_REGIONS + 1) * sizeof(sigurdos::mesh::SigurdRegion);
+
+    EXPECT_EQ(sigurdos::mesh::detail::regionFileLoadCount(
+                  SIGURD_MAX_REGIONS + 1, oversized_file, SIGURD_MAX_REGIONS),
+              0);
+}
+
 // ── Key derivation golden vector ───────────────────────
 
 TEST(RegionsTest, DeriveKeyGoldenVectorDocumented) {

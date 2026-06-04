@@ -18,7 +18,21 @@
 // You should have received a copy of the GNU General Public License
 // along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
+#include "tdeck_pins.h"
 #include <cstdint>
+
+inline uint16_t sigurdos_battery_mv_from_adc_raw(uint16_t raw)
+{
+    return (uint16_t)((BAT_ADC_MULT * (float)raw) / 4096.0f);
+}
+
+inline uint8_t sigurdos_battery_pct_from_mv(uint16_t mv)
+{
+    const int32_t m = (int32_t)mv;
+    if (m <= BAT_MIN_MV) return 0;
+    if (m >= BAT_MAX_MV) return 100;
+    return (uint8_t)(((m - BAT_MIN_MV) * 100) / (BAT_MAX_MV - BAT_MIN_MV));
+}
 
 void sigurdos_battery_init();
 uint16_t sigurdos_battery_mv();        // millivolts

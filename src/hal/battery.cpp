@@ -35,15 +35,12 @@ uint16_t sigurdos_battery_mv()
         raw += analogRead(PIN_BAT_ADC);
     }
     raw /= samples;
-    return (uint16_t)((BAT_ADC_MULT * (float)raw) / 4096.0f);
+    return sigurdos_battery_mv_from_adc_raw((uint16_t)raw);
 }
 
 uint8_t sigurdos_battery_pct()
 {
-    int32_t mv = (int32_t)sigurdos_battery_mv();
-    if (mv <= BAT_MIN_MV) return 0;
-    if (mv >= BAT_MAX_MV) return 100;
-    return (uint8_t)(((mv - BAT_MIN_MV) * 100) / (BAT_MAX_MV - BAT_MIN_MV));
+    return sigurdos_battery_pct_from_mv(sigurdos_battery_mv());
 }
 
 bool sigurdos_battery_charging()

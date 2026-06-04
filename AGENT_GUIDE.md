@@ -48,27 +48,38 @@ src/
 │   ├── github_ota.cpp/h   # GitHub-release OTA download (WiFi STA, async, status/progress)
 │   └── sdcard.cpp/h       # SD card init, status, path helpers
 ├── mesh/
-│   ├── sigurd_mesh_v2.h    # MeshV2 (BaseChatMesh) — routing, channels, message handling, RSSI/SNR history, ACK tracking. V1 class removed (#290).
-│   └── mesh_wrapper.cpp/h  # Public API for the UI layer
+│   ├── sigurd_mesh_v2.h         # MeshV2 (BaseChatMesh) — routing, channels, message handling, RSSI/SNR history, ACK tracking. V1 class removed (#290).
+│   ├── mesh_wrapper.cpp/h       # Public API for the UI layer
+│   ├── channel_validation.cpp/h # Channel name validation (charset, length, prefix rules)
+│   └── regions.cpp/h            # Region frequency preset management (SPIFFS persistence, key derivation)
 ├── ui/
 │   ├── theme.h            # Colors, pixel helpers (apply_pixel_*)
 │   ├── responsive.h       # Display-size-agnostic layout helpers
 │   ├── home_screen.cpp/h  # 4x3 icon grid, top/bottom bars, battery/signal/time
 │   ├── chat_screen.cpp/h  # Channels, DM, message bubbles
-│   ├── screens.cpp/h      # Heard, Contacts, Contact Detail, Map, Settings, Trace, Terminal, Signal, Channels, Finder, Advertise, Radio Setup, Custom RF, Telemetry, Node Status, Node Stats
+│   ├── screens.cpp/h      # Heard, Contacts, Contact Detail, Map, Settings, Trace, Terminal, Signal, Channels, Finder, Advertise, Radio Setup, Custom RF, Telemetry, Node Status, Node Stats, Regions
 │   ├── onboarding_screen.cpp/h  # First-boot setup wizard
 │   ├── navigation.cpp/h   # Screen routing with slide transitions, universal back-swipe
 │   └── ui.cpp/h           # Splash→Home transition, main loop updates
 ├── app/
 │   ├── map_renderer.cpp/h # Offline map (PNG tiles via lodepng, PSRAM cache)
 │   ├── tile_cache.cpp/h   # Tile cache — LRU eviction (4 entries, uint64_t monotonic clock)
-│   └── lodepng_alloc.cpp  # lodepng allocator → PSRAM with DRAM fallback
+│   ├── lodepng_alloc.cpp  # lodepng allocator → PSRAM with DRAM fallback
+│   └── qr_show.cpp/h      # QR code display (ricmoo QRCode library, MIT)
 ├── diagnostics/
-│   ├── debug_cfg.h        # Per-feature debug flag selection (runtime toggle)
-│   └── debug.cpp/h        # Debug dumps (SIGURDOS_DEBUG=1 build)
+│   ├── debug_cfg.h            # Per-feature debug flag selection (runtime toggle)
+│   ├── debug.cpp/h            # Debug dumps (SIGURDOS_DEBUG=1 build)
+│   ├── telemetry.h            # Telemetry aggregation header
+│   ├── telemetry.cpp          # Telemetry core implementation
+│   ├── telemetry_collectors.cpp/h  # Telemetry data collectors (heap, PSRAM, RSSI)
+│   ├── telemetry_crash.cpp/h       # Crash telemetry (reboot reason, stack watermark)
+│   ├── telemetry_hb_ring.cpp/h     # Heartbeat ring buffer
+│   ├── telemetry_input.cpp/h       # Input event telemetry (trackball, keyboard, touch)
+│   └── telemetry_protocol.cpp/h    # Telemetry wire protocol (binary framing)
 ├── fonts/
-│   ├── emoji_font_setup.cpp    # Emoji font fallback registration for LVGL (header: emoji_font.h)
-│   ├── emoji_font.c/h          # Compiled emoji font bitmap data (16px, Noto Emoji derivative)
+│   ├── emoji_font_setup.cpp    # Emoji font fallback registration for LVGL
+│   ├── emoji_font.h            # Emoji font wrapping declarations
+│   ├── emoji_font.c            # Compiled emoji font bitmap data (16px, Noto Emoji derivative, 356KB)
 │   ├── emoji_data.cpp/h        # Discord-style emoji short name ↔ UTF-8 lookup (343 entries)
 │   └── emoji_images/           # Emoji picker image assets (generated)
 │       ├── emoji_picker_images.h
@@ -82,8 +93,6 @@ src/
 - `meshcore/` — Git submodule → MeshCore
 - `lodepng/` — PNG decode library (zlib license, PSRAM allocators)
 - `base64/` — Base64 encode/decode header
-```
-```
 
 ---
 
@@ -198,6 +207,7 @@ Use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 | 18 | Node Status (request & display remote node stats — battery, uptime, airtime, packet counters) | `screens.cpp` | ✅ |
 | 19 | WiFiNetworks (WiFi AP OTA firmware update + site survey, scan & display nearby access points, GitHub release OTA download) | `screens.cpp` | ✅ |
 | 20 | Node Stats (local node packet counters: sent/received flood+direct, TX/RX airtime, duty cycle budget, ACK counter) | `screens.cpp` | ✅ |
+| 21 | Regions (regional frequency preset management — active region selection, import/export, scope gating for flood scoping) | `screens.cpp` | ✅ |
 | — | Custom RF (sub-screen of Radio Setup — Freq, SF, BW, CR, Pwr text inputs with Apply) | `screens.cpp` | ✅ |
 | — | SettingsRadio (Radio/Mesh sub-screen — radio params, bandwidth/SF/tuning, duty cycle, RX gain) | `screens.cpp` | ✅ |
 | — | SettingsGPS (GPS/Location sub-screen — GPS enable toggle, read interval, location sharing) | `screens.cpp` | ✅ |
@@ -349,7 +359,7 @@ sigurdos::mesh::addTestRoomServer(name)        // Inject fake room server contac
 
 ## Testing
 
-**Current test count: 332** (331 passed, 1 skipped for native_test).
+**Current test count: 397** for native_test.
 
 ```bash
 pio test -e native_test -v       # All tests (no hardware)
@@ -378,6 +388,8 @@ Test modules:
 | `test_chat_truncation` | UTF-8 safe message truncation (emoji-aware byte cutting) |
 | `test_home_screen` | Home screen 4x3 grid layout, icon grid, top/bottom bar rendering |
 | `test_terminal` | Terminal screen capped line output, command dispatch |
+| `test_channel_validation` | Channel name validation rules (character set, length limits) |
+| `test_regions` | Region persistence (SPIFFS load/save), key derivation |
 
 **Critical rules:**
 - Tests use `test/test_<name>/` dirs with `main.cpp` entry points. Wrong naming = not discovered.
@@ -628,7 +640,7 @@ All known issues are documented in `docs/KNOWN_ISSUES.md`. Most previously track
 **Recently fixed (see `docs/KNOWN_ISSUES.md` for PR details):**
 - GPS NMEA checksum validation, Navigation history stack, Channel hash full compare, Contact expiry/eviction with LRU, Advert rate limiting at mesh layer, Null-termination on short payloads, LVGL tick starvation during TX, `lv_obj_del` in event handlers, Map screen static persistence, I2C bus speed race (400kHz touch), Trackball LEFT double-fire, `keyboard_consume_event` side effects, GT911 INT-pin-HIGH buffered event drop, TDeckBoard duplicate instances, Module static-init allocation ordering, Terminal unbounded labels, REPEATERS/PACKETS screen separation, GPS NMEA checksum, makeEpoch thread-safety, debug.h non-debug stubs, onboard restart flash write delay, screen dispatch code deduplication, SPI host pin contention, sendTrace indentation
 - **Previously synced:** Radio reception fix (SPI host moved to SPI2_HOST, channel hash full compare, auto-join Public), graceful shutdown from Settings, unread message badges on home screen, display brightness control, auto-backlight timeout, flood max hops setting, contact SNR display, TX/RX delay tuning in Settings, TX/RX airtime and packet statistics on Signal screen, GPS clock sync on first valid fix, Contact Detail screen (#180), Signal screen two-column layout (#183), iOS-style signal dots (#187), `setrf`/`reboot`/`advert` serial test commands (#189), channel deletion (#168/#169), NAV serial command (#35a7638), map canvas PSRAM allocation fix (#4a464f6), `SigurdOS_TDeck_remote_test_radio` env (#195), ROADMAP.md (#197), beta-0.1.36 release, V2/BaseChatMesh migration (Phase 0, #223/#224), per-contact RSSI/SNR history with sparkline chart (#236), message search in chat (#234), message delivery status (ACK ticks) in chat bubbles (#232), custom variables key-value store via terminal commands (Phase 2.6), auto-add contact type config (Phase 2.3), GPS enable/read-interval controls (Phase 2.5), `sendmessage` test controller command, `SigurdOS_TDeck_meshv2` and `SigurdOS_TDeck_remote_test_radio_meshv2` build envs
-- **Since last sync:** Settings organized into category sub-menus (Phase 2.7, #246), runtime theme system with 6 presets + NVS persistence (#244), PendingAck bugfix + 4 unpersisted NodePrefs fields (#249), beta-0.1.37 release, generic binary-request framework (Phase 4.1, #251), status request with UI — battery/uptime/airtime from remote node (Phase 4.2, #253), telemetry request with CayenneLPP parsing (Phase 4.3), path discovery with flood-force routing (Phase 4.4), repeater/room login with admin commands (Phase 4.5, #259), room server message fetch (Phase 4.6, #263), anonymous message send/receive (Phase 4.7, #260), group data datagrams (Phase 4.8, #265), dedicated repeater detail screen with login flow (#257/#258), repeater login with password save and compact UI, NAV serial entries for settings submenus and new screens, `SigurdOS_TDeck_remote_test_radio_testfreq` build env, `test_prefs` test module
+- **Since last sync:** Settings organized into category sub-menus (Phase 2.7, #246), runtime theme system with 6 presets + NVS persistence (#244), PendingAck bugfix + 4 unpersisted NodePrefs fields (#249), beta-0.1.37 release, generic binary-request framework (Phase 4.1, #251), status request with UI — battery/uptime/airtime from remote node (Phase 4.2, #253), telemetry request with CayenneLPP parsing (Phase 4.3), path discovery with flood-force routing (Phase 4.4), repeater/room login with admin commands (Phase 4.5, #259), room server message fetch (Phase 4.6, #263), anonymous message send/receive (Phase 4.7, #260), group data datagrams (Phase 4.8, #265), dedicated repeater detail screen with login flow (#257/#258), repeater login with password save and compact UI, NAV serial entries for settings submenus and new screens, `SigurdOS_TDeck_remote_test_radio_testfreq` build env, `test_prefs` test module, regions screen with flood-scope management (#330), channel name validation module, QR code display screen, telemetry diagnostics subsystem, `test_channel_validation` and `test_regions` test modules
 - **Currently synced:** Home screen DMs/ROOMS filter icons (#269), admin command terminal with live response polling, fav-toggle fix for login view, repeater login UI improvements (#266), RX boost preference test (#267), Phase 4 complete (4.1-4.8), Claude Code review fixes (#273), factory reset from Settings System + `factoryreset`/`wipe` test commands (#274), beta-0.1.38 release, remaining SlopOS ref cleanup, namespace rebrand (`slopos` → `sigurdos`, file renames), orphaned strdup fix in contacts_screen_show, LoginEntry::in_use default fix, meshcore submodule remote sync, V1 mesh class removal (#290), chat 149-byte cap (#291), channel delete confirmation dialog (#289), NodeStats screen (#288), Multi-ACK toggle (#296), node type selector (#298), buzzer notifications (#300), Reboot button (#314), storage usage display (#315), hop count / advert-path display (#316/#324), message signing (#317), telemetry answer-side (#318), client-repeat (#319), identity backup (#320), contact map markers (#321), URI import (#322), device PIN (#326), QR generation (#328), WiFi AP OTA (#329), Node Discovery Protocol (#331), and GitHub-release OTA download from Settings System.
 
 ---

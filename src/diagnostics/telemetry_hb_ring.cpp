@@ -24,6 +24,14 @@ static uint32_t     s_ring_head     = 0;   // next write position
 static uint32_t     s_ring_count    = 0;   // total entries ever written
 static bool         s_psram         = false;
 
+static uint32_t hb_ring_retained_count() {
+    return (s_ring_count < HB_RING_SIZE) ? s_ring_count : HB_RING_SIZE;
+}
+
+static uint32_t hb_ring_oldest_index() {
+    return s_ring_count - hb_ring_retained_count();
+}
+
 // ── Initialisation ─────────────────────────────────────
 
 void hb_ring_init() {
@@ -73,10 +81,15 @@ uint32_t hb_ring_count() {
 }
 
 bool hb_ring_get(uint32_t index, HbRingEntry* out) {
-    if (!s_ring || index >= s_ring_count) return false;
+    if (!s_ring || !out) return false;
 
-    // Physical slot = index % size (works for both wrapped and unwrapped)
-    uint32_t phys = index % HB_RING_SIZE;
+    const uint32_t oldest = hb_ring_oldest_index();
+    if (index < oldest || index >= s_ring_count) return false;
+
+    const uint32_t offset = index - oldest;
+    const uint32_t phys = (s_ring_count <= HB_RING_SIZE)
+        ? index
+        : ((s_ring_head + offset) % HB_RING_SIZE);
     *out = s_ring[phys];
     return true;
 }
@@ -101,7 +114,9 @@ uint32_t hb_ring_query(uint32_t n) {
         return 0;
     }
 
-    uint32_t start_idx = (total > n) ? (total - n) : 0;
+    uint32_t retained = hb_ring_retained_count();
+    uint32_t requested = (n < retained) ? n : retained;
+    uint32_t start_idx = total - requested;
     uint32_t emitted   = 0;
 
     // Emit header with total count

@@ -34,10 +34,6 @@ bool channel_name_valid(const char* name, const char** reason) {
         if (reason) *reason = "Name is empty after trimming";
         return false;
     }
-    if (len > MAX_CHAN_NAME) {
-        if (reason) *reason = "Name too long (max 31 chars)";
-        return false;
-    }
 
     // Optional leading '#' — skip for validation
     if (*start == '#') {
@@ -47,6 +43,11 @@ bool channel_name_valid(const char* name, const char** reason) {
             if (reason) *reason = "Name is just '#'";
             return false;
         }
+    }
+
+    if (len > MAX_CHAN_NAME) {
+        if (reason) *reason = "Name too long (max 31 chars)";
+        return false;
     }
 
     // Leading dash?
@@ -100,15 +101,18 @@ size_t channel_name_sanitise(char* name, size_t max_len) {
         memmove(name, start, len + 1);
     }
 
+    const size_t output_limit = max_len - 1;
+    const size_t effective_limit = output_limit < MAX_CHAN_NAME ? output_limit : MAX_CHAN_NAME;
+    if (len > effective_limit) {
+        len = effective_limit;
+    }
+
     // Lowercase
-    for (size_t i = 0; i < len && i < max_len; i++) {
+    for (size_t i = 0; i < len; i++) {
         name[i] = (char)tolower((unsigned char)name[i]);
     }
 
-    if (len >= max_len) {
-        name[max_len - 1] = '\0';
-        return max_len - 1;
-    }
+    name[len] = '\0';
 
     return len;
 }

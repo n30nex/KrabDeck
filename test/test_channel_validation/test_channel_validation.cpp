@@ -57,6 +57,11 @@ TEST(ChannelValidationTest, ValidMaxLengthName) {
     EXPECT_TRUE(sigurdos::mesh::channel_name_valid("abcdefghijklmnopqrstuvwxyz12345"));
 }
 
+TEST(ChannelValidationTest, ValidMaxLengthNameWithLeadingHash) {
+    // The leading '#' is display syntax and does not count toward the limit.
+    EXPECT_TRUE(sigurdos::mesh::channel_name_valid("#abcdefghijklmnopqrstuvwxyz12345"));
+}
+
 TEST(ChannelValidationTest, ValidNameWithLeadingHash) {
     // '#' is stripped before validation
     EXPECT_TRUE(sigurdos::mesh::channel_name_valid("#general"));
@@ -126,6 +131,14 @@ TEST(ChannelValidationTest, RejectsTooLongName) {
     // 32 chars — exceeds 31-char max
     const char* name = "abcdefghijklmnopqrstuvwxyz123456";
     EXPECT_FALSE(sigurdos::mesh::channel_name_valid(name));
+}
+
+TEST(ChannelValidationTest, RejectsTooLongNameWithLeadingHash) {
+    const char* reason = nullptr;
+    const char* name = "#abcdefghijklmnopqrstuvwxyz123456";
+    EXPECT_FALSE(sigurdos::mesh::channel_name_valid(name, &reason));
+    ASSERT_NE(reason, nullptr);
+    EXPECT_STREQ(reason, "Name too long (max 31 chars)");
 }
 
 TEST(ChannelValidationTest, RejectsNameWithMultipleInternalDashes) {
@@ -232,6 +245,22 @@ TEST(ChannelValidationTest, SanitiseMaxLengthClamps) {
     // 33-char string → clamps at 31 (when max_len = 32, NUL goes at index 31)
     char buf[64] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567";
     size_t len = sigurdos::mesh::channel_name_sanitise(buf, 32);
+    EXPECT_EQ(len, 31);
+    EXPECT_EQ(strlen(buf), 31);
+    EXPECT_STREQ(buf, "abcdefghijklmnopqrstuvwxyz12345");
+}
+
+TEST(ChannelValidationTest, SanitiseClampsToChannelMaxWithLargeBuffer) {
+    char buf[64] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567";
+    size_t len = sigurdos::mesh::channel_name_sanitise(buf, sizeof(buf));
+    EXPECT_EQ(len, 31);
+    EXPECT_EQ(strlen(buf), 31);
+    EXPECT_STREQ(buf, "abcdefghijklmnopqrstuvwxyz12345");
+}
+
+TEST(ChannelValidationTest, SanitiseHashPrefixDoesNotCountAgainstChannelMax) {
+    char buf[64] = "#ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567";
+    size_t len = sigurdos::mesh::channel_name_sanitise(buf, sizeof(buf));
     EXPECT_EQ(len, 31);
     EXPECT_EQ(strlen(buf), 31);
     EXPECT_STREQ(buf, "abcdefghijklmnopqrstuvwxyz12345");

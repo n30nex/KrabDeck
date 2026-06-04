@@ -25,6 +25,90 @@ static void expect_separated(int lower_h, int lower_offset, int upper_h, int upp
     EXPECT_LE(bottom_for(upper_h, upper_offset) + kStackGap, top_for(lower_h, lower_offset));
 }
 
+TEST(LayoutTest, ContentAreaFitsInsideDisplay) {
+    EXPECT_EQ(DISPLAY_W, 320);
+    EXPECT_EQ(DISPLAY_H, 240);
+    EXPECT_TRUE(IS_LANDSCAPE);
+    EXPECT_FALSE(IS_PORTRAIT);
+    EXPECT_FALSE(IS_SQUARE);
+
+    EXPECT_GE(CONTENT_X, 0);
+    EXPECT_GE(CONTENT_Y, TOP_BAR_H);
+    EXPECT_GT(CONTENT_W, 0);
+    EXPECT_GT(CONTENT_H, 0);
+    EXPECT_LE(CONTENT_X + CONTENT_W, DISPLAY_W);
+    EXPECT_LE(CONTENT_Y + CONTENT_H + BOT_BAR_H + DIVIDER_H, DISPLAY_H);
+}
+
+TEST(LayoutTest, BarHeightsStayReadableAndCompact) {
+    EXPECT_GE(TOP_BAR_H, 12);
+    EXPECT_LE(TOP_BAR_H, 28);
+    EXPECT_EQ(BOT_BAR_H, TOP_BAR_H - 2);
+    EXPECT_GT(BOT_BAR_H, 0);
+}
+
+TEST(LayoutTest, TDeckGridUsesFourColumns) {
+    GridLayout layout = compute_grid();
+    EXPECT_EQ(layout.cols, 4);
+}
+
+TEST(LayoutTest, HashtagLabelLeavesRoomForControls) {
+    EXPECT_EQ(HASHTAG_LABEL_W(), DISPLAY_W - 60);
+    EXPECT_GT(HASHTAG_LABEL_W(), CONTENT_W / 2);
+    EXPECT_LT(HASHTAG_LABEL_W(), DISPLAY_W);
+}
+
+TEST(LayoutTest, DialogSizeCapsToDisplayMargins) {
+    DialogSize capped = dialog_size(1000, 1000);
+    EXPECT_EQ(capped.w, DISPLAY_W - 32);
+    EXPECT_EQ(capped.h, DISPLAY_H - 32);
+
+    DialogSize unchanged = dialog_size(120, 80);
+    EXPECT_EQ(unchanged.w, 120);
+    EXPECT_EQ(unchanged.h, 80);
+}
+
+TEST(LayoutTest, CappedWidthUsesPercentLimit) {
+    EXPECT_EQ(capped_width(1000), (DISPLAY_W * 90) / 100);
+    EXPECT_EQ(capped_width(120), 120);
+    EXPECT_EQ(capped_width(1000, 50), DISPLAY_W / 2);
+}
+
+TEST(LayoutTest, BottomStackOffsetUsesRowHeightAndGap) {
+    EXPECT_EQ(bottom_stack_offset(0), 0);
+    EXPECT_EQ(bottom_stack_offset(1), 34);
+    EXPECT_EQ(bottom_stack_offset(2), 68);
+    EXPECT_EQ(bottom_stack_offset(2, 26, 6), 64);
+}
+
+TEST(LayoutTest, BottomAlignedRowsStayAboveFooter) {
+    constexpr int row_h = 30;
+    constexpr int offset = bottom_stack_offset(1);
+    constexpr int row_top = bottom_aligned_top(row_h, offset);
+    constexpr int row_bottom = row_top + row_h;
+
+    EXPECT_GT(row_top, CONTENT_Y);
+    EXPECT_LE(row_bottom + offset + kFooterBase, DISPLAY_H);
+}
+
+TEST(LayoutTest, BarWidgetHeightScalesFromContentArea) {
+    EXPECT_EQ(bar_widget_h(50), CONTENT_H / 2);
+    EXPECT_EQ(bar_widget_h(100), CONTENT_H);
+    EXPECT_GT(bar_widget_h(), 0);
+    EXPECT_LT(bar_widget_h(), CONTENT_H);
+}
+
+TEST(LayoutTest, ColumnOffsetsDistributeWeightedColumns) {
+    int weights[3] = {1, 1, 2};
+    int offsets[3] = {};
+
+    column_offsets(weights, 100, offsets, 10);
+
+    EXPECT_EQ(offsets[0], 10);
+    EXPECT_EQ(offsets[1], 35);
+    EXPECT_EQ(offsets[2], 60);
+}
+
 TEST(LayoutTest, ContactDetailNonRoomRowsDoNotOverlap) {
     constexpr bool is_room = false;
     constexpr bool logged_in = false;

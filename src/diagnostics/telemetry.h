@@ -70,6 +70,10 @@ void report_trackball_event(uint8_t direction);
 void push_packet_log(const char* sender, const char* channel,
                      const char* text, int rssi);
 
+inline const char* packet_log_field_or_empty(const char* value) {
+    return value ? value : "";
+}
+
 }  // namespace telemetry
 }  // namespace sigurdos
 

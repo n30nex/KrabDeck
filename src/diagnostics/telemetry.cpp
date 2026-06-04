@@ -191,13 +191,16 @@ static void init_pktlog() {
 void push_packet_log(const char* sender, const char* channel,
                      const char* text, int rssi) {
     if (!s_pktlog) return;
+    const char* sender_safe = packet_log_field_or_empty(sender);
+    const char* channel_safe = packet_log_field_or_empty(channel);
+    const char* text_safe = packet_log_field_or_empty(text);
     uint32_t idx = s_pktlog_head;
     s_pktlog[idx].timestamp = millis() / 1000;
-    strncpy(s_pktlog[idx].sender,  sender,  sizeof(s_pktlog[idx].sender) - 1);
+    strncpy(s_pktlog[idx].sender,  sender_safe,  sizeof(s_pktlog[idx].sender) - 1);
     s_pktlog[idx].sender[sizeof(s_pktlog[idx].sender) - 1] = '\0';
-    strncpy(s_pktlog[idx].channel, channel, sizeof(s_pktlog[idx].channel) - 1);
+    strncpy(s_pktlog[idx].channel, channel_safe, sizeof(s_pktlog[idx].channel) - 1);
     s_pktlog[idx].channel[sizeof(s_pktlog[idx].channel) - 1] = '\0';
-    strncpy(s_pktlog[idx].text,    text,    sizeof(s_pktlog[idx].text) - 1);
+    strncpy(s_pktlog[idx].text,    text_safe,    sizeof(s_pktlog[idx].text) - 1);
     s_pktlog[idx].text[sizeof(s_pktlog[idx].text) - 1] = '\0';
     s_pktlog[idx].rssi = rssi;
     s_pktlog_head = (s_pktlog_head + 1) % PKTLOG_SIZE;

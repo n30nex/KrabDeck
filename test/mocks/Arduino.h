@@ -26,6 +26,8 @@
 #include <cstring>
 #include <cstdio>
 #include <cmath>
+#include <cstdarg>
+#include <string>
 
 // ── Types ────────────────────────────────────────────────
 using byte = uint8_t;
@@ -102,9 +104,39 @@ public:
         if (_rx_pos < _rx_len) return _rx_buf[_rx_pos++];
         return -1;
     }
-    void print(const char*) {}
-    void println(const char*) {}
-    void printf(const char*, ...) {}
+    size_t write(uint8_t b) override {
+        _tx_buf.push_back((char)b);
+        return 1;
+    }
+    size_t write(const uint8_t* buf, size_t len) {
+        if (!buf) return 0;
+        _tx_buf.append((const char*)buf, len);
+        return len;
+    }
+    void print(const char* s) {
+        if (s) _tx_buf += s;
+    }
+    void print(char c) { _tx_buf.push_back(c); }
+    void print(int v) { append_format("%d", v); }
+    void print(unsigned int v) { append_format("%u", v); }
+    void print(long v) { append_format("%ld", v); }
+    void print(unsigned long v) { append_format("%lu", v); }
+    void println() { _tx_buf.push_back('\n'); }
+    void println(const char* s) {
+        print(s);
+        println();
+    }
+    void printf(const char* fmt, ...) {
+        if (!fmt) return;
+        char buf[256];
+        va_list ap;
+        va_start(ap, fmt);
+        int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+        va_end(ap);
+        if (n <= 0) return;
+        size_t len = (n < (int)sizeof(buf)) ? (size_t)n : sizeof(buf) - 1;
+        _tx_buf.append(buf, len);
+    }
     operator bool() const { return true; }
 
     void mock_clear_rx() {
@@ -118,11 +150,21 @@ public:
             _rx_buf[_rx_len++] = *data++;
         }
     }
+    void mock_clear_tx() { _tx_buf.clear(); }
+    const std::string& mock_tx_output() const { return _tx_buf; }
 
 private:
+    template <typename T>
+    void append_format(const char* fmt, T value) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), fmt, value);
+        _tx_buf += buf;
+    }
+
     char _rx_buf[512] = {};
     size_t _rx_pos = 0;
     size_t _rx_len = 0;
+    std::string _tx_buf;
 };
 extern HardwareSerial Serial;
 extern HardwareSerial Serial1;

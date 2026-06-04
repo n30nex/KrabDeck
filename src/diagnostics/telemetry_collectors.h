@@ -67,6 +67,10 @@ struct TaskWatermark {
     uint8_t  state;
 };
 
+inline bool task_watermark_output_valid(const TaskWatermark* out, uint8_t max) {
+    return out && max > 0;
+}
+
 // ── Collectors (fill a snapshot from hardware state) ──
 
 WifiSnapshot   collect_wifi();

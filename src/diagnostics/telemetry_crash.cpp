@@ -82,7 +82,7 @@ static void IRAM_ATTR crash_shutdown_handler(void) {
     g_crash_record.crash_pc = (uint32_t)__builtin_return_address(0);
     g_crash_record.crash_timestamp = (uint32_t)(esp_timer_get_time() / 1000);  // hw timer, safe during shutdown
     g_crash_record.backtrace_count = (uint8_t)capture_backtrace(
-        g_crash_record.backtrace_pcs, 8);
+        g_crash_record.backtrace_pcs, RTC_CRASH_BACKTRACE_CAPACITY);
 }
 
 // ── Public API ─────────────────────────────────────────
@@ -109,7 +109,8 @@ void init() {
         emit_end();
 
         // Emit backtrace frames
-        for (uint8_t i = 0; i < g_crash_record.backtrace_count; i++) {
+        uint8_t bt_count = bounded_backtrace_count(g_crash_record.backtrace_count);
+        for (uint8_t i = 0; i < bt_count; i++) {
             emit_tag(tag::BT);
             emit_sep();
             emit_kv_u(key::I, i);
@@ -155,7 +156,8 @@ void query() {
     uint32_t n = 1;  // CRASH line
 
     // Emit backtrace frames
-    for (uint8_t i = 0; i < g_crash_record.backtrace_count; i++) {
+    uint8_t bt_count = bounded_backtrace_count(g_crash_record.backtrace_count);
+    for (uint8_t i = 0; i < bt_count; i++) {
         emit_tag(tag::BT);
         emit_sep();
         emit_kv_u(key::I, i);

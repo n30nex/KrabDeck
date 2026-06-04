@@ -15,11 +15,14 @@ Full credit to the MeshCore Dev team! I won't ever accept any money or donations
 ## Test Suite
 
 ```bash
-# Run all 332 tests on native platform (no hardware needed) (1 skipped, 331 passed)
-pio test -e native_test -v
+# Run the native host-side suite (no hardware needed)
+pio test -e native_test
 
 # Run a specific test module
-pio test -e native_test -f test_battery -v
+pio test -e native_test -f test_battery
+
+# Build the firmware image for LilyGo T-Deck
+pio run -e SigurdOS_TDeck
 ```
 
 | Test Module | Tests | What's Covered |
@@ -106,7 +109,7 @@ SigurdOS-tdeck/
 │       └── ui.cpp/h        ← Splash → Home transition
 ├── boards/t-deck.json      ← PlatformIO board definition
 ├── platformio.ini          ← Build config (ESP32-S3 + LVGL + MeshCore)
-├── test/                   ← Unit test directory (19 modules, 332 tests)
++-- test/                   <- Native test suite and mocks
 ```
 
 ## Build & Flash

@@ -178,4 +178,26 @@ TEST_F(TrackballTest, NullEventPointerIsRejected) {
     EXPECT_FALSE(sigurdos_trackball_next_event(nullptr));
 }
 
+TEST_F(TrackballTest, InjectedInvalidEventsAreIgnored) {
+    sigurdos_trackball_inject(SigurdOSTrackballEvent::None);
+    sigurdos_trackball_inject(static_cast<SigurdOSTrackballEvent>(0xFF));
+
+    SigurdOSTrackballEvent event = SigurdOSTrackballEvent::None;
+    EXPECT_FALSE(next(&event));
+}
+
+TEST_F(TrackballTest, InjectedInvalidEventsDoNotDisruptValidOrdering) {
+    sigurdos_trackball_inject(static_cast<SigurdOSTrackballEvent>(0xFE));
+    sigurdos_trackball_inject(SigurdOSTrackballEvent::Up);
+    sigurdos_trackball_inject(SigurdOSTrackballEvent::None);
+    sigurdos_trackball_inject(SigurdOSTrackballEvent::Click);
+
+    SigurdOSTrackballEvent event = SigurdOSTrackballEvent::None;
+    ASSERT_TRUE(next(&event));
+    EXPECT_EQ(event, SigurdOSTrackballEvent::Up);
+    ASSERT_TRUE(next(&event));
+    EXPECT_EQ(event, SigurdOSTrackballEvent::Click);
+    EXPECT_FALSE(next(&event));
+}
+
 } // namespace

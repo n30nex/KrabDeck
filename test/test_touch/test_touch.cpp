@@ -23,6 +23,7 @@
  *        touch lifecycle (press → move → release), I2C register read simulation
  */
 #include <gtest/gtest.h>
+#include "hal/touch.h"
 #include "hal/tdeck_pins.h"
 #include "Arduino.h"
 #include <cstdint>
@@ -139,36 +140,6 @@ void transform_coords(const TouchMapping& m, uint16_t raw_x, uint16_t raw_y,
 }
 
 // ── Register parsing ─────────────────────────────────────
-struct TouchPoint {
-    int x, y;
-    bool valid;
-};
-
-bool parse_touch_point(const uint8_t* buf, int idx, TouchPoint* out,
-                       int max_x = 320, int max_y = 240)
-{
-    const uint8_t* p = buf + idx * 8;
-    uint16_t x = p[1] | ((uint16_t)p[2] << 8);
-    uint16_t y = p[3] | ((uint16_t)p[4] << 8);
-
-    // Invalid sentinel (GT911 uses 0xFFFF for no point)
-    if (x == 0xFFFF || y == 0xFFFF || (x == 0 && y == 0)) {
-        out->valid = false;
-        return false;
-    }
-
-    // Bounds check
-    if (x > (uint16_t)max_x || y > (uint16_t)max_y) {
-        out->valid = false;
-        return false;
-    }
-
-    out->x = x;
-    out->y = y;
-    out->valid = true;
-    return true;
-}
-
 // ════════════════════════════════════════════════════════
 // TEST FIXTURE
 // ════════════════════════════════════════════════════════
@@ -273,58 +244,71 @@ TEST_F(TouchTest, ParseValidPoint) {
     buf[6] = 0;
     buf[7] = 0;
 
-    TouchPoint pt;
-    bool ok = parse_touch_point(buf, 0, &pt);
+    uint16_t x = 0;
+    uint16_t y = 0;
+    bool ok = sigurdos_touch_parse_point_raw(buf, sizeof(buf), 0, &x, &y);
     EXPECT_TRUE(ok);
-    EXPECT_TRUE(pt.valid);
-    EXPECT_EQ(pt.x, 200);
-    EXPECT_EQ(pt.y, 150);
+    EXPECT_EQ(x, 200);
+    EXPECT_EQ(y, 150);
 }
 
 TEST_F(TouchTest, ParsePointWithHighBytes) {
     uint8_t buf[40] = {0};
-    // x=500 (0x01F4), y=300 (0x012C)
+    // x=239 (0x00EF), y=319 (0x013F)
     buf[0] = 0;
-    buf[1] = 0xF4;    // x_low
-    buf[2] = 0x01;    // x_high
-    buf[3] = 0x2C;    // y_low
+    buf[1] = 0xEF;    // x_low
+    buf[2] = 0x00;    // x_high
+    buf[3] = 0x3F;    // y_low
     buf[4] = 0x01;    // y_high
     buf[5] = 20;
     buf[6] = 0;
     buf[7] = 0;
 
-    TouchPoint pt;
-    bool ok = parse_touch_point(buf, 0, &pt, 800, 480);
+    uint16_t x = 0;
+    uint16_t y = 0;
+    bool ok = sigurdos_touch_parse_point_raw(buf, sizeof(buf), 0, &x, &y);
     EXPECT_TRUE(ok);
-    EXPECT_EQ(pt.x, 500);
-    EXPECT_EQ(pt.y, 300);
+    EXPECT_EQ(x, 239);
+    EXPECT_EQ(y, 319);
 }
 
 TEST_F(TouchTest, ParseZeroPointReturnsInvalid) {
     uint8_t buf[40] = {0};
     // All zeros in first 4 bytes = no touch
-    TouchPoint pt;
-    bool ok = parse_touch_point(buf, 0, &pt);
+    uint16_t x = 123;
+    uint16_t y = 456;
+    bool ok = sigurdos_touch_parse_point_raw(buf, sizeof(buf), 0, &x, &y);
     EXPECT_FALSE(ok);
-    EXPECT_FALSE(pt.valid);
+    EXPECT_EQ(x, 123);
+    EXPECT_EQ(y, 456);
 }
 
 TEST_F(TouchTest, ParseFFFFSentinelReturnsInvalid) {
     uint8_t buf[40];
     memset(buf, 0xFF, 40);
-    TouchPoint pt;
-    bool ok = parse_touch_point(buf, 0, &pt);
+    uint16_t x = 0;
+    uint16_t y = 0;
+    bool ok = sigurdos_touch_parse_point_raw(buf, sizeof(buf), 0, &x, &y);
     EXPECT_FALSE(ok);
-    EXPECT_FALSE(pt.valid);
 }
 
 TEST_F(TouchTest, ParseOOBPointReturnsInvalid) {
     uint8_t buf[40] = {0};
-    buf[1] = 0xFF;  buf[2] = 0x07; // x=2047, beyond 320 max
-    buf[3] = 0xFF;  buf[4] = 0x07; // y=2047
-    TouchPoint pt;
-    bool ok = parse_touch_point(buf, 0, &pt, 320, 240);
-    EXPECT_FALSE(ok);
+    uint16_t x = 0;
+    uint16_t y = 0;
+
+    buf[1] = TOUCH_SENSOR_X & 0xFF;
+    buf[2] = (TOUCH_SENSOR_X >> 8) & 0xFF;
+    buf[3] = 100;
+    buf[4] = 0;
+    EXPECT_FALSE(sigurdos_touch_parse_point_raw(buf, sizeof(buf), 0, &x, &y));
+
+    memset(buf, 0, sizeof(buf));
+    buf[1] = 100;
+    buf[2] = 0;
+    buf[3] = TOUCH_SENSOR_Y & 0xFF;
+    buf[4] = (TOUCH_SENSOR_Y >> 8) & 0xFF;
+    EXPECT_FALSE(sigurdos_touch_parse_point_raw(buf, sizeof(buf), 0, &x, &y));
 }
 
 TEST_F(TouchTest, ParseSecondPointInBuffer) {
@@ -338,11 +322,38 @@ TEST_F(TouchTest, ParseSecondPointInBuffer) {
     buf[11] = 80;
     buf[12] = 0;
 
-    TouchPoint pt;
-    bool ok = parse_touch_point(buf, 1, &pt);
+    uint16_t x = 0;
+    uint16_t y = 0;
+    bool ok = sigurdos_touch_parse_point_raw(buf, sizeof(buf), 1, &x, &y);
     EXPECT_TRUE(ok);
-    EXPECT_EQ(pt.x, 100);
-    EXPECT_EQ(pt.y, 80);
+    EXPECT_EQ(x, 100);
+    EXPECT_EQ(y, 80);
+}
+
+TEST_F(TouchTest, ParseNullArgumentsRejected) {
+    uint8_t buf[40] = {0};
+    uint16_t x = 0;
+    uint16_t y = 0;
+    EXPECT_FALSE(sigurdos_touch_parse_point_raw(nullptr, sizeof(buf), 0, &x, &y));
+    EXPECT_FALSE(sigurdos_touch_parse_point_raw(buf, sizeof(buf), 0, nullptr, &y));
+    EXPECT_FALSE(sigurdos_touch_parse_point_raw(buf, sizeof(buf), 0, &x, nullptr));
+}
+
+TEST_F(TouchTest, ParseShortBufferRejected) {
+    uint8_t buf[8] = {0};
+    buf[1] = 10;
+    buf[3] = 20;
+    uint16_t x = 0;
+    uint16_t y = 0;
+    EXPECT_FALSE(sigurdos_touch_parse_point_raw(buf, 7, 0, &x, &y));
+}
+
+TEST_F(TouchTest, ParseIndexOutOfRangeRejected) {
+    uint8_t buf[40] = {0};
+    uint16_t x = 0;
+    uint16_t y = 0;
+    EXPECT_FALSE(sigurdos_touch_parse_point_raw(
+        buf, sizeof(buf), SIGURDOS_TOUCH_GT911_MAX_POINTS, &x, &y));
 }
 
 // ── GT911 status register logic ─────────────────────────

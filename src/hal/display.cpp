@@ -270,6 +270,24 @@ static void lvgl_kb_cb(lv_indev_t* indev, lv_indev_data_t* data)
     sigurdos_keyboard_scan();   // force a fresh poll (catches first key after focus)
     int key = sigurdos_keyboard_get_key();
     if (key > 0 && sigurdos_keyboard_consume_event()) {
+        // ── Global shortcut: Alt+R = add current channel as region ──
+        // Only fires when the chat screen is active (has an input field).
+        if (sigurdos_keyboard_is_alt() && (key == 'r' || key == 'R')) {
+            lv_obj_t* ci = sigurdos::ui::chat_screen_get_input_field();
+            if (ci && lv_obj_is_valid(ci)) {
+                lv_obj_t* chat_scr = lv_obj_get_screen(ci);
+                if (chat_scr == lv_scr_act()) {
+                    const char* ch = sigurdos::ui::chat_screen_get_active_channel_name();
+                    if (ch && ch[0] == '#') {
+                        sigurdos::mesh::addRegion(ch, nullptr);
+                    }
+                }
+            }
+            sigurdos_keyboard_consume_key();
+            data->state = LV_INDEV_STATE_RELEASED;
+            return;
+        }
+
         // Route keyboard input to the chat textarea only when the chat
         // screen is the active screen — never steal focus from other
         // textareas (WiFi password dialog, etc.).

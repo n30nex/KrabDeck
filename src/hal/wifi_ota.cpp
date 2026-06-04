@@ -188,8 +188,8 @@ int scan(APInfo* out, int max_aps) {
         return 0;
     }
 
-    // Collect results, cap at buffer size
-    if (n > max_aps) n = max_aps;
+    // Collect results, cap at documented and caller-provided limits.
+    n = limitScanCount(n, max_aps);
     for (int i = 0; i < n; i++) {
         strncpy(out[i].ssid, WiFi.SSID(i).c_str(), sizeof(out[i].ssid) - 1);
         out[i].ssid[sizeof(out[i].ssid) - 1] = '\0';
@@ -197,6 +197,7 @@ int scan(APInfo* out, int max_aps) {
         out[i].channel   = WiFi.channel(i);
         out[i].encrypted = (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
     }
+    sortByRssi(out, n);
 
     WiFi.scanDelete();
     // Keep WiFi in STA mode so beginConnect() doesn't have to

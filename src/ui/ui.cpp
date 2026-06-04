@@ -89,7 +89,7 @@ void init()
 void loop()
 {
     // Transition from splash to home or onboarding after 2 seconds
-    if (!home_shown && (millis() - splash_start > 2000)) {
+    if (!home_shown && ui_splash_transition_elapsed(millis(), splash_start)) {
         const sigurdos::NodePrefs& p = sigurdos::prefs_get();
         // Show onboarding if: never saved prefs (fresh device) OR not yet configured
         if (!sigurdos::prefs_exists() || !p.configured) {

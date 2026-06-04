@@ -20,9 +20,19 @@
 
 
 #include "../hal/trackball.h"
+#include <cstdint>
 
 namespace sigurdos {
 namespace ui {
+
+static constexpr uint32_t UI_SPLASH_DURATION_MS = 2000;
+
+inline bool ui_splash_transition_elapsed(uint32_t now_ms,
+                                         uint32_t start_ms,
+                                         uint32_t duration_ms = UI_SPLASH_DURATION_MS)
+{
+    return static_cast<uint32_t>(now_ms - start_ms) > duration_ms;
+}
 
 void init();
 void loop();

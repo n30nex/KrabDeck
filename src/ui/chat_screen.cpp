@@ -101,9 +101,9 @@ static constexpr int TOP_H      = TOP_BAR_H;
 static constexpr int INPUT_H    = 35;
 // BOT_BAR_H, DIVIDER_H used directly from responsive namespace
 static constexpr int BUBBLE_PAD = 6;
-static constexpr uint16_t CHAT_MSGS_MAX         = 200;
-static constexpr uint16_t CHAT_MSGS_DEFAULT_CAP = 200;
-static constexpr uint16_t CHAT_MSGS_MIN_CAP     = 8;
+static constexpr uint16_t CHAT_MSGS_MAX         = CHAT_SCREEN_MESSAGE_CAP_MAX;
+static constexpr uint16_t CHAT_MSGS_DEFAULT_CAP = CHAT_SCREEN_MESSAGE_CAP_DEFAULT;
+static constexpr uint16_t CHAT_MSGS_MIN_CAP     = CHAT_SCREEN_MESSAGE_CAP_MIN;
 static constexpr int MAX_MSG_BYTES = 149; // max text bytes for mesh payload (MAX_PAYLOAD - 1)
 static constexpr int MAX_NAME_LEN  = 31;  // max chars for channel/contact names (buffer - null)
 static constexpr int MSG_LIST_Y    = TOP_H + DIVIDER_H;
@@ -170,11 +170,7 @@ static bool has_channel_buffer(int idx)
 
 static uint16_t chat_msg_cap()
 {
-    const uint16_t configured = sigurdos::prefs_get().chat_msg_cap;
-    if (configured == 0) return CHAT_MSGS_DEFAULT_CAP;
-    if (configured < CHAT_MSGS_MIN_CAP) return CHAT_MSGS_MIN_CAP;
-    if (configured > CHAT_MSGS_MAX) return CHAT_MSGS_MAX;
-    return configured;
+    return chat_screen_normalize_message_cap(sigurdos::prefs_get().chat_msg_cap);
 }
 
 static void trim_channel_history(int idx, uint16_t cap)
@@ -2336,10 +2332,7 @@ uint16_t chat_screen_get_message_cap()
 
 void chat_screen_set_message_cap(uint16_t cap)
 {
-    const uint16_t clamped =
-        (cap == 0) ? CHAT_MSGS_DEFAULT_CAP :
-        (cap < CHAT_MSGS_MIN_CAP ? CHAT_MSGS_MIN_CAP :
-         (cap > CHAT_MSGS_MAX ? CHAT_MSGS_MAX : cap));
+    const uint16_t clamped = chat_screen_normalize_message_cap(cap);
 
     sigurdos::NodePrefs np = sigurdos::prefs_get();
     np.chat_msg_cap = clamped;

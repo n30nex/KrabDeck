@@ -25,6 +25,19 @@
 
 namespace sigurdos::ui {
 
+// Chat message history cap bounds, per channel.
+static constexpr uint16_t CHAT_SCREEN_MESSAGE_CAP_MAX     = 200;
+static constexpr uint16_t CHAT_SCREEN_MESSAGE_CAP_DEFAULT = 200;
+static constexpr uint16_t CHAT_SCREEN_MESSAGE_CAP_MIN     = 8;
+
+inline uint16_t chat_screen_normalize_message_cap(uint16_t cap)
+{
+    if (cap == 0) return CHAT_SCREEN_MESSAGE_CAP_DEFAULT;
+    if (cap < CHAT_SCREEN_MESSAGE_CAP_MIN) return CHAT_SCREEN_MESSAGE_CAP_MIN;
+    if (cap > CHAT_SCREEN_MESSAGE_CAP_MAX) return CHAT_SCREEN_MESSAGE_CAP_MAX;
+    return cap;
+}
+
 // Create and show the chat screen
 void chat_screen_show();
 

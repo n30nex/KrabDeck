@@ -9,6 +9,68 @@
 // SAFETY: This module NEVER initializes the LoRa radio. No RF transmission
 // occurs in remote test mode. All mesh messages are simulated via injection.
 
+#include <cstdint>
+#include <cstdio>
+
+struct SigurdOSTestRfParams {
+    float freq;
+    uint8_t sf;
+    float bw;
+    uint8_t cr;
+    int8_t tx_power_dbm;
+};
+
+enum class SigurdOSTestRfParseResult : uint8_t {
+    Ok,
+    MissingArgs,
+    BadArgumentCount,
+    FrequencyOutOfRange,
+    SpreadingFactorOutOfRange,
+    BandwidthOutOfRange,
+    CodingRateOutOfRange,
+    TxPowerOutOfRange,
+};
+
+inline SigurdOSTestRfParseResult
+sigurdos_test_controller_parse_rf_params(const char* arg,
+                                         SigurdOSTestRfParams* out,
+                                         int* parsed_fields = nullptr) {
+    if (parsed_fields) *parsed_fields = 0;
+    if (!arg || !out) return SigurdOSTestRfParseResult::MissingArgs;
+
+    float freq = 0.0f;
+    int sf = 0;
+    float bw = 0.0f;
+    int cr = 0;
+    int tx_pwr = 0;
+    const int n = sscanf(arg, "%f %d %f %d %d", &freq, &sf, &bw, &cr, &tx_pwr);
+    if (parsed_fields) *parsed_fields = n;
+    if (n != 5) return SigurdOSTestRfParseResult::BadArgumentCount;
+
+    if (freq < 400.0f || freq > 1000.0f) {
+        return SigurdOSTestRfParseResult::FrequencyOutOfRange;
+    }
+    if (sf < 6 || sf > 12) {
+        return SigurdOSTestRfParseResult::SpreadingFactorOutOfRange;
+    }
+    if (bw < 7.8f || bw > 500.0f) {
+        return SigurdOSTestRfParseResult::BandwidthOutOfRange;
+    }
+    if (cr < 5 || cr > 8) {
+        return SigurdOSTestRfParseResult::CodingRateOutOfRange;
+    }
+    if (tx_pwr < 2 || tx_pwr > 22) {
+        return SigurdOSTestRfParseResult::TxPowerOutOfRange;
+    }
+
+    out->freq = freq;
+    out->sf = static_cast<uint8_t>(sf);
+    out->bw = bw;
+    out->cr = static_cast<uint8_t>(cr);
+    out->tx_power_dbm = static_cast<int8_t>(tx_pwr);
+    return SigurdOSTestRfParseResult::Ok;
+}
+
 void sigurdos_test_controller_init();
 void sigurdos_test_controller_loop();
 

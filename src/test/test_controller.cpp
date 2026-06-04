@@ -919,52 +919,43 @@ static void dump_focused_widget() {
 
 // ── Cmd: setrf ────────────────────────────────────────────
 static void cmd_setrf(const char* arg) {
-    if (!arg) {
-        Serial.println(F("[test] setrf: usage: setrf <freq> <sf> <bw> <cr> <tx_pwr>"));
-        Serial.println(F("[test] setrf: e.g. setrf 869.525 10 250 5 22"));
-        return;
-    }
-    float freq; int sf, cr, tx_pwr; float bw;
-    int n = sscanf(arg, "%f %d %f %d %d", &freq, &sf, &bw, &cr, &tx_pwr);
-    if (n != 5) {
-        Serial.printf("[test] setrf: expected 5 args, got %d\n", n);
-        return;
-    }
-    // Validate ranges
-    if (freq < 400.0f || freq > 1000.0f) {
-        Serial.println("[test] setrf: freq out of range (400-1000 MHz)");
-        return;
-    }
-    if (sf < 6 || sf > 12) {
-        Serial.println("[test] setrf: SF out of range (6-12)");
-        return;
-    }
-    if (bw < 7.8f || bw > 500.0f) {
-        Serial.println("[test] setrf: BW out of range (7.8-500 kHz)");
-        return;
-    }
-    if (cr < 5 || cr > 8) {
-        Serial.println("[test] setrf: CR out of range (5-8)");
-        return;
-    }
-    if (tx_pwr < 2 || tx_pwr > 22) {
-        Serial.println("[test] setrf: TX power out of range (2-22 dBm)");
+    SigurdOSTestRfParams rf{};
+    int parsed_fields = 0;
+    const SigurdOSTestRfParseResult parse =
+        sigurdos_test_controller_parse_rf_params(arg, &rf, &parsed_fields);
+    if (parse != SigurdOSTestRfParseResult::Ok) {
+        if (parse == SigurdOSTestRfParseResult::MissingArgs) {
+            Serial.println(F("[test] setrf: usage: setrf <freq> <sf> <bw> <cr> <tx_pwr>"));
+            Serial.println(F("[test] setrf: e.g. setrf 869.525 10 250 5 22"));
+        } else if (parse == SigurdOSTestRfParseResult::BadArgumentCount) {
+            Serial.printf("[test] setrf: expected 5 args, got %d\n", parsed_fields);
+        } else if (parse == SigurdOSTestRfParseResult::FrequencyOutOfRange) {
+            Serial.println("[test] setrf: freq out of range (400-1000 MHz)");
+        } else if (parse == SigurdOSTestRfParseResult::SpreadingFactorOutOfRange) {
+            Serial.println("[test] setrf: SF out of range (6-12)");
+        } else if (parse == SigurdOSTestRfParseResult::BandwidthOutOfRange) {
+            Serial.println("[test] setrf: BW out of range (7.8-500 kHz)");
+        } else if (parse == SigurdOSTestRfParseResult::CodingRateOutOfRange) {
+            Serial.println("[test] setrf: CR out of range (5-8)");
+        } else if (parse == SigurdOSTestRfParseResult::TxPowerOutOfRange) {
+            Serial.println("[test] setrf: TX power out of range (2-22 dBm)");
+        }
         return;
     }
 
     sigurdos::NodePrefs p = sigurdos::prefs_get();
-    p.freq = freq;
-    p.sf = (uint8_t)sf;
-    p.bw = bw;
-    p.cr = (uint8_t)cr;
-    p.tx_power_dbm = (int8_t)tx_pwr;
+    p.freq = rf.freq;
+    p.sf = rf.sf;
+    p.bw = rf.bw;
+    p.cr = rf.cr;
+    p.tx_power_dbm = rf.tx_power_dbm;
     p.configured = true;
 
     if (prefs_save(p)) {
         sigurdos::prefs_set(p);
         Serial.println(F("[test] setrf: radio params saved to NVS"));
         Serial.printf("[test] setrf: freq=%.3f SF=%d BW=%.1f CR=%d TX=%d dBm\n",
-                      freq, sf, bw, cr, tx_pwr);
+                      rf.freq, (int)rf.sf, rf.bw, (int)rf.cr, (int)rf.tx_power_dbm);
         Serial.println(F("[test] setrf: reboot to apply changes"));
     } else {
         Serial.println(F("[test] setrf: ERROR failed to save to NVS"));

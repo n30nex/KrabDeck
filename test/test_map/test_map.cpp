@@ -243,9 +243,34 @@ TEST_F(TileCacheTest, InitClearsAllSlots) {
     }
 }
 
+TEST_F(TileCacheTest, InitIgnoresInvalidInputs) {
+    cache[0].pixels = (uint16_t*)1;
+    cache[0].last_used = 99;
+
+    tile_cache_init(nullptr, TILE_CACHE_SIZE);
+    tile_cache_init(cache, 0);
+    tile_cache_init(cache, -1);
+
+    EXPECT_EQ(cache[0].pixels, (uint16_t*)1);
+    EXPECT_EQ(cache[0].last_used, 99U);
+}
+
 TEST_F(TileCacheTest, LookupEmptyCacheReturnsNull) {
     EXPECT_EQ(tile_cache_lookup(cache, TILE_CACHE_SIZE, 10, 512, 340, &clock), nullptr);
     EXPECT_EQ(clock, 0U); // clock not incremented on miss
+}
+
+TEST_F(TileCacheTest, LookupRejectsInvalidInputs) {
+    cache[0].pixels = (uint16_t*)1;
+    cache[0].zoom = 10;
+    cache[0].tx = 512;
+    cache[0].ty = 340;
+
+    EXPECT_EQ(tile_cache_lookup(nullptr, TILE_CACHE_SIZE, 10, 512, 340, &clock), nullptr);
+    EXPECT_EQ(tile_cache_lookup(cache, 0, 10, 512, 340, &clock), nullptr);
+    EXPECT_EQ(tile_cache_lookup(cache, -1, 10, 512, 340, &clock), nullptr);
+    EXPECT_EQ(tile_cache_lookup(cache, TILE_CACHE_SIZE, 10, 512, 340, nullptr), nullptr);
+    EXPECT_EQ(clock, 0U);
 }
 
 TEST_F(TileCacheTest, LookupReturnsEntryOnHit) {
@@ -292,6 +317,12 @@ TEST_F(TileCacheTest, EvictReturnsEmptySlotFirst) {
     ASSERT_NE(slot, nullptr);
     EXPECT_EQ(slot, &cache[0]);
     EXPECT_EQ(slot->pixels, nullptr);
+}
+
+TEST_F(TileCacheTest, EvictRejectsInvalidInputs) {
+    EXPECT_EQ(tile_cache_evict_slot(nullptr, TILE_CACHE_SIZE), nullptr);
+    EXPECT_EQ(tile_cache_evict_slot(cache, 0), nullptr);
+    EXPECT_EQ(tile_cache_evict_slot(cache, -1), nullptr);
 }
 
 TEST_F(TileCacheTest, EvictReturnsFirstNullAmongOccupied) {
@@ -401,4 +432,3 @@ TEST_F(TileCacheTest, SearchSmallerCache) {
 }
 
 } // anonymous namespace
-

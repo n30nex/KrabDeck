@@ -9,6 +9,8 @@
 #include "tile_cache.h"
 
 void tile_cache_init(CachedTile* cache, int count) {
+    if (!cache || count <= 0) return;
+
     for (int i = 0; i < count; i++) {
         cache[i].pixels = nullptr;
         cache[i].last_used = 0;
@@ -18,6 +20,8 @@ void tile_cache_init(CachedTile* cache, int count) {
 CachedTile* tile_cache_lookup(CachedTile* cache, int count,
                                int zoom, int tx, int ty,
                                uint64_t* clock) {
+    if (!cache || count <= 0 || !clock) return nullptr;
+
     for (int i = 0; i < count; i++) {
         if (cache[i].pixels &&
             cache[i].zoom == zoom &&
@@ -31,6 +35,8 @@ CachedTile* tile_cache_lookup(CachedTile* cache, int count,
 }
 
 CachedTile* tile_cache_evict_slot(CachedTile* cache, int count) {
+    if (!cache || count <= 0) return nullptr;
+
     int lru = 0;
     for (int i = 0; i < count; i++) {
         if (!cache[i].pixels) return &cache[i];

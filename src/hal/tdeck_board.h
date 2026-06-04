@@ -18,7 +18,7 @@
 // You should have received a copy of the GNU General Public License
 // along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
-
+#include <cstdint>
 #include <Arduino.h>
 #include <Wire.h>
 #ifdef ESP32_PLATFORM
@@ -31,13 +31,19 @@
 
 namespace sigurdos {
 
+static constexpr uint16_t SIGURDOS_TDECK_AUTO_SHUTDOWN_MV = 3200;
+
+inline bool tdeck_battery_mv_is_critical(uint16_t millivolts) {
+    return millivolts > 0 && millivolts < SIGURDOS_TDECK_AUTO_SHUTDOWN_MV;
+}
+
 #ifdef SIGURDOS_TDECK
 class TDeckBoard : public ESP32Board {
     uint8_t  _startup_reason;
     bool     _inhibit_sleep;
 
     // Low-battery auto-shutdown (matches MeshCore's AUTO_SHUTDOWN_MILLIVOLTS pattern)
-    static constexpr uint16_t AUTO_SHUTDOWN_MV = 3200;   // 3.2V — critical battery level
+    static constexpr uint16_t AUTO_SHUTDOWN_MV = SIGURDOS_TDECK_AUTO_SHUTDOWN_MV;
     bool _shutdown_pending = false;
 
 public:
@@ -80,7 +86,7 @@ public:
     bool isBatteryCritical() {
         if (_shutdown_pending) return true;
         uint16_t mv = getBattMilliVolts();
-        if (mv > 0 && mv < AUTO_SHUTDOWN_MV) {
+        if (tdeck_battery_mv_is_critical(mv)) {
             _shutdown_pending = true;
             return true;
         }

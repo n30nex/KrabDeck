@@ -176,6 +176,19 @@ TEST(EmojiDataTest, NullPrefixReturnsZero) {
     EXPECT_EQ(n, 0) << "Null prefix should return 0";
 }
 
+TEST(EmojiDataTest, NullOutputReturnsZero) {
+    int n = emoji_search("smile", nullptr, 4);
+    EXPECT_EQ(n, 0) << "Null output buffer should return 0";
+}
+
+TEST(EmojiDataTest, NonPositiveMaxResultsReturnZero) {
+    EmojiEntry out[4];
+    EXPECT_EQ(emoji_search("smile", out, 0), 0)
+        << "Zero max_results should return 0";
+    EXPECT_EQ(emoji_search("smile", out, -1), 0)
+        << "Negative max_results should return 0";
+}
+
 TEST(EmojiDataTest, MaxResultsBound) {
     EmojiEntry out[3];
     int n = emoji_search("a", out, 3);

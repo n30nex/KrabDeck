@@ -4607,7 +4607,7 @@ void settings_system_show()
         }
 
         // Polling timer — finds label/bar from dialog children each tick
-        lv_timer_t* poll_timer = lv_timer_create([](lv_timer_t* t) {
+        (void)lv_timer_create([](lv_timer_t* t) {
             lv_obj_t* dlg = (lv_obj_t*)lv_timer_get_user_data(t);
             if (!dlg) { lv_timer_del(t); return; }
 
@@ -5179,7 +5179,7 @@ void terminal_screen_show()
             snprintf(result, sizeof(result), "Commands: help status advert ping sign anon fetchmsgs groupdata emoji-list exportkey importkey import getvar setvar delvar listvars");
         } else if (strncmp(cmd, "import ", 7) == 0) {
             const char* uri = cmd + 7;
-            while (*uri == ' ' || *uri == '\\t') uri++;
+            while (*uri == ' ' || *uri == '\t') uri++;
             if (!*uri) {
                 snprintf(result, sizeof(result), "Usage: import meshcore://contact/add?name=...&public_key=...&type=...  OR  import meshcore://channel/add?name=...&secret=...");
             } else if (strstr(uri, "channel/add")) {
@@ -6487,7 +6487,6 @@ static int g_wifi_ap_count = 0;
 
 static void wifi_do_scan(lv_timer_t* timer) {
     lv_obj_t* list = (lv_obj_t*)lv_timer_get_user_data(timer);
-    lv_obj_t* scr = lv_obj_get_screen(list);
     
     g_wifi_ap_count = sigurdos::wifi_scan::scan(g_wifi_aps, 30);
     g_wifi_scan_done = true;
@@ -6642,7 +6641,7 @@ static void wifi_do_scan(lv_timer_t* timer) {
                     sigurdos::wifi_sta::beginConnect(ssid_buf, pw);
 
                     // Poll connection status every 300ms
-                    lv_timer_t* poll = lv_timer_create([](lv_timer_t* timer) {
+                    (void)lv_timer_create([](lv_timer_t* timer) {
                         lv_obj_t* dlg = (lv_obj_t*)lv_timer_get_user_data(timer);
                         if (!lv_obj_is_valid(dlg)) {
                             lv_timer_del(timer);
@@ -6805,7 +6804,7 @@ void node_status_screen_show()
         sigurdos::mesh::NodeStatus st;
         sigurdos::mesh::getStatusResult(&st);
 
-        char buf[32];
+        char buf[64];
 
         snprintf(buf, sizeof(buf), "%d mV (%.2fV)", st.batt_milli_volts,
                  (float)st.batt_milli_volts / 1000.0f);

@@ -1048,7 +1048,8 @@ public:
 
     uint8_t getLoginStatus(const char* name) const {
         int idx = findLoginEntry(name);
-        return idx >= 0 ? _login_entries[idx].status : LOGIN_NONE;
+        return idx >= 0 ? static_cast<uint8_t>(_login_entries[idx].status)
+                        : static_cast<uint8_t>(LOGIN_NONE);
     }
 
     // Send a login request to a repeater or room server contact.
@@ -1160,8 +1161,7 @@ public:
         for (int i = idx; i < n - 1; i++) {
             if (BaseChatMesh::getChannel(i + 1, tmp)) BaseChatMesh::setChannel(i, tmp);
         }
-        ChannelDetails empty;
-        memset(&empty, 0, sizeof(empty));
+        ChannelDetails empty{};
         BaseChatMesh::setChannel(n - 1, empty);
         return true;
     }
@@ -1198,8 +1198,7 @@ public:
             ChannelDetails t;
             if (BaseChatMesh::getChannel(i, t) && strcmp(t.name, name) == 0) return true;
         }
-        ChannelDetails cd;
-        memset(&cd, 0, sizeof(cd));
+        ChannelDetails cd{};
         int len = decode_b64(psk_base64, strlen(psk_base64),
                              cd.channel.secret, sizeof(cd.channel.secret));
         if (len != 32 && len != 16) return false;
@@ -1231,8 +1230,7 @@ public:
             if (BaseChatMesh::getChannel(i, t) && strcmp(t.name, normalized) == 0)
                 return true;
         }
-        ChannelDetails cd;
-        memset(&cd, 0, sizeof(cd));
+        ChannelDetails cd{};
         ::mesh::Utils::sha256(cd.channel.secret, CIPHER_KEY_SIZE,
                               (const uint8_t*)normalized, strlen(normalized));
         strncpy(cd.name, normalized, sizeof(cd.name) - 1);
@@ -1245,8 +1243,7 @@ public:
         if (!name || !name[0]) return false;
         int idx = getChannelCount();
         if (idx >= MAX_GROUP_CHANNELS) return false;
-        ChannelDetails cd;
-        memset(&cd, 0, sizeof(cd));
+        ChannelDetails cd{};
         size_t cpy = secret_len < sizeof(cd.channel.secret) ? secret_len
                                                             : sizeof(cd.channel.secret);
         memcpy(cd.channel.secret, secret, cpy);
@@ -1397,8 +1394,7 @@ public:
         if (!pub_key || !text || !text[0]) return false;
 
         // Build a temporary ContactInfo with the given pubkey
-        ::ContactInfo tmp;
-        memset(&tmp, 0, sizeof(tmp));
+        ::ContactInfo tmp{};
         memcpy(tmp.id.pub_key, pub_key, PUB_KEY_SIZE);
         tmp.out_path_len = OUT_PATH_UNKNOWN;
         tmp.type = ADV_TYPE_CHAT;

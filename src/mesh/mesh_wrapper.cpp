@@ -1023,8 +1023,7 @@ void syncRegionsFromChannels() {
         if (found) continue;
 
         // Create region from channel name
-        SigurdRegion r;
-        memset(&r, 0, sizeof(r));
+        SigurdRegion r{};
         strncpy(r.name, ch->name, sizeof(r.name) - 1);
         r.name[sizeof(r.name) - 1] = '\0';
         deriveRegionKey(ch->name, r.key);
@@ -1312,8 +1311,7 @@ void loadContacts() {
     if (f.read((uint8_t*)&n, sizeof(n)) != sizeof(n) || n <= 0) { f.close(); return; }
 
     for (int i = 0; i < n; i++) {
-        ::ContactInfo c;
-        memset(&c, 0, sizeof(c));
+        ::ContactInfo c{};
         if (f.read(c.id.pub_key, PUB_KEY_SIZE) != PUB_KEY_SIZE) break;
         if (f.read((uint8_t*)c.name, 32) != 32) break;
         if (f.read(&c.type, 1) != 1) break;
@@ -1595,8 +1593,7 @@ void setDutyCycle(uint8_t percent) {
     // ── Test repeater helper ──────────────────────────
     bool addTestRepeater(const char* name) {
         if (!g_mesh || !name || !name[0]) return false;
-        ::ContactInfo c;
-        memset(&c, 0, sizeof(c));
+        ::ContactInfo c{};
         strncpy(c.name, name, sizeof(c.name) - 1);
         c.name[sizeof(c.name) - 1] = '\0';
         c.type = ADV_TYPE_REPEATER;
@@ -1605,8 +1602,7 @@ void setDutyCycle(uint8_t percent) {
 
     bool addTestRoomServer(const char* name) {
         if (!g_mesh || !name || !name[0]) return false;
-        ::ContactInfo c;
-        memset(&c, 0, sizeof(c));
+        ::ContactInfo c{};
         strncpy(c.name, name, sizeof(c.name) - 1);
         c.name[sizeof(c.name) - 1] = '\0';
         c.type = ADV_TYPE_ROOM;
@@ -1815,8 +1811,7 @@ bool importContactByUri(const char* uri) {
 
         if (type < 1 || type > 4) type = 1; // default to chat
 
-        ::ContactInfo c;
-        memset(&c, 0, sizeof(c));
+        ::ContactInfo c{};
         strncpy(c.name, name, sizeof(c.name) - 1);
         c.name[sizeof(c.name) - 1] = '\0';
         memcpy(c.id.pub_key, pub_key, PUB_KEY_SIZE);
@@ -1951,8 +1946,7 @@ bool addRegion(const char* name, const char* key_b64_or_null) {
     int n = listRegions(list, SIGURD_MAX_REGIONS);
     if (n >= SIGURD_MAX_REGIONS) return false;
 
-    SigurdRegion r;
-    memset(&r, 0, sizeof(r));
+    SigurdRegion r{};
     strncpy(r.name, name, sizeof(r.name) - 1);
     r.name[sizeof(r.name) - 1] = '\0';
 

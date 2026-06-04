@@ -343,7 +343,6 @@ static void create_icon_grid()
     const int usable_w = CONTENT_W - (GRID_PAD * 2) - (GRID_PAD * (active_cols - 1));
     const int usable_h = CONTENT_H - (GRID_PAD * 2) - (GRID_PAD * (active_rows - 1));
     const int base_w = usable_w / active_cols;
-    const int extra_w = usable_w - (base_w * active_cols);
     const int base_h = usable_h / active_rows;
     const int extra_h = usable_h - (base_h * active_rows);
 

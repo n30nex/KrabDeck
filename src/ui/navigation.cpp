@@ -101,7 +101,9 @@ void navigate_to(Screen screen)
     highlight_back_button(false);
 
     // Push current screen onto history before navigating away
+#if SIGURDOS_TELEMETRY
     Screen previous = current;
+#endif
     push_history(current);
     current = screen;
 
@@ -124,7 +126,9 @@ void go_back()
 
     Screen target = pop_history();
     // Navigate directly without pushing current (we're going back, not forward)
+#if SIGURDOS_TELEMETRY
     Screen previous = current;
+#endif
     current = target;
 
     dispatch_screen(target);

@@ -4,7 +4,7 @@
 // Copyright (C) 2025 Ben
 //
 // SigurdOS Pixel Theme — Discord-inspired palette with blocky pixel styling
-// Theme colors are runtime variables (inline) so they can be changed by the
+// Theme colors are runtime variables so they can be changed by the
 // theme system and persist across reboots via NVS.
 
 #include <lvgl.h>
@@ -13,14 +13,14 @@
 namespace sigurdos::theme {
 
 // ── Themeable backgrounds ───────────────────────────────
-inline uint32_t BG_PRIMARY   = 0x0f0f0f;  // deep black
-inline uint32_t BG_SECONDARY = 0x181818;  // status bars
-inline uint32_t BG_TERTIARY  = 0x1e1e1e;  // card/icon tile background
-inline uint32_t BG_INPUT     = 0x252525;  // input field
+extern uint32_t BG_PRIMARY;    // deep black
+extern uint32_t BG_SECONDARY;  // status bars
+extern uint32_t BG_TERTIARY;   // card/icon tile background
+extern uint32_t BG_INPUT;      // input field
 
 // ── Themeable accents ───────────────────────────────────
-inline uint32_t ACCENT       = 0x00bfff;  // bright cyan
-inline uint32_t ACCENT_HOVER = 0x00a5e0;
+extern uint32_t ACCENT;        // bright cyan
+extern uint32_t ACCENT_HOVER;
 
 // ── Semantic accents (always fixed — status indicators) ──
 constexpr uint32_t ACCENT_GREEN = 0x3ba55d;
@@ -38,7 +38,7 @@ constexpr uint32_t TEXT_MUTED     = 0x9098a2;  // AA-readable on dark/input surf
 constexpr uint32_t TEXT_LINK      = 0x00aff4;
 
 // ── Themeable channel colors ─────────────────────────────
-inline uint32_t CHANNEL_HASH   = 0x00bfff;
+extern uint32_t CHANNEL_HASH;
 constexpr uint32_t CHANNEL_ACTIVE = 0xffffff;
 
 // ── Structural ───────────────────────────────────────────

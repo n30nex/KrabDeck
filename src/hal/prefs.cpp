@@ -137,18 +137,36 @@ void prefs_set(const NodePrefs& p) {
 static constexpr const char* PW_NS = "sigurdos_pw";
 static constexpr int MAX_SAVED_PWS = 8;
 
+static uint8_t clampPasswordStoreCount(uint8_t count) {
+    return (count > MAX_SAVED_PWS) ? MAX_SAVED_PWS : count;
+}
+
+static void makePasswordStoreKey(char* out, size_t out_size,
+                                 const char* prefix, uint8_t slot) {
+    if (!out || out_size == 0) return;
+    out[0] = '\0';
+    if (!prefix || slot >= MAX_SAVED_PWS) return;
+
+    const size_t prefix_len = strlen(prefix);
+    if (prefix_len + 2 > out_size) return;
+
+    memcpy(out, prefix, prefix_len);
+    out[prefix_len] = (char)('0' + slot);
+    out[prefix_len + 1] = '\0';
+}
+
 bool saveRepeaterPassword(const char* name, const char* password) {
     if (!name || !name[0] || !password) return false;
     Preferences nvs;
     if (!nvs.begin(PW_NS, false)) return false;
 
-    uint8_t count = nvs.getUChar("count", 0);
+    uint8_t count = clampPasswordStoreCount(nvs.getUChar("count", 0));
     int slot = -1;
 
     // Find existing entry for this name
     for (uint8_t i = 0; i < count; i++) {
         char key[10];
-        snprintf(key, sizeof(key), "name%u", i);
+        makePasswordStoreKey(key, sizeof(key), "name", i);
         char existing[32];
         size_t len = nvs.getString(key, existing, sizeof(existing));
         if (len > 0 && strcmp(existing, name) == 0) {
@@ -169,8 +187,8 @@ bool saveRepeaterPassword(const char* name, const char* password) {
     }
 
     char nk[10], pk[10];
-    snprintf(nk, sizeof(nk), "name%u", (uint8_t)slot);
-    snprintf(pk, sizeof(pk), "pw%u", (uint8_t)slot);
+    makePasswordStoreKey(nk, sizeof(nk), "name", (uint8_t)slot);
+    makePasswordStoreKey(pk, sizeof(pk), "pw", (uint8_t)slot);
     nvs.putString(nk, name);
     nvs.putString(pk, password);
     nvs.putUChar("count", count);
@@ -183,15 +201,15 @@ bool loadRepeaterPassword(const char* name, char* password, size_t max_len) {
     Preferences nvs;
     if (!nvs.begin(PW_NS, true)) return false;
 
-    uint8_t count = nvs.getUChar("count", 0);
+    uint8_t count = clampPasswordStoreCount(nvs.getUChar("count", 0));
     for (uint8_t i = 0; i < count; i++) {
         char key[10];
-        snprintf(key, sizeof(key), "name%u", i);
+        makePasswordStoreKey(key, sizeof(key), "name", i);
         char existing[32];
         size_t len = nvs.getString(key, existing, sizeof(existing));
         if (len > 0 && strcmp(existing, name) == 0) {
             char pwkey[10];
-            snprintf(pwkey, sizeof(pwkey), "pw%u", i);
+            makePasswordStoreKey(pwkey, sizeof(pwkey), "pw", i);
             size_t ret = nvs.getString(pwkey, password, max_len);
             nvs.end();
             password[max_len - 1] = '\0';
@@ -207,25 +225,25 @@ void removeRepeaterPassword(const char* name) {
     Preferences nvs;
     if (!nvs.begin(PW_NS, false)) return;
 
-    uint8_t count = nvs.getUChar("count", 0);
+    uint8_t count = clampPasswordStoreCount(nvs.getUChar("count", 0));
     for (uint8_t i = 0; i < count; i++) {
         char key[10];
-        snprintf(key, sizeof(key), "name%u", i);
+        makePasswordStoreKey(key, sizeof(key), "name", i);
         char existing[32];
         size_t len = nvs.getString(key, existing, sizeof(existing));
         if (len > 0 && strcmp(existing, name) == 0) {
             char nk[10], pk[10];
-            snprintf(nk, sizeof(nk), "name%u", i);
-            snprintf(pk, sizeof(pk), "pw%u", i);
+            makePasswordStoreKey(nk, sizeof(nk), "name", i);
+            makePasswordStoreKey(pk, sizeof(pk), "pw", i);
             nvs.remove(nk);
             nvs.remove(pk);
             // Shift remaining entries down
             for (uint8_t j = i; j + 1 < count; j++) {
                 char oldnk[10], oldpk[10], newnk[10], newpk[10];
-                snprintf(oldnk, sizeof(oldnk), "name%u", j + 1);
-                snprintf(oldpk, sizeof(oldpk), "pw%u", j + 1);
-                snprintf(newnk, sizeof(newnk), "name%u", j);
-                snprintf(newpk, sizeof(newpk), "pw%u", j);
+                makePasswordStoreKey(oldnk, sizeof(oldnk), "name", (uint8_t)(j + 1));
+                makePasswordStoreKey(oldpk, sizeof(oldpk), "pw", (uint8_t)(j + 1));
+                makePasswordStoreKey(newnk, sizeof(newnk), "name", j);
+                makePasswordStoreKey(newpk, sizeof(newpk), "pw", j);
                 char tmp_name[32] = {0}, tmp_pw[64] = {0};
                 if (nvs.getString(oldnk, tmp_name, sizeof(tmp_name)) > 0) {
                     nvs.putString(newnk, tmp_name);

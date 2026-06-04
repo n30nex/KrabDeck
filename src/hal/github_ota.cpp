@@ -37,6 +37,7 @@ static int                    s_http_code = 0;
 static int                    s_content_length = 0;
 static int                    s_downloaded = 0;
 static unsigned long          s_last_progress = 0;
+static unsigned long          s_connect_start = 0;
 static bool                   s_cancelled = false;
 
 // ── Helpers ─────────────────────────────────────────────────────
@@ -98,6 +99,7 @@ bool startGitHubUpdate() {
     s_downloaded = 0;
     s_http_code = 0;
     s_content_length = 0;
+    s_connect_start = millis();
 
     setStatus(GitHubOTAState::Connecting, 0, "Connecting to WiFi...");
 
@@ -126,7 +128,6 @@ void loop() {
 
     // ── Phase 1: WiFi connect ───────────────────────────────────
     if (st == GitHubOTAState::Connecting) {
-        static unsigned long connect_start = millis();
         if (WiFi.status() == WL_CONNECTED) {
             // WiFi ready (either just connected, or was already connected
             // via wifi_sta — we re-used the existing link).
@@ -189,7 +190,7 @@ void loop() {
                      (int)WiFi.status());
             fail(buf);
             return;
-        } else if (millis() - connect_start > WIFI_CONNECT_TIMEOUT_MS) {
+        } else if (millis() - s_connect_start > WIFI_CONNECT_TIMEOUT_MS) {
             fail("WiFi connect timeout");
             return;
         }
@@ -258,7 +259,7 @@ void loop() {
                 int pct = (s_content_length > 0)
                     ? (int)(((long)s_downloaded * 100) / s_content_length)
                     : 0;
-                char msg[40];
+                char msg[64];
                 snprintf(msg, sizeof(msg), "Downloading... %d%% (%d/%d KB)",
                          pct, s_downloaded / 1024,
                          s_content_length / 1024);

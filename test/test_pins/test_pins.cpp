@@ -54,7 +54,34 @@ TEST_F(PinsTest, AllDefinedPinsInValidGPIORange) {
     }
 }
 
-// ── No pin conflicts on shared buses ────────────────────
+// GPIO helper coverage
+TEST_F(PinsTest, DisabledSentinelIsNotValidGpio) {
+    EXPECT_EQ(PIN_TFT_RST, SIGURDOS_GPIO_DISABLED);
+    EXPECT_EQ(PIN_TOUCH_RST, SIGURDOS_GPIO_DISABLED);
+    EXPECT_FALSE(sigurdos_gpio_is_valid(SIGURDOS_GPIO_DISABLED));
+}
+
+TEST_F(PinsTest, GpioValidityCoversRangeBoundaries) {
+    EXPECT_TRUE(sigurdos_gpio_is_valid(SIGURDOS_ESP32S3_GPIO_MIN));
+    EXPECT_TRUE(sigurdos_gpio_is_valid(SIGURDOS_ESP32S3_GPIO_MAX));
+    EXPECT_FALSE(sigurdos_gpio_is_valid(SIGURDOS_ESP32S3_GPIO_MIN - 1));
+    EXPECT_FALSE(sigurdos_gpio_is_valid(SIGURDOS_ESP32S3_GPIO_MAX + 1));
+}
+
+TEST_F(PinsTest, GpioMaskUsesSixtyFourBitShiftForHighPins) {
+    const uint64_t dio1_mask = sigurdos_gpio_mask(PIN_LORA_DIO1);
+
+    EXPECT_EQ(PIN_LORA_DIO1, 45);
+    EXPECT_EQ(dio1_mask, (1ULL << PIN_LORA_DIO1));
+    EXPECT_NE(dio1_mask, 0ULL);
+}
+
+TEST_F(PinsTest, GpioMaskRejectsInvalidPins) {
+    EXPECT_EQ(sigurdos_gpio_mask(SIGURDOS_GPIO_DISABLED), 0ULL);
+    EXPECT_EQ(sigurdos_gpio_mask(SIGURDOS_ESP32S3_GPIO_MAX + 1), 0ULL);
+}
+
+// No pin conflicts on shared buses
 TEST_F(PinsTest, NoSPIConflicts) {
     // TFT and LoRa share SPI bus — SCLK and MOSI must match
     EXPECT_EQ(PIN_TFT_SCL, PIN_LORA_SCLK);

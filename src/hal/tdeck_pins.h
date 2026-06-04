@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
@@ -20,6 +22,18 @@
 
 // SigurdOS T-Deck Hardware Pin Definitions
 // LilyGo T-Deck: ESP32-S3 + ST7789 320x240 + SX1262 LoRa + GT911 Touch
+
+static constexpr int SIGURDOS_GPIO_DISABLED = -1;
+static constexpr int SIGURDOS_ESP32S3_GPIO_MIN = 0;
+static constexpr int SIGURDOS_ESP32S3_GPIO_MAX = 48;
+
+static inline bool sigurdos_gpio_is_valid(int pin) {
+    return pin >= SIGURDOS_ESP32S3_GPIO_MIN && pin <= SIGURDOS_ESP32S3_GPIO_MAX;
+}
+
+static inline uint64_t sigurdos_gpio_mask(int pin) {
+    return sigurdos_gpio_is_valid(pin) ? (uint64_t{1} << pin) : 0ULL;
+}
 
 // ════════════════════════════════════════════════════════
 // LoRa SX1262 (SPI)

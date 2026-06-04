@@ -3718,7 +3718,8 @@ void settings_radio_show()
     lv_obj_align(list, LV_ALIGN_TOP_MID, 0, CONTENT_Y);
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list, 0, 0);
-    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_set_scroll_dir(list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_ON);
 
     const sigurdos::NodePrefs& p = sigurdos::prefs_get();
     char buf[128];

@@ -29,7 +29,6 @@
 #include <helpers/radiolib/RadioLibWrappers.h>
 #include <helpers/radiolib/CustomSX1262Wrapper.h>
 #include <helpers/AutoDiscoverRTCClock.h>
-#include <helpers/ESP32Board.h>
 #include <helpers/ArduinoHelpers.h>
 #include <helpers/StaticPoolPacketManager.h>
 

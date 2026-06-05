@@ -3,8 +3,8 @@
 
 #include <Arduino.h>
 #include <SPIFFS.h>
-#include "hal/tdeck_pins.h"
 #include "hal/tdeck_board.h"
+#include "hal/tdeck_pins.h"
 #include "hal/display.h"
 #include "hal/battery.h"
 #include "hal/gps.h"

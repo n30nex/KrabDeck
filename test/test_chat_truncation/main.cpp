@@ -66,8 +66,32 @@ TEST(Utf8Truncation, ZeroLimit) {
     EXPECT_EQ(utf8_truncate_bytes(s, 0), (size_t)0);
 }
 
+TEST(Utf8Truncation, NullString) {
+    EXPECT_EQ(utf8_truncate_bytes(nullptr, 10), (size_t)0);
+}
+
 TEST(Utf8Truncation, EmptyString) {
     EXPECT_EQ(utf8_truncate_bytes("", 10), (size_t)0);
+}
+
+TEST(Utf8Truncation, BoundedAsciiBufferWithoutTerminator) {
+    const char s[] = {'H', 'e', 'l', 'l', 'o'};
+    EXPECT_EQ(utf8_truncate_bytes(s, sizeof(s)), sizeof(s));
+}
+
+TEST(Utf8Truncation, DropsIncompleteLeadByteAtLimit) {
+    const char s[] = {'O', 'K', static_cast<char>(0xE2)};
+    EXPECT_EQ(utf8_truncate_bytes(s, sizeof(s)), (size_t)2);
+}
+
+TEST(Utf8Truncation, PreservesCompleteMultibyteAtLimitWithoutTerminator) {
+    const char s[] = {
+        '5',
+        static_cast<char>(0xE2),
+        static_cast<char>(0x82),
+        static_cast<char>(0xAC),
+    };
+    EXPECT_EQ(utf8_truncate_bytes(s, sizeof(s)), sizeof(s));
 }
 
 int main(int argc, char** argv) {

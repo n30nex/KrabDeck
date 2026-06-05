@@ -32,8 +32,8 @@ static constexpr uint8_t  GT911_ADDR1          = 0x5D;   // primary I2C addr
 static constexpr uint8_t  GT911_ADDR2          = 0x14;   // alternate
 static constexpr uint16_t GT911_REG_CONFIG     = 0x8047;
 static constexpr uint16_t GT911_REG_STATUS     = 0x814E;
-static constexpr int      GT911_MAX_POINTS     = 5;
-static constexpr int      GT911_POINT_SIZE     = 8;
+static constexpr int      GT911_MAX_POINTS     = (int)SIGURDOS_TOUCH_GT911_MAX_POINTS;
+static constexpr int      GT911_POINT_SIZE     = (int)SIGURDOS_TOUCH_GT911_POINT_SIZE;
 static constexpr uint32_t GT911_INIT_RETRY_MS  = 50;
 static constexpr uint32_t GT911_POLL_INTERVAL  = 10;     // ms between full scans
 
@@ -223,16 +223,11 @@ void sigurdos_touch_loop()
     // Parse first valid touch point (we're single-touch)
     int found_x = -1, found_y = -1;
     for (int i = 0; i < num_points; i++) {
-        const uint8_t* p = point_data + (i * GT911_POINT_SIZE);
-        uint16_t raw_x = p[1] | ((uint16_t)p[2] << 8);
-        uint16_t raw_y = p[3] | ((uint16_t)p[4] << 8);
-
-        // Skip invalid points
-        if (raw_x == 0xFFFF || raw_y == 0xFFFF) continue;
-        if (raw_x == 0 && raw_y == 0) continue;
-
-        // Bounds check against GT911 native (pre-swap) portrait resolution
-        if (raw_x >= (uint16_t)TOUCH_SENSOR_X || raw_y >= (uint16_t)TOUCH_SENSOR_Y) continue;
+        uint16_t raw_x = 0;
+        uint16_t raw_y = 0;
+        if (!sigurdos_touch_parse_point_raw(point_data, sizeof(point_data), (size_t)i, &raw_x, &raw_y)) {
+            continue;
+        }
 
         // ── Coordinate transformation ──────────────────
         int sx = raw_x, sy = raw_y;

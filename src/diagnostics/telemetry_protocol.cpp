@@ -158,8 +158,11 @@ void emit_kv_f(const char* key, float val, int precision) {
         // Simple fixed-point formatting without heap allocation
         int32_t scale = 1;
         for (int i = 0; i < precision; i++) scale *= 10;
-        int32_t whole = (int32_t)val;
-        uint32_t frac = (val < 0) ? (-val - (-whole)) * scale : (val - whole) * scale;
+        const bool neg = (val < 0.0f);
+        const float abs_val = neg ? -val : val;
+        int32_t whole = (int32_t)abs_val;
+        uint32_t frac = (uint32_t)((abs_val - whole) * scale);
+        if (neg) Serial.print('-');
         Serial.print(whole);
         Serial.print('.');
         // Zero-pad fractional part

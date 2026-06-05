@@ -1,368 +1,224 @@
-# SigurdOS-TDeck Implementation Roadmap
-
-**Audience: AI agents implementing features.** This is the *ordered, how-to* companion to [`MISSING_FEATURES.md`](MISSING_FEATURES.md). Read both:
-
-| Document | Answers | Use it for |
-|----------|---------|-----------|
-| [`MISSING_FEATURES.md`](MISSING_FEATURES.md) | **What** is missing and **where** to find it in upstream MeshCore | The catalog: per-feature description + clickable `meshcore-dev/MeshCore` source links |
-| **`ROADMAP.md`** (this file) | **In what order** to build it and **how** | The plan: dependencies, step-by-step guidance, pitfalls, test plans, done-criteria |
-
-> **This file replaces the "Implementation Plan" section that used to live at the bottom of `MISSING_FEATURES.md`.** That section was removed; this is its expanded successor.
-
----
-
-## ⚠️ READ THIS FIRST — mandatory context for any agent
-
-You are working on embedded C++ firmware. Mistakes here are expensive (they require a hardware reflash to observe). **Slow down and follow the process.**
-
-### Required reading before you touch anything
-1. [`CLAUDE.md`](../CLAUDE.md) / [`AGENTS.md`](../AGENTS.md) — architecture, conventions, the **Code Audit Checklist**, and **Rejection triggers**. Do not skip the rejection triggers — they are the exact reasons a PR gets auto-declined.
-2. [`CONTRIBUTING.md`](../CONTRIBUTING.md) — the contribution workflow. **Issue-first is mandatory: no issue = no PR.**
-3. [`docs/KNOWN_ISSUES.md`](KNOWN_ISSUES.md) — known bugs. Several roadmap items overlap; check before starting.
-4. [`docs/MISSING_FEATURES.md`](MISSING_FEATURES.md) — the upstream source references for the feature you're building.
-
-### The non-negotiable loop for every task
-```
-1. Find or open a GitHub issue on hermes-gadget/SigurdOS-tdeck
-2. git checkout dev && git pull origin dev
-3. git checkout -b <type>/<short-name>-<issue#>
-4. pio test -e native_test -v        # confirm baseline GREEN before you change anything
-5. ... make changes + ADD TESTS ...
-6. pio test -e native_test -v        # all green
-7. pio run -e SigurdOS_TDeck           # firmware must build
-8. commit (conventional message), push, open PR targeting dev
-9. PR body MUST declare hardware testing: "Remote test", "Physical hardware test", or both
-```
-If you cannot run hardware, say so explicitly in the PR and use **remote test mode** where the feature allows it (see CLAUDE.md → Remote Test Controller). **Never** switch the build to `SigurdOS_TDeck_remote_test` or touch the radio config without the user's explicit say-so.
-
-### The architecture you must respect
-```
-UI layer (src/ui/*)                ← screens, never touches MeshCore directly
-      │  calls only
-      ▼
-mesh_wrapper.h  (sigurdos::mesh::*)   ← THE SEAM. Public API the UI depends on.
-      │  wraps
-      ▼
-SigurdMeshV2  (src/mesh/sigurd_mesh_v2.h) ← BaseChatMesh subclass
-      │  extends
-      ▼
-BaseChatMesh / ::mesh::Mesh  (lib/meshcore/) ← upstream library
-```
-**Golden rule: keep the `mesh_wrapper.h` public API stable.** The UI is insulated by it. If you change mesh internals, translate back to the existing wrapper structs (`sigurdos::mesh::ContactInfo`, `MeshMessage`, etc.) so screens don't change. This seam is what makes large refactors (see Phase 0) survivable.
-
-### Traps that have already bitten this codebase (do not repeat)
-- **ACK value is NOT a CRC-32.** It is the first 4 bytes of SHA-256 over a recipient-pubkey-dependent buffer. Computing a CRC will *never* match. (`MISSING_FEATURES.md` → "Message delivery status".)
-- **Channel hash matching uses ONE byte** in the packet header, not the full hash. `searchChannelsByHash` compares `hash[0]` only — matching upstream `BaseChatMesh`. ~11% collision on 8 channels is expected; do not "fix" it to a full memcmp or you break interop.
-- **`strncpy` does not null-terminate** when the source is too long. Always `dest[n-1] = '\0'`.
-- **UTF-8 truncation** can split a 4-byte emoji mid-codepoint → invalid UTF-8 over the mesh. Use `sigurdos::utf8_truncate_bytes()` (already used in `sigurd_mesh_v2.h`).
-- **`lv_obj_del` inside an event handler** must be `lv_obj_del_async()`.
-- **`lv_scr_load_anim(..., true)`** deletes the old screen + all children; register `LV_EVENT_DELETE` to null any globals pointing into it.
-- **Stack arrays as LVGL `user_data`** dangle on click. Use `static` arrays.
-- **Adding a `NodePrefs` field**: old saved prefs won't have it. `prefs_get()` zero-fills missing keys — follow the existing default-value pattern in `NodePrefs::set_defaults()` (`src/hal/prefs.h`).
-- **`ESP.restart()`** before a flash write completes loses the write. `saveState()`/`saveChannels()` then delay ~100 ms before restart.
-- **Debug output** must be guarded by `#if defined(SIGURDOS_DEBUG)` — unconditional `Serial.printf` is a rejection trigger.
-
-### Where things live (verified paths)
-| Concern | File |
-|---------|------|
-| Mesh subclass | `src/mesh/sigurd_mesh_v2.h` |
-| Wrapper / public API | `src/mesh/mesh_wrapper.cpp` / `.h` |
-| Persisted settings | `src/hal/prefs.cpp` / `.h` (`struct NodePrefs`, `prefs_get/set/save`) |
-| GPS NMEA | `src/hal/gps.cpp` / `.h` |
-| Keyboard (I2C) | `src/hal/keyboard.cpp` / `.h` |
-| Settings / Radio Setup / Finder / Signal / Contacts screens | `src/ui/screens.cpp` |
-| Chat (DM + channels) | `src/ui/chat_screen.cpp` |
-| Navigation / back-stack | `src/ui/navigation.cpp` |
-| Theme helpers / colors | `src/ui/theme.h` |
-| Mesh tests | `test/test_mesh_messaging/`, `test/test_mesh_wrapper/` |
-| Mocks (Arduino, lvgl, RadioLib, etc.) | `test/mocks/` |
-| Upstream MeshCore | `lib/meshcore/` (submodule, v1.15.0) |
-
-> **Note for the agent:** the old MISSING_FEATURES plan referenced `test/slop_mesh_test.cpp` — that file does **not** exist. The real mesh tests are the two dirs above.
-
----
-
-## Phase 0 — Migrate mesh core onto `BaseChatMesh` ✅ COMPLETED
-
-**Status: ✅ Done.** PR #223 introduced the V2 implementation behind a flag; PR #224 cut over to `SigurdMeshV2` as the default. The old pre-BaseChatMesh mesh implementation path has been removed; current mesh internals live in `src/mesh/sigurd_mesh_v2.h` and are constructed through `mesh_wrapper.cpp`.
-
-**This architectural direction is complete and is now the baseline.** Current roadmap items should use the `mesh_wrapper.h` seam and `SigurdMeshV2`/`BaseChatMesh` APIs rather than reimplementing raw MeshCore protocol plumbing.
-
-### Why we did it
-
-The previous mesh class extended `::mesh::Mesh` directly — a deliberately minimal subclass. One layer up in the *same* library sits `BaseChatMesh` ([`lib/meshcore/src/helpers/BaseChatMesh.h`](https://github.com/meshcore-dev/MeshCore/blob/main/src/helpers/BaseChatMesh.h)), which the reference companion radio uses. It already implements, correctly and tested:
-
-- `sendMessage()` **with ACK tracking** (`expected_ack`), `processAck()`
-- `sendLogin()`, `sendCommandData()` (remote repeater/room admin), connection keep-alive sessions
-- `sendRequest()` x2 (the REQ/RESPONSE framework), `sendAnonReq()`, `sendGroupData()`
-- `resetPathTo()`, `removeContact()`, `addContact()`, `lookupContactByPubKey()`
-- `exportContact()` / `importContact()` (QR/URI sharing payloads)
-- correct `onAckRecv`, path learning, send-timeout handling
+# SigurdOS T-Deck Roadmap
 
-**Almost the entire Phase 4 is already written inside `BaseChatMesh`.** Building those on raw `Mesh` would mean reimplementing them by hand — repeatedly hitting the traps listed above. Inheriting `BaseChatMesh` gets them for free.
+This roadmap is the current source of truth for bringing SigurdOS T-Deck to feature parity with MeshOS and MC Term, then beyond them. It is paired with [AUDIT.md](AUDIT.md), which records the 2026-06-04 end-to-end audit evidence and risk register.
 
-> **This was NOT a "MeshCore version" change.** SigurdOS stayed on the current MeshCore submodule; `SigurdMeshV2` moved the project up one layer to `BaseChatMesh` without a submodule bump.
+## Current Baseline
 
-### Why the blast radius is small
+- Main repo baseline: `97fb805fbb63fcbae19ed8e199e9f3659b8b331b`
+- MeshCore submodule: `9a888541efaf57c38dfb886c1c1e4702f371baf1`
+- Target board: LilyGo T-Deck, ESP32-S3, SX1262, ST7789, GT911, I2C keyboard, trackball
+- Release build: `pio run -e SigurdOS_TDeck` succeeds, but uses 86.4% of available RAM
+- Native tests: `pio test -e native_test -v` passes 396 cases, skips 1
+- Audit references: [MeshOS](https://meshcore.co.uk/meshos.html), [MC Term](https://github.com/dabeani/meshcoreterm)
 
-The blast radius stayed concentrated in **one place**: `SigurdMeshV2` adopts `BaseChatMesh`'s `ContactInfo` and `ChannelDetails` models and `mesh_wrapper.cpp` translates those into the wrapper structs used by the UI. The UI only sees `sigurdos::mesh::ContactInfo`, `MeshMessage`, etc., so screens remain insulated from MeshCore internals.
+SigurdOS already has a strong base: standalone chat, channel and DM messaging, BaseChatMesh integration, regions, contacts, GPS, offline maps, packet logs, telemetry builds, remote test support, OTA entry points, and a sizeable native test suite. The work below is about hardening that base, closing companion-app parity gaps, and making the firmware reliable enough for field use and repeated development.
 
-### Completed migration checklist
+## North Star
 
-The migration is complete; this checklist is retained as historical context and regression guidance. Current work should not recreate a parallel mesh class.
+Feature parity means a T-Deck can operate as a complete MeshCore field terminal without a phone. It should support daily chat, node discovery, repeater and room workflows, maps, telemetry, alerting, diagnostics, secure setup, update recovery, and predictable battery behavior.
 
-1. `SigurdMeshV2 : public BaseChatMesh` is the production mesh implementation.
-2. `mesh_wrapper.cpp` constructs `SigurdMeshV2` and keeps the UI-facing API stable.
-3. Contact/channel persistence, identity persistence, ACK handling, requests/responses, path learning, command data, signed messages, timeouts, and contact request/response hooks are implemented through the BaseChatMesh path.
-4. **Regression checklist** (native tests + hardware/remote-test):
-   - [x] DM send + receive (`test_mesh_messaging`)
-   - [x] Channel text send + receive (hashtag + PSK channels)
-   - [x] Advert parse → contact added with name/type/location/RSSI/SNR
-   - [x] Contact LRU eviction at the cap
-   - [x] Trace route round-trip
-   - [x] Ping Nearby (control PING/PONG)
-   - [x] Duty-cycle factor override still applied
-   - [x] Channel persistence across reboot
-6. The legacy mesh class was removed; `SigurdMeshV2` is the only active mesh subclass.
+Exceeding parity means SigurdOS should also provide stronger on-device observability, repeatable automated hardware tests, safer update and persistence behavior, and better offline-first workflows than phone or companion-terminal tools can provide.
 
-> **Sequencing note:** Phase 0 is no longer blocking anything; Phases 1–6 below are complete for accepted scope.
+## Workstreams
 
----
+| Workstream | Outcome |
+| --- | --- |
+| Stability | Clean boot, predictable radio setup, safe sleep/wake, safe storage, no release-only debug leaks |
+| Performance | Smooth UI under mesh load, bounded RAM, fast map/list rendering, controlled flash writes |
+| Tests | Native, remote, hardware, interop, soak, OTA, and visual tests with reproducible artifacts |
+| Debug | Structured telemetry, crash capture, packet traces, screenshots, and release-safe diagnostic policy |
+| Feature parity | MeshOS and MC Term workflows available directly on the T-Deck |
+| Release ops | Firmware artifacts, rollback guidance, documentation, issue workflow, and field checklists |
 
-## Phase 1 — Quick wins (mostly UI over backend that already exists) ✅ COMPLETED
+## Phase 0 - Documentation And Source-Of-Truth Cleanup
 
-> **Status: ✅ All 8 items done.** See overview below for the specific PRs. Safe to do before or during Phase 0 migration. Great first tasks. Each is small; do them as separate PRs.
+Goal: make the repository easy to audit and safe for parallel contributors.
 
-### 1.1 — RX gain boost toggle — S ✅
-- **Status:** Done. Toggle in Radio Setup → `s_rx_gain` → `applyRadioParams()` at init. Persisted in NodePrefs.
-- **PR:** Part of Phase 0 development (early PRs on dev).
+Priority tasks:
 
-### 1.2 — Duty cycle UI — M ✅
-- **Status:** Done. Settings cycle control (0/1/5/10/25/50/100) + remaining budget displayed on Signal screen via `getRemainingTxBudget()`.
-- **PR:** Part of Phase 0 development (early PRs on dev).
+- Keep this roadmap as the planning source of truth and use [AUDIT.md](AUDIT.md) for findings.
+- Open follow-up issues for stale or superseded feature docs instead of mixing fixes into feature PRs.
+- Reconcile [MISSING_FEATURES.md](MISSING_FEATURES.md), [FEATURES_OVERVIEW.md](FEATURES_OVERVIEW.md), [TELEMETRY_ARCHITECTURE.md](TELEMETRY_ARCHITECTURE.md), and [TELEMETRY_EXPANSION_PLAN.md](TELEMETRY_EXPANSION_PLAN.md) with the current implementation in dedicated docs PRs.
+- Add a short capability matrix to the README that points to feature docs, tests, hardware docs, and this roadmap.
+- Tag issues by workstream: `stability`, `performance`, `test`, `debug`, `mesh-parity`, `ui`, `hardware`, `docs`.
+- Keep protected process files, contribution rules, and known-issues updates in their own PRs.
 
-### 1.3 — Zero-hop ping in Finder UI — M ✅
-- **Status:** Done. "Ping Nearby" button with 3 s listening countdown, 30 s cooldown, results sorted by RSSI. All backend `sendPingNearby()`, `pingIsActive()`, etc. wired to Finder screen.
-- **PR:** Part of Phase 0 development (early PRs on dev).
+Done when:
 
-### 1.4 — Graceful shutdown from UI — S ✅
-- **Status:** Done. "Shut down" button in Settings with confirmation dialog. Calls `saveState()` + `saveChannels()`, delay, then deep sleep.
-- **PR:** Part of Phase 0 development (early PRs on dev).
+- New contributors can find current status without reading old implementation history.
+- The docs distinguish implemented, experimental, and planned features.
+- Every roadmap task links to an issue before code work starts.
 
-### 1.5 — Message timestamps in chat bubbles — S ✅
-- **Status:** Done. `format_time()` renders `HH:MM` in bubble header (sender name + timestamp row). For >24 h old messages shows date.
-- **PR:** Part of Phase 0 development (early PRs on dev).
+## Phase 1 - Stabilization And Warning Cleanup
 
-### 1.6 — Channel removal — S ✅
-- **Status:** Done. Delete/× button on each channel row in channel list. Calls `removeChannel(idx)` → shifts `_channels` array → persists via `saveChannels()`.
-- **PR:** Part of Phase 0 development (early PRs on dev).
+Goal: make the current release build boring, repeatable, and warning-accounted.
 
-### 1.7 — Contact removal — S ✅
-- **Status:** Done. "Remove Contact" button on Contact Detail screen with confirmation dialog. Calls `removeContact()` through the wrapper.
-- **PR:** Part of Phase 0 development (early PRs on dev).
+Priority tasks:
 
-### 1.8 — Reset path to a contact — S ✅
-- **Status:** Done. "Reset Path" button on Contact Detail screen. Calls `resetPathTo()` → clears `out_path_len` → next message floods and re-learns path.
-- **PR:** Part of Phase 0 development (early PRs on dev).
+- Fix the ESP32 sleep wake mask warning caused by shifting a 32-bit value for high GPIO numbers. This affects LoRa DIO and deep-sleep wake reliability.
+- Remove or gate release serial commands such as screenshot, send, and nav behind an explicit debug or remote-test policy.
+- Clean project warnings in `src/ui/theme.h`, `src/hal/github_ota.cpp`, `src/hal/prefs.cpp`, `src/ui/screens.cpp`, `src/ui/navigation.cpp`, and `src/ui/home_screen.cpp`.
+- Make LVGL config inclusion explicit so the build no longer prints repeated `lv_conf.h` possible-failure messages.
+- Resolve `MAX_TEXT_LEN` redefinition between build flags and `BaseChatMesh`.
+- Separate upstream MeshCore warnings from local warnings in CI logs so local regressions are visible.
+- Investigate the PlatformIO Windows cp1252 output exception printed during merged firmware generation, even though the build exits successfully.
+- Add a build-warning budget. Start with "no new local warnings", then move to "no local warnings".
+- Confirm release radio flags are intentional, especially `RADIOLIB_GODMODE`, USB CDC debug warnings, and static/excluded module selections.
 
----
+Done when:
 
-## Phase 2 — Radio & node configuration
+- Release firmware builds with no untriaged local warnings.
+- All remaining third-party warnings are documented or isolated.
+- Sleep/wake paths are tested on hardware.
+- Release builds do not expose debug-only serial commands by accident.
 
-> Some `NodePrefs` fields already exist (`advert_interval`, `advert_type`, `flood_max_hops`) — check `src/hal/prefs.h` before adding new ones.
+## Phase 2 - Test And CI Expansion
 
-### 2.1 — Periodic auto-advert — S ✅
-- **Status:** Done. *(Audit 2026-06-01 reclassified this from "declined" — the feature is in fact wired.)* `advert_interval` (half-minutes, `0` = disabled) in `NodePrefs`, a Settings cycle in `screens.cpp`, persisted in `prefs.cpp`, and a re-advert timer in `mesh::loop()` (`mesh_wrapper.cpp`) that calls `sendAdvert()` on the interval. Defaults to `0` (off).
-- **Upstream ref:** MISSING_FEATURES → "Periodic auto-advert" (`NodePrefs::advert_interval`).
+Goal: turn current native coverage into a complete firmware validation system.
 
-### 2.2 — Temporary radio config (no NVS write) — ❌ NOT NEEDED
-> User declined — not implementing.
+Priority tasks:
 
-### 2.3 — Auto-add contact configuration — M ✅
-- **Status:** Done. Per-type bitmask (`autoadd_config`) in NodePrefs gates auto-add by contact type (chat/repeater/room/sensor via bits 1-4). Separate `autoadd_max_hops` for range limiting. Settings: "Auto-add: All types" cycle + "Add max hops" cycle.
-- **PR:** #228.
+- Keep the native suite green and add coverage for warning-prone logic: regions, ACK matching, persistence migration, OTA state transitions, map tile cache, telemetry command parsing, and storage failures.
+- Add smoke tests for `SigurdOS_TDeck_telemetry`, `SigurdOS_TDeck_remote_test`, and `SigurdOS_TDeck_remote_test_radio` build environments.
+- Add a hardware boot matrix: cold boot, configured boot, unconfigured no-transmit boot, SD present/missing, GPS enabled/disabled, low battery, sleep/wake, first-boot onboarding.
+- Add interop tests with at least one reference MeshCore node, one room server/repeater path, and one MC Term or official-client scenario.
+- Add UI screenshot or widget-tree regression tests for home, chat, contacts, settings, map, telemetry, OTA, and onboarding.
+- Add OTA negative tests: no credentials, wrong credentials, TLS failure, 404, interrupted download, write failure, rollback/reboot.
+- Add flash-wear and persistence tests for chat history, contacts, channels, regions, WiFi profiles, and key import/export.
+- Add soak tests that run mesh loop, UI loop, telemetry, GPS, and map activity for hours with heartbeat artifacts.
 
-### 2.4 — Advert location-share policy (privacy) — S ✅
-- **Status:** Already done. `share_location` toggle in Settings (set_defaults: true). Wireframe already in prefs for lat/lon gating.
+Done when:
 
-### 2.5 — GPS enable / read-interval — S ✅
-- **Status:** Done. `gps_enabled` (bool) + `gps_interval` (uint16_t seconds) in NodePrefs. `sigurdos_gps_init()`/`sigurdos_gps_loop()` gated on the pref. Settings: GPS ON/OFF toggle + interval cycle (0/1/5/10/30/60s).
-- **PR:** #227.
+- CI validates docs-only, native, release build, and telemetry/remote-test build profiles.
+- Hardware test results are attached to release PRs.
+- Interop failures can be reproduced from documented commands and fixtures.
 
-### 2.6 — Custom variables (key-value store) — S ✅
-- **Status:** Done. SPIFFS-backed `key=value` store. Terminal commands: `setvar`, `getvar`, `delvar`, `listvars`.
-- **PR:** #229.
+## Phase 3 - Persistence And State Sync Foundation
 
-### 2.7 — Keyboard backlight & message-cap controls — S each ✅
-- **Status:** Already done. Backlight dialog (+/- slider) and chat history cap dialog in Settings, both fully wired.
+Goal: make message, contact, channel, and region state durable enough for companion sync and field use.
 
----
+Priority tasks:
 
-## Phase 3 — Messaging polish ✅ COMPLETED
+- Replace whole-file chat-history rewrites with an append-friendly or journaled store that supports compaction and power-loss recovery.
+- Persist message metadata beyond sender/text/timestamp/self: ACK state, delivery attempts, route/path hints, RSSI/SNR, channel/DM identity, unread state, and stable message IDs.
+- Version every persistent schema and add migration tests for older SPIFFS/NVS data.
+- Harden contact persistence so path metadata, shared secrets, permissions, favorite/pinned state, and manual contacts survive reboot.
+- Add import/export flows for identity, contacts, channels, regions, and WiFi profiles.
+- Track storage budgets for SPIFFS, SD, NVS, and PSRAM-backed caches.
+- Add deduplication for repeated packets and repeated companion-sync events.
 
-> **Status: ✅ All 3 items done.** See overview below for the specific PRs.
+Done when:
 
-### 3.1 — Message delivery status (ACK ticks) — M ✅
-- **Status:** Done. PendingAck ring buffer in SigurdMeshV2, `processAck()` matches 4-byte SHA-256 ACK against pending outgoing DMs. `isMessageAcked()` bridge to UI. ✓ indicator in self-sent chat bubbles.
-- **PR:** #232.
+- A power cut during message or preference writes does not corrupt the active profile.
+- A companion client can sync without losing local-only history.
+- State migrations are tested before schema changes ship.
 
-### 3.2 — Message search — M ✅
-- **Status:** Done. 'S' button in top bar toggles inline search bar. Case-insensitive substring filter over message text and sender. Trackball Up/Down cycles through matches with auto-scroll and highlight. "No matching messages" when empty.
-- **PR:** #234.
+## Phase 4 - Companion Transport Parity
 
-### 3.3 — Per-contact RSSI/SNR history graph — L ✅
-- **Status:** Done. 64-entry circular buffer per-contact in SigurdMeshV2, `lv_chart` line sparkline on Signal screen showing RSSI trend.
-- **PR:** #236.
+Goal: close the largest MeshOS and MC Term feature gap: phone, app, and external-terminal workflows.
 
----
+Priority tasks:
 
-## Phase 4 — Infrastructure interaction ✅ COMPLETED
+- Implement an official MeshCore BLE bridge mode or clearly documented compatible alternative.
+- Add a WiFi bridge or WebUI mode for local companion access where BLE is insufficient.
+- Define pairing, device PIN, key exposure, and local-network security policy.
+- Support two-way sync for contacts, channels, DMs, channel messages, node config, telemetry history, and map state.
+- Add connection-state UI: BLE, WiFi, companion connected, sync pending, sync failed.
+- Add offline queueing so outbound companion messages survive disconnects.
+- Add a protocol compatibility test plan against official MeshCore clients and MC Term behavior.
 
-> **Status: ✅ Items 4.1–4.8 done (4.3 has an outstanding answer-side — see its note and 6.4). Items 4.9–4.10 declined — not implementing.**
-> Phase 0 cutover was the prerequisite.
+Done when:
 
-### 4.1 — Generic binary-request framework (REQ/RESPONSE) — M ✅
-- **Status:** Done. `BaseChatMesh::sendRequest()` exposed through wrapper with tag→handler dispatch.
-- **PR:** #251.
+- A user can pair a companion app or terminal, sync current state, send/receive messages, and recover from reconnects.
+- Security-sensitive material is never exposed without a deliberate user action.
+- Companion sync survives reboots and transport changes.
 
-### 4.2 — Status request — M ✅
-- **Status:** Done. `REQ_TYPE_GET_STATUS` request with NodeStatus UI panel.
-- **PR:** #253.
+## Phase 5 - Mesh Feature Parity And Polish
 
-### 4.3 — Telemetry queries (remote + self, CayenneLPP) — M ✅ ⚠️ answer-side outstanding
-- **Status:** Remote query done. Send `REQ_TYPE_GET_TELEMETRY_DATA` and decode the CayenneLPP response (voltage, temp, humidity, lat-lon) — `requestTelemetry()` in `mesh_wrapper.cpp`. **Answering inbound telemetry is NOT implemented:** `SigurdMeshV2::onContactRequest()` (`sigurd_mesh_v2.h`) is a skeleton that returns `0`, so the T-Deck never replies with its own battery/telemetry when queried. *(Audit 2026-06-01 found the "answer inbound requests with own battery" claim inaccurate.)* The answer side + per-type policy is tracked as **6.4** below.
-- **PRs:** #2907746, #0ee06ea.
+Goal: match and improve the core field workflows visible in MeshOS and MC Term.
 
-### 4.4 — Path discovery request — M ✅
-- **Status:** Done. Distinct from Trace — discovers route to a contact with unknown path.
-- **PRs:** #944bded, #ae68b3d.
+Priority tasks:
 
-### 4.5 — Repeater/room login + remote administration — L ✅
-- **Status:** Done. Dedicated repeater detail screen with login flow, password field, admin command terminal with live response polling.
-- **PR:** #259.
+- Verify region support over real hardware and interop nodes, including scoped sends, active region switching, `$` private region keys, and collision behavior.
+- Add MC Term-like contact sorting, filtering, favorites, manual contact add, and richer contact badges.
+- Expand message detail views with path, hop count, RSSI/SNR, ACK status, repeaters, route hints, and packet metadata.
+- Add path hash mode and route-reset workflows where compatible with MeshCore behavior.
+- Harden room server and repeater management: login status, permissions, commands, fetch message history, errors, and keep-alive behavior.
+- Add alerts and popups for new DMs, mentions, battery, GPS fix/loss, companion connect/disconnect, OTA, and storage failures.
+- Add telemetry history views for battery/GPS/sensor data and remote node snapshots.
+- Add QR/import/export flows for contacts, channels, regions, and identity backup.
 
-### 4.6 — Room server message fetch — L ✅
-- **Status:** Done. Login to room server, fetch stored posts, merge into message store.
-- **PR:** #263.
+Done when:
 
-### 4.7 — Anonymous requests (send) — M ✅
-- **Status:** Done. Expose `BaseChatMesh::sendAnonReq()` through wrapper with UI.
-- **PR:** #260.
+- The T-Deck can perform the main MeshOS and MC Term workflows without a separate device.
+- Feature docs include screenshots or command examples for each workflow.
+- Interop results are recorded for each MeshCore packet class the UI exposes.
 
-### 4.8 — Group data datagrams — M ✅
-- **Status:** Done. `sendGroupDatagram(channel, type_code, data, len)` + received-datagram type dispatch.
-- **PR:** #265.
+## Phase 6 - UI, Performance, And Power
 
-### 4.9 — Multipart messages — L ❌ NOT DOING
-- **Reason:** User declined — not implementing.
+Goal: make the device feel responsive and conserve battery during real field use.
 
-### 4.10 — Raw custom payloads — L ❌ NOT DOING
-- **Reason:** User declined — not implementing.
+Priority tasks:
 
----
+- Decompose large UI files, especially `src/ui/screens.cpp` and `src/ui/chat_screen.cpp`, into focused screen modules with shared helpers.
+- Virtualize long lists for messages, contacts, packet logs, telemetry history, and map markers.
+- Reduce release RAM pressure below 80% before adding large BLE or map features.
+- Profile LVGL buffer use, PSRAM fallback behavior, map tile decode allocations, and worst-case chat rendering.
+- Add online tile fetch and negative tile cache for map parity, while preserving offline SD-first behavior.
+- Add map tile prefetch, cache budget settings, and graceful no-SD/no-network states.
+- Improve autolock, sleep, wake sources, and backlight behavior around radio receive, trackball, keyboard, and touch.
+- Add battery and duty-cycle status surfaces that are visible without opening deep diagnostics.
+- Add keyboard editor polish: shortcuts, selection, clipboard or draft persistence, and faster correction flows.
 
-## Phase 5 — Identity, UI & security
+Done when:
 
-### 5.1 — Contact locations on Map — M ✅
-- **Status:** Done. Map overlays contact-location markers from `ContactInfo::has_location` / `latitude` / `longitude`; marker taps open Contact Detail.
-- **PR:** #321 (Closes #302).
+- UI remains responsive while receiving mesh packets, rendering maps, and saving state.
+- Battery behavior is predictable and documented.
+- Large data views do not cause frame spikes or heap fragmentation.
 
-### 5.2 — Factory reset — S ✅
-- **Status:** Done. "Factory reset" action on the Settings → System screen (double-confirm) → `mesh::factoryReset()` clears NVS prefs + contacts + channels, regenerates identity, delays for flash, then reboots.
-- **PR:** #275 (issue #274).
+## Phase 7 - Release And Field Operations
 
-### 5.3 — Identity backup (export/import) — M ✅
-- **Status:** Done. Terminal `exportkey` / `importkey <hex>` commands back up and restore the node identity.
-- **PR:** #320 (Closes #303).
+Goal: make releases installable, recoverable, and supportable.
 
-### 5.4 — QR code generation + URI import — L / M ✅
-- **Status:** Done. Terminal `import meshcore://...` handles contact/channel URI import; Contact Detail and Channel Settings can render shareable QR codes via `src/app/qr_show.cpp`.
-- **PRs:** #322 (URI import), #328 (QR generation).
+Priority tasks:
 
-### 5.5 — Node stats query — S ✅
-- **Status:** Done. Node Stats diagnostics panel surfacing sent/recv flood+direct counters, airtime totals, and duplicate/drop counts. Reachable from navigation (`nodestats` nav entry).
-- **PR:** #277 (issue #276).
+- Publish merged firmware artifacts with checksums and board/region notes.
+- Add a release checklist covering native tests, release build, telemetry build, hardware smoke, radio interop, OTA, SD/map, GPS, and sleep/wake.
+- Add recovery docs for factory reset, identity backup/restore, failed OTA, bad radio config, and unconfigured no-transmit boot.
+- Add version reporting that includes firmware version, git SHA, MeshCore submodule SHA, build environment, and partition layout.
+- Add firmware-manifest support for GitHub OTA and future Web Flasher flows.
+- Add issue templates for bugs, hardware test reports, interop failures, and feature parity requests.
 
-### 5.6 — Universal trackball back-swipe — M ✅
-- **Status:** Done. `navigation.cpp` implements the two-swipe-commit back gesture for non-Home/non-Chat screens; Chat keeps its channel-list left-swipe behaviour.
+Done when:
 
-### 5.7 — Device admin PIN — M ✅
-- **Status:** Done. `NodePrefs::device_pin` persists a 4–6 digit PIN; Settings → System exposes set/change; Settings/Terminal entry prompts when enabled.
-- **PR:** #326.
+- A non-developer can install, update, recover, and report useful diagnostics.
+- Maintainers can compare field reports against exact firmware artifacts.
+- Release PRs carry consistent validation evidence.
 
-### 5.8 — ACL / contact permissions — L ✅
-- **Status:** Done. `ContactInfo::perm` plus `setContactPerm()` / `getContactPerm()` wrappers; Contact Detail displays ACL role and provides promote/demote controls.
-- **Issue:** #310.
+## Definition Of Parity
 
-### 5.9 — Message signing — S (niche) ✅
-- **Status:** Done. Terminal `sign <data>` signs arbitrary text with the node identity.
-- **PR:** #317 (Closes #307).
+| Capability | Required parity behavior | Exceeds parity when |
+| --- | --- | --- |
+| Standalone chat | Channel and DM messaging, timestamps, ACK status, unread state | Search, details, delivery history, resilient drafts |
+| Contacts | Discovery, manual add, details, route/path reset | Favorites, filters, badges, QR/import/export |
+| Maps | Own position, contacts, pan/zoom, offline tiles | Online tile fetch, negative cache, prefetch, route overlays |
+| Repeater/room workflows | Login, command, fetch, status, errors | Guided workflows, permission display, recovery hints |
+| Companion access | BLE or WiFi client sync and messaging | Two-way offline queue, transport switching, sync diagnostics |
+| Diagnostics | Packet log, telemetry, screenshots, heap/status | Crash ring, heartbeat history, reproducible hardware artifacts |
+| Power | Backlight, sleep, low-battery shutdown | Wake-source tuning, power profiles, measured runtime |
+| Releases | Build artifacts and install docs | Rollback/recovery flows and field-report automation |
 
-### 5.10 — OTA firmware update — L ✅ DONE
+## PR Validation Checklist
 
-- **Implemented:** Two OTA paths — WiFi AP upload (`screens.cpp` "OTA Update") and GitHub download via STA WiFi (`github_ota.h`). Dual OTA partition table active. See MISSING_FEATURES → "OTA firmware update".
+Every code PR should state which of these were run:
 
----
+- `pio test -e native_test -v`
+- `pio run -e SigurdOS_TDeck`
+- Relevant telemetry or remote-test build
+- Hardware boot test, if applicable
+- Physical radio test or documented reason it was not run
+- Companion/client interop test, if applicable
+- Screenshot/widget-tree evidence for UI work
+- Persistence migration test for storage changes
 
-## Phase 6 — Companion parity gaps (audit 2026-06-01)
-
-> **Status: complete.** The companion-firmware deltas found in the 2026-06-01 audit have been implemented or explicitly declined. Infrastructure-only deltas (region / flood-scope routing, allowed-repeat-freq, path-hash-mode, BLE-modem) remain documented for reference but outside the standalone handheld scope.
-
-### 6.1 — Multi-ACK reliability toggle — S ✅
-- **Status:** Done. `NodePrefs::multi_acks`, Settings toggle, and `SigurdMeshV2::getExtraAckTransmitCount()` are wired.
-
-### 6.2 — Message-arrival notification (buzzer) + quiet toggle — M ✅
-- **Status:** Done. Buzzer HAL, incoming-message beep, `buzzer_quiet` pref, and Settings "Notification sound" toggle are implemented.
-
-### 6.3 — Client-repeat mode (companion also relays) — M ✅
-- **Status:** Done. `NodePrefs::client_repeat`, Settings toggle, and `SigurdMeshV2` forwarding gate are implemented.
-- **PR:** #319 (issue #306).
-
-### 6.4 — Answer inbound telemetry + telemetry-mode policy — M ✅
-- **Status:** Done. `SigurdMeshV2::onContactRequest()` answers `REQ_TYPE_GET_TELEMETRY_DATA` with CayenneLPP battery/GPS data where available.
-- **PR:** #318 (issue #301).
-
-### 6.5 — Advert path query (diagnostic) — S *(niche)* ✅
-- **Status:** Done. `SigurdMeshV2` tracks inbound advert paths and Contact Detail displays path/hop count.
-- **PRs:** #316 (hop count), #324 (advert path).
-
-### 6.6 — Storage usage display — S *(niche)* ✅
-- **Status:** Done. Settings → System shows internal/SD storage usage where available.
-
-### 6.7 — Reboot action — S *(low value)* ✅
-- **Status:** Done. Settings → System includes a dedicated Reboot action with confirmation.
-
----
-
-## Suggested sequence
-
-```
-| Phase 1 (quick wins) ──── ✅ COMPLETED
-|        │
-|        ▼
-| Phase 0  migrate to BaseChatMesh ──── ✅ COMPLETED
-|        │
-|        ├──────────────► Phase 4 (4.1–4.8) ──── ✅ COMPLETED
-|        │                        │            (4.9–4.10 declined)
-| Phase 2 (radio/config) ── ✅ COMPLETED
-|        │                        │
-|        └────────► Phase 3 (messaging polish) ── ✅ COMPLETED
-|                               │
-|                               ▼
-|                           Phase 5 (identity/UI/security/OTA) ── ✅ COMPLETED
-|                               │
-|                               ▼
-|                           Phase 6 (companion parity gaps) ───── ✅ COMPLETED
-```
-
-- **Phases 0–6 ✅** are complete for the currently accepted companion-handheld scope.
-- Declined/out-of-scope items remain documented in `MISSING_FEATURES.md` for reference, but are not active roadmap work.
-
-## Final reminders for the agent
-
-- **One feature, one PR, one issue.** Don't bundle.
-- **Add tests for every change.** A PR with no new/updated test and no green `pio test -e native_test` is rejected.
-- **Declare hardware testing in the PR body** — "Remote test", "Physical hardware test", or both. Missing = auto-decline.
-- **Don't hardcode colors or skip `apply_dark_bg()`** — theme compliance is enforced.
-- **If you find a bug unrelated to your task**, add it to [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) in the standard format — don't silently fix or ignore it.
-- **When in doubt about the Phase 0 migration, stop and ask the user.** Guessing on an embedded refactor is how regressions ship.
+Docs-only PRs should still run `git diff --check` and should avoid changing protected process docs unless the PR is specifically scoped for that.

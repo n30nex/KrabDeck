@@ -15,6 +15,8 @@ namespace sigurdos {
 namespace telemetry {
 namespace crash {
 
+static constexpr uint8_t RTC_CRASH_BACKTRACE_CAPACITY = 8;
+
 // ── RTC Crash Record ───────────────────────────────────
 // Stored in RTC slow memory, survives deep sleep.
 struct __attribute__((packed)) RtcCrashRecord {
@@ -22,10 +24,16 @@ struct __attribute__((packed)) RtcCrashRecord {
     uint8_t  reset_reason;    // ESP reset reason code
     uint32_t crash_pc;        // Program counter at crash
     uint32_t crash_timestamp; // millis() at crash
-    uint16_t backtrace_pcs[8]; // Backtrace frames (truncated)
+    uint16_t backtrace_pcs[RTC_CRASH_BACKTRACE_CAPACITY]; // Backtrace frames (truncated)
     uint8_t  backtrace_count;
     uint8_t  reserved[9];
 };
+
+inline uint8_t bounded_backtrace_count(uint8_t count) {
+    return (count > RTC_CRASH_BACKTRACE_CAPACITY)
+        ? RTC_CRASH_BACKTRACE_CAPACITY
+        : count;
+}
 
 // ── Public API ─────────────────────────────────────────
 

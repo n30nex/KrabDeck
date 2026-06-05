@@ -102,7 +102,7 @@ float collect_temp() {
 uint8_t collect_task_watermarks(TaskWatermark* out, uint8_t max) {
     // uxTaskGetSystemState and vTaskList require trace facilities that
     // may not be enabled. Report current task stack HWM only.
-    if (max == 0) return 0;
+    if (!task_watermark_output_valid(out, max)) return 0;
     
     TaskHandle_t self = xTaskGetCurrentTaskHandle();
     strncpy(out[0].name, pcTaskGetName(self), sizeof(out[0].name) - 1);

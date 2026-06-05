@@ -53,6 +53,21 @@ static bool raw_pin_active(const ButtonState& btn)
     return btn.direction ? raw != btn.last_raw : raw == LOW;
 }
 
+static bool valid_input_event(SigurdOSTrackballEvent event)
+{
+    switch (event) {
+    case SigurdOSTrackballEvent::Up:
+    case SigurdOSTrackballEvent::Down:
+    case SigurdOSTrackballEvent::Left:
+    case SigurdOSTrackballEvent::Right:
+    case SigurdOSTrackballEvent::Click:
+        return true;
+    case SigurdOSTrackballEvent::None:
+    default:
+        return false;
+    }
+}
+
 #if defined(SIGURDOS_TRACKBALL_DEBUG)
 static const char* event_name(SigurdOSTrackballEvent event)
 {
@@ -257,7 +272,7 @@ bool sigurdos_trackball_next_event(SigurdOSTrackballEvent* out)
 
 void sigurdos_trackball_inject(SigurdOSTrackballEvent event)
 {
-    if (event == SigurdOSTrackballEvent::None) return;
+    if (!valid_input_event(event)) return;
     queue_event(event);
 }
 

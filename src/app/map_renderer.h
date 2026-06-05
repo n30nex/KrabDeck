@@ -20,7 +20,79 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <cmath>
 #include <lvgl.h>
+
+static constexpr int SIGURDOS_MAP_TILE_SIZE = 256;
+static constexpr int SIGURDOS_MAP_MAX_ZOOM = 18;
+static constexpr int SIGURDOS_MAP_MIN_ZOOM = 0;
+static constexpr double SIGURDOS_MAP_MAX_LAT = 85.0511;
+static constexpr double SIGURDOS_MAP_MIN_LAT = -85.0511;
+static constexpr double SIGURDOS_MAP_MAX_LON = 180.0;
+static constexpr double SIGURDOS_MAP_MIN_LON = -180.0;
+static constexpr double SIGURDOS_MAP_PI = 3.14159265358979323846;
+
+inline bool sigurdos_map_zoom_valid(int zoom) {
+    return zoom >= SIGURDOS_MAP_MIN_ZOOM && zoom <= SIGURDOS_MAP_MAX_ZOOM;
+}
+
+inline int sigurdos_map_tiles_per_axis(int zoom) {
+    return sigurdos_map_zoom_valid(zoom) ? (1 << zoom) : 0;
+}
+
+inline int sigurdos_map_clamp_int(int val, int lo, int hi) {
+    if (val < lo) return lo;
+    if (val > hi) return hi;
+    return val;
+}
+
+inline double sigurdos_map_clamp_double(double val, double lo, double hi) {
+    if (val < lo) return lo;
+    if (val > hi) return hi;
+    return val;
+}
+
+inline double sigurdos_map_clamp_lat(double lat) {
+    return sigurdos_map_clamp_double(lat, SIGURDOS_MAP_MIN_LAT, SIGURDOS_MAP_MAX_LAT);
+}
+
+inline double sigurdos_map_clamp_lon(double lon) {
+    return sigurdos_map_clamp_double(lon, SIGURDOS_MAP_MIN_LON, SIGURDOS_MAP_MAX_LON);
+}
+
+inline bool sigurdos_map_tile_valid(int zoom, int x, int y) {
+    const int n = sigurdos_map_tiles_per_axis(zoom);
+    return n > 0 && x >= 0 && x < n && y >= 0 && y < n;
+}
+
+inline double sigurdos_map_lon_to_tile_x(double lon, int zoom) {
+    const int n = sigurdos_map_tiles_per_axis(zoom);
+    if (n <= 0) return 0.0;
+    return (lon + 180.0) / 360.0 * (double)n;
+}
+
+inline double sigurdos_map_lat_to_tile_y(double lat, int zoom) {
+    const int n = sigurdos_map_tiles_per_axis(zoom);
+    if (n <= 0) return 0.0;
+    const double clamped_lat = sigurdos_map_clamp_lat(lat);
+    const double lat_rad = clamped_lat * SIGURDOS_MAP_PI / 180.0;
+    return (1.0 - std::log(std::tan(lat_rad) + 1.0 / std::cos(lat_rad)) /
+                      SIGURDOS_MAP_PI) /
+           2.0 * (double)n;
+}
+
+inline double sigurdos_map_tile_x_to_lon(double tile_x, int zoom) {
+    const int n = sigurdos_map_tiles_per_axis(zoom);
+    if (n <= 0) return 0.0;
+    return tile_x / (double)n * 360.0 - 180.0;
+}
+
+inline double sigurdos_map_tile_y_to_lat(double tile_y, int zoom) {
+    const int n = sigurdos_map_tiles_per_axis(zoom);
+    if (n <= 0) return 0.0;
+    return std::atan(std::sinh(SIGURDOS_MAP_PI * (1.0 - 2.0 * tile_y / (double)n))) *
+           180.0 / SIGURDOS_MAP_PI;
+}
 
 // Initialize the map renderer with LVGL parent object
 // Call after LVGL is initialized and SD card is mounted

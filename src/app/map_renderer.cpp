@@ -45,15 +45,14 @@ void sigurdos_map_contact_set_tap_cb(map_contact_tap_cb_t cb) {
 extern void lodepng_free(void* ptr);
 
 // ── Constants ─────────────────────────────────────────────
-static constexpr int TILE_SIZE    = 256;   // standard tile size (pixels)
-static constexpr int MAX_ZOOM     = 18;
-static constexpr int MIN_ZOOM     = 0;
-static constexpr double MAX_LAT   = 85.0511;
-static constexpr double MIN_LAT   = -85.0511;
-static constexpr double MAX_LON   = 180.0;
-static constexpr double MIN_LON   = -180.0;
+static constexpr int TILE_SIZE    = SIGURDOS_MAP_TILE_SIZE;
+static constexpr int MAX_ZOOM     = SIGURDOS_MAP_MAX_ZOOM;
+static constexpr int MIN_ZOOM     = SIGURDOS_MAP_MIN_ZOOM;
+static constexpr double MAX_LAT   = SIGURDOS_MAP_MAX_LAT;
+static constexpr double MIN_LAT   = SIGURDOS_MAP_MIN_LAT;
+static constexpr double MAX_LON   = SIGURDOS_MAP_MAX_LON;
+static constexpr double MIN_LON   = SIGURDOS_MAP_MIN_LON;
 
-// Note: PI is defined by Arduino.h as a macro
 static lv_obj_t* map_canvas = nullptr;
 static uint8_t*   canvas_pixels = nullptr;
 
@@ -90,36 +89,27 @@ static bool have_tile_coverage = false;
 
 // ── Web Mercator helpers ──────────────────────────────────
 static double lon_to_tile_x(double lon, int z) {
-    double n = (double)(1 << z);
-    return (lon + 180.0) / 360.0 * n;
+    return sigurdos_map_lon_to_tile_x(lon, z);
 }
 
 static double lat_to_tile_y(double lat, int z) {
-    double n = (double)(1 << z);
-    double lat_rad = lat * PI / 180.0;
-    return (1.0 - log(tan(lat_rad) + 1.0 / cos(lat_rad)) / PI) / 2.0 * n;
+    return sigurdos_map_lat_to_tile_y(lat, z);
 }
 
 static double tile_x_to_lon(double tx, int z) {
-    double n = (double)(1 << z);
-    return tx / n * 360.0 - 180.0;
+    return sigurdos_map_tile_x_to_lon(tx, z);
 }
 
 static double tile_y_to_lat(double ty, int z) {
-    double n = (double)(1 << z);
-    return atan(sinh(PI * (1.0 - 2.0 * ty / n))) * 180.0 / PI;
+    return sigurdos_map_tile_y_to_lat(ty, z);
 }
 
 static int clamp(int val, int lo, int hi) {
-    if (val < lo) return lo;
-    if (val > hi) return hi;
-    return val;
+    return sigurdos_map_clamp_int(val, lo, hi);
 }
 
 static double clamp_d(double val, double lo, double hi) {
-    if (val < lo) return lo;
-    if (val > hi) return hi;
-    return val;
+    return sigurdos_map_clamp_double(val, lo, hi);
 }
 
 static void* map_alloc(size_t size) {

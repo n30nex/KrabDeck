@@ -25,6 +25,7 @@
 #include <gtest/gtest.h>
 #include "Arduino.h"
 #include "hal/gps.h"
+#include "hal/tdeck_pins.h"
 #include <cstdint>
 #include <cstring>
 #include <cstdlib>
@@ -356,7 +357,7 @@ class GPSIntegrationTest : public ::testing::Test {
 protected:
     void SetUp() override {
         arduino_mock::reset();
-        Serial1.mock_clear_rx();
+        Serial1.mock_reset();
         sigurdos_gps_init();
     }
 
@@ -365,6 +366,50 @@ protected:
         sigurdos_gps_loop();
     }
 };
+
+TEST_F(GPSIntegrationTest, InitUsesLilyGoGpsShieldUartContract) {
+    EXPECT_TRUE(Serial1.mock_was_begun());
+    EXPECT_EQ(Serial1.mock_last_baud(), GPS_PRIMARY_BAUD_RATE);
+    EXPECT_EQ(Serial1.mock_last_config(), SERIAL_8N1);
+    EXPECT_EQ(Serial1.mock_last_rx_pin(), PIN_GPS_RX);
+    EXPECT_EQ(Serial1.mock_last_tx_pin(), PIN_GPS_TX);
+    EXPECT_EQ(PIN_GPS_RX, 44);
+    EXPECT_EQ(PIN_GPS_TX, 43);
+    EXPECT_EQ(sigurdos_gps_active_baud(), GPS_PRIMARY_BAUD_RATE);
+}
+
+TEST_F(GPSIntegrationTest, FallsBackToAlternateBaudWhenNoValidNmeaArrives) {
+    delay(3001);
+    sigurdos_gps_loop();
+
+    EXPECT_EQ(Serial1.mock_last_baud(), GPS_FALLBACK_BAUD_RATE);
+    EXPECT_EQ(Serial1.mock_last_rx_pin(), PIN_GPS_RX);
+    EXPECT_EQ(Serial1.mock_last_tx_pin(), PIN_GPS_TX);
+    EXPECT_EQ(sigurdos_gps_active_baud(), GPS_FALLBACK_BAUD_RATE);
+    EXPECT_EQ(sigurdos_gps_baud_switches(), 1U);
+}
+
+TEST_F(GPSIntegrationTest, ChecksumValidNmeaLocksDetectedBaud) {
+    feed("$GPGGA,123519,,,,,1,08,0.9,545.4,M,46.9,M,,*7E\n");
+
+    delay(3001);
+    sigurdos_gps_loop();
+
+    EXPECT_EQ(sigurdos_gps_sentences_received(), 1U);
+    EXPECT_EQ(sigurdos_gps_valid_sentences(), 1U);
+    EXPECT_EQ(sigurdos_gps_checksum_failures(), 0U);
+    EXPECT_EQ(sigurdos_gps_baud_switches(), 0U);
+    EXPECT_EQ(sigurdos_gps_active_baud(), GPS_PRIMARY_BAUD_RATE);
+    EXPECT_EQ(sigurdos_gps_gga_sentences(), 1U);
+}
+
+TEST_F(GPSIntegrationTest, ChecksumFailuresAreCountedForHardwareDebug) {
+    feed("$GPGGA,123519,,,,,1,08,0.9,545.4,M,46.9,M,,*00\n");
+
+    EXPECT_EQ(sigurdos_gps_sentences_received(), 1U);
+    EXPECT_EQ(sigurdos_gps_valid_sentences(), 0U);
+    EXPECT_EQ(sigurdos_gps_checksum_failures(), 1U);
+}
 
 TEST_F(GPSIntegrationTest, GGAWithEmptyCoordinateFieldsDoesNotShiftLaterFields) {
     feed("$GPGGA,123519,,,,,1,08,0.9,545.4,M,46.9,M,,*7E\n");
@@ -384,6 +429,51 @@ TEST_F(GPSIntegrationTest, RMCWithEmptySpeedKeepsHeadingInFieldEight) {
 
     EXPECT_FLOAT_EQ(sigurdos_gps_speed_kn(), 0.0f);
     EXPECT_NEAR(sigurdos_gps_heading(), 84.4f, 0.1f);
+    EXPECT_EQ(sigurdos_gps_rmc_sentences(), 1U);
+    EXPECT_EQ(sigurdos_gps_rmc_status(), 'A');
+}
+
+TEST_F(GPSIntegrationTest, GsvAndGsaDiagnosticsTrackSkyViewBeforeFix) {
+    feed("$GPGSV,3,1,11,03,03,111,00,04,15,270,00,06,01,010,00,13,06,292,00*74\n");
+    feed("$GPGSA,A,3,04,05,,09,12,,,24,,,,,2.5,1.3,2.1*39\n");
+
+    EXPECT_EQ(sigurdos_gps_valid_sentences(), 2U);
+    EXPECT_EQ(sigurdos_gps_gsv_sentences(), 1U);
+    EXPECT_EQ(sigurdos_gps_gsa_sentences(), 1U);
+    EXPECT_EQ(sigurdos_gps_satellites_in_view(), 11);
+    EXPECT_EQ(sigurdos_gps_fix_type(), 3);
+    EXPECT_EQ(sigurdos_gps_gsv_snr_max(), 0);
+    EXPECT_EQ(sigurdos_gps_gsv_snr_count(), 0);
+    EXPECT_FALSE(sigurdos_gps_has_fix());
+}
+
+TEST_F(GPSIntegrationTest, GsvDiagnosticsAggregateNonZeroSnrAcrossMessageSet) {
+    feed("$GPGSV,2,1,08,03,03,111,22,04,15,270,00,06,01,010,17,13,06,292,35*7D\n");
+    feed("$GPGSV,2,2,08,16,45,123,42,19,10,050,,23,20,180,09,24,60,200,00*7C\n");
+
+    EXPECT_EQ(sigurdos_gps_gsv_sentences(), 2U);
+    EXPECT_EQ(sigurdos_gps_satellites_in_view(), 8);
+    EXPECT_EQ(sigurdos_gps_gsv_snr_max(), 42);
+    EXPECT_EQ(sigurdos_gps_gsv_snr_count(), 5);
+
+    feed("$GPGSV,1,1,04,01,02,003,00,02,04,120,00,03,07,250,00,05,09,210,00*74\n");
+
+    EXPECT_EQ(sigurdos_gps_gsv_sentences(), 3U);
+    EXPECT_EQ(sigurdos_gps_satellites_in_view(), 4);
+    EXPECT_EQ(sigurdos_gps_gsv_snr_max(), 0);
+    EXPECT_EQ(sigurdos_gps_gsv_snr_count(), 0);
+}
+
+TEST_F(GPSIntegrationTest, GNVariantsUpdateAcquisitionDiagnostics) {
+    feed("$GNGSV,1,1,03,01,02,003,00,02,04,120,00,03,07,250,00*52\n");
+    feed("$GNGSA,A,1,,,,,,,,,,,,,99.99,99.99,99.99*2E\n");
+
+    EXPECT_EQ(sigurdos_gps_gsv_sentences(), 1U);
+    EXPECT_EQ(sigurdos_gps_gsa_sentences(), 1U);
+    EXPECT_EQ(sigurdos_gps_satellites_in_view(), 3);
+    EXPECT_EQ(sigurdos_gps_fix_type(), 1);
+    EXPECT_EQ(sigurdos_gps_gsv_snr_max(), 0);
+    EXPECT_EQ(sigurdos_gps_gsv_snr_count(), 0);
 }
 
 } // anonymous namespace

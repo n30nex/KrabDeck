@@ -128,6 +128,24 @@ TEST_F(ThemeTest, AllConstantsNonZero) {
 }
 
 // ── Color uniqueness ────────────────────────────────────
+TEST_F(ThemeTest, ThemeApplyUpdatesRuntimeColors) {
+    using namespace sigurdos::theme;
+
+    theme_apply(2);
+    EXPECT_EQ(BG_PRIMARY, THEMES[2].bg_primary);
+    EXPECT_EQ(BG_SECONDARY, THEMES[2].bg_secondary);
+    EXPECT_EQ(BG_TERTIARY, THEMES[2].bg_tertiary);
+    EXPECT_EQ(BG_INPUT, THEMES[2].bg_input);
+    EXPECT_EQ(ACCENT, THEMES[2].accent);
+    EXPECT_EQ(ACCENT_HOVER, THEMES[2].accent_hover);
+    EXPECT_EQ(CHANNEL_HASH, THEMES[2].channel_hash);
+
+    theme_apply(255);
+    EXPECT_EQ(BG_PRIMARY, THEMES[0].bg_primary);
+    EXPECT_EQ(ACCENT, THEMES[0].accent);
+    EXPECT_EQ(CHANNEL_HASH, THEMES[0].channel_hash);
+}
+
 TEST_F(ThemeTest, AccentColorsAreDistinct) {
     using namespace sigurdos::theme;
     EXPECT_NE(ACCENT, ACCENT_GREEN);

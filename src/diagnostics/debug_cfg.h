@@ -48,6 +48,10 @@
 #define SIGURDOS_DEBUG_DIAG SIGURDOS_DEBUG_ACTIVE
 #endif
 
+#ifndef SIGURDOS_SERIAL_DEBUG_COMMANDS
+#define SIGURDOS_SERIAL_DEBUG_COMMANDS 0
+#endif
+
 // Per-feature runtime state declarations.
 // These are always compiled so the test controller can call them
 // regardless of compile-time gating. In non-debug builds the stubs

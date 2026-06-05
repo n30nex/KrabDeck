@@ -15,34 +15,37 @@ Full credit to the MeshCore Dev team! I won't ever accept any money or donations
 ## Test Suite
 
 ```bash
-# Run all 332 tests on native platform (no hardware needed) (1 skipped, 331 passed)
-pio test -e native_test -v
+# Run the native host-side suite (no hardware needed)
+pio test -e native_test
 
 # Run a specific test module
-pio test -e native_test -f test_battery -v
+pio test -e native_test -f test_battery
+
+# Build the firmware image for LilyGo T-Deck
+pio run -e SigurdOS_TDeck
 ```
 
-| Test Module | Tests | What's Covered |
-|-------------|-------|----------------|
-| `test_build` | 7 | All headers compile together, cross-module API consistency |
-| `test_battery` | 16 | Battery level monitoring, ADC reading, voltage conversion, percentage calculation |
-| `test_chat_truncation` | 10 | Chat message truncation, long text handling |
-| `test_emoji` | 22 | Emoji font rendering, fallback logic, sizing |
-| `test_gps` | 26 | NMEA parsing, coordinate conversion, fix detection |
-| `test_home_screen` | 16 | Home screen layout, icon grid, status bars |
-| `test_keyboard` | 20 | Matrix scan, keymap, debounce, ghost detection, LVGL mapping |
-| `test_layout` | 4 | Adaptive layout helpers, responsive grid calculations, screen size adjustments |
-| `test_map` | 25 | Tile math (lat/lon→tile), zoom levels, bounding box |
-| `test_mesh_messaging` | 43 | Message queue, send/receive, channel ops, contact export |
-| `test_mesh_wrapper` | 18 | API signatures, return value ranges, unread count init |
-| `test_navigation` | 22 | Forward/back with history stack, deep nav chains, all pairs |
-| `test_pins` | 9 | GPIO ranges, SPI/I2C bus conflicts, duplicate detection, LoRa params |
-| `test_prefs` | 3 | NVS preferences, radio config persistence, identity storage, save/load |
-| `test_sdcard` | 15 | SPI init, mount, read/write, directory listing, edge cases |
-| `test_terminal` | 7 | Terminal buffer management, command parsing |
-| `test_theme` | 7 | Color darkness, vibrancy, distinctness, readability hierarchy |
-| `test_touch` | 22 | GT911 coordinate mapping, multitouch parsing, press→release lifecycle |
-| `test_trackball` | 9 | Direction debounce, deadtime, click detection, idle calibration |
+| Test Module | What's Covered |
+|-------------|----------------|
+| `test_build` | All headers compile together, cross-module API consistency |
+| `test_battery` | Battery level monitoring, ADC reading, voltage conversion, percentage calculation |
+| `test_chat_truncation` | Chat message truncation, long text handling |
+| `test_emoji` | Emoji font rendering, fallback logic, sizing |
+| `test_gps` | NMEA parsing, coordinate conversion, fix detection |
+| `test_home_screen` | Home screen layout, icon grid, status bars |
+| `test_keyboard` | Matrix scan, keymap, debounce, ghost detection, LVGL mapping |
+| `test_layout` | Adaptive layout helpers, responsive grid calculations, screen size adjustments |
+| `test_map` | Tile math, zoom levels, bounding box |
+| `test_mesh_messaging` | Message queue, send/receive, channel ops, contact export |
+| `test_mesh_wrapper` | API signatures, return value ranges, unread count init |
+| `test_navigation` | Forward/back with history stack, deep nav chains, all pairs |
+| `test_pins` | GPIO ranges, SPI/I2C bus conflicts, duplicate detection, LoRa params |
+| `test_prefs` | NVS preferences, radio config persistence, identity storage, save/load |
+| `test_sdcard` | SPI init, mount, read/write, directory listing, edge cases |
+| `test_terminal` | Terminal buffer management, command parsing |
+| `test_theme` | Color darkness, vibrancy, distinctness, readability hierarchy |
+| `test_touch` | GT911 coordinate mapping, multitouch parsing, press/release lifecycle |
+| `test_trackball` | Direction debounce, deadtime, click detection, idle calibration |
 
 Full test documentation: [`test/README.md`](test/README.md)
 
@@ -106,7 +109,7 @@ SigurdOS-tdeck/
 │       └── ui.cpp/h        ← Splash → Home transition
 ├── boards/t-deck.json      ← PlatformIO board definition
 ├── platformio.ini          ← Build config (ESP32-S3 + LVGL + MeshCore)
-├── test/                   ← Unit test directory (19 modules, 332 tests)
++-- test/                   <- Native test suite and mocks
 ```
 
 ## Build & Flash

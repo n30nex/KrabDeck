@@ -41,9 +41,35 @@ struct APInfo {
     bool encrypted;
 };
 
+static constexpr int SIGURDOS_WIFI_SCAN_MAX_APS = 30;
+
+inline int limitScanCount(int found, int capacity) {
+    if (found <= 0 || capacity <= 0) return 0;
+
+    int count = found;
+    if (count > SIGURDOS_WIFI_SCAN_MAX_APS) count = SIGURDOS_WIFI_SCAN_MAX_APS;
+    if (count > capacity) count = capacity;
+    return count;
+}
+
+inline void sortByRssi(APInfo* aps, int count) {
+    if (!aps || count <= 1) return;
+
+    for (int i = 1; i < count; ++i) {
+        APInfo current = aps[i];
+        int j = i - 1;
+        while (j >= 0 && aps[j].rssi < current.rssi) {
+            aps[j + 1] = aps[j];
+            --j;
+        }
+        aps[j + 1] = current;
+    }
+}
+
 // Scan nearby WiFi access points. Returns count of found APs
 // (max 30). Caller provides buffer; results sorted by RSSI
-// (strongest first). WiFi is left in WIFI_OFF after scan.
+// (strongest first). WiFi is left in STA mode after scan so
+// beginConnect() can reuse the settled radio path.
 int scan(APInfo* out, int max_aps);
 
 }  // namespace wifi_scan

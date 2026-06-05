@@ -349,7 +349,7 @@ const EmojiEntry emoji_data[] = {
 
 int emoji_search(const char* prefix, EmojiEntry* out, int max_results)
 {
-    if (!prefix || !prefix[0]) return 0;
+    if (!prefix || !prefix[0] || !out || max_results <= 0) return 0;
     int len = (int)strlen(prefix);
     int count = 0;
 

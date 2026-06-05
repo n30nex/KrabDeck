@@ -26,6 +26,9 @@ struct NodePrefs {
     uint16_t chat_msg_cap;      // Per-channel in-memory message history cap
     uint8_t  flood_max_hops;    // 0=no limit, otherwise max flood hops for contact auto-add
     bool     share_location;    // include GPS coordinates in adverts
+    bool     advert_location_valid; // true when companion app supplied fixed-point lat/lon
+    int32_t  advert_lat;        // fixed-point degrees * 1e6, companion advert fallback
+    int32_t  advert_lon;        // fixed-point degrees * 1e6, companion advert fallback
     float    rx_delay_base;        // 0-20.0, RX delay base factor for collision avoidance
     float    tx_delay_factor;      // 0-2.0, TX flood retransmit delay multiplier
     float    direct_tx_delay_factor; // 0-2.0, TX direct retransmit delay multiplier
@@ -41,6 +44,7 @@ struct NodePrefs {
     bool     multi_acks;              // send extra redundant ACK transmissions for lossy links
     bool     buzzer_quiet;            // mute message-arrival buzzer
     uint8_t  client_repeat;           // 0=no forwarding, !=0=opportunistic relay (client-repeat mode)
+    bool     ble_enabled;             // BLE companion advertising enabled in BLE build
     uint32_t device_pin;               // 4-6 digit device PIN (0 = disabled)
     char     wifi_ssid[33];            // WiFi STA SSID for GitHub OTA (empty = not set)
     char     wifi_password[64];        // WiFi STA password
@@ -62,6 +66,9 @@ struct NodePrefs {
         chat_msg_cap = 200;
         flood_max_hops = 0;  // 0 = no limit
         share_location = false;  // location OFF by default (privacy-first)
+        advert_location_valid = false;
+        advert_lat = 0;
+        advert_lon = 0;
         rx_delay_base = 10.0f;      // default RX delay base (matching MeshCore companion default)
         tx_delay_factor = 1.0f;     // default TX flood delay factor
         direct_tx_delay_factor = 1.0f; // default TX direct delay factor
@@ -77,6 +84,7 @@ struct NodePrefs {
         multi_acks = false;           // default: send minimum ACKs
         buzzer_quiet = false;         // default: buzzer enabled
         client_repeat = 0;            // default: no forwarding
+        ble_enabled = false;          // default: BLE companion off
         device_pin = 0;               // default: no PIN
         wifi_ssid[0] = '\0';          // default: no WiFi
         wifi_password[0] = '\0';

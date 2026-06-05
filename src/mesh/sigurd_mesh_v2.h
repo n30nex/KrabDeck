@@ -156,9 +156,58 @@ public:
         return true;
     }
 
-    void onTraceRecv(::mesh::Packet*, uint32_t tag, uint32_t auth_code, uint8_t flags,
+    // Companion CMD_SEND_TRACE_PATH: trace an explicit caller-supplied path with
+    // a caller-chosen tag/auth/flags. Fills est_timeout for RESP_CODE_SENT.
+    bool sendTracePathRaw(uint32_t tag, uint32_t auth, uint8_t flags,
+                          const uint8_t* path, uint8_t path_len, uint32_t& est_timeout) {
+        ::mesh::Packet* pkt = createTrace(tag, auth, flags);
+        if (!pkt) return false;
+        _has_trace_result = false;
+        sendDirect(pkt, const_cast<uint8_t*>(path), path_len);
+        uint8_t path_sz = flags & 0x03;
+        // Advisory estimate; airtime is dominated by per-hop round trips.
+        est_timeout = calcDirectTimeoutMillisFor(150, (uint8_t)(path_len >> path_sz));
+        return true;
+    }
+
+    // Companion CMD_SEND_LOGIN: send a login and register the login entry so the
+    // response is matched in onContactResponse. Returns the MSG_SEND_* result.
+    int sendLoginCompanion(const ::ContactInfo& contact, const char* password,
+                           uint32_t& est_timeout) {
+        est_timeout = 0;
+        int r = BaseChatMesh::sendLogin(contact, password ? password : "", est_timeout);
+        if (r != MSG_SEND_FAILED) addLoginEntry(contact.name);
+        return r;
+    }
+
+    // Public companion shims for the protected keep-alive connection helpers.
+    bool companionHasConnection(const uint8_t* pub_key) {
+        return pub_key && BaseChatMesh::hasConnectionTo(pub_key);
+    }
+    void companionStopConnection(const uint8_t* pub_key) {
+        if (pub_key) BaseChatMesh::stopConnection(pub_key);
+    }
+
+    // Companion CMD_EXPORT_CONTACT (self): serialise this node's advert into out.
+    // Returns bytes written (0 on failure).
+    int exportSelfContact(const char* name, uint8_t* out, size_t out_cap) {
+        if (!out || out_cap < 1) return 0;
+        ::mesh::Packet* pkt = createSelfAdvert(name ? name : "");
+        if (!pkt) return 0;
+        pkt->header |= ROUTE_TYPE_FLOOD;
+        uint8_t n = pkt->writeTo(out);
+        releasePacket(pkt);
+        return (n > 0 && n <= out_cap) ? (int)n : 0;
+    }
+
+    void onTraceRecv(::mesh::Packet* pkt, uint32_t tag, uint32_t auth_code, uint8_t flags,
                      const uint8_t* path_snrs, const uint8_t* path_hashes,
                      uint8_t path_len) override {
+        // Fan out the full trace result to the phone app before clamping.
+        int8_t final_snr_q = (int8_t)((pkt ? pkt->getSNR() : 0.0f) * 4.0f);
+        sigurdos::mesh::mesh_v2_companion_trace_push(tag, auth_code, flags,
+                                                     path_hashes, path_snrs,
+                                                     path_len, final_snr_q);
         _last_trace_tag = tag;
         if (path_len > MAX_PATH_SIZE) path_len = MAX_PATH_SIZE;
         _last_trace_len = path_len;
@@ -566,10 +615,18 @@ public:
             storeAdvertPath(contact.id.pub_key, contact.name, path_len, path);
         }
 
+        // Fan out to the phone app (NEW_ADVERT for a new contact, else ADVERT).
+        sigurdos::mesh::mesh_v2_companion_advert_push(&contact, is_new);
+
 #if SIGURDOS_DEBUG_MESH
         Serial.printf("[mesh] %s contact: %s (type=%d)\n",
                       is_new ? "new" : "updated", contact.name, contact.type);
 #endif
+    }
+
+    // Notify the phone app when the oldest contact is evicted to make room.
+    void onContactOverwrite(const uint8_t* pub_key) override {
+        sigurdos::mesh::mesh_v2_companion_contact_deleted_push(pub_key);
     }
 
     // ── ACK tracking ──────────────────────────────
@@ -619,8 +676,11 @@ public:
         for (int i = 0; i < MAX_PENDING_ACKS; i++) {
             if (_pending_acks[i].in_use && _pending_acks[i].expected_ack == ack_val) {
                 _pending_acks[i].in_use = false;
-                // Notify wrapper layer
+                uint32_t trip_ms = _ms->getMillis() - _pending_acks[i].sent_at_ms;
+                // Notify wrapper layer (local UI + persistent store)
                 sigurdos::mesh::registerAckedMessage(_pending_acks[i].dest_name, _pending_acks[i].timestamp);
+                // Notify the phone app so it marks the sent message delivered.
+                sigurdos::mesh::mesh_v2_notify_send_confirmed(ack_val, trip_ms);
                 // Return a valid ContactInfo for BaseChatMesh internal processing
                 for (int j = 0; j < getNumContacts(); j++) {
                     if (getContactByIdx((uint32_t)j, _contact_cache)) {
@@ -639,7 +699,10 @@ public:
         int rssi = (int)_radio->getLastRSSI();
         float snr = pkt ? pkt->getSNR() : _radio->getLastSNR();
         updateSignalSample(contact.id.pub_key, rssi, snr);
-        sigurdos::mesh::mesh_v2_queue_push(contact.name, "", text, rssi, snr);
+        uint8_t companion_path_len =
+            (pkt && pkt->isRouteFlood()) ? (uint8_t)pkt->path_len : 0xFF;
+        sigurdos::mesh::mesh_v2_queue_push(contact.name, "", text, rssi, snr,
+                                           sender_timestamp, companion_path_len);
     }
 
     void onCommandDataRecv(const ::ContactInfo& contact, ::mesh::Packet* pkt,
@@ -676,7 +739,10 @@ public:
     {
         int rssi = pkt ? (int)_radio->getLastRSSI() : 0;
         float snr = pkt ? pkt->getSNR() : 0.0f;
-        sigurdos::mesh::mesh_v2_queue_push(contact.name, "", text, rssi, snr);
+        uint8_t companion_path_len =
+            (pkt && pkt->isRouteFlood()) ? (uint8_t)pkt->path_len : 0xFF;
+        sigurdos::mesh::mesh_v2_queue_push(contact.name, "", text, rssi, snr,
+                                           sender_timestamp, companion_path_len);
     }
 
     uint32_t calcFloodTimeoutMillisFor(uint32_t pkt_airtime_millis) const override {
@@ -721,7 +787,12 @@ public:
             sender_name = sender_buf;
             msg_text = colon + 2;
         }
-        sigurdos::mesh::mesh_v2_queue_push(sender_name, chname, msg_text, rssi, snr);
+        // Channel messages are flood-routed: forward the real hop path so the
+        // app shows the true hop count (0xFF only for a direct/unknown route).
+        uint8_t companion_path_len =
+            (pkt && pkt->isRouteFlood()) ? (uint8_t)pkt->path_len : 0xFF;
+        sigurdos::mesh::mesh_v2_queue_push(sender_name, chname, msg_text, rssi, snr,
+                                           timestamp, companion_path_len);
     }
 
     uint8_t onContactRequest(const ::ContactInfo& contact, uint32_t sender_timestamp,
@@ -776,6 +847,9 @@ public:
                 _login_entries[login_idx].permission = perm;
                 _login_entries[login_idx].acl_permissions = acl;
 
+                sigurdos::mesh::mesh_v2_companion_login_push(
+                    contact.id.pub_key, true, perm, /*is_admin=*/false);
+
                 // Start keep-alive connection
                 if (keep_alive_secs > 0) {
                     BaseChatMesh::startConnection(contact, keep_alive_secs);
@@ -791,6 +865,8 @@ public:
             if (data[4] == 'O' && data[5] == 'K') {
                 _login_entries[login_idx].status = LOGIN_OK;
                 _login_entries[login_idx].permission = 1; // legacy: admin if "OK"
+                sigurdos::mesh::mesh_v2_companion_login_push(
+                    contact.id.pub_key, true, 0, /*is_admin=*/false);
 #if SIGURDOS_DEBUG_MESH
                 Serial.printf("[mesh] Login OK (legacy) for %s\n", contact.name);
 #endif
@@ -799,6 +875,8 @@ public:
             // Explicit login failure — pending entry with nonzero code
             if (_login_entries[login_idx].status == LOGIN_PENDING && data[4] != 0) {
                 _login_entries[login_idx].status = LOGIN_FAILED;
+                sigurdos::mesh::mesh_v2_companion_login_push(
+                    contact.id.pub_key, false, 0, false);
 #if SIGURDOS_DEBUG_MESH
                 Serial.printf("[mesh] Login FAILED for %s (reason=%d)\n",
                               contact.name, data[4]);
@@ -819,10 +897,12 @@ public:
             re.valid = true;
         }
 
-        // Clear matching pending request — also parse room msg responses
+        // Clear matching pending request — also parse room msg responses and
+        // fan status/telemetry responses out to the phone app.
         for (int i = 0; i < MAX_PENDING_REQUESTS; i++) {
             if (_pending_reqs[i].in_use && _pending_reqs[i].tag == tag) {
-                if (_pending_reqs[i].req_type == REQ_TYPE_GET_ROOM_MSGS && len > 4) {
+                uint8_t req_type = _pending_reqs[i].req_type;
+                if (req_type == REQ_TYPE_GET_ROOM_MSGS && len > 4) {
                     char chan[32];
                     strncpy(chan, _pending_reqs[i].channel_name, sizeof(chan) - 1);
                     chan[sizeof(chan) - 1] = '\0';
@@ -830,6 +910,15 @@ public:
                     parseRoomMsgResponse(contact, data + 4, len - 4, chan);
                 } else {
                     _pending_reqs[i].in_use = false;
+                    if (len > 4) {
+                        if (req_type == REQ_TYPE_GET_STATUS) {
+                            sigurdos::mesh::mesh_v2_companion_status_push(
+                                contact.id.pub_key, data + 4, len - 4);
+                        } else if (req_type == REQ_TYPE_GET_TELEMETRY_DATA) {
+                            sigurdos::mesh::mesh_v2_companion_telemetry_push(
+                                contact.id.pub_key, data + 4, len - 4);
+                        }
+                    }
                 }
                 break;
             }
@@ -841,6 +930,7 @@ public:
         Serial.printf("[mesh] Path updated for %s (len=%d)\n",
                       contact.name, contact.out_path_len);
 #endif
+        sigurdos::mesh::mesh_v2_companion_path_push(contact.id.pub_key);
         // If we had a pending discovery for this contact, mark it complete
         for (int i = 0; i < MAX_DISCOVERY_PENDING; i++) {
             if (_discovery_pending[i].in_use &&
@@ -971,7 +1061,9 @@ public:
     uint8_t getAutoAddMaxHops() const override {
         return sigurdos::prefs_get().flood_max_hops;
     }
-    void onContactsFull() override {}
+    void onContactsFull() override {
+        sigurdos::mesh::mesh_v2_companion_contacts_full_push();
+    }
     float getAirtimeBudgetFactor() const override {
         sigurdos::NodePrefs p = sigurdos::prefs_get();
         if (p.duty_cycle == 0) return -1.0f;
@@ -1331,32 +1423,57 @@ public:
     // Send a typed data datagram to a group channel.
     bool sendGroupDataToChannel(int idx, uint16_t data_type,
                                 const uint8_t* data, int data_len) {
+        return sendGroupDataToChannel(idx, nullptr, OUT_PATH_UNKNOWN,
+                                      data_type, data, data_len);
+    }
+
+    bool sendGroupDataToChannel(int idx, const uint8_t* path, uint8_t path_len,
+                                uint16_t data_type, const uint8_t* data, int data_len) {
         if (idx < 0 || idx >= getChannelCount()) return false;
         if (data_len > 0 && !data) return false;
+        if (path_len != OUT_PATH_UNKNOWN && !::mesh::Packet::isValidPathLen(path_len)) return false;
+        if (path_len != OUT_PATH_UNKNOWN && !path) return false;
         ChannelDetails cd;
         if (!BaseChatMesh::getChannel(idx, cd)) return false;
-        return BaseChatMesh::sendGroupData(cd.channel, nullptr, OUT_PATH_UNKNOWN,
-                                           data_type, data, data_len);
+        uint8_t* route_path = path_len == OUT_PATH_UNKNOWN ? nullptr : const_cast<uint8_t*>(path);
+        return BaseChatMesh::sendGroupData(cd.channel, route_path, path_len, data_type, data, data_len);
     }
 
     // Override to receive group data datagrams.
     void onChannelDataRecv(const ::mesh::GroupChannel& channel,
                            ::mesh::Packet* pkt, uint16_t data_type,
                            const uint8_t* data, size_t data_len) override {
+        // Resolve channel name/index once; the companion bridge should still
+        // receive the datagram even if the local debug buffer is full.
+        char chname[32] = "[group]";
+        int channel_idx = -1;
+        for (int i = 0; i < getChannelCount(); i++) {
+            ChannelDetails cd;
+            if (BaseChatMesh::getChannel(i, cd) &&
+                memcmp(cd.channel.hash, channel.hash, sizeof(channel.hash)) == 0) {
+                strncpy(chname, cd.name, sizeof(chname) - 1);
+                chname[sizeof(chname) - 1] = '\0';
+                channel_idx = i;
+                break;
+            }
+        }
+
+        uint8_t companion_path_len = OUT_PATH_UNKNOWN;
+        int8_t companion_snr = 0;
+        if (pkt) {
+            companion_path_len = pkt->isRouteFlood() ? (uint8_t)pkt->path_len : OUT_PATH_UNKNOWN;
+            companion_snr = pkt->_snr;
+        }
+        sigurdos::mesh::mesh_v2_group_data_push(
+            channel_idx >= 0 ? (uint8_t)channel_idx : 0xFF,
+            companion_path_len,
+            companion_snr,
+            data_type,
+            data,
+            data_len);
+
         // Store in receive buffer
         if (_n_grp_data_recv < MAX_GROUP_DATA_RECV) {
-            // Resolve channel name
-            char chname[32] = "[group]";
-            for (int i = 0; i < getChannelCount(); i++) {
-                ChannelDetails cd;
-                if (BaseChatMesh::getChannel(i, cd) &&
-                    memcmp(cd.channel.hash, channel.hash, sizeof(channel.hash)) == 0) {
-                    strncpy(chname, cd.name, sizeof(chname) - 1);
-                    chname[sizeof(chname) - 1] = '\0';
-                    break;
-                }
-            }
-
             GroupDataEntry& e = _grp_data_recv[_n_grp_data_recv++];
             e.data_type = data_type;
             e.data_len = (data_len < sizeof(e.data)) ? (uint8_t)data_len : sizeof(e.data);

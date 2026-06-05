@@ -19,6 +19,36 @@ struct SigurdRegion {
     uint8_t key[16];      // public: SHA256(prefix+name)[0..15]; private: user secret
 };
 
+namespace detail {
+
+static constexpr size_t REGION_FILE_HEADER_SIZE = sizeof(uint32_t);
+
+inline int regionFileLoadCount(uint32_t stored_count, size_t file_size, int max) {
+    if (max <= 0 || stored_count == 0 || file_size < REGION_FILE_HEADER_SIZE) {
+        return 0;
+    }
+    if (stored_count > SIGURD_MAX_REGIONS) {
+        return 0;
+    }
+
+    const size_t count = static_cast<size_t>(stored_count);
+    const size_t max_count =
+        (static_cast<size_t>(-1) - REGION_FILE_HEADER_SIZE) / sizeof(SigurdRegion);
+    if (count > max_count) {
+        return 0;
+    }
+
+    const size_t expected_size = REGION_FILE_HEADER_SIZE + count * sizeof(SigurdRegion);
+    if (file_size < expected_size) {
+        return 0;
+    }
+
+    const int stored_as_int = static_cast<int>(stored_count);
+    return stored_as_int < max ? stored_as_int : max;
+}
+
+} // namespace detail
+
 // ── Persistence (SPIFFS /regions.dat) ──────────────────
 // Returns number of regions loaded (≤ max).
 int  loadRegions(SigurdRegion* out, int max);

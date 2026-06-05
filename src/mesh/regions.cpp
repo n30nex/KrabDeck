@@ -34,23 +34,20 @@ int loadRegions(SigurdRegion* out, int max) {
     size_t rd = f.read((uint8_t*)&count, 4);
     if (rd != 4) { f.close(); SPIFFS.end(); return 0; }
 
-    // Guard against corrupt/spoofed count values
-    if (count > (uint32_t)max) count = max;
-    if (count == 0) { f.close(); SPIFFS.end(); return 0; }
+    const int load_count = detail::regionFileLoadCount(count, sz, max);
+    if (load_count <= 0) { f.close(); SPIFFS.end(); return 0; }
 
-    size_t expected = count * sizeof(SigurdRegion);
-    if (sz - 4 < expected) { f.close(); SPIFFS.end(); return 0; }
-
+    size_t expected = static_cast<size_t>(load_count) * sizeof(SigurdRegion);
     rd = f.read((uint8_t*)out, expected);
     f.close();
     SPIFFS.end();
 
     // Force null-terminate all names in case of truncation
-    for (uint32_t i = 0; i < count; i++) {
+    for (int i = 0; i < load_count; i++) {
         out[i].name[sizeof(out[i].name) - 1] = '\0';
     }
 
-    return (rd >= expected) ? (int)count : 0;
+    return (rd >= expected) ? load_count : 0;
 }
 
 bool saveRegions(const SigurdRegion* list, int count) {

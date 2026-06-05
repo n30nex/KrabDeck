@@ -66,7 +66,7 @@ void report_touch_event(uint16_t x, uint16_t y) {
 }
 
 void report_trackball_event(uint8_t direction) {
-    if (direction == 0) return;  // None
+    if (direction == 0 || direction > 5) return;  // None or invalid
 
     s_trackball_count++;
 

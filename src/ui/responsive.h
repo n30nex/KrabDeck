@@ -91,11 +91,20 @@ template<int N>
 inline void column_offsets(const int (&weights)[N], int total_w,
                                int (&out_x)[N], int start_x = 0) {
     int sum = 0;
-    for (int i = 0; i < N; i++) sum += weights[i];
+    for (int i = 0; i < N; i++) {
+        if (weights[i] > 0) sum += weights[i];
+    }
+
+    if (total_w <= 0 || sum <= 0) {
+        for (int i = 0; i < N; i++) out_x[i] = start_x;
+        return;
+    }
+
     int x = start_x;
     for (int i = 0; i < N; i++) {
         out_x[i] = x;
-        x += (total_w * weights[i]) / sum;
+        const int weight = weights[i] > 0 ? weights[i] : 0;
+        x += (total_w * weight) / sum;
     }
 }
 

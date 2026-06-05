@@ -20,9 +20,21 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <cstring>
 
 // VFS mountpoint — use this prefix for POSIX file I/O on the SD card
 #define SIGURDOS_SD_MOUNTPOINT "/sdcard"
+
+static constexpr size_t SIGURDOS_SD_MAX_PATH_LEN = 255;
+
+inline bool sigurdos_sdcard_path_valid(const char* path)
+{
+    if (!path || path[0] == '\0') return false;
+    if (path[0] != '/') return false;
+    if (std::strstr(path, "..")) return false;
+    if (std::strlen(path) > SIGURDOS_SD_MAX_PATH_LEN) return false;
+    return true;
+}
 
 // Initialize SD card over SPI
 // Returns true if card detected and mounted

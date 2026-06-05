@@ -89,13 +89,13 @@ const char* sigurdos_sdcard_format_size(uint64_t bytes, char* buf, size_t buf_sz
 
 bool sigurdos_sdcard_exists(const char* path)
 {
-    if (!mounted || !path) return false;
+    if (!mounted || !sigurdos_sdcard_path_valid(path)) return false;
     return SD.exists(path);
 }
 
 size_t sigurdos_sdcard_read(const char* path, uint8_t* buf, size_t max_len)
 {
-    if (!mounted || !path || !buf || max_len == 0) return 0;
+    if (!mounted || !sigurdos_sdcard_path_valid(path) || !buf || max_len == 0) return 0;
 
     File f = SD.open(path, FILE_READ);
     if (!f) return 0;
@@ -107,7 +107,7 @@ size_t sigurdos_sdcard_read(const char* path, uint8_t* buf, size_t max_len)
 
 bool sigurdos_sdcard_write(const char* path, const uint8_t* data, size_t len)
 {
-    if (!mounted || !path || !data || len == 0) return false;
+    if (!mounted || !sigurdos_sdcard_path_valid(path) || !data || len == 0) return false;
 
     // SD.begin() with FILE_WRITE opens for append — remove first so we replace the file
     if (SD.exists(path)) {

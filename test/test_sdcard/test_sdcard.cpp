@@ -16,20 +16,19 @@
 // You should have received a copy of the GNU General Public License
 // along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
-
 /**
- * Unit tests for SD card HAL contract
+ * Unit tests for SD card HAL contract.
  * Tests: API signatures, filesystem mount states, file path validation,
- *        size formatting, SPI CS pin sanity
+ *        size formatting, SPI CS pin sanity.
  */
 #include <gtest/gtest.h>
-#include "hal/tdeck_pins.h"
 #include "Arduino.h"
+#include "hal/sdcard.h"
+#include "hal/tdeck_pins.h"
 #include <cstring>
 
 namespace {
 
-// ── Replicated SD card state machine for testing ──────────
 enum class SDState { NOT_MOUNTED, MOUNTING, MOUNTED, ERROR };
 
 static SDState sd_state = SDState::NOT_MOUNTED;
@@ -42,16 +41,6 @@ void sd_mock_set_state(SDState s, uint64_t cap = 0, uint64_t free = 0) {
     sd_free_bytes = free;
 }
 
-// ── File path validation ──────────────────────────────────
-bool sd_is_valid_path(const char* path) {
-    if (!path || path[0] == '\0') return false;
-    if (path[0] != '/') return false;  // must start with /
-    if (strstr(path, "..")) return false;  // no traversal
-    if (strlen(path) > 255) return false;  // max path length
-    return true;
-}
-
-// ── Format helpers ────────────────────────────────────────
 const char* sd_format_size(uint64_t bytes, char* buf, size_t buf_sz) {
     if (bytes >= 1024ULL * 1024 * 1024) {
         snprintf(buf, buf_sz, "%.1f GB", (double)bytes / (1024.0 * 1024.0 * 1024.0));
@@ -63,9 +52,6 @@ const char* sd_format_size(uint64_t bytes, char* buf, size_t buf_sz) {
     return buf;
 }
 
-// ════════════════════════════════════════════════════════
-// TESTS
-// ════════════════════════════════════════════════════════
 class SDCardTest : public ::testing::Test {
 protected:
     void SetUp() override {
@@ -74,7 +60,6 @@ protected:
     }
 };
 
-// ── CS pin ────────────────────────────────────────────────
 TEST_F(SDCardTest, CSPinIsValidGPIO) {
     EXPECT_GE(PIN_SD_CS, 0);
     EXPECT_LE(PIN_SD_CS, 48);
@@ -85,7 +70,6 @@ TEST_F(SDCardTest, CSPinDoesNotConflictWithDisplayOrLoRa) {
     EXPECT_NE(PIN_SD_CS, PIN_LORA_NSS);
 }
 
-// ── Mount states ──────────────────────────────────────────
 TEST_F(SDCardTest, InitialStateIsNotMounted) {
     EXPECT_EQ(sd_state, SDState::NOT_MOUNTED);
 }
@@ -102,41 +86,40 @@ TEST_F(SDCardTest, ErrorStateHasZeroCapacity) {
     EXPECT_EQ(sd_state, SDState::ERROR);
 }
 
-// ── File path validation ──────────────────────────────────
 TEST_F(SDCardTest, ValidPathStartsWithSlash) {
-    EXPECT_TRUE(sd_is_valid_path("/maps/london.mbtiles"));
-    EXPECT_TRUE(sd_is_valid_path("/config.txt"));
-    EXPECT_TRUE(sd_is_valid_path("/logs/mesh_2026_05_14.log"));
+    EXPECT_TRUE(sigurdos_sdcard_path_valid("/maps/london.mbtiles"));
+    EXPECT_TRUE(sigurdos_sdcard_path_valid("/config.txt"));
+    EXPECT_TRUE(sigurdos_sdcard_path_valid("/logs/mesh_2026_05_14.log"));
 }
 
 TEST_F(SDCardTest, PathWithoutSlashIsInvalid) {
-    EXPECT_FALSE(sd_is_valid_path("maps/file.dat"));
-    EXPECT_FALSE(sd_is_valid_path(""));
-    EXPECT_FALSE(sd_is_valid_path(nullptr));
+    EXPECT_FALSE(sigurdos_sdcard_path_valid("maps/file.dat"));
+    EXPECT_FALSE(sigurdos_sdcard_path_valid(""));
+    EXPECT_FALSE(sigurdos_sdcard_path_valid(nullptr));
 }
 
 TEST_F(SDCardTest, PathWithDotDotIsInvalid) {
-    EXPECT_FALSE(sd_is_valid_path("/etc/../passwd"));
-    EXPECT_FALSE(sd_is_valid_path("/../../root"));
+    EXPECT_FALSE(sigurdos_sdcard_path_valid("/etc/../passwd"));
+    EXPECT_FALSE(sigurdos_sdcard_path_valid("/../../root"));
+    EXPECT_FALSE(sigurdos_sdcard_path_valid("/tiles/10/..hidden.png"));
 }
 
 TEST_F(SDCardTest, PathTooLongIsInvalid) {
-    char long_path[260];
+    char long_path[SIGURDOS_SD_MAX_PATH_LEN + 5];
     memset(long_path, 'a', sizeof(long_path));
     long_path[0] = '/';
-    long_path[259] = '\0';
-    EXPECT_FALSE(sd_is_valid_path(long_path));
+    long_path[sizeof(long_path) - 1] = '\0';
+    EXPECT_FALSE(sigurdos_sdcard_path_valid(long_path));
 }
 
 TEST_F(SDCardTest, PathAtMaxLengthIsValid) {
-    char max_path[256];
-    memset(max_path, 'x', 254);
+    char max_path[SIGURDOS_SD_MAX_PATH_LEN + 1];
+    memset(max_path, 'x', SIGURDOS_SD_MAX_PATH_LEN);
     max_path[0] = '/';
-    max_path[255] = '\0';
-    EXPECT_TRUE(sd_is_valid_path(max_path));
+    max_path[SIGURDOS_SD_MAX_PATH_LEN] = '\0';
+    EXPECT_TRUE(sigurdos_sdcard_path_valid(max_path));
 }
 
-// ── Size formatting ───────────────────────────────────────
 TEST_F(SDCardTest, FormatGB) {
     char buf[16];
     const char* s = sd_format_size(32ULL * 1024 * 1024 * 1024, buf, sizeof(buf));
@@ -161,12 +144,10 @@ TEST_F(SDCardTest, FormatZero) {
     EXPECT_STREQ(s, "0 KB");
 }
 
-// ── Map tile path convention ──────────────────────────────
 TEST_F(SDCardTest, MapTilePathConvention) {
-    // Offline raster maps use a Ripple-compatible /tiles/z/x/y.png tree.
-    EXPECT_TRUE(sd_is_valid_path("/sdcard/tiles/10/512/340.png"));
-    EXPECT_TRUE(sd_is_valid_path("/sdcard/tiles/14/8137/5290.png"));
-    EXPECT_TRUE(sd_is_valid_path("/sdcard/tiles/metadata.json"));
+    EXPECT_TRUE(sigurdos_sdcard_path_valid("/sdcard/tiles/10/512/340.png"));
+    EXPECT_TRUE(sigurdos_sdcard_path_valid("/sdcard/tiles/14/8137/5290.png"));
+    EXPECT_TRUE(sigurdos_sdcard_path_valid("/sdcard/tiles/metadata.json"));
 }
 
 } // anonymous namespace

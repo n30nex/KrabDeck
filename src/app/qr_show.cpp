@@ -30,6 +30,19 @@ namespace app {
 
 using namespace sigurdos::theme;
 
+namespace {
+
+void qr_show_error(lv_obj_t* scr, const char* message)
+{
+    lv_obj_t* err = lv_label_create(scr);
+    lv_label_set_text(err, message);
+    lv_obj_set_style_text_color(err, lv_color_hex(ACCENT_RED), 0);
+    lv_obj_align(err, LV_ALIGN_CENTER, 0, 0);
+    lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_LEFT, 200, 0, true);
+}
+
+} // namespace
+
 void qr_show(const char* title, const char* data)
 {
     // ── Create full-screen ─────────────────────────────────
@@ -100,38 +113,33 @@ void qr_show(const char* title, const char* data)
     lv_obj_set_style_border_width(tdiv, 0, 0);
 
     // ── Generate QR code ───────────────────────────────────
-    // Use a generously-sized module buffer (large enough for up to version 10)
-    uint8_t qr_modules[512];
+    // Use an explicitly-sized module buffer for the configured version.
+    uint8_t qr_modules[SIGURDOS_QR_MODULE_BUFFER_BYTES];
     QRCode qr;
 
-    if (!data || !data[0] || qrcode_initText(&qr, qr_modules, 0, ECC_MEDIUM, data) != 0) {
+    if (!data || !data[0] ||
+        qrcode_initText(&qr, qr_modules, SIGURDOS_QR_VERSION, ECC_MEDIUM, data) != 0) {
         // Show error if QR generation fails
-        lv_obj_t* err = lv_label_create(scr);
-        lv_label_set_text(err, "QR generation failed");
-        lv_obj_set_style_text_color(err, lv_color_hex(ACCENT_RED), 0);
-        lv_obj_align(err, LV_ALIGN_CENTER, 0, 0);
         // Still show screen so user can go back
-        lv_scr_load_anim(scr, LV_SCR_LOAD_ANIM_MOVE_LEFT, 200, 0, true);
+        qr_show_error(scr, "QR generation failed");
         return;
     }
 
     // ── Determine scale factor ─────────────────────────────
     // Pick the largest integer scale that keeps the QR code within the content
     // area, leaving a small margin.
-    const int margin = 20;
-    int avail_w = CONTENT_W - margin;
-    int avail_h = CONTENT_H - margin;
-    int scale = 1;
-    for (int s = 1; s <= 6; s++) {
-        int px = qr.size * s;
-        if (px <= avail_w && px <= avail_h) scale = s;
+    QrCanvasLayout qr_layout = sigurdos_qr_canvas_layout(qr.size, CONTENT_W, CONTENT_H);
+    if (!qr_layout.fits) {
+        qr_show_error(scr, "QR too large");
+        return;
     }
 
-    int canvas_size = qr.size * scale;
+    int scale = qr_layout.scale;
+    int canvas_size = qr_layout.canvas_size;
 
     // ── Create canvas for QR rendering ─────────────────────
     // Static buffer in PSRAM-compatible memory. 180*180*2 = 64,800 bytes max.
-    static uint8_t cbuf[180 * 180 * 2];
+    static uint8_t cbuf[SIGURDOS_QR_CANVAS_MAX_PX * SIGURDOS_QR_CANVAS_MAX_PX * 2];
 
     lv_obj_t* canvas = lv_canvas_create(scr);
     lv_canvas_set_buffer(canvas, cbuf, canvas_size, canvas_size, LV_COLOR_FORMAT_RGB565);

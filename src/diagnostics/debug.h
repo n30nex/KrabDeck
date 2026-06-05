@@ -21,6 +21,21 @@
 #define SIGURDOS_DEBUG_LEVEL 2
 #endif
 
+namespace sigurdos {
+namespace debug {
+
+static constexpr uint8_t SIGURDOS_DEBUG_MIN_LEVEL = 1;
+static constexpr uint8_t SIGURDOS_DEBUG_MAX_LEVEL = 3;
+
+inline uint8_t clamp_level(int level) {
+    if (level < SIGURDOS_DEBUG_MIN_LEVEL) return SIGURDOS_DEBUG_MIN_LEVEL;
+    if (level > SIGURDOS_DEBUG_MAX_LEVEL) return SIGURDOS_DEBUG_MAX_LEVEL;
+    return static_cast<uint8_t>(level);
+}
+
+} // namespace debug
+} // namespace sigurdos
+
 #if defined(SIGURDOS_DEBUG) && (SIGURDOS_DEBUG)
 
 namespace sigurdos {

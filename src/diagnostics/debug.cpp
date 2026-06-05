@@ -41,10 +41,7 @@ using namespace theme;
 
 static constexpr uint32_t DUMP_INTERVAL_MS = 5000;
 static uint32_t last_dump_ms = 0;
-static uint8_t  current_level = 
-    (SIGURDOS_DEBUG_LEVEL < 1) ? 1 :
-    (SIGURDOS_DEBUG_LEVEL > 3) ? 3 :
-    (uint8_t)SIGURDOS_DEBUG_LEVEL;
+static uint8_t  current_level = clamp_level(SIGURDOS_DEBUG_LEVEL);
 
 // ── Per-feature runtime state ─────────────────────────────
 // Default to the compile-time flag so builds with individual
@@ -96,10 +93,8 @@ uint8_t feat_to_mask()
 }
 
 void set_level(uint8_t level) {
-    if (level < 1) level = 1;
-    if (level > 3) level = 3;
-    current_level = level;
-    Serial.printf("[debug] level set to %u\n", (unsigned)level);
+    current_level = clamp_level(level);
+    Serial.printf("[debug] level set to %u\n", (unsigned)current_level);
 }
 
 uint8_t get_level() {

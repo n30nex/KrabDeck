@@ -273,6 +273,10 @@ void sigurdos_keyboard_consume_key()
 
 void sigurdos_keyboard_inject(uint8_t key_code)
 {
+    if (key_code == 0 || key_code == 0xFF) {
+        return;
+    }
+
     // Push into ring buffer (if full, overwrite oldest)
     key_buf[key_head] = key_code;
     key_head = (key_head + 1) % KEY_BUF_SIZE;

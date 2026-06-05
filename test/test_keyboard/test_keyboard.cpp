@@ -259,4 +259,29 @@ TEST_F(KeyboardTest, InjectedKeysAreQueuedAndConsumedInOrder) {
     EXPECT_FALSE(sigurdos_keyboard_consume_event());
 }
 
+TEST_F(KeyboardTest, InjectedInvalidBytesAreIgnored) {
+    init_with_ack();
+    sigurdos_keyboard_inject(0x00);
+    sigurdos_keyboard_inject(0xFF);
+    EXPECT_FALSE(sigurdos_keyboard_has_event());
+    EXPECT_FALSE(sigurdos_keyboard_consume_event());
+    EXPECT_EQ(sigurdos_keyboard_get_key(), 0);
+}
+
+TEST_F(KeyboardTest, InjectedInvalidBytesDoNotDisruptValidOrdering) {
+    init_with_ack();
+    sigurdos_keyboard_inject(0x00);
+    sigurdos_keyboard_inject('a');
+    sigurdos_keyboard_inject(0xFF);
+    sigurdos_keyboard_inject('b');
+
+    EXPECT_EQ(sigurdos_keyboard_get_key(), 'a');
+    EXPECT_TRUE(sigurdos_keyboard_consume_event());
+    sigurdos_keyboard_consume_key();
+    EXPECT_EQ(sigurdos_keyboard_get_key(), 'b');
+    EXPECT_TRUE(sigurdos_keyboard_consume_event());
+    sigurdos_keyboard_consume_key();
+    EXPECT_FALSE(sigurdos_keyboard_consume_event());
+}
+
 } // anonymous namespace

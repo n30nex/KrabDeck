@@ -151,11 +151,9 @@ static void bleValidationStartLog()
 }
 #elif defined(SIGURDOS_COMPANION_BLE) && SIGURDOS_COMPANION_BLE
 static void bleValidationEmit(bool) {}
-#if defined(SIGURDOS_COMPANION_BLE) && SIGURDOS_COMPANION_BLE
 static void bleValidationStartLog() {}
 #else
 static void bleValidationEmit(bool) {}
-#endif
 #endif
 
 // Non-static overload for SigurdMeshV2 — takes RSSI/SNR from caller context

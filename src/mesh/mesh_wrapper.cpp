@@ -64,6 +64,23 @@ static uint32_t last_advert_time = 0;
 static bool     last_advert_success = false;
 static bool     last_advert_used_gps = false;
 
+static void formatDmConversation(char* out, size_t out_size, const char* name)
+{
+    if (!out || out_size == 0) return;
+
+    static constexpr char prefix[] = "DM: ";
+    size_t pos = 0;
+    for (const char* p = prefix; *p && pos + 1 < out_size; ++p) {
+        out[pos++] = *p;
+    }
+
+    const char* src = name ? name : "";
+    while (*src && pos + 1 < out_size) {
+        out[pos++] = *src++;
+    }
+    out[pos] = '\0';
+}
+
 // ════════════════════════════════════════════════════
 // Message queue
 // ════════════════════════════════════════════════════
@@ -134,9 +151,11 @@ static void bleValidationStartLog()
 }
 #elif defined(SIGURDOS_COMPANION_BLE) && SIGURDOS_COMPANION_BLE
 static void bleValidationEmit(bool) {}
+#if defined(SIGURDOS_COMPANION_BLE) && SIGURDOS_COMPANION_BLE
 static void bleValidationStartLog() {}
 #else
 static void bleValidationEmit(bool) {}
+#endif
 #endif
 
 // Non-static overload for SigurdMeshV2 — takes RSSI/SNR from caller context
@@ -395,8 +414,8 @@ void registerAckedMessage(const char* dest, uint32_t ts) {
     _acked_head = (_acked_head + 1) % MAX_ACKED;
     if (_acked_count < MAX_ACKED) _acked_count++;
     _ack_counter++;
-    char conversation[32];
-    snprintf(conversation, sizeof(conversation), "DM: %s", dest);
+    char conversation[sigurdos::mesh::SIGURDOS_MSG_CONVERSATION_LEN];
+    formatDmConversation(conversation, sizeof(conversation), dest);
     sigurdos::mesh::messageStoreMarkAcked(conversation, ts);
 #if SIGURDOS_DEBUG_MESH
     Serial.printf("[mesh] ACK for %s (ts=%lu) — %d total tracked\n", dest, (unsigned long)ts, _acked_count);
@@ -1003,8 +1022,8 @@ uint32_t sendMessage(const char* dest, const char* text) {
     // (see slop_mesh_v2.h sendTextTo overload)
     bool ok = g_mesh->sendTextTo(dest, text, ts);
     if (ok) {
-        char conversation[32];
-        snprintf(conversation, sizeof(conversation), "DM: %s", dest ? dest : "");
+        char conversation[sigurdos::mesh::SIGURDOS_MSG_CONVERSATION_LEN];
+        formatDmConversation(conversation, sizeof(conversation), dest);
         storeOutgoingMessageForCompanion(conversation, text, ts, false);
         pushPacketLog(own_name, 0, 0.0f, "TX_DM");
     }

@@ -74,7 +74,7 @@ static lv_obj_t* msg_list       = nullptr;
 static lv_obj_t* input_bar      = nullptr;
 static lv_obj_t* input_field    = nullptr;
 static lv_obj_t* byte_counter   = nullptr;
-// Alt+C channel menu overlay (null when closed). While open, trackball
+// Channel menu overlay (null when closed). While open, trackball
 // events fall through to the LVGL group so its buttons stay navigable.
 static lv_obj_t* channel_menu   = nullptr;
 
@@ -650,7 +650,7 @@ static void populate_channel_rows(lv_obj_t* list) {
                 lv_obj_t* title = lv_label_create(dlg);
                 lv_label_set_text(title, "Delete channel?");
                 lv_obj_set_style_text_color(title, lv_color_hex(TEXT_PRIMARY), 0);
-                lv_obj_set_style_text_font(title, &lv_font_montserrat_12, 0);
+                lv_obj_set_style_text_font(title, emoji_wrapped_montserrat_12, 0);
                 lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 4);
 
                 lv_obj_t* msg = lv_label_create(dlg);
@@ -658,7 +658,7 @@ static void populate_channel_rows(lv_obj_t* list) {
                 snprintf(msg_buf, sizeof(msg_buf), "Delete channel #%s?", dyn_channels[idx]);
                 lv_label_set_text(msg, msg_buf);
                 lv_obj_set_style_text_color(msg, lv_color_hex(TEXT_SECONDARY), 0);
-                lv_obj_set_style_text_font(msg, &lv_font_montserrat_10, 0);
+                lv_obj_set_style_text_font(msg, emoji_wrapped_montserrat_10, 0);
                 lv_obj_align(msg, LV_ALIGN_CENTER, 0, -4);
 
                 lv_obj_t* cancel_btn = lv_btn_create(dlg);
@@ -2045,7 +2045,7 @@ static void show_add_channel_options(lv_obj_t* parent) {
     }, LV_EVENT_ALL, (void*)fb);
 }
 
-// ── Channel quick-action menu (Alt+C) ──────────────────────
+// ── Channel quick-action menu (keyboard shortcut emits 0x0C) ───────────────
 // Small popup over the messaging view for per-chat private scope entry
 // plus normal chat actions. The validation/key derivation lives in
 // channel_menu.{h,cpp}; this block only renders and stores per-chat state.

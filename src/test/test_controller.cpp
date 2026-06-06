@@ -13,6 +13,7 @@
 //   back                          Go back
 //   tb up|down|left|right|click   Simulate trackball event
 //   type <text>                   Type text via keyboard simulation
+//   picker <char>                 Open keyboard character picker
 //   press enter|backspace|esc     Press special key
 //   inject <from> <text>          Simulate incoming DM
 //   inject <from> channel=<ch> <text>  Simulate incoming channel msg
@@ -51,8 +52,8 @@ static void dump_focused_widget();
 // ── Constants ────────────────────────────────────────────
 static constexpr uint32_t CMD_POLL_MS = 50;   // check Serial every 50ms
 static constexpr size_t   CMD_BUF_SIZE = 256;
-static constexpr size_t   TYPE_BUF_SIZE = 256;   // max chars in type queue
-static constexpr size_t   TYPE_CHUNK_DELAY = 120; // ms between injected chars, must give LVGL time to consume
+static constexpr size_t   TYPE_BUF_SIZE = 256;   // max codepoints in type queue
+static constexpr size_t   TYPE_CHUNK_DELAY = 120; // ms between injected codepoints, must give LVGL time to consume
 
 // ── State ────────────────────────────────────────────────
 static bool     initialized = false;
@@ -60,10 +61,10 @@ static uint32_t last_poll_ms = 0;
 static char     cmd_buf[CMD_BUF_SIZE];
 static size_t   cmd_pos = 0;
 
-// Type queue — drained one char per loop iteration so LVGL can consume each keypress
-static char     type_buf[TYPE_BUF_SIZE];
-static size_t   type_pos = 0;    // next char to inject
-static size_t   type_count = 0;  // total chars in queue
+// Type queue — drained one codepoint per loop iteration so LVGL can consume each keypress
+static uint32_t type_buf[TYPE_BUF_SIZE];
+static size_t   type_pos = 0;    // next codepoint to inject
+static size_t   type_count = 0;  // remaining codepoints in queue
 static uint32_t type_last_inject_ms = 0;
 
 // ── Screen name lookup ───────────────────────────────────
@@ -122,6 +123,7 @@ static void print_help() {
     Serial.println(F("║  back        Go back                 ║"));
     Serial.println(F("║  tb <dir>    Trackball (u/d/l/r/c)   ║"));
     Serial.println(F("║  type <txt>  Type text               ║"));
+    Serial.println(F("║  picker <c>  Open char picker        ║"));
     Serial.println(F("║  press <key> Press Enter/Bksp/Esc    ║"));
     Serial.println(F("║  inject <from> [channel=<ch>] <msg>  ║"));
     Serial.println(F("║  sendchannel <ch> <text>          Send on a channel        ║"));
@@ -282,13 +284,46 @@ static void cmd_type(const char* text) {
     }
     type_pos = 0;
     type_count = 0;
-    size_t len = strlen(text);
-    if (len > TYPE_BUF_SIZE - 1) len = TYPE_BUF_SIZE - 1;
-    memcpy(type_buf, text, len);
-    type_buf[len] = '\0';
-    type_count = len;
-    type_last_inject_ms = 0;  // inject first char on next loop
-    Serial.printf("[test] queued %d chars to type\n", (int)type_count);
+    const unsigned char* p = (const unsigned char*)text;
+    while (*p && type_count < TYPE_BUF_SIZE) {
+        uint32_t cp = 0;
+        if (*p < 0x80) {
+            cp = *p++;
+        } else if ((*p & 0xE0) == 0xC0 &&
+                   p[1] != 0 &&
+                   (p[1] & 0xC0) == 0x80) {
+            cp = ((uint32_t)(p[0] & 0x1F) << 6) |
+                 (uint32_t)(p[1] & 0x3F);
+            p += 2;
+        } else if ((*p & 0xF0) == 0xE0 &&
+                   p[1] != 0 &&
+                   p[2] != 0 &&
+                   (p[1] & 0xC0) == 0x80 &&
+                   (p[2] & 0xC0) == 0x80) {
+            cp = ((uint32_t)(p[0] & 0x0F) << 12) |
+                 ((uint32_t)(p[1] & 0x3F) << 6) |
+                 (uint32_t)(p[2] & 0x3F);
+            p += 3;
+        } else if ((*p & 0xF8) == 0xF0 &&
+                   p[1] != 0 &&
+                   p[2] != 0 &&
+                   p[3] != 0 &&
+                   (p[1] & 0xC0) == 0x80 &&
+                   (p[2] & 0xC0) == 0x80 &&
+                   (p[3] & 0xC0) == 0x80) {
+            cp = ((uint32_t)(p[0] & 0x07) << 18) |
+                 ((uint32_t)(p[1] & 0x3F) << 12) |
+                 ((uint32_t)(p[2] & 0x3F) << 6) |
+                 (uint32_t)(p[3] & 0x3F);
+            p += 4;
+        } else {
+            cp = '?';
+            p++;
+        }
+        type_buf[type_count++] = cp;
+    }
+    type_last_inject_ms = 0;  // inject first codepoint on next loop
+    Serial.printf("[test] queued %d codepoints to type\n", (int)type_count);
 }
 
 static void cmd_press(const char* key) {
@@ -308,6 +343,24 @@ static void cmd_press(const char* key) {
     sigurdos_keyboard_inject(code);
     Serial.printf("[test] press %s (0x%02X)\n", key, code);
     // Small delay to let LVGL process the keypress before reading focus
+    delay(50);
+    dump_focused_widget();
+}
+
+static void cmd_picker(const char* arg) {
+    if (!arg || !arg[0]) {
+        Serial.println("[test] picker: usage: picker <ascii-char>");
+        return;
+    }
+    unsigned char base = (unsigned char)arg[0];
+    if (base < 0x20 || base >= 0x7F) {
+        Serial.println("[test] picker: base must be one ASCII character");
+        return;
+    }
+    sigurdos_keyboard_inject_codepoint(sigurdos_keyboard_char_picker_key(base));
+    Serial.printf("[test] picker %c (0x%08lX)\n",
+                  (char)base,
+                  (unsigned long)sigurdos_keyboard_char_picker_key(base));
     delay(50);
     dump_focused_widget();
 }
@@ -1049,6 +1102,9 @@ static bool dispatch(const char* line) {
         cmd_trackball(arg);
     } else if (strcmp(cmd, "type") == 0) {
         cmd_type(arg);
+    } else if (strcmp(cmd, "picker") == 0) {
+        if (!arg) { Serial.println("[test] picker: missing base character"); return true; }
+        cmd_picker(arg);
     } else if (strcmp(cmd, "press") == 0) {
         if (!arg) { Serial.println("[test] press: missing key name"); return true; }
         cmd_press(arg);
@@ -1220,14 +1276,14 @@ void sigurdos_test_controller_loop() {
 
     uint32_t now = millis();
 
-    // Drain type queue: inject one character per loop iteration
+    // Drain type queue: inject one codepoint per loop iteration
     if (type_count > 0 && (now - type_last_inject_ms >= TYPE_CHUNK_DELAY)) {
-        sigurdos_keyboard_inject((uint8_t)type_buf[type_pos]);
+        sigurdos_keyboard_inject_codepoint(type_buf[type_pos]);
         type_pos++;
         type_count--;
         type_last_inject_ms = now;
         if (type_count == 0) {
-            Serial.printf("[test] type done: %d chars injected, verifying...\n", (int)type_pos);
+            Serial.printf("[test] type done: %d codepoints injected, verifying...\n", (int)type_pos);
             delay(50);
             dump_focused_widget();
         }

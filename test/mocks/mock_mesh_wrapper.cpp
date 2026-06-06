@@ -30,6 +30,16 @@ bool sendChannelMessage(const char* channel_name, const char* text) {
     (void)channel_name; (void)text; return false;
 }
 
+uint32_t sendMessageWithScopeKey(const char* dest_name, const char* text, const uint8_t* key16) {
+    (void)key16;
+    return sendMessage(dest_name, text);
+}
+
+bool sendChannelMessageWithScopeKey(const char* channel_name, const char* text, const uint8_t* key16) {
+    (void)key16;
+    return sendChannelMessage(channel_name, text);
+}
+
 int pollMessages(MeshMessage* out, int max) {
     int drained = 0;
     while (drained < max && mock_msg_count > 0) {
@@ -61,6 +71,7 @@ int exportContactsFull(ContactInfo* out, int max) { (void)out; return 0; }
 int getChannelCount() { return 0; }
 int exportChannels(char names[][32], int max) { return 0; }
 bool addChannel(const char* name, const char* psk) { return false; }
+bool removeChannel(int idx) { (void)idx; return true; }
 
 bool removeContact(const char* name) { (void)name; return false; }
 bool resetPathTo(const char* name) { (void)name; return false; }
@@ -301,6 +312,12 @@ bool setActiveRegionName(const char* name) {
     }
     return true;
 }
+
+// mesh_wrapper-level setter: mirrors setActiveRegionName for the cache so
+// getActiveRegion() reflects the change (real build also propagates to g_mesh).
+bool setActiveRegion(const char* name) { return setActiveRegionName(name); }
+
+void setSendUnscopedOnce(bool v) { (void)v; }
 
 void syncRegionsFromChannels() {}
 

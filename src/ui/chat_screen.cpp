@@ -18,6 +18,7 @@
 
 
 #include "chat_screen.h"
+#include "channel_menu.h"
 #include "navigation.h"
 #include "screens.h"
 #include "theme.h"
@@ -73,6 +74,9 @@ static lv_obj_t* msg_list       = nullptr;
 static lv_obj_t* input_bar      = nullptr;
 static lv_obj_t* input_field    = nullptr;
 static lv_obj_t* byte_counter   = nullptr;
+// Alt+C channel menu overlay (null when closed). While open, trackball
+// events fall through to the LVGL group so its buttons stay navigable.
+static lv_obj_t* channel_menu   = nullptr;
 
 // ── Search state ───────────────────────────────────────
 static bool     search_active        = false;
@@ -146,6 +150,64 @@ struct ChannelMessage {
 static ChannelMessage* ch_msgs[MAX_CHANNELS] = {nullptr};
 static uint16_t       ch_msg_capacity[MAX_CHANNELS] = {0};
 static uint16_t       ch_msg_count[MAX_CHANNELS];
+
+
+struct ChatPrivateScopeState {
+    char conversation[32];
+    char name[31];
+    uint8_t key[16];
+    bool has_scope;
+};
+static ChatPrivateScopeState ch_private_scopes[MAX_CHANNELS];
+
+static ChatPrivateScopeState* find_chat_private_scope(const char* conversation, bool create)
+{
+    if (!conversation || !conversation[0]) return nullptr;
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (ch_private_scopes[i].conversation[0] &&
+            strcmp(ch_private_scopes[i].conversation, conversation) == 0) {
+            return &ch_private_scopes[i];
+        }
+    }
+    if (!create) return nullptr;
+    for (int i = 0; i < MAX_CHANNELS; i++) {
+        if (!ch_private_scopes[i].conversation[0]) {
+            strncpy(ch_private_scopes[i].conversation, conversation,
+                    sizeof(ch_private_scopes[i].conversation) - 1);
+            ch_private_scopes[i].conversation[sizeof(ch_private_scopes[i].conversation) - 1] = '\0';
+            return &ch_private_scopes[i];
+        }
+    }
+    return nullptr;
+}
+
+static const ChatPrivateScopeState* get_chat_private_scope(const char* conversation)
+{
+    ChatPrivateScopeState* scope = find_chat_private_scope(conversation, false);
+    return (scope && scope->has_scope) ? scope : nullptr;
+}
+
+static bool set_chat_private_scope(const char* conversation, const char* name, const uint8_t key[16])
+{
+    if (!conversation || !conversation[0] || !name || !name[0] || !key) return false;
+    ChatPrivateScopeState* scope = find_chat_private_scope(conversation, true);
+    if (!scope) return false;
+    strncpy(scope->name, name, sizeof(scope->name) - 1);
+    scope->name[sizeof(scope->name) - 1] = '\0';
+    memcpy(scope->key, key, sizeof(scope->key));
+    scope->has_scope = true;
+    return true;
+}
+
+static void clear_chat_private_scope(const char* conversation)
+{
+    ChatPrivateScopeState* scope = find_chat_private_scope(conversation, false);
+    if (!scope) return;
+    scope->conversation[0] = '\0';
+    scope->name[0] = '\0';
+    memset(scope->key, 0, sizeof(scope->key));
+    scope->has_scope = false;
+}
 
 static void ensure_channel_buffer(int idx)
 {
@@ -1529,14 +1591,17 @@ static void do_send()
     bool is_dm = (strncmp(chan, "DM: ", 4) == 0);
     const char* dest = is_dm ? (chan + 4) : chan;
 
+    const ChatPrivateScopeState* scope = get_chat_private_scope(chan);
+    const uint8_t* scope_key = scope ? scope->key : nullptr;
+
     bool sent = false;
     uint32_t ts = sigurdos::mesh::getCurrentTime();
     if (is_dm) {
-        uint32_t send_ts = sigurdos::mesh::sendMessage(dest, text);
+        uint32_t send_ts = sigurdos::mesh::sendMessageWithScopeKey(dest, text, scope_key);
         sent = (send_ts != 0);
         if (sent) ts = send_ts;  // use the timestamp the mesh layer tracked the ACK with
     } else {
-        sent = sigurdos::mesh::sendChannelMessage(dest, text);
+        sent = sigurdos::mesh::sendChannelMessageWithScopeKey(dest, text, scope_key);
     }
 
     int sent_channel = active_channel;
@@ -1984,8 +2049,340 @@ static void show_add_channel_options(lv_obj_t* parent) {
     }, LV_EVENT_ALL, (void*)fb);
 }
 
+// ── Channel quick-action menu (Alt+C) ──────────────────────
+// Small popup over the messaging view for per-chat private scope entry
+// plus normal chat actions. The validation/key derivation lives in
+// channel_menu.{h,cpp}; this block only renders and stores per-chat state.
+
+static void show_scope_picker();
+
+static const char* channel_action_icon(ChannelAction a) {
+    switch (a) {
+    case ChannelAction::ChooseScope:  return LV_SYMBOL_GPS;
+    case ChannelAction::MarkRead:     return LV_SYMBOL_EYE_OPEN;
+    case ChannelAction::LeaveChannel: return LV_SYMBOL_TRASH;
+    default:                          return LV_SYMBOL_RIGHT;
+    }
+}
+
+static void channel_menu_action_cb(lv_event_t* e) {
+    ChannelAction action = (ChannelAction)(intptr_t)lv_event_get_user_data(e);
+    lv_obj_t* btn  = (lv_obj_t*)lv_event_get_target(e);
+    lv_obj_t* list = lv_obj_get_parent(btn);
+    lv_obj_t* dlg  = list ? lv_obj_get_parent(list) : nullptr;
+    lv_obj_t* feedback = list ? (lv_obj_t*)lv_obj_get_user_data(list) : nullptr;
+
+    if (active_channel < 0 || active_channel >= dyn_count) {
+        if (dlg) lv_obj_del_async(dlg);
+        return;
+    }
+    const char* channel = dyn_channels[active_channel];
+    const int   idx     = active_channel;
+
+    if (action == ChannelAction::ChooseScope) {
+        if (dlg) lv_obj_del_async(dlg);
+        show_scope_picker();
+        return;
+    }
+
+    if (action == ChannelAction::MarkRead) {
+        ch_meta[idx].unread = 0;
+        rebuild_channel_ribbon();
+        if (feedback) {
+            lv_label_set_text(feedback, "Marked all read");
+            lv_obj_set_style_text_color(feedback, lv_color_hex(ACCENT_GREEN), 0);
+        }
+        return;
+    }
+
+    if (action == ChannelAction::LeaveChannel) {
+        channel_menu_perform(action, channel, idx);
+        clear_chat_private_scope(channel);
+        show_channel_list(LV_SCR_LOAD_ANIM_MOVE_RIGHT);
+        return;
+    }
+}
+
+void chat_screen_show_channel_menu()
+{
+    if (!input_field || !lv_obj_is_valid(input_field)) return;
+    if (active_channel < 0 || active_channel >= dyn_count) return;
+
+    const char* channel = dyn_channels[active_channel];
+    if (!channel || !channel[0]) return;
+
+    ChannelMenuItem items[8];
+    int n = channel_menu_build(channel, items, 8);
+    if (n <= 0) return;
+
+    lv_obj_t* parent = lv_scr_act();
+
+    auto dlg_sz = dialog_size(240, 176);
+    lv_obj_t* dlg = lv_obj_create(parent);
+    lv_obj_set_size(dlg, dlg_sz.w, dlg_sz.h);
+    lv_obj_center(dlg);
+    lv_obj_set_style_bg_color(dlg, lv_color_hex(BG_SECONDARY), 0);
+    lv_obj_set_style_radius(dlg, 0, 0);
+    lv_obj_set_style_border_width(dlg, 2, 0);
+    lv_obj_set_style_border_color(dlg, lv_color_hex(ACCENT), 0);
+    lv_obj_set_style_pad_all(dlg, 8, 0);
+    disable_scroll(dlg);
+
+    channel_menu = dlg;
+    lv_obj_add_event_cb(dlg, [](lv_event_t* e) {
+        if (channel_menu == (lv_obj_t*)lv_event_get_target(e)) channel_menu = nullptr;
+    }, LV_EVENT_DELETE, nullptr);
+
+    lv_obj_t* title = lv_label_create(dlg);
+    lv_label_set_text(title, channel);
+    lv_obj_set_style_text_color(title, lv_color_hex(TEXT_PRIMARY), 0);
+    lv_obj_set_style_text_font(title, emoji_wrapped_montserrat_12, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+
+    lv_obj_t* scope_lbl = lv_label_create(dlg);
+    char scope_buf[48];
+    const ChatPrivateScopeState* scope = get_chat_private_scope(channel);
+    if (scope) snprintf(scope_buf, sizeof(scope_buf), "Private: %s", scope->name);
+    else       snprintf(scope_buf, sizeof(scope_buf), "Private: none");
+    lv_label_set_text(scope_lbl, scope_buf);
+    lv_obj_set_style_text_color(scope_lbl, lv_color_hex(TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_font(scope_lbl, emoji_wrapped_montserrat_10, 0);
+    lv_obj_align(scope_lbl, LV_ALIGN_TOP_MID, 0, 16);
+
+    lv_obj_t* list = lv_obj_create(dlg);
+    lv_obj_set_size(list, dlg_sz.w - 16, dlg_sz.h - 90);
+    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, 32);
+    lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(list, 0, 0);
+    lv_obj_set_style_pad_all(list, 0, 0);
+    lv_obj_set_style_pad_row(list, 4, 0);
+    lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_scroll_dir(list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);
+
+    lv_obj_t* feedback = lv_label_create(dlg);
+    lv_label_set_text(feedback, "");
+    lv_obj_set_style_text_color(feedback, lv_color_hex(TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_font(feedback, emoji_wrapped_montserrat_10, 0);
+    lv_obj_align(feedback, LV_ALIGN_BOTTOM_MID, 0, -30);
+    lv_obj_set_user_data(list, feedback);
+
+    lv_group_t* g = lv_group_get_default();
+
+    for (int i = 0; i < n; i++) {
+        lv_obj_t* btn = lv_btn_create(list);
+        lv_obj_set_width(btn, LV_PCT(100));
+        lv_obj_set_height(btn, 28);
+        bool destructive = items[i].action == ChannelAction::LeaveChannel;
+        lv_obj_set_style_bg_color(btn,
+            lv_color_hex(destructive ? ACCENT_RED : BG_INPUT), 0);
+        lv_obj_set_style_radius(btn, 0, 0);
+        lv_obj_set_style_border_width(btn, 0, 0);
+        lv_obj_set_style_pad_left(btn, 6, 0);
+
+        lv_obj_t* lbl = lv_label_create(btn);
+        char row[64];
+        snprintf(row, sizeof(row), "%s  %s",
+                 channel_action_icon(items[i].action), items[i].label);
+        lv_label_set_text(lbl, row);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(TEXT_PRIMARY), 0);
+        lv_obj_set_style_text_font(lbl, emoji_wrapped_montserrat_10, 0);
+        lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 0, 0);
+
+        lv_obj_add_event_cb(btn, channel_menu_action_cb, LV_EVENT_CLICKED,
+                            (void*)(intptr_t)items[i].action);
+        if (g) {
+            lv_group_add_obj(g, btn);
+            if (i == 0) lv_group_focus_obj(btn);
+        }
+    }
+
+    lv_obj_t* close = lv_btn_create(dlg);
+    lv_obj_set_size(close, 80, 26);
+    lv_obj_align(close, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_bg_color(close, lv_color_hex(BG_INPUT), 0);
+    lv_obj_set_style_radius(close, 0, 0);
+    lv_obj_set_style_border_width(close, 0, 0);
+    lv_obj_t* cl = lv_label_create(close);
+    lv_label_set_text(cl, "Close");
+    lv_obj_set_style_text_font(cl, emoji_wrapped_montserrat_10, 0);
+    lv_obj_center(cl);
+    lv_obj_add_event_cb(close, [](lv_event_t* e) {
+        lv_obj_t* b = (lv_obj_t*)lv_event_get_target(e);
+        lv_obj_del_async(lv_obj_get_parent(b));
+        if (input_field && lv_obj_is_valid(input_field) && lv_group_get_default())
+            lv_group_focus_obj(input_field);
+    }, LV_EVENT_CLICKED, nullptr);
+    if (g) lv_group_add_obj(g, close);
+}
+
+// ── Private scope editor ───────────────────────────────────
+
+static lv_obj_t* g_scope_subtitle = nullptr;
+
+static const char* current_scope_channel()
+{
+    return (active_channel >= 0 && active_channel < dyn_count) ? dyn_channels[active_channel] : "";
+}
+
+static void update_private_scope_subtitle()
+{
+    if (!g_scope_subtitle || !lv_obj_is_valid(g_scope_subtitle)) return;
+    const ChatPrivateScopeState* scope = get_chat_private_scope(current_scope_channel());
+    char sb[48];
+    if (scope) snprintf(sb, sizeof(sb), "This chat: %s", scope->name);
+    else       snprintf(sb, sizeof(sb), "This chat: none");
+    lv_label_set_text(g_scope_subtitle, sb);
+    lv_obj_set_style_text_color(g_scope_subtitle, lv_color_hex(TEXT_SECONDARY), 0);
+}
+
+static void scope_custom_apply(lv_obj_t* ta) {
+    if (!ta) return;
+    const char* channel = current_scope_channel();
+    if (!channel || !channel[0]) return;
+
+    const char* text = lv_textarea_get_text(ta);
+    const char* reason = nullptr;
+    char name[31];
+    uint8_t key[16];
+    if (!private_scope_prepare(text, name, sizeof(name), key, &reason)) {
+        if (g_scope_subtitle && lv_obj_is_valid(g_scope_subtitle)) {
+            lv_label_set_text(g_scope_subtitle, reason ? reason : "Invalid scope");
+            lv_obj_set_style_text_color(g_scope_subtitle, lv_color_hex(ACCENT_RED), 0);
+        }
+        return;
+    }
+
+    if (name[0]) {
+        if (!set_chat_private_scope(channel, name, key)) {
+            if (g_scope_subtitle && lv_obj_is_valid(g_scope_subtitle)) {
+                lv_label_set_text(g_scope_subtitle, "Scope table full");
+                lv_obj_set_style_text_color(g_scope_subtitle, lv_color_hex(ACCENT_RED), 0);
+            }
+            return;
+        }
+    } else {
+        clear_chat_private_scope(channel);
+    }
+
+    lv_textarea_set_text(ta, "");
+    update_private_scope_subtitle();
+}
+
+static void show_scope_picker() {
+    if (!input_field || !lv_obj_is_valid(input_field)) return;
+    if (!current_scope_channel()[0]) return;
+    lv_obj_t* parent = lv_scr_act();
+
+    auto dlg_sz = dialog_size(250, 150);
+    lv_obj_t* dlg = lv_obj_create(parent);
+    lv_obj_set_size(dlg, dlg_sz.w, dlg_sz.h);
+    lv_obj_center(dlg);
+    lv_obj_set_style_bg_color(dlg, lv_color_hex(BG_SECONDARY), 0);
+    lv_obj_set_style_radius(dlg, 0, 0);
+    lv_obj_set_style_border_width(dlg, 2, 0);
+    lv_obj_set_style_border_color(dlg, lv_color_hex(ACCENT), 0);
+    lv_obj_set_style_pad_all(dlg, 8, 0);
+    disable_scroll(dlg);
+
+    channel_menu = dlg;
+    lv_obj_add_event_cb(dlg, [](lv_event_t* e) {
+        if (channel_menu == (lv_obj_t*)lv_event_get_target(e)) channel_menu = nullptr;
+        g_scope_subtitle = nullptr;
+    }, LV_EVENT_DELETE, nullptr);
+
+    lv_obj_t* title = lv_label_create(dlg);
+    lv_label_set_text(title, "Private scope");
+    lv_obj_set_style_text_color(title, lv_color_hex(TEXT_PRIMARY), 0);
+    lv_obj_set_style_text_font(title, emoji_wrapped_montserrat_12, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);
+
+    g_scope_subtitle = lv_label_create(dlg);
+    lv_obj_set_style_text_color(g_scope_subtitle, lv_color_hex(TEXT_SECONDARY), 0);
+    lv_obj_set_style_text_font(g_scope_subtitle, emoji_wrapped_montserrat_10, 0);
+    lv_obj_align(g_scope_subtitle, LV_ALIGN_TOP_MID, 0, 16);
+
+    lv_obj_t* ta = lv_textarea_create(dlg);
+    lv_obj_set_size(ta, dlg_sz.w - 16 - 48, 24);
+    lv_obj_align(ta, LV_ALIGN_TOP_LEFT, 0, 38);
+    lv_obj_set_style_bg_color(ta, lv_color_hex(BG_INPUT), 0);
+    lv_obj_set_style_text_color(ta, lv_color_hex(TEXT_PRIMARY), 0);
+    lv_obj_set_style_text_font(ta, emoji_wrapped_montserrat_10, 0);
+    lv_obj_set_style_border_width(ta, 0, 0);
+    lv_obj_set_style_radius(ta, 0, 0);
+    lv_textarea_set_one_line(ta, true);
+    lv_textarea_set_max_length(ta, 30);
+    lv_textarea_set_placeholder_text(ta, "private scope");
+    apply_focus_style(ta);
+
+    lv_obj_t* set_btn = lv_btn_create(dlg);
+    lv_obj_set_size(set_btn, 44, 24);
+    lv_obj_align(set_btn, LV_ALIGN_TOP_RIGHT, 0, 38);
+    lv_obj_set_style_bg_color(set_btn, lv_color_hex(ACCENT_GREEN), 0);
+    lv_obj_set_style_radius(set_btn, 0, 0);
+    lv_obj_set_style_border_width(set_btn, 0, 0);
+    lv_obj_t* sl = lv_label_create(set_btn);
+    lv_label_set_text(sl, "Set");
+    lv_obj_set_style_text_font(sl, emoji_wrapped_montserrat_10, 0);
+    lv_obj_center(sl);
+    lv_obj_add_event_cb(set_btn, [](lv_event_t* e) {
+        scope_custom_apply((lv_obj_t*)lv_event_get_user_data(e));
+    }, LV_EVENT_CLICKED, (void*)ta);
+
+    lv_obj_add_event_cb(ta, [](lv_event_t* e) {
+        if (lv_event_get_code(e) == LV_EVENT_READY)
+            scope_custom_apply((lv_obj_t*)lv_event_get_target(e));
+    }, LV_EVENT_ALL, nullptr);
+
+    lv_obj_t* clear = lv_btn_create(dlg);
+    lv_obj_set_size(clear, 74, 24);
+    lv_obj_align(clear, LV_ALIGN_BOTTOM_LEFT, 10, -4);
+    lv_obj_set_style_bg_color(clear, lv_color_hex(BG_INPUT), 0);
+    lv_obj_set_style_radius(clear, 0, 0);
+    lv_obj_set_style_border_width(clear, 0, 0);
+    lv_obj_t* clr = lv_label_create(clear);
+    lv_label_set_text(clr, "Clear");
+    lv_obj_set_style_text_font(clr, emoji_wrapped_montserrat_10, 0);
+    lv_obj_center(clr);
+    lv_obj_add_event_cb(clear, [](lv_event_t*) {
+        clear_chat_private_scope(current_scope_channel());
+        update_private_scope_subtitle();
+    }, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t* close = lv_btn_create(dlg);
+    lv_obj_set_size(close, 74, 24);
+    lv_obj_align(close, LV_ALIGN_BOTTOM_RIGHT, -10, -4);
+    lv_obj_set_style_bg_color(close, lv_color_hex(BG_INPUT), 0);
+    lv_obj_set_style_radius(close, 0, 0);
+    lv_obj_set_style_border_width(close, 0, 0);
+    lv_obj_t* cl = lv_label_create(close);
+    lv_label_set_text(cl, "Close");
+    lv_obj_set_style_text_font(cl, emoji_wrapped_montserrat_10, 0);
+    lv_obj_center(cl);
+    lv_obj_add_event_cb(close, [](lv_event_t* e) {
+        lv_obj_del_async(lv_obj_get_parent((lv_obj_t*)lv_event_get_target(e)));
+        if (input_field && lv_obj_is_valid(input_field) && lv_group_get_default())
+            lv_group_focus_obj(input_field);
+    }, LV_EVENT_CLICKED, nullptr);
+
+    lv_group_t* g = lv_group_get_default();
+    if (g) {
+        lv_group_add_obj(g, ta);
+        lv_group_add_obj(g, set_btn);
+        lv_group_add_obj(g, clear);
+        lv_group_add_obj(g, close);
+        lv_group_focus_obj(ta);
+    }
+
+    update_private_scope_subtitle();
+}
+
 void chat_screen_set_filter(int mode) {
     chat_filter_mode = mode;
+}
+
+bool chat_screen_overlay_active() {
+    return channel_menu != nullptr && lv_obj_is_valid(channel_menu);
 }
 
 void chat_screen_show()
@@ -2097,6 +2494,10 @@ void chat_screen_refresh_acks()
 // ════════════════════════════════════════════════════
 bool chat_screen_handle_trackball(SigurdOSTrackballEvent event)
 {
+    // While the channel menu overlay is open, let trackball events fall
+    // through to the LVGL group so its buttons stay focus-navigable.
+    if (channel_menu && lv_obj_is_valid(channel_menu)) return false;
+
     if (msg_list) {
         // ── Search mode: Up/Down cycles through matches, Left dismisses search ──
         if (search_active && search_query[0] && search_match_count > 0) {

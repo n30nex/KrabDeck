@@ -270,21 +270,35 @@ static void lvgl_kb_cb(lv_indev_t* indev, lv_indev_data_t* data)
     sigurdos_keyboard_scan();   // force a fresh poll (catches first key after focus)
     int key = sigurdos_keyboard_get_key();
     if (key > 0 && sigurdos_keyboard_consume_event()) {
-        // ── Global shortcut: Alt+R = add current channel as region ──
-        // Only fires when the chat screen is active (has an input field).
-        if (sigurdos_keyboard_is_alt() && (key == 'r' || key == 'R')) {
+        // ── Global shortcut: Alt+C = channel quick-action menu ──
+        // The T-Deck keyboard's ESP32-C3 swallows modifier keys internally
+        // and only emits a finished byte for a few combos. Alt+C is the one
+        // free, non-typing code it sends (0x0C / form feed) — Alt+Space and
+        // the Mic key (NULL in the C3 keymap) produce nothing the host can
+        // see. Opens per-chat private scope controls plus channel actions
+        // when the chat messaging view is active.
+        if (key == 0x0C) {
             lv_obj_t* ci = sigurdos::ui::chat_screen_get_input_field();
-            if (ci && lv_obj_is_valid(ci)) {
-                lv_obj_t* chat_scr = lv_obj_get_screen(ci);
-                if (chat_scr == lv_scr_act()) {
-                    const char* ch = sigurdos::ui::chat_screen_get_active_channel_name();
-                    if (ch && ch[0] == '#') {
-                        sigurdos::mesh::addRegion(ch, nullptr);
-                    }
-                }
+            if (ci && lv_obj_is_valid(ci) && lv_obj_get_screen(ci) == lv_scr_act()) {
+                sigurdos::ui::chat_screen_show_channel_menu();
             }
             sigurdos_keyboard_consume_key();
             data->state = LV_INDEV_STATE_RELEASED;
+            return;
+        }
+
+        // While a chat overlay (channel menu / scope picker) is open, deliver
+        // keys straight to the focused overlay widget. Skipping the chat
+        // refocus heuristics below lets the scope picker's custom-scope field
+        // actually receive typing instead of the message box stealing it.
+        if (sigurdos::ui::chat_screen_overlay_active()) {
+            if (key == 0x08)      data->key = LV_KEY_BACKSPACE;
+            else if (key == 0x0D) data->key = LV_KEY_ENTER;
+            else if (key == 0x09) data->key = LV_KEY_NEXT;
+            else                  data->key = (uint32_t)key;
+            data->state = LV_INDEV_STATE_PRESSED;
+            sigurdos_display_wake();
+            sigurdos_keyboard_consume_key();
             return;
         }
 

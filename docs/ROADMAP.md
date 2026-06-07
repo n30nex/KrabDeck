@@ -1,16 +1,17 @@
 # SigurdOS T-Deck Roadmap
 
-This roadmap is the current source of truth for bringing SigurdOS T-Deck to feature parity with core MeshCore field workflows, then beyond them. It is paired with [AUDIT.md](AUDIT.md), which records the 2026-06-04 end-to-end audit evidence and risk register.
+This roadmap is the current source of truth for bringing SigurdOS T-Deck to feature parity with core MeshCore field workflows, then beyond them. It is paired with [AUDIT.md](AUDIT.md), which records the 2026-06-07 end-to-end audit evidence and risk register.
 
 ## Current Baseline
 
-- Source audit baseline: `020195e4581ec7b83147bab09af07e5c902b8ae5` on `dev`
-- MeshCore submodule: `9a888541efaf57c38dfb886c1c1e4702f371baf1`
+- Source audit baseline: `f74ee234c5a1f0f5ad5ad3a8f1ef17e3b7c2f5f5` on `dev` (`origin/dev`)
+- MeshCore submodule: `07a3ca9e05b0ab23b878200b2c44b04e08131972`
 - Target board: LilyGo T-Deck, ESP32-S3, SX1262, ST7789, GT911, I2C keyboard, trackball
-- Validation status: 2026-06-06 current-dev release validation passed
-  `pio run -e SigurdOS_TDeck`, `pio run -e SigurdOS_TDeck_ble`, and
-  `pio test -e native_test -v`; hardware interop, OTA, SD/map, sleep/wake, and
-  soak gates remain before production release. See
+- Validation status: 2026-06-07 upstream-aligned release/BLE validation and CANADA-preset
+  hardware smoke executed on `COM8`; `pio run -e SigurdOS_TDeck`,
+  `pio run -e SigurdOS_TDeck_ble_validation`, and `pio test -e native_test -v`
+  evidence is attached across roadmap/hardware docs; hardware interop, OTA, SD/map,
+  sleep/wake, and soak gates remain before production release. See
   [RC2_HARDWARE_VALIDATION.md](RC2_HARDWARE_VALIDATION.md).
 - Audited sources: `src/`, `test/`, `platformio.ini`, MeshCore companion-radio references, and feature docs.
 

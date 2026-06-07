@@ -409,7 +409,6 @@ static void build_step3()
         sigurdos::mesh::joinPublicChannel();
         sigurdos::mesh::saveChannels();
         chat_save_messages();
-        delay(100); // allow SPIFFS writes to complete before restart
         ESP.restart();
     }, LV_EVENT_CLICKED, nullptr);
 }

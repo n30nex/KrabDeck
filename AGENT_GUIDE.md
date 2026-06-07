@@ -46,6 +46,7 @@ src/
 │   ├── buzzer.cpp/h       # Buzzer notifications (short/double beep, active-low GPIO 46)
 │   ├── wifi_ota.cpp/h     # WiFi AP OTA firmware update + site survey (APInfo struct, scan)
 │   ├── github_ota.cpp/h   # GitHub-release OTA download (WiFi STA, async, status/progress)
+│   ├── github_ota_plan.cpp/h  # GitHub OTA release planning (branch selection, pre-release toggle, release tag parsing)
 │   └── sdcard.cpp/h       # SD card init, status, path helpers
 ├── mesh/
 │   ├── sigurd_mesh_v2.h         # MeshV2 (BaseChatMesh) — routing, channels, message handling, RSSI/SNR history, ACK tracking. V1 class removed (#290).
@@ -66,6 +67,7 @@ src/
 │   ├── screens.cpp/h      # Heard, Contacts, Contact Detail, Map, Settings, Trace, Terminal, Signal, Channels, Finder, Advertise, Radio Setup, Custom RF, Telemetry, Node Status, Node Stats, Regions
 │   ├── onboarding_screen.cpp/h  # First-boot setup wizard
 │   ├── navigation.cpp/h   # Screen routing with slide transitions, universal back-swipe
+│   ├── contact_paging.h   # Contact list paging helpers (32 per page, page-count/clamp/start/end)
 │   └── ui.cpp/h           # Splash→Home transition, main loop updates
 ├── app/
 │   ├── map_renderer.cpp/h # Offline map (PNG tiles via lodepng, PSRAM cache)
@@ -75,6 +77,7 @@ src/
 ├── diagnostics/
 │   ├── debug_cfg.h            # Per-feature debug flag selection (runtime toggle)
 │   ├── debug.cpp/h            # Debug dumps (SIGURDOS_DEBUG=1 build)
+│   ├── build_info.cpp/h       # Build identity struct (firmware version, git SHA, MCU, partitions, board)
 │   ├── telemetry.h            # Telemetry aggregation header
 │   ├── telemetry.cpp          # Telemetry core implementation
 │   ├── telemetry_collectors.cpp/h  # Telemetry data collectors (heap, PSRAM, RSSI)
@@ -87,15 +90,17 @@ src/
 │   ├── emoji_font.h            # Emoji font wrapping declarations
 │   ├── emoji_font.c            # Compiled emoji font bitmap data (16px, Noto Emoji derivative, 356KB)
 │   ├── emoji_data.cpp/h        # Discord-style emoji short name ↔ UTF-8 lookup (343 entries)
-│   └── emoji_images/           # Emoji picker image assets (generated)
-│       ├── emoji_picker_images.h
-│       └── emoji_picker_index.h
+│   ├── emoji_images/           # Emoji picker image assets (generated)
+│   │   ├── emoji_picker_images.h
+│   │   └── emoji_picker_index.h
+│   ├── latin_ext_font.c/h  # Latin-extended font (Montserrat Regular, Latin-1 Supplement + Latin Extended-A, 16px, 4bpp)
 ├── test/                  # Remote test controller (SIGURDOS_REMOTE_TEST=1)
 │   └── test_controller.cpp/h  # Serial-driven test harness — inject events, nav, type, screen capture
 ├── utils/                 # Utility modules
 │   └── utf8_util.h       # UTF-8 safe truncation (emoji-aware byte cutting)
 ├── validation/
-│   └── gps_validation.cpp # Standalone GPS hardware validation firmware (no display/mesh/LVGL, built as SigurdOS_TDeck_gps_validation env)
+│   ├── gps_validation.cpp # Standalone GPS hardware validation firmware (no display/mesh/LVGL, built as SigurdOS_TDeck_gps_validation env)
+│   └── gps_validation_wifi.cpp/h  # GPS validation WiFi upload (WiFi STA, HTTP POST, compile-time SSID/pass configure)
 ```
 `lib/` (at repo root, not under `src/`):
 - `meshcore/` — Git submodule → MeshCore
@@ -380,7 +385,7 @@ sigurdos::mesh::messageStoreLoadRecent(conv, out, max) // Load recent messages f
 
 ## Testing
 
-**Current test count: 679** for native_test.
+**Current test count: 726** for native_test.
 
 ```bash
 pio test -e native_test -v       # All tests (no hardware)
@@ -402,8 +407,9 @@ Test modules:
 | `test_prefs` | NVS preferences read/write, NodePrefs struct serialization |
 | `test_pins` | Pin definitions and aliases |
 | `test_sdcard` | SD card VFS path helpers |
-| `test_build` | Compilation checks for all modules |
-| `test_navigation` | Screen navigation and history |
+|| `test_build` | Compilation checks for all modules |
+|| `test_build_info` | Build identity reporting (firmware version, git SHA, safe defaults) |
+|| `test_navigation` | Screen navigation and history |
 | `test_map_renderer` | Map renderer PSRAM allocators |
 | `test_emoji` | Emoji font data, glyph coverage, fallback registration, Discord-style autocomplete |
 | `test_chat_truncation` | UTF-8 safe message truncation (emoji-aware byte cutting) |
@@ -430,8 +436,9 @@ Test modules:
 | `test_emoji_integrity` | Emoji font data integrity and short name ↔ codepoint mapping |
 | `test_emoji_fallback` | Emoji font fallback wiring |
 | `test_chat_config` | Chat configuration validation |
-| `test_companion_protocol` | Companion BLE wire protocol encoding/decoding |
-| `test_message_store` | Persistent message store (SPIFFS, binary ring buffer) |
+|| `test_companion_protocol` | Companion BLE wire protocol encoding/decoding |
+|| `test_contact_paging` | Contact list paging helpers (page count, clamping, boundaries, MAX_CONTACTS validation) |
+|| `test_message_store` | Persistent message store (SPIFFS, binary ring buffer) |
 | `test_responsive` | Responsive layout helpers |
 | `test_ui_timing` | LVGL timing contract |
 | `test_controller` | Remote test controller command dispatch |
@@ -681,7 +688,8 @@ On "Apply", validated values are written to the shared state and `go_back()` is 
 | New: Home screen icon grid restructured | 12-tile grid now has: CHATS, DMs, ROOMS, CONTACTS, REPEATERS, ADVERTISE, MAP, TERMINAL, PACKETS, SETTINGS, SETUP, SIGNAL. FINDER and TRACE removed from home grid (still navigable via nav commands). DMs filters chat to DMs only; ROOMS filters contacts to ADV_TYPE_ROOM only. |
 | New: factoryReset() wipes everything | `factoryReset()` clears all NVS keys and SPIFFS via `nvs_flash_erase()` + SPIFFS format — no confirmation prompt at the mesh layer. UI must gate behind user confirmation. Accessible from Settings System screen and `factoryreset`/`wipe` test controller commands. |
 | New: Command response ring buffer | `pushCmdResponse(name, text)` stores responses from admin commands in a 16-entry circular buffer. No persistent storage — data is lost on `clearCmdResponses()` or buffer wrap. Single-consumer polling via `pollCmdResponse()`. |
-| New: forceLoginState always available | Previously guarded behind `#if SIGURDOS_REMOTE_TEST`, `forceLoginState()` is now unconditionally available — can be called from any code path, not just tests. |
+|| New: forceLoginState always available | Previously guarded behind `#if SIGURDOS_REMOTE_TEST`, `forceLoginState()` is now unconditionally available — can be called from any code path, not just tests. |
+|| New: Latin-ext font init ordering | `latin_ext_font_register()` must be called **after** `emoji_font_register_fallback()` because it inserts itself as an intermediate fallback between the ASCII Montserrat font and the emoji font. Registering in the wrong order breaks the accent character fallback chain. |
 | New: Namespace rebrand slopos → sigurdos | All code now uses `namespace sigurdos` instead of `namespace slopos`. Legacy mesh class names were removed during the V2/BaseChatMesh migration; only `SigurdMeshV2` via `sigurd_mesh_v2.h` remains. Build env names unchanged (`SigurdOS_TDeck`). |
 | New: Chat input capped at 149 bytes | Chat textarea is limited to 149 bytes with a live byte counter display (#288, #291). Messages over 149 bytes are rejected before send. |
 | New: Channel deletion has confirmation dialog | The Channels screen now shows a confirmation dialog before deleting a channel (#287, #289). The `removeChannel()` API call is still immediate — the dialog only gates the UI path. |
@@ -709,8 +717,8 @@ All known issues are documented in `docs/KNOWN_ISSUES.md`. Most previously track
 - GPS NMEA checksum validation, Navigation history stack, Channel hash full compare, Contact expiry/eviction with LRU, Advert rate limiting at mesh layer, Null-termination on short payloads, LVGL tick starvation during TX, `lv_obj_del` in event handlers, Map screen static persistence, I2C bus speed race (400kHz touch), Trackball LEFT double-fire, `keyboard_consume_event` side effects, GT911 INT-pin-HIGH buffered event drop, TDeckBoard duplicate instances, Module static-init allocation ordering, Terminal unbounded labels, REPEATERS/PACKETS screen separation, GPS NMEA checksum, makeEpoch thread-safety, debug.h non-debug stubs, onboard restart flash write delay, screen dispatch code deduplication, SPI host pin contention, sendTrace indentation
 - **Previously synced:** Radio reception fix (SPI host moved to SPI2_HOST, channel hash full compare, auto-join Public), graceful shutdown from Settings, unread message badges on home screen, display brightness control, auto-backlight timeout, flood max hops setting, contact SNR display, TX/RX delay tuning in Settings, TX/RX airtime and packet statistics on Signal screen, GPS clock sync on first valid fix, Contact Detail screen (#180), Signal screen two-column layout (#183), iOS-style signal dots (#187), `setrf`/`reboot`/`advert` serial test commands (#189), channel deletion (#168/#169), NAV serial command (#35a7638), map canvas PSRAM allocation fix (#4a464f6), `SigurdOS_TDeck_remote_test_radio` env (#195), ROADMAP.md (#197), beta-0.1.36 release, V2/BaseChatMesh migration (Phase 0, #223/#224), per-contact RSSI/SNR history with sparkline chart (#236), message search in chat (#234), message delivery status (ACK ticks) in chat bubbles (#232), custom variables key-value store via terminal commands (Phase 2.6), auto-add contact type config (Phase 2.3), GPS enable/read-interval controls (Phase 2.5), `sendmessage` test controller command, `SigurdOS_TDeck_meshv2` and `SigurdOS_TDeck_remote_test_radio_meshv2` build envs
 - **Since last sync:** Settings organized into category sub-menus (Phase 2.7, #246), runtime theme system with 6 presets + NVS persistence (#244), PendingAck bugfix + 4 unpersisted NodePrefs fields (#249), beta-0.1.37 release, generic binary-request framework (Phase 4.1, #251), status request with UI — battery/uptime/airtime from remote node (Phase 4.2, #253), telemetry request with CayenneLPP parsing (Phase 4.3), path discovery with flood-force routing (Phase 4.4), repeater/room login with admin commands (Phase 4.5, #259), room server message fetch (Phase 4.6, #263), anonymous message send/receive (Phase 4.7, #260), group data datagrams (Phase 4.8, #265), dedicated repeater detail screen with login flow (#257/#258), repeater login with password save and compact UI, NAV serial entries for settings submenus and new screens, `SigurdOS_TDeck_remote_test_radio_testfreq` build env, `test_prefs` test module, regions screen with flood-scope management (#330), channel name validation module, QR code display screen, telemetry diagnostics subsystem, `test_channel_validation` and `test_regions` test modules
-- **Currently synced:** Home screen DMs/ROOMS filter icons (#269), admin command terminal with live response polling, fav-toggle fix for login view, repeater login UI improvements (#266), RX boost preference test (#267), Phase 4 complete (4.1-4.8), Claude Code review fixes (#273), factory reset from Settings System + `factoryreset`/`wipe` test commands (#274), beta-0.1.38 release, remaining SlopOS ref cleanup, namespace rebrand (`slopos` → `sigurdos`, file renames), orphaned strdup fix in contacts_screen_show, LoginEntry::in_use default fix, meshcore submodule remote sync, V1 mesh class removal (#290), chat 149-byte cap (#291), channel delete confirmation dialog (#289), NodeStats screen (#288), Multi-ACK toggle (#296), node type selector (#298), buzzer notifications (#300), Reboot button (#314), storage usage display (#315), hop count / advert-path display (#316/#324), message signing (#317), telemetry answer-side (#318), client-repeat (#319), identity backup (#320), contact map markers (#321), URI import (#322), device PIN (#326), QR generation (#328), WiFi AP OTA (#329), Node Discovery Protocol (#331), GitHub-release OTA download from Settings System, beta-0.1.39 release, companion BLE bridge (`comms/companion_bridge.cpp/h` — SerialInterface transport, command protocol, offline queue), persistent message store (`mesh/message_store.cpp/h` — SPIFFS binary ring buffer, 32 conversations, 160-char text), Bluetooth screen (#22 — enable/disable toggle, PIN display, connection state, last sync), companion adapter (`mesh/companion_adapter.inc` — PSRAM-allocated bridge, included into mesh_wrapper.cpp), `SigurdOS_TDeck_ble` build env, screen enum completeness audit, mesh public API contract tests, HAL public API contract tests, navigation screen inventory contract, input event API contract, prefs defaults contract, emoji integrity checks, companion protocol wire tests, responsive layout tests, UI timing tests, and 28 additional test modules bringing total to 586 test cases.
-- **Since last sync:** GPS GGA coordinate validity hardening, private per-chat scopes via Alt+C menu (`src/ui/channel_menu.cpp/h`, #461), MAX_CONTACTS increased from 64 to 350 with heap allocation (#459), upstream RegionMap integration for flood-scope gating (#458), companion message sent-flag persisted in NVS to prevent re-send on reboot (#457), companion BLE bridge channel data sync, GPS UART bring-up validation firmware (`src/validation/gps_validation.cpp`, `SigurdOS_TDeck_gps_validation` env, #453), release serial debug command policy (#451), region add validation hardening (#445), 64-bit T-Deck wake mask (#447), redundant `MAX_TEXT_LEN` build flag removal (#456), ASCII-safe merge-bin output (#449), and 93 additional test modules bringing total to 679 test cases.
+|- **Currently synced:** GPS GGA coordinate validity hardening, private per-chat scopes via Alt+C menu (`src/ui/channel_menu.cpp/h`, #461), MAX_CONTACTS increased from 64 to 350 with heap allocation (#459), upstream RegionMap integration for flood-scope gating (#458), companion message sent-flag persisted in NVS to prevent re-send on reboot (#457), companion BLE bridge channel data sync, GPS UART bring-up validation firmware (`src/validation/gps_validation.cpp`, `SigurdOS_TDeck_gps_validation` env, #453), release serial debug command policy (#451), region add validation hardening (#445), 64-bit T-Deck wake mask (#447), redundant `MAX_TEXT_LEN` build flag removal (#456), ASCII-safe merge-bin output (#449), Home screen DMs/ROOMS filter icons (#269), admin command terminal with live response polling, fav-toggle fix for login view, repeater login UI improvements (#266), RX boost preference test (#267), Phase 4 complete (4.1-4.8), Claude Code review fixes (#273), factory reset from Settings System + `factoryreset`/`wipe` test commands (#274), beta-0.1.38 release, remaining SlopOS ref cleanup, namespace rebrand (`slopos` → `sigurdos`, file renames), orphaned strdup fix in contacts_screen_show, LoginEntry::in_use default fix, meshcore submodule remote sync, V1 mesh class removal (#290), chat 149-byte cap (#291), channel delete confirmation dialog (#289), NodeStats screen (#288), Multi-ACK toggle (#296), node type selector (#298), buzzer notifications (#300), Reboot button (#314), storage usage display (#315), hop count / advert-path display (#316/#324), message signing (#317), telemetry answer-side (#318), client-repeat (#319), identity backup (#320), contact map markers (#321), URI import (#322), device PIN (#326), QR generation (#328), WiFi AP OTA (#329), Node Discovery Protocol (#331), GitHub-release OTA download from Settings System, beta-0.1.39 release, companion BLE bridge (`comms/companion_bridge.cpp/h` — SerialInterface transport, command protocol, offline queue), persistent message store (`mesh/message_store.cpp/h` — SPIFFS binary ring buffer, 32 conversations, 160-char text), Bluetooth screen (#22 — enable/disable toggle, PIN display, connection state, last sync), companion adapter (`mesh/companion_adapter.inc` — PSRAM-allocated bridge, included into mesh_wrapper.cpp), `SigurdOS_TDeck_ble` build env, screen enum completeness audit, mesh public API contract tests, HAL public API contract tests, navigation screen inventory contract, input event API contract, prefs defaults contract, emoji integrity checks, companion protocol wire tests, responsive layout tests, UI timing tests, and 28 additional test modules bringing total to 586 test cases.
+|- **Since last sync:** RC2 build identity reporting (`diagnostics/build_info.cpp/h`, #478), Latin-extended text font and raw T-Deck keyboard input (`fonts/latin_ext_font.c/h`, #474), GitHub OTA branch selection (dev/main/latest) + pre-release toggle (`hal/github_ota_plan.cpp/h`, #471), large contact list paging support (`ui/contact_paging.h` + `test_contact_paging`, #469), remote test controller `getrf` command to read current radio params (#502), `setrf` with optional rx_boosted_gain parameter (#502), BLE companion reconnect validation hardening (#501), GPS validation WiFi upload firmware (`src/validation/gps_validation_wifi.cpp/h`), OTA branch/prerelease buttons update inline instead of screen rebuild (#472), fix: correct EMJI_DATA_H include guard typo (#494), fix: update meshcore submodule URL to meshcore-dev/MeshCore, fix: comprehensive bugfix sweep — 14 confirmed issues resolved, fix: keep Public channel visible and prevent accidental removal, OTA release selection negative coverage test (#475), RC2 release build validation test (#473), BLE hardware pairing validation (#466), RC2 non-radio UI smoke test (#468), GPS lock hardware validation (#464), CI streamlined to run only tests on PRs, build single unified firmware (BLE now default), fix: local release warning sites removal (#476), Android full-screen report (#467), and `test_build_info` + `test_contact_paging` test modules bringing total to 726 test cases.
 
 ---
 

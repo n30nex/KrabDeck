@@ -78,7 +78,7 @@ struct NodePrefs {
         duty_cycle = 0;               // 0 = disabled
         advert_interval = 0;          // 0 = disabled
         advert_type = 1;              // 1 = ADV_TYPE_CHAT (default: chat companion)
-        gps_enabled = true;           // GPS on by default
+        gps_enabled = false;          // GPS off by default (privacy, battery)
         gps_interval = 0;             // 0 = poll every loop
         autoadd_config = 0x1E;        // auto-add: chat|repeater|room|sensor (bits 1-4), no overwrite (bit 0)
         autoadd_max_hops = 0;         // 0 = no limit

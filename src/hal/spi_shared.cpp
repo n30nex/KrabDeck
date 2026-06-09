@@ -17,7 +17,13 @@
 // along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "spi_shared.h"
-#include <Arduino.h>  // provides SPIClass (real or mock)
+// SPIClass definition comes from <SPI.h> on real ESP32 hardware, or from
+// the mock Arduino.h in native test builds. Include both to cover all cases.
+#ifdef ESP32_PLATFORM
+#include <SPI.h>
+#else
+#include <Arduino.h>  // native test mock
+#endif
 
 // Single SPIClass instance for the shared SPI2_HOST (FSPI) bus.
 // Initialised on first call to sigurdos_shared_spi_begin(). Both the LoRa

@@ -2418,7 +2418,8 @@ void chat_screen_open_dm(const char* contact_name)
     navigate_to(Screen::Chat);
     refresh_channels();
 
-    char dm_name[32];
+    // Buffer must fit "DM: " (4) + max contact name (31) + null (1) = 36
+    char dm_name[37];
     snprintf(dm_name, sizeof(dm_name), "DM: %s", contact_name);
 
     int idx = find_channel_idx(dm_name);
@@ -2439,7 +2440,7 @@ void chat_screen_add_msg(const char* channel, const char* sender, const char* te
     uint32_t now = sigurdos::mesh::getCurrentTime();
 
     // Map DM messages (empty channel) to "DM: <sender>" conversation
-    char dm_buf[32];
+    char dm_buf[37];
     if (!channel || !channel[0]) {
         snprintf(dm_buf, sizeof(dm_buf), "DM: %s", sender);
         channel = dm_buf;

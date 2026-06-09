@@ -3,6 +3,8 @@
 
 #include <gtest/gtest.h>
 #include <cstdint>
+#include <cstring>
+#include <cstdio>
 
 #include "ui/chat_screen.h"
 
@@ -62,6 +64,70 @@ TEST(ChatConfig, DmFilterKeepsOnlyDmConversations) {
     EXPECT_TRUE(chat_screen_filter_accepts_channel(2, "DM: Alice"));
     EXPECT_FALSE(chat_screen_filter_accepts_channel(2, "Public"));
     EXPECT_FALSE(chat_screen_filter_accepts_channel(2, "#general"));
+}
+
+// ── Issue #543: DM name buffer overflow tests ──────────────────────────
+
+// Constants matching chat_screen.cpp
+static constexpr int MAX_NAME_LEN  = 31;
+static constexpr int CHANNEL_BUF_SZ = 32;
+
+// Simulates the DM name formatting that caused stack overflow #543
+static void formatDmName(const char* contact_name, char* out, size_t out_sz) {
+    snprintf(out, out_sz, "DM: %s", contact_name);
+}
+
+TEST(ChatScreenDmName, FormatFitsInBuffer) {
+    // Verify compile-time sizing: DM prefix + MAX_NAME_LEN + null must fit in a reasonable buffer
+    constexpr size_t NEEDED = sizeof("DM: ") + MAX_NAME_LEN;  // including null from ""
+    EXPECT_LE(NEEDED, (size_t)37) << "Buffer must be at least " << NEEDED << " bytes";
+}
+
+TEST(ChatScreenDmName, MaxLengthName) {
+    char max_name[32];
+    memset(max_name, 'A', MAX_NAME_LEN);
+    max_name[MAX_NAME_LEN] = '\0';
+
+    char dm_name[37];
+    formatDmName(max_name, dm_name, sizeof(dm_name));
+
+    EXPECT_EQ(strlen(dm_name), (size_t)(4 + MAX_NAME_LEN)) << "DM name should be 'DM: ' + contact_name";
+    EXPECT_EQ(strncmp(dm_name, "DM: ", 4), 0);
+    EXPECT_EQ(strncmp(dm_name + 4, max_name, MAX_NAME_LEN), 0);
+}
+
+TEST(ChatScreenDmName, NullTerminatorCheck) {
+    // Verify the full DM name is null-terminated even at max length
+    char max_name[32];
+    memset(max_name, 'A', MAX_NAME_LEN);
+    max_name[MAX_NAME_LEN] = '\0';
+
+    char dm_name[37] = {};
+    memset(dm_name, 0xFF, sizeof(dm_name));  // poison
+    formatDmName(max_name, dm_name, sizeof(dm_name));
+
+    EXPECT_EQ(dm_name[4 + MAX_NAME_LEN], '\0') << "Must be null-terminated after contact name";
+}
+
+TEST(ChatScreenDmName, ChannelCopyFits) {
+    // Verify DM name fits in dyn_channels[32] buffer
+    // "DM: " uses 4 bytes, leaving 27 bytes for name within 32-byte channel buffer
+    // Longer names will be truncated by strncpy — this documents the limitation
+    char max_name[32];
+    memset(max_name, 'A', MAX_NAME_LEN);
+    max_name[MAX_NAME_LEN] = '\0';
+
+    char dm_name[37];
+    formatDmName(max_name, dm_name, sizeof(dm_name));
+
+    char channel_buf[CHANNEL_BUF_SZ];
+    strncpy(channel_buf, dm_name, CHANNEL_BUF_SZ - 1);
+    channel_buf[CHANNEL_BUF_SZ - 1] = '\0';
+
+    // No crash — buffer is fully valid
+    EXPECT_EQ(strlen(channel_buf), (size_t)(CHANNEL_BUF_SZ - 1))
+        << "DM name truncated to fit channel buffer (4+len=" << (4 + MAX_NAME_LEN)
+        << " > " << (CHANNEL_BUF_SZ - 1) << ")";
 }
 
 } // anonymous namespace

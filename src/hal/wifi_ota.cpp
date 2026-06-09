@@ -4,6 +4,7 @@
 // WiFi OTA implementation — WebServer-based firmware upload.
 
 #include "wifi_ota.h"
+#include "launcher_env.h"
 #include "prefs.h"
 #include <WiFi.h>
 #include <WebServer.h>
@@ -71,6 +72,11 @@ xhr.send(formData);
 
 bool start(const char* ssid, const char* password) {
     if (active) return true;
+
+    if (sigurdos_is_under_launcher()) {
+        Serial.println("[ota] REFUSED: OTA not available under bmorcelli/Launcher — update SigurdOS through Launcher instead");
+        return false;
+    }
 
     IPAddress ip;
     if (wifi_sta::isConnected()) {

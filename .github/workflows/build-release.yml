@@ -67,6 +67,9 @@ jobs:
       - name: Build firmware
         run: pio run -e SigurdOS_TDeck
 
+      - name: Create Launcher artifact
+        run: cp .pio/build/SigurdOS_TDeck/firmware-merged.bin .pio/build/SigurdOS_TDeck/SigurdOS-tdeck-launcher.bin
+
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -74,6 +77,7 @@ jobs:
           path: |
             .pio/build/SigurdOS_TDeck/firmware.bin
             .pio/build/SigurdOS_TDeck/firmware-merged.bin
+            .pio/build/SigurdOS_TDeck/SigurdOS-tdeck-launcher.bin
           if-no-files-found: warn
 
   release:
@@ -115,9 +119,11 @@ jobs:
             |------|-----|
             | `firmware.bin` | App only (flash at 0x10000) |
             | `firmware-merged.bin` | Full flash (flash at 0x0) |
+            | `SigurdOS-tdeck-launcher.bin` | For bmorcelli/Launcher install (same bytes as merged) |
           draft: false
           prerelease: true
           generate_release_notes: true
           files: |
             firmware/firmware.bin
             firmware/firmware-merged.bin
+            firmware/SigurdOS-tdeck-launcher.bin

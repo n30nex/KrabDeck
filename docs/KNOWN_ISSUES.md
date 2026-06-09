@@ -6,13 +6,23 @@ This document tracks currently open known issues, bugs, and missing features in 
 
 ## Launcher Compatibility
 
-### SigurdOS doesn't work under bmorcelli/Launcher
+### Supported — bmorcelli/Launcher (v2.7.2+)
 
-[Launcher](https://github.com/bmorcelli/Launcher) is an ESP32 app launcher with explicit T-Deck support (display, touch, keyboard, SD card). A user tried running SigurdOS as a Launcher-launched app and ran into problems — the keyboard doesn't work properly, and many other things break.
+SigurdOS can now be installed as a Launcher app. See [`firmware/README.md`](../firmware/README.md) for the full installation guide and caveats.
 
-**Root cause:** SigurdOS is built as standalone firmware that expects full hardware control at boot. Launcher initialises the display, keyboard, I2C, SPI, and LoRa pins before handing off, which leaves GPIOs, peripheral registers, and I2C bus state in an incompatible state when SigurdOS starts.
+**What's implemented:**
+- ✅ Launcher install via SD, WebUI, or direct GitHub URL — use `SigurdOS-tdeck-launcher.bin`
+- ✅ Runtime Launcher detection (probes for test-subtype app partition)
+- ✅ Self-OTA gated with on-screen explanation when under Launcher
+- ✅ Boot-time diagnostics when app-only install loses persistence
+- ✅ Self-OTA disabled to prevent flash corruption of co-installed apps
+- ✅ SPIFFS partition created for persistence (when using merged image)
 
-**Status:** Not planned. SigurdOS is designed as standalone firmware, not a Launcher app. Fixing this would require deep changes to every HAL driver to detect and handle pre-initialised peripherals.
+**Remaining gaps (Phase 3 — requires bench hardware):**
+- ⚠️ Warm-handoff peripheral state: Launcher's I2C/touch/keyboard init before ESP.restart() may leave peripherals in unexpected states. The keyboard init currently uses a single-NACK-abort which may fail after soft reset. Expected fix: keyboard-init retry/timing window. Scope depends on bench root-cause analysis.
+- ⚠️ Warm-handoff soak testing (10+ power-cycle loops)
+- ⚠️ Multi-app coexistence test (install Bruce alongside SigurdOS, switch back)
+- ❌ Not yet listed in LauncherHub catalog (requires maintainer coordination)
 
 ---
 

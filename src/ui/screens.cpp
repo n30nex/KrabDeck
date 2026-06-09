@@ -30,6 +30,7 @@
 #include "../hal/wifi_ota.h"
 #include "../hal/github_ota.h"
 #include "../hal/gps.h"
+#include "../hal/launcher_env.h"
 #include "../hal/prefs.h"
 #include "../hal/display.h"
 #include "../hal/keyboard.h"
@@ -4769,6 +4770,38 @@ void settings_system_show()
     lv_obj_set_style_text_color(btn_ota, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_add_event_cb(btn_ota, [](lv_event_t* e) {
         lv_obj_t* scr_ota = lv_obj_get_screen((lv_obj_t*)lv_event_get_target(e));
+
+        if (sigurdos_is_under_launcher()) {
+            auto dlg_sz = dialog_size(260, 80);
+            lv_obj_t* dlg = lv_obj_create(scr_ota);
+            lv_obj_set_size(dlg, dlg_sz.w, dlg_sz.h);
+            lv_obj_center(dlg);
+            lv_obj_set_style_bg_color(dlg, lv_color_hex(BG_SECONDARY), 0);
+            lv_obj_set_style_border_color(dlg, lv_color_hex(ACCENT), 0);
+            lv_obj_set_style_border_width(dlg, 2, 0);
+            lv_obj_set_style_radius(dlg, 0, 0);
+            lv_obj_set_style_pad_all(dlg, 8, 0);
+
+            lv_obj_t* msg = lv_label_create(dlg);
+            lv_label_set_text(msg, "Update SigurdOS\nthrough Launcher instead");
+            lv_obj_set_style_text_color(msg, lv_color_hex(TEXT_PRIMARY), 0);
+            lv_obj_set_style_text_font(msg, emoji_wrapped_montserrat_10, 0);
+            lv_obj_align(msg, LV_ALIGN_CENTER, 0, 0);
+
+            lv_obj_t* close_btn = lv_btn_create(dlg);
+            lv_obj_set_size(close_btn, 80, 24);
+            lv_obj_align(close_btn, LV_ALIGN_BOTTOM_MID, 0, -4);
+            lv_obj_set_style_bg_color(close_btn, lv_color_hex(BG_INPUT), 0);
+            lv_obj_set_style_radius(close_btn, 0, 0);
+            lv_obj_t* cl = lv_label_create(close_btn);
+            lv_label_set_text(cl, "OK");
+            lv_obj_center(cl);
+            lv_obj_add_event_cb(close_btn, [](lv_event_t* ev) {
+                lv_obj_del_async(lv_obj_get_parent((lv_obj_t*)lv_event_get_target(ev)));
+            }, LV_EVENT_CLICKED, nullptr);
+            return;
+        }
+
         auto dlg_sz = dialog_size(260, 120);
         lv_obj_t* dlg = lv_obj_create(scr_ota);
         lv_obj_set_size(dlg, dlg_sz.w, dlg_sz.h);
@@ -4883,6 +4916,38 @@ void settings_system_show()
     lv_obj_set_style_text_color(btn_gh_ota, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_add_event_cb(btn_gh_ota, [](lv_event_t* e) {
         lv_obj_t* scr = lv_obj_get_screen((lv_obj_t*)lv_event_get_target(e));
+
+        if (sigurdos_is_under_launcher()) {
+            auto dlg_sz = dialog_size(260, 80);
+            lv_obj_t* dlg = lv_obj_create(scr);
+            lv_obj_set_size(dlg, dlg_sz.w, dlg_sz.h);
+            lv_obj_center(dlg);
+            lv_obj_set_style_bg_color(dlg, lv_color_hex(BG_SECONDARY), 0);
+            lv_obj_set_style_border_color(dlg, lv_color_hex(ACCENT), 0);
+            lv_obj_set_style_border_width(dlg, 2, 0);
+            lv_obj_set_style_radius(dlg, 0, 0);
+            lv_obj_set_style_pad_all(dlg, 8, 0);
+
+            lv_obj_t* msg = lv_label_create(dlg);
+            lv_label_set_text(msg, "Update SigurdOS\nthrough Launcher instead");
+            lv_obj_set_style_text_color(msg, lv_color_hex(TEXT_PRIMARY), 0);
+            lv_obj_set_style_text_font(msg, emoji_wrapped_montserrat_10, 0);
+            lv_obj_align(msg, LV_ALIGN_CENTER, 0, 0);
+
+            lv_obj_t* close_btn = lv_btn_create(dlg);
+            lv_obj_set_size(close_btn, 80, 24);
+            lv_obj_align(close_btn, LV_ALIGN_BOTTOM_MID, 0, -4);
+            lv_obj_set_style_bg_color(close_btn, lv_color_hex(BG_INPUT), 0);
+            lv_obj_set_style_radius(close_btn, 0, 0);
+            lv_obj_t* cl = lv_label_create(close_btn);
+            lv_label_set_text(cl, "OK");
+            lv_obj_center(cl);
+            lv_obj_add_event_cb(close_btn, [](lv_event_t* ev) {
+                lv_obj_del_async(lv_obj_get_parent((lv_obj_t*)lv_event_get_target(ev)));
+            }, LV_EVENT_CLICKED, nullptr);
+            return;
+        }
+
         auto dlg_sz = dialog_size(280, 160);
         lv_obj_t* dlg = lv_obj_create(scr);
         lv_obj_set_size(dlg, dlg_sz.w, dlg_sz.h);

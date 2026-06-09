@@ -12,6 +12,7 @@
 #include "hal/wifi_ota.h"
 #include "hal/github_ota.h"
 #include "hal/prefs.h"
+#include "hal/launcher_env.h"
 #include "hal/buzzer.h"
 #include "app/map_renderer.h"
 #include "mesh/mesh_wrapper.h"
@@ -48,8 +49,13 @@ void setup()
     sigurdos::hal::buzzer_init();
 
     bool spiffs_ok = SPIFFS.begin(true);
-    if (!spiffs_ok)
-        Serial.println("[boot] WARNING: SPIFFS mount failed — identity/contacts won't persist across reboots");
+    if (!spiffs_ok) {
+        if (sigurdos_is_under_launcher()) {
+            Serial.println("[boot] WARNING: SPIFFS mount failed — installed app-only under Launcher. Reinstall from the Launcher/merged image (SigurdOS-tdeck-launcher.bin) for persistence.");
+        } else {
+            Serial.println("[boot] WARNING: SPIFFS mount failed — identity/contacts won't persist across reboots");
+        }
+    }
 #if SIGURDOS_DEBUG_UI
     else
         Serial.println("[boot] step 3: SPIFFS mounted");

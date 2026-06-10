@@ -10,7 +10,7 @@ This document tracks currently open known issues, bugs, and missing features in 
 
 SigurdOS can now be installed as a Launcher app. See [`firmware/README.md`](../firmware/README.md) for the full installation guide and caveats.
 
-**What's implemented:**
+**What's implemented (Phase 1/4):**
 - ✅ Launcher install via SD, WebUI, or direct GitHub URL — use `SigurdOS-tdeck-launcher.bin`
 - ✅ Runtime Launcher detection (probes for test-subtype app partition)
 - ✅ Self-OTA gated with on-screen explanation when under Launcher
@@ -18,10 +18,12 @@ SigurdOS can now be installed as a Launcher app. See [`firmware/README.md`](../f
 - ✅ Self-OTA disabled to prevent flash corruption of co-installed apps
 - ✅ SPIFFS partition created for persistence (when using merged image)
 
-**Remaining gaps (Phase 3 — requires bench hardware):**
-- ⚠️ Warm-handoff peripheral state: Launcher's I2C/touch/keyboard init before ESP.restart() may leave peripherals in unexpected states. The keyboard init currently uses a single-NACK-abort which may fail after soft reset. Expected fix: keyboard-init retry/timing window. Scope depends on bench root-cause analysis.
+**Remaining gaps (Phase 2/3/5 — in progress):**
+- 🔄 Phase 2: Boot/flash compatibility testing — **in progress**
+- ⚠️ Warm-handoff peripheral state: Launcher's I2C/touch/keyboard init before ESP.restart() may leave peripherals in unexpected states. The keyboard init currently uses a single-NACK-abort which may fail after soft reset. Expected fix: keyboard-init retry/timing window.
 - ⚠️ Warm-handoff soak testing (10+ power-cycle loops)
 - ⚠️ Multi-app coexistence test (install Bruce alongside SigurdOS, switch back)
+- ⏳ **Phase 5:** Full regression matrix (T1–T14)
 - ❌ Not yet listed in LauncherHub catalog (requires maintainer coordination)
 
 ---

@@ -46,6 +46,10 @@ def merge_bin_action(target, source, env):
 
     if _os.path.isfile(merged_bin):
         print(f"SigurdOS: merged -> firmware-merged.bin ({_os.path.getsize(merged_bin):,} bytes)")
+        # Launcher-compatible copy (same bytes as merged, Launcher-optimized name)
+        launcher_bin = _os.path.join(build_dir, "SigurdOS-tdeck-launcher.bin")
+        _os.system(f"cp {merged_bin} {launcher_bin}")
+        print(f"SigurdOS: launcher -> SigurdOS-tdeck-launcher.bin ({_os.path.getsize(launcher_bin):,} bytes)")
 
     # ── Web flasher manifest ──────────────────────────────
     import hashlib as _hashlib
@@ -82,6 +86,7 @@ def merge_bin_action(target, source, env):
         "boot_app0": boot_app0_src,
         "firmware":  firmware_bin,
         "full":      merged_bin,
+        "launcher":  merged_bin,  # same bytes, Launcher-friendly name
     }
 
     def _git(args, cwd):

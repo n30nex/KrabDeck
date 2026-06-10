@@ -311,11 +311,22 @@ BLE host-task callbacks (`onWrite`) must only enqueue into the interface RX queu
 
 ---
 
-### Launcher compatibility — M
+### Launcher compatibility — M → ✅
 
-A niche build target for running under `bmorcelli/Launcher`. Not relevant to the standalone companion experience. (See `KNOWN_ISSUES.md`.)
+Implemented. SigurdOS can be installed as an app under [bmorcelli/Launcher](https://github.com/bmorcelli/Launcher) v2.7.2+.
 
-*(No MeshCore reference — local build/HAL.)*
+**Delivered:**
+- Launcher install via `SigurdOS-tdeck-launcher.bin` (byte-identical to `firmware-merged.bin`)
+- Runtime Launcher detection (C3) — gates self-OTA to prevent flash corruption
+- Boot-time diagnostics (C5) — warns about app-only install persistence
+- Documentation (C2/C7) — install guide and migration caveats in `firmware/README.md`
+- CI artifact (C1) — `SigurdOS-tdeck-launcher.bin` in every release
+
+**Remaining work (Phase 3 — requires bench hardware):**
+- Warm-handoff peripheral-state root cause (RC3) and keyboard-init hardening (C6)
+- LauncherHub catalog listing (O1)
+
+See [`docs/LAUNCHER_ROADMAP.md`](LAUNCHER_ROADMAP.md) and [`docs/KNOWN_ISSUES.md`](KNOWN_ISSUES.md).
 
 ---
 

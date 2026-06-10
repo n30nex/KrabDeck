@@ -4,7 +4,8 @@ Pre-built firmware for the LilyGo T-Deck (ESP32-S3, 16 MB flash).
 
 | File | Use |
 |------|-----|
-| `firmware-merged.bin` | **Full flash at 0x0** — recommended for first install (bootloader + partitions + boot_app0 + firmware) |
+| `firmware-merged.bin` | **Full flash at 0x0** — recommended for standalone first install (bootloader + partitions + boot_app0 + firmware) |
+| `SigurdOS-tdeck-launcher.bin` | Same bytes as merged — feed to [bmorcelli/Launcher](https://github.com/bmorcelli/Launcher) for install as a Launcher app |
 | `sigurdos-tdeck-merged.bin` | Full flash at 0x0 — legacy merged build (older format) |
 | `sigurdos-tdeck.bin` | App update only — flash at 0x10000 (preserves bootloader/partitions) |
 
@@ -88,3 +89,52 @@ The flasher will flash the merged binary at offset 0x0.
 | 0x10000 | SigurdOS firmware |
 
 Flash the merged binary at offset 0x0 — it contains everything needed to boot.
+
+---
+
+## Install via bmorcelli/Launcher
+
+SigurdOS can be installed as an app under [bmorcelli/Launcher](https://github.com/bmorcelli/Launcher) (v2.7.2+).
+
+### Prerequisites
+
+- A T-Deck already running Launcher (v2.7.2 or newer)
+- The file `SigurdOS-tdeck-launcher.bin` from the [latest release](https://github.com/hermes-gadget/SigurdOS-tdeck/releases/latest)
+
+### Installation
+
+Feed `SigurdOS-tdeck-launcher.bin` to Launcher via:
+
+- **SD card** — copy the file to FAT32 SD, insert, use Launcher's SD install
+- **WebUI** — upload through Launcher's browser interface
+- **Direct URL** (OTA) — enter the release asset URL in Launcher's online installer:
+  `https://github.com/hermes-gadget/SigurdOS-tdeck/releases/latest/download/SigurdOS-tdeck-launcher.bin`
+
+Launcher detects the embedded partition table, creates a SPIFFS partition for persistence, and boots SigurdOS.
+
+### Important warnings
+
+| Issue | What happens | Mitigation |
+|-------|-------------|------------|
+| **App-only (`firmware.bin`) loses persistence** | If you feed `firmware.bin` (app-only, no partition table) to Launcher, SPIFFS is not created — mesh identity regenerates on every boot, contacts/channels never persist | Always use `SigurdOS-tdeck-launcher.bin` (or `firmware-merged.bin`) for Launcher installs |
+| **Merged image overwrites Launcher** | Flashing `firmware-merged.bin` at 0x0 with esptool replaces Launcher's bootloader and partition table — reflash Launcher to recover | Only feed the merged image **to Launcher's installer**, not esptool, if you want to keep Launcher |
+| **Self-OTA disabled under Launcher** | WiFi AP OTA and GitHub OTA are automatically detected and refuse to start when running under Launcher (preventing flash corruption of co-installed apps) | Update SigurdOS through Launcher's own update mechanism |
+| **Settings reset on mode switch** | Switching between standalone and Launcher-installed modes resets NVS preferences and SPIFFS identity — onboarding re-runs, radio TX stays safely gated | Back up your identity/contacts before switching install methods |
+
+### How it works
+
+`SigurdOS-tdeck-launcher.bin` is byte-identical to `firmware-merged.bin` (bootloader + partition table + app). Launcher uses the embedded partition table as a manifest to create the app partition and a 1 MB SPIFFS partition at runtime. The bootloader inside our merged image is never flashed — Launcher uses its own custom bootloader to return to Launcher at power-on.
+
+The firmware detects it is running under Launcher by probing for Launcher's resident `test`-subtype app partition, which never exists in the standard standalone partition layout. When detected:
+- Self-OTA features are disabled with an on-screen explanation
+- Boot-time diagnostics provide targeted advice if SPIFFS mount fails
+
+### Switching back to standalone
+
+To return to standalone operation:
+```bash
+esptool.py --chip esp32s3 --port /dev/ttyACM0 write_flash 0x0 firmware-merged.bin
+```
+
+This replaces Launcher entirely with standalone SigurdOS. Your mesh identity will regenerate (it's stored in a differently-located SPIFFS), and NVS settings will reset. Re-onboard via the setup wizard and reconfigure your radio preferences.
+

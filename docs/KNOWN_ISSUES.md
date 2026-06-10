@@ -6,20 +6,25 @@ This document tracks currently open known issues, bugs, and missing features in 
 
 ## Launcher Compatibility
 
-### SigurdOS Launcher compatibility
+### Supported — bmorcelli/Launcher (v2.7.2+)
 
-[Launcher](https://github.com/bmorcelli/Launcher) is an ESP32 app launcher with explicit T-Deck support. SigurdOS can be installed and run under Launcher by flashing the `SigurdOS-tdeck-launcher.bin` merged artifact from the latest release.
+SigurdOS can now be installed as a Launcher app. See [`firmware/README.md`](../firmware/README.md) for the full installation guide and caveats.
 
-**Current status:**
-- ✅ **Phase 1/4 (PR #573):** Runtime Launcher detection, self-OTA gates, partition layout compatibility, release artifacts, documentation — **code complete, awaiting hardware test**
-- 🔄 **Phase 2:** Boot/flash compatibility testing — blocked, needs hardware (see below)
-- 🔄 **Phase 5:** Full regression matrix (T1–T14) — blocked on hardware
-- ⏳ **Phase 3:** Warm-handoff keyboard timing hardening — scoping deferred
-- ⏳ **Phase 6:** LauncherHub catalog listing — post-hardware verification
+**What's implemented (Phase 1/4):**
+- ✅ Launcher install via SD, WebUI, or direct GitHub URL — use `SigurdOS-tdeck-launcher.bin`
+- ✅ Runtime Launcher detection (probes for test-subtype app partition)
+- ✅ Self-OTA gated with on-screen explanation when under Launcher
+- ✅ Boot-time diagnostics when app-only install loses persistence
+- ✅ Self-OTA disabled to prevent flash corruption of co-installed apps
+- ✅ SPIFFS partition created for persistence (when using merged image)
 
-**Blocking issue:** Firmware testing requires a stable USB power supply on the test bench. The Pi-powered T-Deck is currently unreachable due to undervoltage (`throttled=0x50000`). A new power adapter is on order.
-
-Standalone (non-Launcher) firmware is unaffected by any of these changes.
+**Remaining gaps (Phase 2/3/5 — in progress):**
+- 🔄 Phase 2: Boot/flash compatibility testing — **in progress**
+- ⚠️ Warm-handoff peripheral state: Launcher's I2C/touch/keyboard init before ESP.restart() may leave peripherals in unexpected states. The keyboard init currently uses a single-NACK-abort which may fail after soft reset. Expected fix: keyboard-init retry/timing window.
+- ⚠️ Warm-handoff soak testing (10+ power-cycle loops)
+- ⚠️ Multi-app coexistence test (install Bruce alongside SigurdOS, switch back)
+- ⏳ **Phase 5:** Full regression matrix (T1–T14)
+- ❌ Not yet listed in LauncherHub catalog (requires maintainer coordination)
 
 ---
 

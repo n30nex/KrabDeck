@@ -31,9 +31,25 @@ lv_obj_t* make_screen_full(const char* title);
 // Load a fully built screen object (lv_scr_load wrapper).
 void show_screen(lv_obj_t* scr);
 
+// Update the text inside a settings row button (used after live value set).
+// Shared by the Bluetooth and Settings screens.
+void update_row_label(lv_obj_t* row, const char* new_text);
+
 // Device PIN gate — true while a previous unlock is within the grace window.
 bool pin_grace_active();
 // Show the PIN entry screen; loads target_screen on successful entry.
 void pin_entry_show(Screen target_screen);
+
+// Contact-list helpers shared by the Contacts and Repeaters screens
+// (implemented in screens/screen_contacts.cpp).
+void show_contact_memory_error(lv_obj_t* scr);
+void add_contact_pager(lv_obj_t* scr, int page, int pages, int total,
+                       lv_event_cb_t prev_cb, lv_event_cb_t next_cb);
+
+// Contact/repeater dialogs shared by the Contact detail and Repeater detail
+// screens (implemented in screens/screen_contacts.cpp).
+void show_login_password_dialog(const char* contact_name);
+void show_admin_cmd_dialog(const char* contact_name);
+void show_fetch_msgs_dialog(const char* contact_name);
 
 } // namespace sigurdos::ui

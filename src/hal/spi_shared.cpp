@@ -26,13 +26,21 @@
 #endif
 
 // Single SPIClass instance for the shared SPI2_HOST (FSPI) bus.
-// Initialised on first call to sigurdos_shared_spi_begin(). Both the LoRa
-// radio (mesh_wrapper.cpp) and SD card (sdcard.cpp) use this instance so the
-// bus is configured exactly once and all transactions share the same IDF bus
-// lock. Note: LovyanGFX (display) manages its own bus access on SPI2_HOST
-// through the IDF SPI driver directly.
+// Both the LoRa radio (mesh_wrapper.cpp) and SD card (sdcard.cpp) use this
+// instance so all transactions share the same IDF bus lock.
+//
+// NOTE: sigurdos_shared_spi_begin() intentionally re-calls s_shared_spi.begin()
+// on every invocation rather than guarding with a one-shot flag. The ESP32
+// SPIClass.begin() calls spiStartBus() which issues periph_module_reset() on
+// SPI2 — resetting the peripheral hardware. The SD card's GO_IDLE_STATE (CMD0)
+// requires this fresh hardware state to handshake correctly. Without the reset,
+// the bus has stale state from the LoRa init and the SD card never responds.
+// Repeated begin() is safe: transaction-specific settings (clock speed, mode)
+// are applied per-transaction via SPI.beginTransaction().
+//
+// Note: LovyanGFX (display) manages its own bus access on SPI2_HOST through
+// the IDF SPI driver directly and is not affected by this SPI class state.
 static SPIClass s_shared_spi(FSPI);
-static bool     s_shared_spi_begun = false;
 
 SPIClass& sigurdos_shared_spi()
 {
@@ -46,12 +54,9 @@ void sigurdos_shared_spi_begin(int sck, int miso, int mosi)
 
 void sigurdos_shared_spi_begin(int sck, int miso, int mosi, int cs)
 {
-    if (!s_shared_spi_begun) {
-        if (cs >= 0) {
-            s_shared_spi.begin(sck, miso, mosi, cs);
-        } else {
-            s_shared_spi.begin(sck, miso, mosi);
-        }
-        s_shared_spi_begun = true;
+    if (cs >= 0) {
+        s_shared_spi.begin(sck, miso, mosi, cs);
+    } else {
+        s_shared_spi.begin(sck, miso, mosi);
     }
 }

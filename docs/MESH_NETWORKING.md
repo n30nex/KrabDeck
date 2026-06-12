@@ -322,18 +322,14 @@ This cooldown is enforced at the wrapper level (not in `SigurdMeshV2`) so it pro
 
 Adverts are **only broadcast on boot** if the user has explicitly configured radio parameters via Settings → Radio Setup. Compile-time defaults do not trigger a boot advert, preventing accidental transmissions on potentially illegal frequencies.
 
-### Contact List (64-entry LRU)
+### Contact List (350-entry, BaseChatMesh-managed)
 
-`onAdvertRecv(pkt, id, timestamp, app_data, len)` (`sigurd_mesh_v2.h:124`):
+Contacts now live in BaseChatMesh's contact table (capacity `-D MAX_CONTACTS=350` in `platformio.ini`) rather than a separate SigurdOS-side array. `SigurdMeshV2` configures the behavior through BaseChatMesh overrides (`src/mesh/sigurd_mesh_v2.h`):
 
-1. **Parse** advert using `AdvertDataParser` to extract the node name. Falls back to `"node_<pub_key[0]>"` hex format if no name.
-2. **Deduplicate** — linear scan for matching `Identity`; if found, update `last_seen`, `last_rssi`, and name.
-3. **Add if space** — if `_nContacts < SLOP_MAX_CONTACTS`, append to array.
-4. **LRU eviction** — if the list is full (`_nContacts >= SLOP_MAX_CONTACTS`), evict the contact with the **oldest** `last_seen` timestamp. The evicted slot is overwritten in-place.
-
-```cpp
-static constexpr int SLOP_MAX_CONTACTS = 64;  // sigurd_mesh_v2.h:22
-```
+1. **Auto-add** — `isAutoAddEnabled()` returns true; `shouldAutoAddContactType()` and `getAutoAddMaxHops()` (from `NodePrefs`) gate which adverts become contacts.
+2. **Discovery hook** — `onDiscoveredContact(contact, is_new, path_len, path)` updates UI state and persistence when an advert is parsed.
+3. **Eviction** — `shouldOverwriteWhenFull()` returns true, so a full table overwrites the oldest entry; `onContactsFull()` additionally pushes a companion notification.
+4. **Persistence** — contacts are saved through the versioned contact store (`src/mesh/contact_store.cpp`, magic header + bounds checks).
 
 Each BaseChatMesh `ContactInfo` plus SigurdOS wrapper metadata stores:
 
@@ -395,7 +391,7 @@ After a ping completes (or its 3-second window expires), `pingOnCooldown()` retu
 
 ### Usage
 
-The Finder screen (`src/ui/screens.cpp:564`) provides the "Ping Nearby" UI:
+The Finder screen (`src/ui/screens/screen_finder.cpp`) provides the "Ping Nearby" UI:
 - Button to initiate a ping
 - Shows active listening state during the 3-second window
 - Displays results sorted by RSSI
@@ -464,7 +460,7 @@ The wrapper layer (`mesh_wrapper.cpp:512`) maintains a monotonic `trace_tag_coun
 
 ### UI — Trace Screen
 
-The Trace screen (`src/ui/screens.cpp:1436`) presents:
+The Trace screen (`src/ui/screens/screen_trace.cpp`) presents:
 - A list of contacts with known paths (marked with path indicator)
 - Tapping a contact sends a trace probe
 - The returned path is displayed as hop-by-hop SNR values and node hashes
@@ -518,7 +514,7 @@ Each `PacketLogEntry` stores:
 
 ### UI — Heard Screen
 
-The Heard screen (also called Packets screen, `heard_screen_show()` at `screens.cpp:411`) renders a live-updating list:
+The Heard screen (also called Packets screen, `heard_screen_show()` in `src/ui/screens/screen_packets.cpp`) renders a live-updating list:
 - Timestamp column
 - Source column (node name or "RADIO")
 - RSSI column (dBm)
@@ -541,7 +537,7 @@ Navigated to via `Screen::Network`, calls `finder_screen_show()`. Shows:
 
 ### Signal Screen
 
-`signal_screen_show()` (in `screens.cpp`) provides real-time radio metrics:
+`signal_screen_show()` (in `src/ui/screens/screen_signal.cpp`) provides real-time radio metrics:
 
 | Metric | API | Description |
 |--------|-----|-------------|

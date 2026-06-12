@@ -85,6 +85,9 @@ jobs:
       - name: Build firmware
         run: pio run -e SigurdOS_TDeck
 
+      - name: Build debug firmware
+        run: pio run -e SigurdOS_TDeck_debug
+
       - name: Create Launcher artifact
         run: cp .pio/build/SigurdOS_TDeck/firmware-merged.bin .pio/build/SigurdOS_TDeck/SigurdOS-tdeck-launcher.bin
 
@@ -96,6 +99,7 @@ jobs:
             .pio/build/SigurdOS_TDeck/firmware.bin
             .pio/build/SigurdOS_TDeck/firmware-merged.bin
             .pio/build/SigurdOS_TDeck/SigurdOS-tdeck-launcher.bin
+            .pio/build/SigurdOS_TDeck_debug/firmware-merged.bin
           if-no-files-found: warn
 
   release:
@@ -150,4 +154,5 @@ jobs:
             firmware/firmware.bin
             firmware/firmware-merged.bin
             firmware/SigurdOS-tdeck-launcher.bin
+            firmware/firmware-debug.bin
             firmware/SHA256SUMS.txt

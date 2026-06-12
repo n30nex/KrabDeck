@@ -21,6 +21,20 @@
 #define SIGURDOS_DEBUG_LEVEL 2
 #endif
 
+// ── Crash ring buffer ───────────────────────────────────
+// Captures last N debug lines in DRAM. Auto-dumped on boot
+// after a crash (panic, watchdog, brownout).
+#ifndef SIGURDOS_CRASH_RING
+#define SIGURDOS_CRASH_RING 0
+#endif
+
+#define DEBUG_RING_SIZE 128
+
+struct DebugRingEntry {
+    uint32_t timestamp_ms;
+    char     line[64];
+};
+
 namespace sigurdos {
 namespace debug {
 
@@ -72,6 +86,12 @@ void dump_memory();
 void dump_display_config();
 void dump_mesh_state();
 
+// ── Crash ring buffer (SIGURDOS_CRASH_RING) ─────────────
+void ring_log(const char* line);
+void ring_dump();
+void ring_clear();
+bool has_crash_record();
+
 } // namespace debug
 } // namespace sigurdos
 
@@ -108,6 +128,11 @@ inline void dump_home_screen_layout() {}
 inline void dump_memory() {}
 inline void dump_display_config() {}
 inline void dump_mesh_state() {}
+
+inline void ring_log(const char*) {}
+inline void ring_dump() {}
+inline void ring_clear() {}
+inline bool has_crash_record() { return false; }
 
 } // namespace debug
 } // namespace sigurdos

@@ -21,6 +21,7 @@
 
 #include <Arduino.h>
 #include <lvgl.h>
+#include <esp_core_dump.h>
 
 #include "../hal/tdeck_pins.h"
 #include "../hal/battery.h"
@@ -52,6 +53,52 @@ static bool feat_mesh    = SIGURDOS_DEBUG_MESH    ? true : false;
 static bool feat_ui      = SIGURDOS_DEBUG_UI      ? true : false;
 static bool feat_map     = SIGURDOS_DEBUG_MAP     ? true : false;
 static bool feat_diag    = SIGURDOS_DEBUG_DIAG    ? true : false;
+
+// ── Crash ring buffer ───────────────────────────────────
+#if SIGURDOS_CRASH_RING
+static DebugRingEntry s_ring[DEBUG_RING_SIZE];
+static uint8_t s_ring_head = 0;
+static uint8_t s_ring_count = 0;
+
+void ring_log(const char* line)
+{
+    DebugRingEntry* e = &s_ring[s_ring_head % DEBUG_RING_SIZE];
+    e->timestamp_ms = millis();
+    strncpy(e->line, line, sizeof(e->line) - 1);
+    e->line[sizeof(e->line) - 1] = '\0';
+    s_ring_head++;
+    if (s_ring_count < DEBUG_RING_SIZE) s_ring_count++;
+}
+
+void ring_dump()
+{
+    uint8_t start = (s_ring_count < DEBUG_RING_SIZE) ? 0
+                   : (s_ring_head % DEBUG_RING_SIZE);
+    for (uint8_t i = 0; i < s_ring_count; i++) {
+        auto* e = &s_ring[(start + i) % DEBUG_RING_SIZE];
+        Serial.printf("[ring] t=%lu %s\n", (unsigned long)e->timestamp_ms, e->line);
+    }
+}
+
+void ring_clear()
+{
+    s_ring_head = 0;
+    s_ring_count = 0;
+}
+
+bool has_crash_record()
+{
+    return esp_reset_reason() == ESP_RST_PANIC ||
+           esp_reset_reason() == ESP_RST_INT_WDT ||
+           esp_reset_reason() == ESP_RST_TASK_WDT ||
+           esp_reset_reason() == ESP_RST_BROWNOUT;
+}
+#else
+void ring_log(const char*) {}
+void ring_dump() {}
+void ring_clear() {}
+bool has_crash_record() { return false; }
+#endif // SIGURDOS_CRASH_RING
 
 void feat_set_display(bool on) { feat_display = on; }
 bool feat_get_display() { return feat_display; }
@@ -103,6 +150,26 @@ uint8_t get_level() {
 
 void init()
 {
+#if SIGURDOS_CRASH_RING
+    // Check if previous boot ended in a crash
+    esp_reset_reason_t reason = esp_reset_reason();
+    if (reason == ESP_RST_PANIC || reason == ESP_RST_INT_WDT ||
+        reason == ESP_RST_TASK_WDT || reason == ESP_RST_BROWNOUT) {
+        Serial.println("\n⚠═══════════════════════════════════════");
+        Serial.println("⚠ PREVIOUS BOOT ENDED IN A CRASH");
+        Serial.printf("⚠ Reason: %d\n", (int)reason);
+        Serial.println("⚠═══════════════════════════════════════");
+        ring_dump();
+        if (esp_core_dump_image_check() == ESP_OK) {
+            Serial.println("[crash] Core dump saved to flash. Use esptool.py to extract.");
+        }
+        Serial.println();
+    } else {
+        // Normal boot — clear old ring buffer
+        ring_clear();
+    }
+#endif
+
     Serial.println();
     Serial.println("╔══════════════════════════════════════════════╗");
     Serial.println("║   SigurdOS DEBUG build                  ║");
@@ -127,6 +194,17 @@ void init()
                   (unsigned)ESP.getFreeHeap(),
                   (unsigned)ESP.getFreePsram(),
                   (unsigned)sigurdos_battery_pct());
+#if SIGURDOS_CRASH_RING
+    {
+        char ring_buf[64];
+        snprintf(ring_buf, sizeof(ring_buf), "[boot] debug level=%u heap=%u psram=%u batt=%u%%",
+                 (unsigned)current_level,
+                 (unsigned)ESP.getFreeHeap(),
+                 (unsigned)ESP.getFreePsram(),
+                 (unsigned)sigurdos_battery_pct());
+        ring_log(ring_buf);
+    }
+#endif
     last_dump_ms = now;
 }
 
@@ -149,6 +227,18 @@ void loop()
                       (unsigned)sigurdos_battery_pct(),
                       (unsigned long)0 /* flush count is local to display.cpp */,
                       (unsigned)feat_to_mask());
+#if SIGURDOS_CRASH_RING
+        {
+            char ring_buf[64];
+            snprintf(ring_buf, sizeof(ring_buf), "[stat] t=%lu heap=%u/%u psram=%u batt=%u%%",
+                     (unsigned long)(now/1000),
+                     (unsigned)ESP.getFreeHeap(),
+                     (unsigned)ESP.getMinFreeHeap(),
+                     (unsigned)ESP.getFreePsram(),
+                     (unsigned)sigurdos_battery_pct());
+            ring_log(ring_buf);
+        }
+#endif
 
         // Quick pin snapshot (non-intrusive)
         Serial.printf("[pins] U=%d D=%d L=%d R=%d BTN=%d\n",
@@ -157,6 +247,18 @@ void loop()
                       digitalRead(PIN_TRACKBALL_LEFT),
                       digitalRead(PIN_TRACKBALL_RIGHT),
                       digitalRead(PIN_TRACKBALL_BTN));
+#if SIGURDOS_CRASH_RING
+        {
+            char ring_buf[64];
+            snprintf(ring_buf, sizeof(ring_buf), "[pins] U=%d D=%d L=%d R=%d BTN=%d",
+                     digitalRead(PIN_TRACKBALL_UP),
+                     digitalRead(PIN_TRACKBALL_DOWN),
+                     digitalRead(PIN_TRACKBALL_LEFT),
+                     digitalRead(PIN_TRACKBALL_RIGHT),
+                     digitalRead(PIN_TRACKBALL_BTN));
+            ring_log(ring_buf);
+        }
+#endif
     }
 }
 

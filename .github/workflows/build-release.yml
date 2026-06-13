@@ -154,6 +154,7 @@ jobs:
           draft: false
           prerelease: true
           generate_release_notes: true
+          preserve_order: true
           files: |
             firmware/firmware.bin
             firmware/firmware-merged.bin

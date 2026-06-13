@@ -91,16 +91,20 @@ jobs:
       - name: Create Launcher artifact
         run: cp .pio/build/SigurdOS_TDeck/firmware-merged.bin .pio/build/SigurdOS_TDeck/SigurdOS-tdeck-launcher.bin
 
+      - name: Flatten for artifact upload
+        run: |
+          mkdir -p artifacts
+          cp .pio/build/SigurdOS_TDeck/firmware.bin           artifacts/firmware.bin
+          cp .pio/build/SigurdOS_TDeck/firmware-merged.bin    artifacts/firmware-merged.bin
+          cp .pio/build/SigurdOS_TDeck/SigurdOS-tdeck-launcher.bin artifacts/SigurdOS-tdeck-launcher.bin
+          cp .pio/build/SigurdOS_TDeck_debug/firmware-merged.bin artifacts/firmware-debug.bin
+
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
           name: sigurdos-tdeck-firmware
-          path: |
-            .pio/build/SigurdOS_TDeck/firmware.bin
-            .pio/build/SigurdOS_TDeck/firmware-merged.bin
-            .pio/build/SigurdOS_TDeck/SigurdOS-tdeck-launcher.bin
-            .pio/build/SigurdOS_TDeck_debug/firmware-merged.bin
-          if-no-files-found: warn
+          path: artifacts/
+          if-no-files-found: error
 
   release:
     name: Create Release

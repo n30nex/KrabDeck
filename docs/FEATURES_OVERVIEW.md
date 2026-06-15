@@ -31,9 +31,11 @@ This document catalogs every feature in the firmware — the 12-grid home screen
   - [Emoji Font Support](#emoji-font-support)
   - [NVS Preferences](#nvs-preferences)
   - [Diagnostics & Debug](#diagnostics--debug)
+  - [Logging Subsystem](#logging-subsystem)
   - [Packet Log](#packet-log)
   - [RTC & System Time](#rtc--system-time)
   - [SPIFFS Persistence](#spiffs-persistence)
+  - [Contact Persistence](#contact-persistence)
   - [Web Flasher Support](#web-flasher-support)
   - [OTA Firmware Update](#ota-firmware-update)
   - [Remote Test Controller](#remote-test-controller)
@@ -132,6 +134,7 @@ Signal diagnostics screen showing current RSSI, noise floor, SNR, and signal qua
 - **Programmable brightness** via PWM (0–255)
 - **Screen capture** via serial hex dump (`lv_snapshot_take_to_draw_buf`)
 - **Tick-starvation fix** — periodic `lv_timer_handler()` inside mesh loop (20ms guard) keeps UI responsive
+- **Boot splash with live status** — `boot_status()` updates a status label on the splash screen during boot sequence (PR #625), showing progress such as "Mounting storage...", "Starting radio..."
 **Sources:** [`src/hal/display.cpp`](../src/hal/display.cpp), [`src/hal/display.h`](../src/hal/display.h), [`src/lv_conf.h`](../src/lv_conf.h), [`docs/KNOWN_ISSUES.md`](KNOWN_ISSUES.md#ui-performance)
 
 ### Mesh Networking
@@ -204,6 +207,13 @@ Signal diagnostics screen showing current RSSI, noise floor, SNR, and signal qua
 - **Test controller integration** — remote test mode can change debug level and feature masks at runtime
 **Sources:** [`src/diagnostics/debug.cpp`](../src/diagnostics/debug.cpp), [`src/diagnostics/debug.h`](../src/diagnostics/debug.h), [`src/diagnostics/debug_cfg.h`](../src/diagnostics/debug_cfg.h)
 
+### Logging Subsystem
+- **Lightweight serial logging** — header-only macros for tagged log messages (`LOG_I`, `LOG_W`, `LOG_E`)
+- **Compile-time gating** — logging compiles away entirely when `SIGURDOS_DEBUG` is not defined
+- **Flexible backends** — supports both USB CDC serial and the telemetry framing layer
+- **Full documentation:** [`docs/LOGGING.md`](LOGGING.md)
+**Sources:** [`src/diagnostics/log.h`](../src/diagnostics/log.h)
+
 ### Packet Log
 - **Circular packet buffer** — logs every received radio frame with timestamp, source, RSSI, SNR, and payload type string
 - **Type classification** — ADVERT_RX, DM_RX, GRP_RX, ANON_RX, ACK, TRACE, PKT_RX
@@ -221,6 +231,13 @@ Signal diagnostics screen showing current RSSI, noise floor, SNR, and signal qua
 - **Graceful fallback** — if SPIFFS mount fails at boot, device continues without persistence (warning logged)
 - **Chat persistence** — `chat_save_messages()` / `chat_load_messages()` per-channel history
 **Sources:** [`src/main.cpp`](../src/main.cpp), [`src/mesh/mesh_wrapper.cpp`](../src/mesh/mesh_wrapper.cpp), [`src/ui/chat_screen.h`](../src/ui/chat_screen.h)
+
+### Contact Persistence
+- **Contact management** — add, remove, lookup, and favourite contacts via `contact_store`
+- **On-disk storage** — contacts persisted to SPIFFS via `persistence_store`
+- **LRU eviction** — bounded contact list (up to 350 entries) with least-recently-used eviction
+- **Full documentation:** [`docs/CONTACT_STORE.md`](CONTACT_STORE.md)
+**Sources:** [`src/mesh/contact_store.cpp`](../src/mesh/contact_store.cpp), [`src/mesh/contact_store.h`](../src/mesh/contact_store.h), [`src/mesh/persistence_store.cpp`](../src/mesh/persistence_store.cpp), [`src/mesh/persistence_store.h`](../src/mesh/persistence_store.h)
 
 ### Web Flasher Support
 - **Pre-built binaries** in `webflasher/` — bootloader, partitions, boot_app0, firmware, merged full image, and the Launcher-named copy
@@ -255,7 +272,7 @@ Signal diagnostics screen showing current RSSI, noise floor, SNR, and signal qua
 - **Self-OTA gating** — WiFi AP and GitHub OTA refuse to run under Launcher to protect co-installed firmware
 - **Boot diagnostics** — targeted warning when an app-only Launcher install leaves the device without a SPIFFS partition
 - **Install artifact** — releases publish `SigurdOS-tdeck-launcher.bin` (byte-identical to `firmware-merged.bin`) for Launcher SD/WebUI/URL installs
-**Full documentation:** [`docs/LAUNCHER_ROADMAP.md`](LAUNCHER_ROADMAP.md), [`docs/LAUNCHER_SIZE_AUDIT.md`](LAUNCHER_SIZE_AUDIT.md), [`firmware/README.md`](../firmware/README.md)
+**Full documentation:** [`docs/LAUNCHER.md`](LAUNCHER.md), [`docs/LAUNCHER_ROADMAP.md`](LAUNCHER_ROADMAP.md), [`docs/LAUNCHER_SIZE_AUDIT.md`](LAUNCHER_SIZE_AUDIT.md), [`firmware/README.md`](../firmware/README.md)
 **Sources:** [`src/hal/launcher_env.cpp`](../src/hal/launcher_env.cpp), [`src/hal/launcher_env.h`](../src/hal/launcher_env.h), [`test/test_launcher_env/`](../test/test_launcher_env/)
 
 ### Companion BLE (Official MeshCore App)
@@ -395,8 +412,11 @@ Run it with `pio test -e native_test`. See [`test/README.md`](../test/README.md)
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Contribution workflow, PR checklist, coding standards |
 | [`docs/KNOWN_ISSUES.md`](KNOWN_ISSUES.md) | Tracked bugs, fixes, and workarounds |
 | [`docs/CHAT_SCREEN.md`](CHAT_SCREEN.md) | Chat screen UI and messaging documentation |
+| [`docs/CONTACT_STORE.md`](CONTACT_STORE.md) | Contact store API, persistence, and data model |
 | [`docs/HARDWARE.md`](HARDWARE.md) | Hardware pinout, peripherals, and configuration |
 | [`docs/HOME_SCREEN.md`](HOME_SCREEN.md) | Home screen layout and tile system documentation |
+| [`docs/LAUNCHER.md`](LAUNCHER.md) | Launcher detection, OTA gating, partition layout |
+| [`docs/LOGGING.md`](LOGGING.md) | Logging subsystem API, verbosity levels, and configuration |
 | [`docs/MAP_SCREEN.md`](MAP_SCREEN.md) | Map screen and tile cache system documentation |
 | [`docs/MESH_NETWORKING.md`](MESH_NETWORKING.md) | Mesh networking protocol and features documentation |
 | [`docs/MISSING_FEATURES.md`](MISSING_FEATURES.md) | Companion parity audit: implemented, declined, and out-of-scope MeshCore deltas |

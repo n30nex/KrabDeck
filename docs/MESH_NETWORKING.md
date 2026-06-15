@@ -150,6 +150,12 @@ SPI is **not** initialised globally with a single `SPI.begin()`. Each driver ini
 
 The mesh init **must happen after display init** (display init is at step 5 in main.cpp, mesh at step 7). In remote test mode (`SIGURDOS_REMOTE_TEST`), `mesh::init()` still calls `sigurdos_shared_spi_begin()` so the SPI bus is available for SD card, even though the radio is not used.
 
+> **`wifi_sta::connect()` removed.** The blocking `wifi_sta::connect()` method
+> has been deprecated and removed. Only **`beginConnect()`** (non-blocking start)
+> and **`getStatus()`** (poll for completion) remain. Callers must use the
+> async pattern: `beginConnect(ssid, password)` → poll `getStatus()` →
+> `Status::Connected` or `Status::Failed`. See `src/hal/wifi_ota.h`.
+
 ---
 
 ## SigurdMeshV2 — Core Mesh Subclass
@@ -197,6 +203,29 @@ static sigurdos::mesh::SigurdMeshV2*   g_mesh = nullptr;
 | `onControlDataRecv(pkt)` | `sigurd_mesh_v2.h:324` | Handle PING/PONG control packets |
 | `onRawDataRecv(pkt)` | `sigurd_mesh_v2.h:393` | Stub — reserved for future use |
 | `logRx(pkt, ...)` | `sigurd_mesh_v2.h:398` | Log every received packet to the circular packet log |
+
+### ACK Tracking
+
+SigurdMeshV2 maintains a `_pending_acks[]` array (`MAX_PENDING_ACKS = 16`) to
+match incoming ACK packets against recently sent messages. Each `PendingAck`
+struct carries **in-class default initializers** so the array is fully zeroed
+on construction — without them, `dest_name`, `timestamp`, `expected_ack`, and
+`sent_at_ms` would hold garbage until first write, which is fragile for ACK
+matching:
+
+```cpp
+struct PendingAck {
+    char     dest_name[32]  = {};
+    uint32_t timestamp      = 0;
+    uint32_t expected_ack   = 0;
+    uint32_t sent_at_ms     = 0;
+    bool     in_use         = false;
+};
+```
+
+`addPendingAck(name, ts, expected_ack)` registers an entry; `processAck(data)`
+(from `BaseChatMesh`) walks the array and returns the matching `ContactInfo*`
+or `nullptr`.
 
 ---
 
@@ -580,6 +609,22 @@ Each channel stores three NVS keys:
 
 Channel count is stored as `ch_cnt` (uint8_t). On boot, `loadChannels()` is called during `init()` after `g_mesh->begin()` to restore all previously joined channels.
 
+### Persistence Store Module (`persistence_store.h/cpp`)
+
+The `sigurdos::mesh::persistence_store` module provides the low-level NVS and
+SPIFFS access functions that the wrapper layer uses for channel and identity
+persistence:
+
+| Function | Backend | Purpose |
+|----------|---------|---------|
+| `channelStoreSave(count, read, ctx)` | NVS (`"sigurdos"` namespace) | Save all channels via caller-provided `ChannelReadFn` |
+| `channelStoreLoad(load, ctx)` | NVS | Load channels via caller-provided `ChannelLoadFn`; returns count loaded |
+| `identityStoreSave(data, len)` | SPIFFS (`/mesh_id`) | Save raw identity bytes |
+| `identityStoreLoad(buf, buf_len, out_len)` | SPIFFS | Load raw identity bytes |
+
+These are called by `saveChannels()` / `loadChannels()` and `saveIdentity()` /
+`loadIdentity()` respectively in `mesh_wrapper.cpp`.
+
 ### Chat History Persistence
 
 *(Not part of the mesh layer directly, but relevant)*
@@ -657,6 +702,30 @@ Radio parameters are stored in `NodePrefs` (NVS-backed) and can be changed via t
 | TX Power | 2–22 dBm | Transmission power |
 
 See `src/hal/prefs.h` for the full `NodePrefs` struct.
+
+### Debug/Test Override: `SIGURDOS_DEBUG_FORCE_RADIO_PARAMS`
+
+Defined in `platformio.ini` for remote-test and automation builds, this flag
+**overrides** NVS-stored radio parameters with the compile-time defaults
+(`LORA_FREQ`, `LORA_BW`, `LORA_SF`, `LORA_CR`, `LORA_TX_PWR`) to ensure
+consistent RF behaviour regardless of stale NVS values from prior firmware
+versions or manual configuration:
+
+```cpp
+// mesh_wrapper.cpp:799
+#ifdef SIGURDOS_DEBUG_FORCE_RADIO_PARAMS
+    freq = LORA_FREQ;
+    bw   = LORA_BW;
+    sf   = LORA_SF;
+    // ...
+#endif
+```
+
+This is **not** enabled by `SIGURDOS_DEBUG` — that flag is for diagnostic
+logging only. `SIGURDOS_DEBUG_FORCE_RADIO_PARAMS` is intended for CI/remote-test
+environments. When defined, it also auto-joins the `#testingsigurdos` test channel
+(on frequency 869.525/SF10/BW250/CR5) so the device is fully operational without
+requiring Settings → Radio Setup.
 
 ### SX1262 Hard Reset
 

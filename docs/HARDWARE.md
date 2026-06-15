@@ -443,7 +443,7 @@ pct = ((mv - 3000) * 100) / (4200 - 3000);
 | SPI Speed          | **4 MHz** (`SD.begin(..., 4000000)`) |
 | Filesystem         | FATFS via Arduino SD library     |
 | VFS Mountpoint     | **`/sdcard`** (`SIGURDOS_SD_MOUNTPOINT`) |
-| Init Retries       | 3 attempts, 500 ms apart         |
+| Init Strategy     | Single attempt at boot (`sigurdos_sdcard_init()`) + lazy retry<br>via `sigurdos_sdcard_retry()` capped at 3 total attempts |
 | Capacity           | Exposed via `sigurdos_sdcard_capacity_bytes()` |
 
 ### Shared Bus Note
@@ -460,11 +460,17 @@ SD card must be initialised **after** the LoRa radio, because the LoRa/SPI init
 If the SD card is initialised first with unconfigured pins, FATFS returns
 `FR_NOT_READY`.
 
+`sigurdos_sdcard_init()` makes only a **single attempt** at boot for fast startup.
+Consumers (e.g., the map renderer) call **`sigurdos_sdcard_retry()`** lazily when
+they need the card. The retry is capped at 3 total attempts to avoid unbounded
+re-probing of a broken or absent card.
+
 ### API
 
 | Function                             | Purpose                   |
 |--------------------------------------|---------------------------|
-| `sigurdos_sdcard_init()`              | Mount SD card (3 retries) |
+| `sigurdos_sdcard_init()`              | Mount SD card (single attempt, fast boot) |
+| `sigurdos_sdcard_retry()`             | Lazy retry (capped at 3), called by consumers |
 | `sigurdos_sdcard_mounted()`           | Check mount status        |
 | `sigurdos_sdcard_capacity_bytes()`    | Total card capacity       |
 | `sigurdos_sdcard_free_bytes()`        | Free space                |
@@ -553,14 +559,23 @@ Radio parameters are configurable at runtime via NVS (`NodePrefs`):
 | Property | Value              |
 |----------|--------------------|
 | Pin      | **46**             |
-| Type     | Active-low buzzer  |
+| Type     | Active-low buzzer (GPIO output — no PWM tone generation) |
 | Default  | HIGH (off)         |
 
 > The buzzer is driven as a GPIO output — no PWM tone generation is implemented.
-> Notification patterns (short/double beep) are played back **non-blocking**:
-> `buzzer_loop()` is called once per main-loop iteration and steps through the
-> active pattern's level/duration table (`src/hal/buzzer.h`). A `buzzer_quiet`
-> preference mutes message-arrival beeps.
+> **Non-blocking loop-driven playback:** `buzzer_loop()` is called once per
+> main-loop iteration (`main.cpp:189`) and advances through the active pattern's
+> step table (`src/hal/buzzer.h`). Each `BuzzerPatternStep` has a `level_high`
+> (bool) and `duration_ms` field. Steps with `duration_ms = 0` are terminal
+> markers that apply the level and then idle LOW until the next pattern starts.
+> Starting a new beep while one is playing replaces it immediately (restart
+> semantics — no overlap occurs as only the message-arrival path in `ui.cpp`
+> triggers beeps). A `buzzer_quiet` preference in `NodePrefs` mutes
+> message-arrival beeps.
+
+> **API:** `buzzer_init()` configures the GPIO; `buzzer_beep_short()` triggers
+> a ~100 ms pulse (DM arrival); `buzzer_beep_double()` fires two 60 ms pulses
+> 60 ms apart (channel message arrival); `buzzer_loop()` advances playback.
 
 ---
 
@@ -611,39 +626,71 @@ Radio parameters are configurable at runtime via NVS (`NodePrefs`):
 ## Appendix A — Boot Sequence
 
 Numbers in brackets are the `[boot] step N` markers printed by debug builds.
+The splash screen shows a status label updated by `boot_status()`, which calls
+`sigurdos::ui::set_boot_status(...)` and flushes the display after each step.
 
 ```
-1. Serial.begin(115200)                 [step 1]
-2. TDeckBoard::begin()                  [step 2]
-     → PIN_PERIPH_PWR HIGH
-     → Trackball GPIO INPUT
-     → LoRa DIO1 INPUT_PULLUP
-     → ADC resolution 12-bit
-     → Wire.begin(18, 8)
-     → Deep sleep wake detection
-3. sigurdos_battery_init() + buzzer_init()
-4. SPIFFS.begin()                       [step 3]
-     → Launcher-aware warning if the mount fails
-5. sigurdos_gps_init() (if GPS enabled) [step 4]
-6. sigurdos_display_init()              [step 5]
-     → LovyanGFX init (rotation 1, 320×240)
-     → LVGL init
-     → Touch init (GT911 I2C)
-     → Keyboard init (ESP32-C3 I2C)
-     → Trackball init (GPIO)
-     → On failure: restart (no hang)
-7. sigurdos::mesh::init()               [step 6]
-     → Shared SPI bus init
-     → SX1262 hard reset + std_init
-     → Radio config from prefs or defaults
-     → MeshCore SigurdMeshV2 init
-8. sigurdos::ui::init()                 [step 7]
-9. Debug diagnostics (debug builds)     [step 8]
-10. sigurdos_sdcard_init()              [step 9]
-11. sigurdos_map_init()
-12. WiFi STA auto-connect (non-blocking, if credentials saved)
-13. telemetry::init() (telemetry builds)
+ 1. Serial.begin(115200)                 [step 1]
+ 2. TDeckBoard::begin()                  [step 2]
+      → PIN_PERIPH_PWR HIGH
+      → Trackball GPIO INPUT
+      → LoRa DIO1 INPUT_PULLUP
+      → ADC resolution 12-bit
+      → Wire.begin(18, 8)
+      → Deep sleep wake detection
+ 3. sigurdos_battery_init() + buzzer_init()
+ 4. sigurdos_display_init()              [step 3]  ◄─ moved BEFORE SPIFFS/GPS
+      → LovyanGFX init (rotation 1, 320×240)
+      → LVGL init
+      → Draw-buffer alloc (PSRAM or DRAM)
+      → On failure: restart (no hang)
+ 5. sigurdos::ui::init()                 [step 4]
+      → Splash screen with status label
+      → boot_status("Starting SigurdOS...")
+ 6. SPIFFS.begin()                       [step 5]
+      → boot_status("Mounting storage...")
+      → Launcher-aware warning if the mount fails
+      → boot_status("Storage ready" / "Storage unavailable")
+ 7. Load NodePrefs, apply theme,
+      display brightness, reset auto-off
+      → boot_status("Loading settings...")
+ 8. sigurdos_display_init_inputs()        [step 6]  ◄─ input INITIALISATION deferred
+      → GT911 touch init (I2C)
+      → Keyboard init (ESP32-C3 I2C)
+      → Trackball init (GPIO)
+      → boot_status("Starting input...")
+      → boot_status("Input ready")
+ 9. sigurdos_gps_init() (if GPS enabled) [step 7]
+      → boot_status("Starting GPS...")
+10. sigurdos::mesh::init()               [step 8]
+      → Shared SPI bus init
+      → SX1262 hard reset + std_init
+      → Radio config from prefs or defaults
+      → MeshCore SigurdMeshV2 init
+      → boot_status("Starting radio...")
+      → boot_status("Radio ready" / "Radio unavailable")
+11. sigurdos::ui::load_persisted_state()
+      → boot_status("Loading chats...")
+      → boot_status("Chats ready")
+12. Debug diagnostics (debug builds)     [step 9]
+13. sigurdos_sdcard_init()               [step 10]
+      → boot_status("Checking SD card...")
+      → boot_status("SD card ready" / "No SD card")
+14. sigurdos_map_init()
+      → boot_status("Preparing map...")
+15. boot_status("Ready")                 [step 11]
+16. WiFi STA auto-connect (non-blocking beginConnect(), if credentials saved)
+17. telemetry::init() (telemetry builds)
 ```
+
+**Key changes from pre-PR-625 boot order:**
+
+| Change | Before | After |
+|--------|--------|-------|
+| Display init | After SPIFFS & GPS (step 6) | **Before** SPIFFS & GPS (step 4) |
+| Input init | Inline in display init | **Deferred** via `sigurdos_display_init_inputs()` (step 8), after prefs loaded |
+| Splash status | Static splash | Live status label via `boot_status()` |
+| SPIFFS error | Serial-only warning | Also shown on splash status label |
 
 ---
 

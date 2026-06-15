@@ -14,6 +14,7 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <Update.h>
+#include <SPIFFS.h>
 #include <esp_heap_caps.h>
 #include <cstring>
 #include <cstdlib>
@@ -363,6 +364,7 @@ void loop() {
                                   s_downloaded);
                     setStatus(GitHubOTAState::Success, 100,
                               "Update complete — rebooting...");
+                    SPIFFS.end();
                     delay(500);
                     ESP.restart();
                 } else {

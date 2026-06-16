@@ -250,7 +250,9 @@ void settings_system_show()
     lv_obj_set_style_bg_opa(btn_wizard, LV_OPA_COVER, 0);
     lv_obj_set_style_text_color(btn_wizard, lv_color_hex(TEXT_PRIMARY), 0);
     lv_obj_add_event_cb(btn_wizard, [](lv_event_t*) {
-        navigate_to(Screen::Onboarding);
+        lv_async_call([](void*) {
+            navigate_to(Screen::Onboarding);
+        }, nullptr);
     }, LV_EVENT_CLICKED, nullptr);
     row++;
 
@@ -360,7 +362,9 @@ void settings_system_show()
         lv_obj_set_style_bg_opa(btn_wifi, LV_OPA_COVER, 0);
         lv_obj_set_style_text_color(btn_wifi, lv_color_hex(TEXT_PRIMARY), 0);
         lv_obj_add_event_cb(btn_wifi, [](lv_event_t*) {
-            navigate_to(Screen::WiFiNetworks);
+            lv_async_call([](void*) {
+                navigate_to(Screen::WiFiNetworks);
+            }, nullptr);
         }, LV_EVENT_CLICKED, nullptr);
         row++;
     }

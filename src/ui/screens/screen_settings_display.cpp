@@ -547,12 +547,9 @@ void settings_display_show()
             np.theme_id = (np.theme_id + 1) % NUM_THEMES;
             theme_apply(np.theme_id);
             sigurdos::prefs_set(np);
-            char row_buf[64];
-            snprintf(row_buf, sizeof(row_buf), "  Theme: %s", THEMES[np.theme_id].name);
-            lv_obj_t* lbl = lv_obj_get_child(target, 1);
-            if (lbl && lv_obj_check_type(lbl, &lv_label_class)) {
-                lv_label_set_text(lbl, row_buf);
-            }
+            // Defer screen refresh to next LVGL tick — the current event
+            // handler runs on a widget that will be deleted by lv_scr_load().
+            lv_async_call([](void*) { refresh_current_screen(); }, nullptr);
         }, LV_EVENT_CLICKED, nullptr);
         row++;
     }

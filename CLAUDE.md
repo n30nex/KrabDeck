@@ -6,6 +6,7 @@
 
 
 **This file is a mirror of `AGENTS.md`.** Both files contain identical content. Claude Code reads `CLAUDE.md` by default; other agents should read `AGENTS.md`.
+
 ---
 
 ## Markdown Files in This Repo
@@ -25,6 +26,12 @@ These are the reference documents you should load before starting work. Which on
 | **`docs/MISSING_FEATURES.md`** | Before implementing new features | Catalog of MeshCore protocol features not yet implemented, with source references and effort estimates |
 | **`firmware/README.md`** | Releasing or CI work | Release artifact structure, web flasher manifest format |
 | **`test/README.md`** | Writing new tests | Test framework, mock structure, naming conventions |
+| **`docs/HARDWARE.md`** | When working on hardware/drivers | Full hardware reference: pinout, boot sequence, peripheral details |
+| **`docs/CHAT_SCREEN.md`** | When working on chat UI | Chat screen architecture, data model, input routing, persistence |
+| **`docs/FEATURES_OVERVIEW.md`** | Getting oriented on features | Top-level index of all features with source cross-references |
+| **`docs/HOME_SCREEN.md`** | When working on home screen | Home screen layout, tile grid, icon mapping |
+| **`docs/ROADMAP.md`** | Understanding project direction | Development roadmap and planned features |
+| **`docs/TERMINAL.md`** | When working on terminal | Terminal screen commands, serial protocol, debug levels |
 
 **Critical rules — follow all:**
 1. **Check for an existing issue on the upstream repo.** Before writing any code, check if there's already an open GitHub issue on `hermes-gadget/SigurdOS-tdeck` covering what you plan to do. If not, open one. No issue = no PR accepted.
@@ -64,7 +71,7 @@ pio test -e native_test -f test_keyboard -v
 pio run -e SigurdOS_TDeck
 
 # Check test count (varies as tests are added)
-pio test -e native_test --list
+pio test -e native_test --list-tests
 ```
 
 MeshCore is at `lib/meshcore/` — a git submodule. `git submodule update --init` if you cloned without `--recurse-submodules`.
@@ -97,6 +104,7 @@ src/
 │   └── lv_pool.cpp        # LVGL object pool allocator
 ├── mesh/
 │   ├── sigurd_mesh_v2.cpp/h  # SigurdMeshV2 — BaseChatMesh subclass (routing, channels, messages)
+│   ├── companion_adapter.inc  # Companion BLE bridge adapter (included from mesh_wrapper.cpp)
 │   ├── mesh_wrapper.cpp/h # Public API for the UI layer (sigurdos::mesh::*)
 │   ├── persistence_store.cpp/h  # On-disk state persistence (contacts, channels via SPIFFS)
 │   ├── contact_store.cpp/h     # Contact management (add, remove, lookup, favourites)
@@ -111,6 +119,7 @@ src/
 │   ├── home_screen.cpp/h  # 4x3 icon grid, top/bottom bars
 │   ├── chat_screen.cpp/h  # Channels, DM, message bubbles
 │   ├── screens.h          # Screen entry points (sigurdos::ui::*_screen_show)
+│   ├── screens.cpp        # Screen create/show/dispatch implementations
 │   ├── screens_common.cpp/h  # make_screen_full(), show_screen(), PIN gate, shared helpers
 │   ├── channel_menu.cpp/h # Long-press channel menu (rename, delete, info)
 │   ├── contact_paging.h   # Paginated contact list helpers
@@ -277,40 +286,40 @@ Navigation lives in `ui/navigation.h` — the `Screen` enum and all routing func
 
 ### Icons
 
-Use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
+The home screen tiles use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 
-| Icon | Symbol | Use on screen |
-|------|--------|-------------|
-| CHATS | `LV_SYMBOL_ENVELOPE` | Chat |
-| CONTACTS | `LV_SYMBOL_CALL` | Contacts |
-| REPEATERS | `LV_SYMBOL_WIFI` | Heard (network) |
-| FINDER | `LV_SYMBOL_EYE_OPEN` | Network |
-| PACKETS | `LV_SYMBOL_LIST` | Heard (packet log) |
-| MAP | `LV_SYMBOL_GPS` | Map |
-| ADVERTISE | `LV_SYMBOL_AUDIO` | Advertise |
-| SETTINGS | `LV_SYMBOL_SETTINGS` | Settings |
-| TRACE | `LV_SYMBOL_SHUFFLE` | Trace |
-| TERMINAL | `LV_SYMBOL_KEYBOARD` | Terminal |
-| SETUP | `LV_SYMBOL_SETTINGS` | Onboarding |
-| SIGNAL | `LV_SYMBOL_BARS` | Signal |
+| Tile | Symbol | Routes to | Notes |
+|------|--------|-----------|-------|
+| CHATS | `LV_SYMBOL_ENVELOPE` | Screen::Chat | Primary tile (bold) — opens chat screen with channel list + DMs |
+| DMs | `LV_SYMBOL_FILE` | Screen::Chat | Opens chat screen focused on DMs |
+| ROOMS | `LV_SYMBOL_DIRECTORY` | Screen::Contacts | Opens contacts filtered to room servers |
+| CONTACTS | `LV_SYMBOL_CALL` | Screen::Contacts | All contacts, alphabetical |
+| REPEATERS | `LV_SYMBOL_WIFI` | Screen::Repeaters | Network repeater/node list |
+| ADVERTISE | `LV_SYMBOL_BELL` | Screen::Advertise | Broadcast presence |
+| MAP | `LV_SYMBOL_GPS` | Screen::Map | Offline map viewer |
+| TERMINAL | `LV_SYMBOL_KEYBOARD` | Screen::Terminal | Serial-style command terminal |
+| PACKETS | `LV_SYMBOL_LIST` | Screen::Heard | Raw packet log (heard nodes) |
+| SETTINGS | `LV_SYMBOL_SETTINGS` | Screen::Settings | Device configuration |
+| SETUP | `LV_SYMBOL_HOME` | Screen::Onboarding | First-time setup wizard |
+| SIGNAL | `LV_SYMBOL_BARS` | Screen::Signal | Live RSSI/SNR signal strength |
 
 ### All Screens
 
 | # | Screen | Source | Status |
 |---|--------|--------|--------|
-| 0 | Splash | `ui.cpp` | ✅ |
-| 1 | Home (4x3 grid) | `home_screen.cpp` | ✅ |
-| 2 | Chat (channels + DM) | `chat_screen.cpp` | ✅ |
+| 0 | Splash (boot screen, not in nav enum) | `ui.cpp` | ✅ |
+| 1 | Home (4×3 icon grid) | `home_screen.cpp` | ✅ |
+| 2 | Chat (channels + DMs, message bubbles) | `chat_screen.cpp` | ✅ |
 | 3 | Contacts (alphabetical, tap→DM) | `screens/screen_contacts.cpp` | ✅ |
 | 4 | Channels (list + create #hashtag/PSK) | `screens/screen_channels.cpp` | ✅ |
-| 5 | Finder (nearby nodes) | `screens/screen_finder.cpp` | ✅ |
-| 6 | Heard/Repeaters (network nodes) | `screens/screen_repeaters.cpp` | ✅ |
-| 7 | Packets (raw packet log, 50 entries) | `screens/screen_packets.cpp` | ✅ |
+| 5 | Network / Finder (nearby node discovery) | `screens/screen_finder.cpp` | ✅ |
+| 6 | Heard / Packets (raw packet log, home tile "PACKETS") | `screens/screen_packets.cpp` | ✅ |
+| 7 | Repeaters (network node list, home tile "REPEATERS") | `screens/screen_repeaters.cpp` | ✅ |
 | 8 | Map (touch pan, auto-center) | `screens/screen_map.cpp` | ✅ |
 | 9 | Advertise (broadcast presence) | `screens/screen_advertise.cpp` | ✅ |
 | 10 | Settings (top-level) | `screens/screen_settings.cpp` | ✅ |
 | 11 | Trace (path discovery per contact) | `screens/screen_trace.cpp` | ⚠️ see docs/KNOWN_ISSUES.md |
-| 12 | Terminal (colored log + commands) | `screens/screen_terminal.cpp` | ⚠️ see docs/KNOWN_ISSUES.md |
+| 12 | Terminal (colored log + commands, 64-line cap) | `screens/screen_terminal.cpp` | ⚠️ see docs/KNOWN_ISSUES.md |
 | 13 | Signal (live RSSI, SNR, radio params) | `screens/screen_signal.cpp` | ✅ |
 | 14 | Radio Setup (freq, SF, BW, CR, power) | `screens/screen_radio_setup.cpp` | ✅ |
 | 15 | Onboarding (wizard) | `onboarding_screen.cpp` | ✅ |
@@ -332,30 +341,101 @@ Use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 
 MeshCore is a submodule at `lib/meshcore/`. The mesh subclass is `SigurdMeshV2` in `sigurd_mesh_v2.h` — it extends `BaseChatMesh` (not the old raw `::mesh::Mesh`). The UI never touches MeshCore or SigurdMeshV2 directly — all calls go through `sigurdos::mesh::*` in `mesh_wrapper.h`.
 
-**Key mesh wrapper API (selected highlights — see full header for complete API):**
+**Key mesh wrapper API (see `src/mesh/mesh_wrapper.h` for the complete 400+ line API):**
 
 ```cpp
+// ── Init / Loop ──────────────────────────────
 sigurdos::mesh::init(spiffs_ok)          // Boot — load identity, start radio
 sigurdos::mesh::loop()                   // Call from main loop
+
+// ── Messaging ────────────────────────────────
 sigurdos::mesh::sendMessage(name, text)  // Direct message (returns ACK timestamp)
 sigurdos::mesh::sendChannelMessage(ch, text)  // Group message
+sigurdos::mesh::sendMessageWithScopeKey(name, text, key16)  // Scoped DM
+sigurdos::mesh::sendAnonMessage(pubkey_hex, text)  // DM by public key (no contact needed)
+sigurdos::mesh::sendRoomMessage(contact, channel, text)  // Room server message
+sigurdos::mesh::injectMessage(...)       // Test-only: simulate incoming msg
+sigurdos::mesh::pollMessages(out, max)   // Poll incoming messages queue
+sigurdos::mesh::getUnreadMessageCount()  // Unread message count
+
+// ── Channels ─────────────────────────────────
 sigurdos::mesh::addChannel(name, psk_b64)     // PSK channel
 sigurdos::mesh::addHashtagChannel(name)       // Hash-of-name channel
+sigurdos::mesh::joinPublicChannel()           // Join "Public" channel
+sigurdos::mesh::removeChannel(idx)            // Remove channel by index
+sigurdos::mesh::exportChannels(out, max)      // Channel name list
+sigurdos::mesh::saveChannels() / loadChannels()
+
+// ── Contacts ─────────────────────────────────
 sigurdos::mesh::exportContacts(out, max)      // Name list
 sigurdos::mesh::exportContactsFull(out, max)  // Full ContactInfo list
-sigurdos::mesh::exportChannels(out, max)      // Channel name list
+sigurdos::mesh::getContactByName(name, out)   // Lookup by name
+sigurdos::mesh::removeContact(name)           // Remove contact
+sigurdos::mesh::isContactFavourite(name) / setContactFavourite(name, fav)
+sigurdos::mesh::importContactByUri(uri)       // Import from meshcore:// URI
+sigurdos::mesh::addChannelByUri(uri)          // Add channel from meshcore:// URI
+sigurdos::mesh::getContactPubkeyHex(name, out, sz)  // Pubkey for QR sharing
+
+// ── Signal / Stats ───────────────────────────
 sigurdos::mesh::getNoiseFloor()              // Current noise floor dBm
 sigurdos::mesh::getLastRSSI() / getLastSNR() // Signal metrics
-sigurdos::mesh::saveState()                  // Persist contacts + channels
-sigurdos::mesh::requestStatus(name)          // Request repeater status blob
-sigurdos::mesh::requestTelemetry(name)       // Request sensor telemetry
-sigurdos::mesh::discoverPath(name)           // Flood path discovery
-sigurdos::mesh::sendLogin(name, pwd)         // Login to repeater/room
-sigurdos::mesh::sendCommand(name, text)      // Send admin command to repeater
-sigurdos::mesh::companionBleEnabled()        // Companion BLE bridge state
-sigurdos::mesh::injectMessage(...)           // Test-only: simulate incoming msg
-sigurdos::mesh::addRegion(name, parent)      // Flood-scope region
-sigurdos::mesh::setActiveRegion(name)        // Set active flood scope
+sigurdos::mesh::getTotalTxAirtimeMs() / getTotalRxAirtimeMs()
+sigurdos::mesh::getNumSentFlood() / getNumSentDirect()
+sigurdos::mesh::getNumRecvFlood() / getNumRecvDirect()
+sigurdos::mesh::resetPacketStats()
+sigurdos::mesh::getSignalHistoryCount/RSSI/SNR(idx)  // Sparkline data
+
+// ── Advertise ────────────────────────────────
+sigurdos::mesh::sendAdvert()               // Broadcast presence
+sigurdos::mesh::getLastAdvertTime/Success/UsedGps()
+
+// ── Radio Config ─────────────────────────────
+sigurdos::mesh::applyRadioParams(freq, bw, sf, cr, power, rx_gain)
+sigurdos::mesh::revertRadioParams()
+
+// ── Persistence ──────────────────────────────
+sigurdos::mesh::saveState()                // Persist contacts + channels
+sigurdos::mesh::saveContacts() / loadContacts()
+sigurdos::mesh::shutdown()                 // Graceful shutdown
+sigurdos::mesh::factoryReset()             // Wipe all persisted state
+
+// ── Time ─────────────────────────────────────
+sigurdos::mesh::getCurrentTime()
+sigurdos::mesh::setSystemTime(epoch)
+sigurdos::mesh::getCurrentLocalDateTime(y, m, d, h, min)
+
+// ── Request/Response (Phase 4) ───────────────
+sigurdos::mesh::requestStatus(name)        // Request repeater status blob
+sigurdos::mesh::requestTelemetry(name)     // Request sensor telemetry
+sigurdos::mesh::sendRequest(name, type)    // Generic request
+sigurdos::mesh::discoverPath(name)         // Flood path discovery
+sigurdos::mesh::sendTrace(contact_idx, tag_out)  // Trace route
+sigurdos::mesh::sendLogin(name, pwd)       // Login to repeater/room
+sigurdos::mesh::sendCommand(name, text)    // Send admin command to repeater
+sigurdos::mesh::sendPingNearby()           // Ping nearby nodes
+sigurdos::mesh::sendRoomMsgFetchRequest(contact, channel)
+
+// ── Regions ──────────────────────────────────
+sigurdos::mesh::listRegions(out, max)
+sigurdos::mesh::addRegion(name, parent)
+sigurdos::mesh::removeRegion(name)
+sigurdos::mesh::setActiveRegion(name)
+sigurdos::mesh::getActiveRegion()
+sigurdos::mesh::syncRegionsFromChannels()
+
+// ── Companion BLE ────────────────────────────
+sigurdos::mesh::companionBleAvailable/Enabled/Connected()
+sigurdos::mesh::companionBleSetEnabled(bool)
+sigurdos::mesh::companionBleLastSyncTime/Pin()
+
+// ── Identity ─────────────────────────────────
+sigurdos::mesh::exportIdentity(hex_out, sz)
+sigurdos::mesh::importIdentity(hex_privkey)
+sigurdos::mesh::signMessage(data, sig_out)
+
+// ── Group Data ───────────────────────────────
+sigurdos::mesh::sendGroupDataToChannel(idx, type, data, len)
+sigurdos::mesh::getGroupDataRecvCount/Entry() / clearGroupDataRecv()
 ```
 
 **Messages arrive** via `chat_screen_add_msg(channel, sender, text, is_self)`. The chat screen maintains per-channel message caches (8 messages each, 16 channels max).
@@ -370,7 +450,7 @@ sigurdos::mesh::setActiveRegion(name)        // Set active flood scope
 ## Testing
 
 ```bash
-pio test -e native_test -v       # All tests (no hardware, ~56 test modules, ~300+ tests)
+pio test -e native_test -v       # All tests (no hardware, 60 test modules, ~770+ tests)
 pio test -e native_test -f test_touch -v     # One module
 ```
 

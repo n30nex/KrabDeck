@@ -25,6 +25,7 @@
 #include "../../hal/display.h"
 #include "../../hal/keyboard.h"
 #include "../../fonts/emoji_font.h"
+#include <Arduino.h>
 #include <lvgl.h>
 #include <cstdio>
 

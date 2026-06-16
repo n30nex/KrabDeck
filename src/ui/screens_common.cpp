@@ -26,6 +26,7 @@
 #include "../hal/prefs.h"
 #include "../mesh/mesh_wrapper.h"
 #include "../fonts/emoji_font.h"
+#include <Arduino.h>
 #include <lvgl.h>
 #include <cstdio>
 #include <cstdlib>

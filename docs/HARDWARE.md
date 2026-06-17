@@ -93,13 +93,12 @@ The GT911 touch controller and keyboard MCU share a single I2C bus on pins 18
 
 | Device     | Address | Speed       | Driver     |
 |------------|---------|-------------|------------|
-| Touch      | 0x5D    | 400 kHz     | GT911      |
-| Keyboard   | 0x55    | 100 kHz     | ESP32-C3   |
+| Touch      | 0x5D    | 200 kHz     | GT911      |
+| Keyboard   | 0x55    | 200 kHz     | ESP32-C3   |
 
-> **Clock contention:** Each driver re-asserts its preferred clock speed before
-> every transaction (`Wire.setClock(...)`) because the other device changes it.
-> Touch `loop()` calls `Wire.setClock(400000)`; keyboard `scan()` calls
-> `Wire.setClock(100000)`.
+> **Clock speed:** Both devices share a single I2C bus at 200 kHz -- a compromise
+> between the GT911's rated 400 kHz and the keyboard MCU's typical 100 kHz.
+> Each driver sets the clock once at init; neither re-asserts during loop/scan.
 
 ---
 
@@ -363,9 +362,11 @@ Row6   Mic      LShift   f        j        k
 
 ### Voltage Calculation
 
+The driver uses `analogReadMilliVolts()` (efuse-calibrated) and compensates
+for the 2x voltage divider:
+
 ```c
-raw_adc = analogRead(PIN_BAT_ADC);         // 0–4095
-voltage_mv = (6600.0f * raw_adc) / 4096.0f; // 2× divider compensation
+voltage_mv = analogReadMilliVolts(PIN_BAT_ADC) * 2;  // efuse-calibrated, 2x divider
 ```
 
 ### Battery Percentage
@@ -559,10 +560,10 @@ Radio parameters are configurable at runtime via NVS (`NodePrefs`):
 | Property | Value              |
 |----------|--------------------|
 | Pin      | **46**             |
-| Type     | Active-low buzzer (GPIO output — no PWM tone generation) |
-| Default  | HIGH (off)         |
+| Type     | Active-high buzzer (GPIO output - no PWM tone generation) |
+| Default  | LOW (off)          |
 
-> The buzzer is driven as a GPIO output — no PWM tone generation is implemented.
+> The buzzer is driven as a GPIO output - no PWM tone generation is implemented.
 > **Non-blocking loop-driven playback:** `buzzer_loop()` is called once per
 > main-loop iteration (`main.cpp:189`) and advances through the active pattern's
 > step table (`src/hal/buzzer.h`). Each `BuzzerPatternStep` has a `level_high`

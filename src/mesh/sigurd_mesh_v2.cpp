@@ -29,7 +29,7 @@ namespace mesh {
 
     void SigurdMeshV2::updateSignalSample(const uint8_t* pub_key, int rssi, float snr) {
         if (!pub_key) return;
-        uint32_t now = getRTCClock()->getCurrentTime();
+        uint32_t now = getRTCClock() ? getRTCClock()->getCurrentTime() : 0;
         for (int i = 0; i < _n_signal_samples; i++) {
             if (memcmp(_signal_samples[i].key, pub_key, 4) == 0) {
                 _signal_samples[i].rssi = rssi;

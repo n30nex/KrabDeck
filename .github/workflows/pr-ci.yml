@@ -80,6 +80,12 @@ jobs:
           set -o pipefail
           pio run -e SigurdOS_TDeck | tee build.log
 
+      - name: Build debug firmware
+        run: pio run -e SigurdOS_TDeck_debug
+
+      - name: Build remote test firmware
+        run: pio run -e SigurdOS_TDeck_remote_test_radio
+
       - name: Report firmware size
         if: always()
         run: |

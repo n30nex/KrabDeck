@@ -4,6 +4,9 @@
 #include "trackball.h"
 #include "tdeck_pins.h"
 #include <Arduino.h>
+#ifdef ESP32_PLATFORM
+#include <driver/gpio.h>
+#endif
 #if SIGURDOS_TELEMETRY
 #include "../diagnostics/telemetry.h"
 #endif
@@ -218,6 +221,23 @@ static void scan_button(ButtonState& btn, uint32_t now)
 
 bool sigurdos_trackball_init()
 {
+    // Detach any ISRs left by Launcher's warm-handoff (ESP.restart()).
+    // Launcher registers FALLING-edge ISRs on every trackball GPIO
+    // (UP=3, DOWN=15, LEFT=1, RIGHT=2, CLICK=0). After ESP.restart()
+    // the GPIO interrupt-enable bits survive in hardware even though
+    // the ISR service is reset. detachInterrupt() can't work because
+    // gpio_isr_handler_remove() returns early when the ISR service
+    // isn't installed — so we use gpio_intr_disable() directly to
+    // clear the hardware interrupt-enable bits before reconfiguring
+    // the pins. This is a no-op on cold boot (pins start disabled).
+#ifdef ESP32_PLATFORM
+    gpio_intr_disable((gpio_num_t)PIN_TRACKBALL_UP);
+    gpio_intr_disable((gpio_num_t)PIN_TRACKBALL_DOWN);
+    gpio_intr_disable((gpio_num_t)PIN_TRACKBALL_LEFT);
+    gpio_intr_disable((gpio_num_t)PIN_TRACKBALL_RIGHT);
+    gpio_intr_disable((gpio_num_t)PIN_TRACKBALL_BTN);
+#endif
+
     for (ButtonState& btn : buttons) {
         pinMode(btn.pin, INPUT_PULLUP);
     }

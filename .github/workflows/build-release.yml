@@ -85,6 +85,17 @@ jobs:
       - name: Build firmware
         run: pio run -e SigurdOS_TDeck
 
+      - name: Save webflasher assets (before debug build overwrites)
+        run: |
+          mkdir -p webflasher_release
+          cp webflasher/manifest.json                    webflasher_release/manifest.json
+          cp webflasher/sigurdos-tdeck-bootloader.bin    webflasher_release/sigurdos-tdeck-bootloader.bin
+          cp webflasher/sigurdos-tdeck-partitions.bin    webflasher_release/sigurdos-tdeck-partitions.bin
+          cp webflasher/sigurdos-tdeck-boot_app0.bin     webflasher_release/sigurdos-tdeck-boot_app0.bin
+          cp webflasher/sigurdos-tdeck-firmware.bin      webflasher_release/sigurdos-tdeck-firmware.bin
+          cp webflasher/sigurdos-tdeck-full.bin          webflasher_release/sigurdos-tdeck-full.bin
+          cp webflasher/sigurdos-tdeck-launcher.bin      webflasher_release/sigurdos-tdeck-launcher.bin
+
       - name: Build debug firmware
         run: pio run -e SigurdOS_TDeck_debug
 
@@ -98,6 +109,14 @@ jobs:
           cp .pio/build/SigurdOS_TDeck/firmware-merged.bin    artifacts/firmware-merged.bin
           cp .pio/build/SigurdOS_TDeck/SigurdOS-tdeck-launcher.bin artifacts/SigurdOS-tdeck-launcher.bin
           cp .pio/build/SigurdOS_TDeck_debug/firmware-merged.bin artifacts/firmware-debug.bin
+          # Web flasher assets (saved from release build before debug build overwrote)
+          cp webflasher_release/manifest.json                    artifacts/manifest.json
+          cp webflasher_release/sigurdos-tdeck-bootloader.bin    artifacts/sigurdos-tdeck-bootloader.bin
+          cp webflasher_release/sigurdos-tdeck-partitions.bin    artifacts/sigurdos-tdeck-partitions.bin
+          cp webflasher_release/sigurdos-tdeck-boot_app0.bin     artifacts/sigurdos-tdeck-boot_app0.bin
+          cp webflasher_release/sigurdos-tdeck-firmware.bin      artifacts/sigurdos-tdeck-firmware.bin
+          cp webflasher_release/sigurdos-tdeck-full.bin          artifacts/sigurdos-tdeck-full.bin
+          cp webflasher_release/sigurdos-tdeck-launcher.bin      artifacts/sigurdos-tdeck-launcher-webflasher.bin
 
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
@@ -144,13 +163,20 @@ jobs:
             ```
 
             ### Web Flasher
-            Use the manifest at `webflasher/manifest.json` with [esptool.js](https://espressif.github.io/esptool-js/).
+            Use `manifest.json` with [esptool.js](https://espressif.github.io/esptool-js/).
 
             | File | Use |
             |------|-----|
             | `firmware.bin` | App only (flash at 0x10000) |
             | `firmware-merged.bin` | Full flash (flash at 0x0) |
-            | `SigurdOS-tdeck-launcher.bin` | For bmorcelli/Launcher install (same bytes as merged) |
+            | `SigurdOS-tdeck-launcher.bin` | For bmorcelli/Launcher install |
+            | `firmware-debug.bin` | Debug build with verbose logging |
+            | `manifest.json` | Web flasher manifest |
+            | `sigurdos-tdeck-bootloader.bin` | Bootloader (web flasher) |
+            | `sigurdos-tdeck-partitions.bin` | Partition table (web flasher) |
+            | `sigurdos-tdeck-boot_app0.bin` | Boot app0 (web flasher) |
+            | `sigurdos-tdeck-firmware.bin` | App firmware (web flasher) |
+            | `sigurdos-tdeck-full.bin` | Full image (web flasher) |
           draft: false
           prerelease: true
           generate_release_notes: true
@@ -161,3 +187,10 @@ jobs:
             firmware/SigurdOS-tdeck-launcher.bin
             firmware/firmware-debug.bin
             firmware/SHA256SUMS.txt
+            firmware/manifest.json
+            firmware/sigurdos-tdeck-bootloader.bin
+            firmware/sigurdos-tdeck-partitions.bin
+            firmware/sigurdos-tdeck-boot_app0.bin
+            firmware/sigurdos-tdeck-firmware.bin
+            firmware/sigurdos-tdeck-full.bin
+            firmware/sigurdos-tdeck-launcher-webflasher.bin

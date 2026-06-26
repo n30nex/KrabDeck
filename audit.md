@@ -203,7 +203,9 @@ First-pass audit reconciliation:
 ### Finding 1: Protocol version and current command surface are behind upstream
 
 * Severity: High
-* Status: partial
+* Status: **PARTIAL** (PR #735 — enum entries + stubs; full implementations deferred)
+* Issue: [#734](https://github.com/hermes-gadget/SigurdOS-tdeck/issues/734)
+* PR: [#735](https://github.com/hermes-gadget/SigurdOS-tdeck/pull/735)
 * Confidence: High
 * Our code: `src/comms/companion_bridge.h` (`SIGURDOS_COMPANION_FIRMWARE_VER_CODE`, `CompanionCommand`, `CompanionPush`), `src/comms/companion_bridge.cpp` (`CompanionBridge::handleFrame()`)
 * Upstream reference: `/tmp/meshcore-audit/examples/companion_radio/MyMesh.h` (`FIRMWARE_VER_CODE 13`), `/tmp/meshcore-audit/examples/companion_radio/MyMesh.cpp` (`CMD_*`, `PUSH_CODE_*`, `handleCmdFrame()`)
@@ -463,7 +465,9 @@ First-pass audit reconciliation:
 ### Finding 8: Advert path, path discovery, and app-triggered self advert semantics diverge
 
 * Severity: Medium
-* Status: partial/incompatible
+* Status: **PARTIAL** (PR #735 — advert path storage, GET_ADVERT_PATH, path discovery, zero-hop advert)
+* Issue: [#734](https://github.com/hermes-gadget/SigurdOS-tdeck/issues/734)
+* PR: [#735](https://github.com/hermes-gadget/SigurdOS-tdeck/pull/735)
 * Confidence: High
 * Our code: `CMD_GET_ADVERT_PATH` and `CMD_SEND_SELF_ADVERT` handling in `src/comms/companion_bridge.cpp`; `WrapperCompanionHost::sendAdvert()` in `src/mesh/companion_adapter.inc`; `SigurdMeshV2::_advert_paths`, `storeAdvertPath()`, `getAdvertPathLen()`, `sendPathDiscovery()`, and `broadcastAdvert()` in `src/mesh/sigurd_mesh_v2.cpp` and `.h`
 * Upstream reference: `AdvertPath`, `onDiscoveredContact()`, `CMD_GET_ADVERT_PATH`, `CMD_SEND_PATH_DISCOVERY_REQ`, `PUSH_CODE_PATH_DISCOVERY_RESPONSE`, and `CMD_SEND_SELF_ADVERT` in `/tmp/meshcore-audit/examples/companion_radio/MyMesh.cpp`

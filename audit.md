@@ -429,7 +429,9 @@ First-pass audit reconciliation:
 ### Finding 7: Companion telemetry, custom variables, and "other params" are incomplete
 
 * Severity: Medium
-* Status: missing/partial
+* Status: **FIXED** (PR #733)
+* Issue: [#732](https://github.com/hermes-gadget/SigurdOS-tdeck/issues/732)
+* PR: [#733](https://github.com/hermes-gadget/SigurdOS-tdeck/pull/733)
 * Confidence: High
 * Our code: `WrapperCompanionHost::selfTelemetry()` and `setOtherParams()` in `src/mesh/companion_adapter.inc`; `CMD_GET_CUSTOM_VARS` in `src/comms/companion_bridge.cpp`; `CompanionCommand` in `src/comms/companion_bridge.h`; `NodePrefs` GPS/location fields in `src/hal/prefs.h`
 * Upstream reference: `CMD_SEND_TELEMETRY_REQ`, `CMD_GET_CUSTOM_VARS`, `CMD_SET_CUSTOM_VAR`, `CMD_SET_OTHER_PARAMS`, and telemetry permission handling in `/tmp/meshcore-audit/examples/companion_radio/MyMesh.cpp`
@@ -494,7 +496,9 @@ First-pass audit reconciliation:
 ### Finding 9: Remote-management async response frames are incomplete
 
 * Severity: Medium
-* Status: partial
+* Status: **FIXED** (PR #733)
+* Issue: [#732](https://github.com/hermes-gadget/SigurdOS-tdeck/issues/732)
+* PR: [#733](https://github.com/hermes-gadget/SigurdOS-tdeck/pull/733)
 * Confidence: Medium to High
 * Our code: `CompanionBridge::pushLoginResult()`, `pushStatusResponse()`, `pushTelemetryResponse()`, `pushTraceData()` in `src/comms/companion_bridge.cpp`; `SigurdMeshV2::onContactResponse()` and `mesh_v2_companion_login_push()` in `src/mesh/sigurd_mesh_v2.cpp` and `src/mesh/companion_adapter.inc`
 * Upstream reference: `MyMesh::onContactResponse()`, `onContactPathRecv()`, and push frame construction in `/tmp/meshcore-audit/examples/companion_radio/MyMesh.cpp`
@@ -520,7 +524,9 @@ First-pass audit reconciliation:
 ### Finding 10: Radio, PIN, repeat-frequency, and time validation differ from upstream
 
 * Severity: Medium
-* Status: partial
+* Status: **FIXED** (PR #733)
+* Issue: [#732](https://github.com/hermes-gadget/SigurdOS-tdeck/issues/732)
+* PR: [#733](https://github.com/hermes-gadget/SigurdOS-tdeck/pull/733)
 * Confidence: High
 * Our code: `WrapperCompanionHost::setRadioParams()`, `setRadioTxPower()`, `setBlePin()`, `allowedRepeatFreqRanges()`, and `setCurrentTime()` in `src/mesh/companion_adapter.inc`; `sigurdos::mesh::setSystemTime()` in `src/mesh/mesh_wrapper.cpp`
 * Upstream reference: `CMD_SET_RADIO_PARAMS`, `CMD_SET_RADIO_TX_POWER`, `CMD_GET_ALLOWED_REPEAT_FREQ`, `CMD_SET_DEVICE_PIN`, and `CMD_SET_DEVICE_TIME` in `/tmp/meshcore-audit/examples/companion_radio/MyMesh.cpp`
@@ -548,7 +554,9 @@ First-pass audit reconciliation:
 ### Finding 11: Private flood-scope default keys are not persisted through companion commands
 
 * Severity: Medium
-* Status: partial
+* Status: **FIXED** (PR #733)
+* Issue: [#732](https://github.com/hermes-gadget/SigurdOS-tdeck/issues/732)
+* PR: [#733](https://github.com/hermes-gadget/SigurdOS-tdeck/pull/733)
 * Confidence: High
 * Our code: `WrapperCompanionHost::getDefaultFloodScope()`, `setDefaultFloodScope()`, and `setFloodScopeOverride()` in `src/mesh/companion_adapter.inc`; `src/mesh/regions.cpp`; `src/hal/prefs.h`
 * Upstream reference: `CMD_SET_DEFAULT_FLOOD_SCOPE`, `CMD_GET_DEFAULT_FLOOD_SCOPE`, `CMD_SET_FLOOD_SCOPE_KEY`, and `NodePrefs.default_scope_name/default_scope_key` in `/tmp/meshcore-audit/examples/companion_radio/MyMesh.cpp` and companion `NodePrefs.h`

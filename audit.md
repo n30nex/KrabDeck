@@ -240,7 +240,9 @@ First-pass audit reconciliation:
 ### Finding 2: USB serial and Wi-Fi TCP companion transports are missing
 
 * Severity: High
-* Status: missing
+* Status: **PARTIAL** (PR #737 — USB serial transport added; Wi-Fi TCP deferred)
+* Issue: [#736](https://github.com/hermes-gadget/SigurdOS-tdeck/issues/736)
+* PR: [#737](https://github.com/hermes-gadget/SigurdOS-tdeck/pull/737)
 * Confidence: High
 * Our code: `platformio.ini`, `src/comms/observed_ble_interface.*`, `src/mesh/mesh_wrapper.cpp`, `src/hal/wifi_ota.cpp`, `src/ui/screens/screen_bluetooth.cpp`
 * Upstream reference: `/tmp/meshcore-audit/examples/companion_radio/main.cpp`, `/tmp/meshcore-audit/src/helpers/ArduinoSerialInterface.cpp`, `/tmp/meshcore-audit/src/helpers/esp32/SerialWifiInterface.cpp`, `/tmp/meshcore-audit/README.md`

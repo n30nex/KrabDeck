@@ -192,7 +192,7 @@ Key differences from standalone:
 
 ### Under-Launcher Runtime Layout (dynamic, created by Launcher's installer)
 
-When SigurdOS is installed via Launcher's merged-bin path, Launcher's partitioner (`src/partition_install_layout.cpp`) creates a layout like:
+When SigurdOS is installed via Launcher's merged-bin path, Launcher's partition installer creates a layout like:
 
 ```
 nvs @0x9000     size 0x4000

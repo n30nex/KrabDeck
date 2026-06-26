@@ -274,7 +274,9 @@ First-pass audit reconciliation:
 ### Finding 3: Persistent companion sync marks messages delivered before delivery
 
 * Severity: High
-* Status: incompatible
+* Status: **FIXED** (PR #727)
+* Issue: [#726](https://github.com/hermes-gadget/SigurdOS-tdeck/issues/726)
+* PR: [#727](https://github.com/hermes-gadget/SigurdOS-tdeck/pull/727)
 * Confidence: High
 * Our code: `CompanionBridge::seedOfflineQueueFromStore()`, `CompanionBridge::enqueueMessage()` in `src/comms/companion_bridge.cpp`; `messageStoreMarkAllCompanionSent()` and `messageStoreLoadUnsent()` in `src/mesh/message_store.cpp`; `StoredMessage::companion_sent` in `src/mesh/message_store.h`
 * Upstream reference: `/tmp/meshcore-audit/examples/companion_radio/MyMesh.cpp` offline queue helpers and `CMD_SYNC_NEXT_MESSAGE`
@@ -313,7 +315,9 @@ First-pass audit reconciliation:
 ### Finding 4: Stored companion messages do not preserve exact MeshCore receive metadata
 
 * Severity: High
-* Status: incompatible
+* Status: **FIXED** (PR #727)
+* Issue: [#726](https://github.com/hermes-gadget/SigurdOS-tdeck/issues/726)
+* PR: [#727](https://github.com/hermes-gadget/SigurdOS-tdeck/pull/727)
 * Confidence: High
 * Our code: `StoredMessage` in `src/mesh/message_store.h`; `CompanionBridge::buildMessageFrame()` in `src/comms/companion_bridge.cpp`; `storeIncomingMessageForCompanion()` and `fillStoredPrefixForName()` in `src/mesh/companion_adapter.inc`; `SigurdMeshV2::onMessageRecv()`, `onCommandDataRecv()`, `onSignedMessageRecv()`, `onChannelMessageRecv()` in `src/mesh/sigurd_mesh_v2.cpp`
 * Upstream reference: `MyMesh::queueMessage()`, `onMessageRecv()`, `onCommandDataRecv()`, and `onSignedMessageRecv()` in `/tmp/meshcore-audit/examples/companion_radio/MyMesh.cpp`; `BaseChatMesh::onPeerDataRecv()` in `/tmp/meshcore-audit/src/helpers/BaseChatMesh.cpp`
@@ -356,7 +360,9 @@ First-pass audit reconciliation:
 ### Finding 5: Private key import does not reset contact cryptographic state
 
 * Severity: High
-* Status: incompatible
+* Status: **FIXED** (PR #729)
+* Issue: [#728](https://github.com/hermes-gadget/SigurdOS-tdeck/issues/728)
+* PR: [#729](https://github.com/hermes-gadget/SigurdOS-tdeck/pull/729)
 * Confidence: High
 * Our code: `WrapperCompanionHost::importPrivateKey()` in `src/mesh/companion_adapter.inc`; `saveIdentity()` in `src/mesh/mesh_wrapper.cpp`
 * Upstream reference: `CMD_IMPORT_PRIVATE_KEY` handling in `/tmp/meshcore-audit/examples/companion_radio/MyMesh.cpp`

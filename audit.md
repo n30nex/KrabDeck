@@ -620,7 +620,7 @@ First-pass audit reconciliation:
 ### Finding 13: Official app and BLE hardware compatibility remains unproven
 
 * Severity: Medium
-* Status: unknown
+* Status: **BLOCKED** — requires physical T-Deck with Raspberry Pi bridge (192.168.4.1 unreachable) + Android phone with official MeshCore companion app (not available in current environment)
 * Confidence: High that validation is missing; unknown on runtime behavior
 * Our code: `src/comms/observed_ble_interface.*`, `src/ui/screens/screen_bluetooth.cpp`, `scripts/validation/companion_ble_smoke.py` if present, `SigurdOS_TDeck_ble_validation` environment in `platformio.ini`
 * Upstream reference: `/tmp/meshcore-audit/docs/companion_protocol.md`, `/tmp/meshcore-audit/src/helpers/esp32/SerialBLEInterface.cpp`, official clients listed in upstream `README.md`

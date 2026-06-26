@@ -592,7 +592,9 @@ First-pass audit reconciliation:
 ### Finding 12: QR share URI names are not URL-encoded
 
 * Severity: Low
-* Status: partial
+* Status: **FIXED** (PR #739)
+* Issue: [#738](https://github.com/hermes-gadget/SigurdOS-tdeck/issues/738)
+* PR: [#739](https://github.com/hermes-gadget/SigurdOS-tdeck/pull/739)
 * Confidence: High
 * Our code: `src/ui/screens/screen_contacts.cpp` contact QR construction; `src/ui/screens/screen_channels.cpp` channel QR construction; import parsing in `src/mesh/mesh_wrapper.cpp`
 * Upstream reference: `/tmp/meshcore-audit/docs/qr_codes.md`

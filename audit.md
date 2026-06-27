@@ -707,9 +707,10 @@ Schemas/data model:
 
 ## Recommended PR Plan
 
-### PR 1: Fix Companion Message Sync and Metadata
+### PR 1: Fix Companion Message Sync and Metadata ✅
 
 * title: `fix: preserve companion message metadata and mark sync per message`
+* **Status: MERGED/SUBMITTED** — Issue [#726](https://github.com/hermes-gadget/SigurdOS-tdeck/issues/726), PR [#727](https://github.com/hermes-gadget/SigurdOS-tdeck/pull/727)
 * goal: eliminate companion message loss and preserve sender/type/extra metadata.
 * findings fixed: 3, 4
 * files likely changed: `src/mesh/message_store.h`, `src/mesh/message_store.cpp`, `src/comms/companion_bridge.cpp`, `src/mesh/companion_adapter.inc`, `src/mesh/mesh_wrapper.cpp`, `src/mesh/sigurd_mesh_v2.cpp`, `test/test_message_store/`, `test/test_companion_protocol/`

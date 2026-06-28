@@ -219,7 +219,6 @@ public:
     void begin() {}
     void begin(int, int) {}
     void setClock(uint32_t) {}
-    void setTimeOut(uint16_t) {}  // ESP32 Arduino Wire timeout
 
     // Master write
     void beginTransmission(uint8_t addr) {

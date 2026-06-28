@@ -70,6 +70,7 @@ bool prefs_load(NodePrefs& p) {
     // saved user preference still controls later boots.
     p.ble_enabled = nvs.getBool("ble_en", DEFAULT_BLE_ENABLED);
     p.device_pin = nvs.getULong("dev_pin", 0);
+    p.ble_pin = nvs.getULong("ble_pin", 0);
     p.telemetry_modes = nvs.getUChar("tele_mod", 0);
     p.manual_add_contacts = nvs.getUChar("man_add", 0);
     // default scope key (hex-encoded)
@@ -139,6 +140,7 @@ bool prefs_save(const NodePrefs& p) {
     nvs.putUChar("clirep", p.client_repeat);
     nvs.putBool("ble_en", p.ble_enabled);
     nvs.putULong("dev_pin", p.device_pin);
+    nvs.putULong("ble_pin", p.ble_pin);
     nvs.putUChar("tele_mod", p.telemetry_modes);
     nvs.putUChar("man_add", p.manual_add_contacts);
     nvs.putString("scope_key", p.default_scope_key_hex);

@@ -47,6 +47,7 @@ struct NodePrefs {
     uint8_t  client_repeat;           // 0=no forwarding, !=0=opportunistic relay (client-repeat mode)
     bool     ble_enabled;             // BLE companion advertising enabled in BLE build
     uint32_t device_pin;               // 4-6 digit device PIN (0 = disabled)
+    uint32_t ble_pin;                  // random per-device BLE pairing PIN (0 = not generated yet)
     uint8_t  telemetry_modes;          // bitmask for companion telemetry modes
     uint8_t  manual_add_contacts;      // companion manual-add-contacts mode (0=auto, 1=prompt)
     char     default_scope_key_hex[33];  // hex-encoded 16-byte private flood-scope key (empty if none)
@@ -93,6 +94,7 @@ struct NodePrefs {
         client_repeat = 0;            // default: no forwarding
         ble_enabled = false;          // default: BLE companion off
         device_pin = 0;               // default: no PIN
+        ble_pin = 0;                  // default: not generated (will generate on first BLE boot)
         telemetry_modes = 0;          // default: no telemetry sharing
         manual_add_contacts = 0;      // default: auto-add contacts
         default_scope_key_hex[0] = '\0';  // default: no private scope key

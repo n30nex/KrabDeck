@@ -35,7 +35,7 @@ jobs:
       - name: Install PlatformIO
         run: |
           python -m pip install --upgrade pip
-          pip install platformio
+          pip install platformio intelhex
 
       - name: Run native tests
         run: pio test -e native_test -v
@@ -70,7 +70,7 @@ jobs:
       - name: Install PlatformIO
         run: |
           python -m pip install --upgrade pip
-          pip install platformio
+          pip install platformio intelhex
 
       - name: Check version fallback matches tag
         if: startsWith(github.ref, 'refs/tags/')

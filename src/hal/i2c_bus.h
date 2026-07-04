@@ -10,7 +10,7 @@ namespace sigurdos::i2c {
 static constexpr uint8_t KEYBOARD_ADDR = 0x55;
 static constexpr uint8_t TOUCH_ADDR_PRIMARY = 0x5D;
 static constexpr uint8_t TOUCH_ADDR_ALTERNATE = 0x14;
-static constexpr uint32_t BUS_CLOCK_HZ = 400000;
+static constexpr uint32_t BUS_CLOCK_HZ = 100000;
 static constexpr uint16_t TRANSACTION_TIMEOUT_MS = 20;
 static constexpr uint8_t RECOVERY_CLOCKS = 9;
 

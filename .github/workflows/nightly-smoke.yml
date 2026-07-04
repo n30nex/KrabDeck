@@ -36,7 +36,7 @@ jobs:
             ${{ runner.os }}-platformio-
 
       - name: Install PlatformIO
-        run: python -m pip install --upgrade platformio
+        run: python -m pip install --upgrade platformio intelhex
 
       - name: Run smoke build matrix
         run: python scripts/smoke_build_matrix.py --profile roadmap

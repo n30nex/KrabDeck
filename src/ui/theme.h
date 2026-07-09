@@ -154,8 +154,8 @@ inline void apply_focus_style(lv_obj_t* obj) {
     lv_obj_set_style_border_color(obj, lv_color_hex(ACCENT), LV_STATE_FOCUS_KEY);
     lv_obj_set_style_border_width(obj, PIXEL_BORDER, LV_STATE_FOCUS_KEY);
     // Make textarea cursor visible (defaults to text color, may blend with dark bg).
-    // LV_PART_CURSOR was added in LVGL 9.0; guard for native test compatibility.
-#if LVGL_VERSION_MAJOR >= 9
+    // LV_PART_CURSOR is LVGL 9+ but not available in native test stubs; use ifdef guard.
+#ifdef LV_PART_CURSOR
     lv_obj_set_style_border_color(obj, lv_color_hex(0xFFFFFF), LV_PART_CURSOR);
     lv_obj_set_style_border_width(obj, 2, LV_PART_CURSOR);
 #endif

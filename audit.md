@@ -375,7 +375,7 @@ The line is a single physical line: `// Trackball button ... (GPIO 0 shared with
 ### SEC-002 — On-device PIN gate cannot accept a `device_pin > 9999` set via the companion app
 **Severity:** Low · **Confidence:** High confidence · **Category:** SEC / BUG
 **Affected:** `src/ui/screens_common.cpp:280,315-320`; companion `CMD_SET_DEVICE_PIN` (`companion_bridge.cpp:841-847`)
-The PIN-entry field is capped at 4 digits and compares `atoi(text) == device_pin`. The companion protocol sets `device_pin` as an arbitrary `uint32_t`. A phone-set PIN outside 0–9999 (or with significant leading zeros) can never be reproduced by the 4-digit on-device gate, locking the user out of Settings/Terminal on the device itself (recoverable only via the companion app). **Fix:** either widen the on-device PIN field to match the protocol range, or clamp/validate `CMD_SET_DEVICE_PIN` to the 4-digit space the UI supports and document it. Related to `SEC-001`.
+The PIN-entry field is capped at 4 digits and compares `atoi(text) == device_pin`. The companion protocol sets `device_pin` as an arbitrary `uint32_t`. A phone-set PIN outside 0–9999 (or with significant leading zeros) can never be reproduced by the 4-digit on-device gate, locking the user out of Settings/Terminal on the device itself (recoverable only via the companion app). **RESOLVED (PR #780)** — companion bridge `setBlePin()` validation relaxed from [100000, 999999] to [0, 9999], matching the device UI range. Leading zeros are handled implicitly (atoi("0005") == 5).
 
 ### SEC-003 — Sensitive values stored in plaintext NVS/SPIFFS (informational)
 **Severity:** Informational · **Confidence:** Confirmed · **Category:** SEC

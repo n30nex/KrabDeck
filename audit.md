@@ -413,7 +413,7 @@ See `HW-001`. Framed here as reliability: `board.sleep(0)` should always arm *so
 ### RELI-003 — `atomicReplaceStore` removes the live file before the rename
 **Severity:** Low · **Confidence:** High confidence · **Category:** reliability
 **Affected:** `src/mesh/message_store.cpp:351-356`
-The "atomic" replace writes a temp file, then `SPIFFS.remove(STORE_PATH)` **before** `SPIFFS.rename(TMP_PATH, STORE_PATH)`. A power loss between the remove and the rename leaves no live store (the temp still exists but is not promoted on next boot). True atomic-rename semantics require renaming over the existing file, or promoting a surviving `.tmp` on load. **Fix:** rename temp→store without the prior remove if SPIFFS supports replace-rename, or on `messageStoreBegin` detect a leftover `.tmp` and promote it. Low probability, bounded blast radius (companion message history only).
+The "atomic" replace writes a temp file, then `SPIFFS.remove(STORE_PATH)` **before** `SPIFFS.rename(TMP_PATH, STORE_PATH)`. A power loss between the remove and the rename leaves no live store. **RESOLVED (PR #779)** — removed the prior `remove()` call (SPIFFS rename atomically overwrites the destination) + added `.tmp` recovery in `messageStoreBegin()` to promote an orphaned temp on next boot.
 
 ### DOC-001 — Stale/incorrect comments
 **Severity:** Low · **Confidence:** Confirmed · **Category:** DOC

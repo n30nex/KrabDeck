@@ -348,7 +348,9 @@ static bool atomicReplaceStore(const StoredMessage* msgs, uint32_t count)
         SPIFFS.remove(TMP_PATH);
         return false;
     }
-    SPIFFS.remove(STORE_PATH);
+    // SPIFFS rename atomically overwrites the destination — no need
+    // to remove STORE_PATH first, which would create a window where
+    // a power loss leaves no live store (RELI-003).
     if (!SPIFFS.rename(TMP_PATH, STORE_PATH)) {
         SPIFFS.remove(TMP_PATH);
         return false;
@@ -377,7 +379,9 @@ static bool atomicReplaceStore(const StoredMessage* msgs, uint32_t count)
         std::remove(tmp_path);
         return false;
     }
-    std::remove(g_native_path);
+    // POSIX rename atomically replaces the destination — no need
+    // to remove first, which would create a window where power loss
+    // leaves no live store (RELI-003).
     if (std::rename(tmp_path, g_native_path) != 0) {
         std::remove(tmp_path);
         return false;
@@ -425,6 +429,19 @@ void storedMessageNormalize(StoredMessage& msg)
 
 bool messageStoreBegin()
 {
+#if defined(ESP32_PLATFORM)
+    // Recovery: if a .tmp file survived a power loss during
+    // atomicReplaceStore, promote it to the live store (RELI-003).
+    // The temp was fully written before the rename was attempted,
+    // so it contains the most recent complete state.
+    static constexpr const char* TMP_PATH = "/companion_msgs.tmp";
+    if (SPIFFS.exists(TMP_PATH)) {
+        SPIFFS.remove(STORE_PATH);
+        SPIFFS.rename(TMP_PATH, STORE_PATH);
+        // If rename fails, the temp is discarded (orphaned, can't recover)
+    }
+#endif
+
     if (!writeHeaderIfNeeded()) return false;
     uint32_t count = 0;
     if (readHeader(&count) && count > MESSAGE_STORE_MAX_RECORDS) {

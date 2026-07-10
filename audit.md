@@ -357,7 +357,7 @@ mesh_v2_queue_push(sender_name, chname, msg_text, ...);  // dangling read
 
 **User impact.** Higher CPU/SPI utilization and power draw than partial/dirty-rectangle rendering; competes with LoRa/SD for the shared SPI bus. Chosen deliberately to eliminate tearing, so this is a trade-off rather than a defect — but worth revisiting for battery life.
 
-**Recommended fix.** Evaluate a **two-buffer** setup (double-buffered full or partial mode) so rendering of frame N+1 overlaps the DMA push of frame N, and/or DMA the flush (`startWrite`+`pushImageDMA`) so the CPU isn't blocked during transmit. If tearing is the concern, a second full PSRAM buffer with DMA push preserves tear-free output while freeing the CPU. Measure before/after with the telemetry render-flush counter.
+**RESOLVED (PR #783)** — added second 153KB PSRAM buffer for double-buffered full mode + switched all flush paths from blocking `writePixels()` to DMA `pushPixels()`. LVGL can now render frame N+1 while DMA pushes frame N. `LV_DISPLAY_RENDER_MODE_FULL` preserved (no tearing regression). On-device validated: boots normally, no visual artifacts.
 
 **Suggested tests.** Bench measurement of flush time and frame rate (telemetry `report_render_flush`); no native test.
 

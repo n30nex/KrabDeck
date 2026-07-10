@@ -96,10 +96,13 @@ public:
 
 static LGFX_SigurdOS tft;
 static lv_display_t* lv_disp = nullptr;
-// Full-screen PSRAM buffer: 320×240×2 = 153,600 bytes.
-// Full rendering mode flushes the entire frame in one go,
-// which eliminates the multiple tear lines caused by partial flushes.
-static uint8_t* draw_buf = nullptr;
+// Two full-screen PSRAM buffers for double-buffered rendering (PERF-002).
+// LVGL renders to one buffer while the other is being flushed over SPI via DMA,
+// overlapping CPU work with display update.  Each buffer: 320x240x2 = 153,600 B.
+// Full rendering mode flushes the entire frame in one go, which eliminates the
+// multiple tear lines caused by partial flushes.
+static uint8_t* draw_buf  = nullptr;
+static uint8_t* draw_buf2 = nullptr;
 static bool input_initialized = false;
 static constexpr uint8_t BOOT_DISPLAY_BRIGHTNESS = 200;
 static constexpr uint16_t BOOT_AUTO_OFF_TIMEOUT_SEC = 30;
@@ -561,11 +564,14 @@ static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px
     tft.startWrite();
     tft.setAddrWindow(area->x1, area->y1, w, h);
     if (cf == LV_COLOR_FORMAT_RGB565 && stride == row_bytes) {
-        tft.writePixels((lgfx::rgb565_t*)px_map, w * h);
+        // DMA push: uses SPI DMA (configured with SPI_DMA_CH_AUTO) to free
+        // the CPU during the 153KB frame transmit.  With double-buffered full
+        // mode, LVGL can render the next frame while DMA pushes this one (PERF-002).
+        tft.pushPixels((lgfx::rgb565_t*)px_map, w * h);
     } else if (cf == LV_COLOR_FORMAT_RGB565) {
         uint8_t* line = px_map;
         for (uint32_t i = 0; i < h; i++) {
-            tft.writePixels((lgfx::rgb565_t*)line, w);
+            tft.pushPixels((lgfx::rgb565_t*)line, w);
             line += stride;
         }
     } else {
@@ -586,7 +592,7 @@ static void lvgl_flush_cb(lv_display_t* disp, const lv_area_t* area, uint8_t* px
                 }
                 line565[x] = lgfx::color565(r, g, b);
             }
-            tft.writePixels(line565, w);
+            tft.pushPixels(line565, w);
             line += stride;
         }
     }
@@ -776,7 +782,15 @@ bool sigurdos_display_init()
     const uint32_t full_buf_bytes = full_stride * TFT_HEIGHT;
 
     draw_buf = (uint8_t*)heap_caps_malloc(full_buf_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (draw_buf) {
+    draw_buf2 = (uint8_t*)heap_caps_malloc(full_buf_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (draw_buf && draw_buf2) {
+        lv_display_set_buffers(lv_disp, draw_buf, draw_buf2,
+                               full_buf_bytes,
+                               LV_DISPLAY_RENDER_MODE_FULL);
+    } else if (draw_buf) {
+        // Second buffer failed — fall back to single-buffer full mode
+        heap_caps_free(draw_buf2);
+        draw_buf2 = nullptr;
         lv_display_set_buffers(lv_disp, draw_buf, nullptr,
                                full_buf_bytes,
                                LV_DISPLAY_RENDER_MODE_FULL);

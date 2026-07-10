@@ -334,7 +334,7 @@ mesh_v2_queue_push(sender_name, chname, msg_text, ...);  // dangling read
 
 **User impact.** SPIFFS opens are slow; ~128 of them per message can add tens to hundreds of milliseconds of stall inside the mesh loop, degrading UI responsiveness during message bursts and increasing flash wear. On battery this is avoidable wakeful work.
 
-**Recommended fix.** Rewrite `messageExists`/load paths to open the file **once** and stream records sequentially (single header read + sequential record reads). Cache the record count in RAM. Consider an in-RAM index of `(conversation,sender,timestamp)` identities to answer `messageExists` without touching flash.
+**RESOLVED (PR #781)** — `messageExists()` rewritten to open the file once, read the header inline, and stream all records sequentially. Reduced from N×(2 opens) to 1 open + N sequential reads.
 
 **Suggested tests.** Existing `test/test_message_store` covers correctness; add a test that counts mock file-open calls per append and asserts it is O(1) (or a small constant), not O(n).
 
@@ -662,7 +662,7 @@ Each PR below is independently reviewable; none is created here.
 | BUG-004 | `processAck` returns wrong contact | Medium | High | BUG/COMPAT | `sigurd_mesh_v2.cpp:459-481` | Bogus path-return, wasted airtime | Store pubkey in PendingAck | Opt. | PR 4 |
 | BUG-003 | Out-of-scope stack buffer in channel RX | Medium | Confirmed | BUG/UB | `sigurd_mesh_v2.cpp:560-578` | Latent garbage sender attribution | Hoist buffer to fn scope | No | PR 7 |
 | SEC-001 | OTA gated by brute-forceable 4-digit PIN, no rate limit | Medium | High | SEC | `hal/wifi_ota.cpp:131-198` | Unauthed flash by nearby attacker during OTA | Rate-limit/lockout, longer PIN | Rec. | PR 8 |
-| PERF-001 | O(n) SPIFFS open storm per incoming message | Medium | High | PERF/storage | `message_store.cpp:139-160,308-319` | UI stalls, flash wear on RX bursts | Single-open streaming + RAM index | No | PR 5 |
+| PERF-001 | O(n) SPIFFS open storm per incoming message | Medium | High | PERF/storage | `message_store.cpp:308-319` | UI stalls, flash wear on RX bursts | Single-open streaming | **PR #781** | ✅ Fixed |
 | PERF-002 | Full-frame synchronous flush every redraw | Medium | High | PERF/render | `hal/display.cpp:770-807,529-595` | Higher CPU/power, SPI contention | Double-buffer / DMA flush | **Yes** | PR 6 |
 | HW-002 | Literal `\n` comment swallows trackball `pinMode` | Low | Confirmed | BUG/HW | `tdeck_board.h:62` | GPIO0 pull-up deferred (mitigated) | Real newline | **PR #776** | ✅ Fixed |
 | SEC-002 | Companion PIN >4 digits locks on-device gate | Low | High | SEC/BUG | `screens_common.cpp:280`, `companion_bridge.cpp:841` | Owner locked out of Settings/Terminal | Align PIN ranges | No | PR 8 |

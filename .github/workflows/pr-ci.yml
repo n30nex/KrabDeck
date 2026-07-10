@@ -158,12 +158,14 @@ jobs:
           # or in the MeshCore submodule (some docs cite submodule-relative
           # paths). Excluded docs: planning docs citing not-yet-created files
           # (CODEBASE_IMPROVEMENT_ROADMAP), docs describing external repos
-          # (LAUNCHER_ROADMAP), and docs already flagged OUT OF DATE
-          # (TELEMETRY_ARCHITECTURE) — re-include the last after its rewrite.
+          # (LAUNCHER_ROADMAP, LauncherCompatibility — the latter describes
+          # bmorcelli/Launcher source files not in this repo), and docs
+          # already flagged OUT OF DATE (TELEMETRY_ARCHITECTURE) —
+          # re-include the last after its rewrite.
           status=0
           for doc in docs/*.md; do
             case "$doc" in
-              docs/CODEBASE_IMPROVEMENT_ROADMAP.md|docs/LAUNCHER_ROADMAP.md|docs/TELEMETRY_ARCHITECTURE.md) continue;;
+              docs/CODEBASE_IMPROVEMENT_ROADMAP.md|docs/LAUNCHER_ROADMAP.md|docs/TELEMETRY_ARCHITECTURE.md|docs/LauncherCompatibility.md) continue;;
             esac
             for ref in $(grep -ohE 'src/[A-Za-z0-9_/.-]+\.(cpp|h|c)' "$doc" | sort -u); do
               case "$ref" in */.*) continue;; esac

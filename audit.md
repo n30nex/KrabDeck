@@ -405,7 +405,7 @@ The touch init reads the 186-byte GT911 config in 32-byte chunks and writes it s
 ### RELI-001 — Touch controller has no re-init path after a persistent wedge
 **Severity:** Low · **Confidence:** High confidence · **Category:** reliability
 **Affected:** `src/hal/touch.cpp:45-46,236-248,271-277`
-After `TOUCH_MAX_CONSECUTIVE_ERRORS` (5) consecutive I²C read failures the driver forces a release but never attempts re-initialization, and `init_attempted` latches so `sigurdos_touch_init()` won't retry. A wedged GT911 (bus glitch, ESD) means touch is dead until reboot. **Fix:** on sustained error, attempt a bounded re-init (reset via INT pin + re-probe) before giving up; expose a recovery counter in diagnostics.
+After `TOUCH_MAX_CONSECUTIVE_ERRORS` (5) consecutive I²C read failures the driver forces a release but never attempts re-initialization, and `init_attempted` latches so `sigurdos_touch_init()` won't retry. A wedged GT911 (bus glitch, ESD) means touch is dead until reboot. **RESOLVED (PR #782)** — added `touch_attempt_reinit()`: on sustained error, resets GT911 via INT pin, re-probes I2C, caps at 3 attempts. Recovery counter exposed in diagnostics (`diag_reinit_count`). On-device validated: boots normally, touch init clean, no spurious re-inits.
 
 ### RELI-002 — Critical-battery deep sleep arms no wake source (reliability facet of HW-001)
 See `HW-001`. Framed here as reliability: `board.sleep(0)` should always arm *some* wake (timer) so the node can re-evaluate charge state and recover without a power cycle.

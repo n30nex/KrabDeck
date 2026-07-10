@@ -305,17 +305,71 @@ static int loadAllInternal(StoredMessage* out, int max)
     return n;
 }
 
+// Check whether a message with the same identity already exists in the store.
+// Opens the store file ONCE and streams all records sequentially — O(n) reads,
+// but O(1) file opens.  Previously called readRecordAt() per record, which
+// opened the file twice for each (readHeader + seek/read), giving O(n²) SPIFFS
+// opens (~128 for a full 64-record store on every incoming message).  PERF-001.
 static bool messageExists(const StoredMessage& msg)
 {
+    if (!ensureFs() || !existsStore()) return false;
+
+#if defined(ESP32_PLATFORM)
+    File f = SPIFFS.open(STORE_PATH, "r");
+    if (!f) return false;
+
+    // Read header inline (avoids a separate readHeader() open)
+    uint32_t magic = 0;
+    uint8_t version = 0;
     uint32_t count = 0;
-    if (!readHeader(&count)) return false;
+    bool header_ok = f.read((uint8_t*)&magic, 4) == 4 &&
+                     f.read(&version, 1) == 1 &&
+                     f.read((uint8_t*)&count, 4) == 4 &&
+                     magic == detail::MESSAGE_STORE_MAGIC &&
+                     version == detail::MESSAGE_STORE_VERSION;
+
+    if (!header_ok) { f.close(); return false; }
+
+    uint8_t rec[detail::MESSAGE_STORE_RECORD_SIZE];
     StoredMessage existing;
-    for (uint32_t i = 0; i < count; i++) {
-        if (readRecordAt(i, existing) && detail::storedMessageSameIdentity(existing, msg)) {
-            return true;
+    bool found = false;
+    for (uint32_t i = 0; i < count && !found; i++) {
+        if (f.read(rec, sizeof(rec)) == sizeof(rec) &&
+            readRecordRaw(existing, rec, sizeof(rec)) &&
+            detail::storedMessageSameIdentity(existing, msg)) {
+            found = true;
         }
     }
-    return false;
+    f.close();
+    return found;
+#else
+    FILE* f = std::fopen(g_native_path, "rb");
+    if (!f) return false;
+
+    uint32_t magic = 0;
+    uint8_t version = 0;
+    uint32_t count = 0;
+    bool header_ok = std::fread(&magic, 1, 4, f) == 4 &&
+                     std::fread(&version, 1, 1, f) == 1 &&
+                     std::fread(&count, 1, 4, f) == 4 &&
+                     magic == detail::MESSAGE_STORE_MAGIC &&
+                     version == detail::MESSAGE_STORE_VERSION;
+
+    if (!header_ok) { std::fclose(f); return false; }
+
+    uint8_t rec[detail::MESSAGE_STORE_RECORD_SIZE];
+    StoredMessage existing;
+    bool found = false;
+    for (uint32_t i = 0; i < count && !found; i++) {
+        if (std::fread(rec, 1, sizeof(rec), f) == sizeof(rec) &&
+            readRecordRaw(existing, rec, sizeof(rec)) &&
+            detail::storedMessageSameIdentity(existing, msg)) {
+            found = true;
+        }
+    }
+    std::fclose(f);
+    return found;
+#endif
 }
 
 // Atomically replace the entire message store with the given records.

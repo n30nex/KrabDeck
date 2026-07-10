@@ -420,7 +420,7 @@ The "atomic" replace writes a temp file, then `SPIFFS.remove(STORE_PATH)` **befo
 - `navigation.cpp:34` says "max 8 entries" but `MAX_HISTORY = 16`.
 - `touch.cpp:210` says "200kHz compromise" but the shared bus runs at `BUS_CLOCK_HZ = 100000` (100 kHz, `i2c_bus.h`).
 - `keyboard.cpp:577` / general: comments reference the I²C clock being set "once in `TDeckBoard::begin()`" — accurate, but `configure_runtime()` re-asserts it in several inits; harmless, just noisy.
-**Fix:** correct the comments during any nearby edit.
+**PARTIAL** — `touch.cpp:210` clock comment was corrected during RELI-001 work. `navigation.cpp:34` (MAX_HISTORY comment) remains — fix during next navigation edit.
 
 ---
 
@@ -430,7 +430,7 @@ Grouped by resource. High-value items are written up in §5–§7; the rest are 
 
 **CPU**
 - `PERF-002` — full-frame synchronous flush blocks the CPU during SPI transmit (§6).
-- `PERF-007` — contact lookups (`getPathLen`, `sendTextTo`, `sendRequest`, `findContactIndex`, favourite/DM helpers in `mesh_wrapper.cpp`) do a **linear scan copying a full `ContactInfo` per index** (up to `MAX_CONTACTS=350`) on each call, several of which run from UI refresh paths. Consider a name→index cache or `lookupContactByPubKey` where a key is known.
+- `PERF-007` — contact lookups (`getPathLen`, `sendTextTo`, `sendRequest`, `findContactIndex`, favourite/DM helpers in `mesh_wrapper.cpp`) do a **linear scan copying a full `ContactInfo` per index** (up to `MAX_CONTACTS=350`) on each call, several of which run from UI refresh paths. **DEFERRED** — `getContact()` returns a `const ContactInfo*` pointer (not a copy), so per-index cost is just indirection + string comparison, not struct copy. A name→index cache would help at 350 contacts but is low ROI for current contact counts.
 
 **RAM / Heap**
 - `PERF-003` — `display.cpp:797` declares `static uint8_t emergency_buf[TFT_WIDTH*20*2]` (12,800 B) permanently in BSS even though the surrounding comment claims fallbacks are only allocated on PSRAM failure. Only reachable if both PSRAM *and* DRAM `heap_caps_malloc` fail. **Fix:** allocate it lazily like the other fallbacks, reclaiming ~12.8 KB of internal RAM in the common case.
@@ -454,8 +454,8 @@ Grouped by resource. High-value items are written up in §5–§7; the rest are 
 - `PERF-001`; `RELI-003`.
 
 **Battery / power**
-- `PERF-004` — `touch.cpp` polls the GT911 status register every 10 ms (100 Hz) even when `INT` is HIGH and idle, so the I²C bus is never quiet. Consider trusting `INT` edge more aggressively or lengthening the idle poll interval.
-- `PERF-005` — `keyboard.cpp` issues a raw-modifier sample (mode-switch write + 5-byte read + mode-switch write) every 20 ms **and** an *extra* raw sample immediately after every ASCII byte, giving ~3 I²C transactions per 20 ms on the shared bus during typing. Bounded and functional, but a candidate for reducing bus churn.
+- `PERF-004` — `touch.cpp` polls the GT911 status register every 10 ms (100 Hz) even when `INT` is HIGH and idle, so the I²C bus is never quiet. **RESOLVED (PR #785)** — adaptive poll interval: 10ms when active, 50ms after 5 consecutive idle polls (INT HIGH + no data). Saves ~80% of idle touch I2C transactions. On-device validated.
+- `PERF-005` — `keyboard.cpp` issues a raw-modifier sample (mode-switch write + 5-byte read + mode-switch write) every 20 ms **and** an *extra* raw sample immediately after every ASCII byte, giving ~3 I²C transactions per 20 ms on the shared bus during typing. **DEFERRED** — test coupling prevents safe change to raw sample interval. The post-ASCII-byte raw sample already resets the periodic timer, so the two don't double-fire during typing. Idle periodic rate (20ms, 50 Hz) is acceptable for an interactive device.
 - `display.cpp` loop caps LVGL idle sleep at `delay(min(next,5))`, so the super-loop spins at ≥~200 Hz with no light-sleep even when idle — expected for an interactive device, but a power lever if deep idle is ever desired.
 
 ---
@@ -667,10 +667,10 @@ Each PR below is independently reviewable; none is created here.
 | HW-002 | Literal `\n` comment swallows trackball `pinMode` | Low | Confirmed | BUG/HW | `tdeck_board.h:62` | GPIO0 pull-up deferred (mitigated) | Real newline | **PR #776** | ✅ Fixed |
 | SEC-002 | Companion PIN >4 digits locks on-device gate | Low | High | SEC/BUG | `screens_common.cpp:280`, `companion_bridge.cpp:841` | Owner locked out of Settings/Terminal | Align PIN ranges | No | PR 8 |
 | SEC-003 | Plaintext secrets in NVS/SPIFFS | Info | Confirmed | SEC | `prefs.cpp`, `persistence_store.cpp` | Flash dump exposes creds/identity | Document; consider flash encryption | No | — |
-| PERF-003 | 12.8 KB `emergency_buf` always in BSS | Low | High | PERF/RAM | `hal/display.cpp:797` | Wasted internal RAM | Allocate lazily | No | PR 7 |
-| PERF-004 | Touch status polled 100 Hz when idle | Low | High | PERF/battery | `hal/touch.cpp:202-232` | Constant idle bus/power | Trust INT / longer idle poll | Rec. | Phase 3 |
-| PERF-005 | Keyboard raw-sample I²C churn + extra post-byte sample | Low | High | PERF/battery | `hal/keyboard.cpp:569-592` | Extra bus traffic while typing | Reduce sampling | Rec. | Phase 3 |
-| PERF-007 | Full-`ContactInfo`-copy linear scans in hot paths | Low | High | PERF/CPU | `sigurd_mesh_v2.cpp`, `mesh_wrapper.cpp` | CPU on UI refresh | Name→index cache | No | Phase 3 |
+| PERF-003 | 12.8 KB `emergency_buf` always in BSS | Low | High | PERF/RAM | `hal/display.cpp:797` | Wasted internal RAM | Lazy heap alloc | **PR #784** | ✅ Fixed |
+| PERF-004 | Touch status polled 100 Hz when idle | Low | High | PERF/battery | `hal/touch.cpp:202-232` | Constant idle bus/power | Adaptive 10/50ms polling | **PR #785** | ✅ Fixed |
+| PERF-005 | Keyboard raw-sample I²C churn + extra post-byte sample | Low | High | PERF/battery | `hal/keyboard.cpp:569-592` | Extra bus traffic while typing | Reduce sampling | **Deferred** | Test-coupled |
+| PERF-007 | Full-`ContactInfo`-copy linear scans in hot paths | Low | High | PERF/CPU | `sigurd_mesh_v2.cpp`, `mesh_wrapper.cpp` | CPU on UI refresh | Name→index cache | **Deferred** | Low ROI |
 | RELI-001 | No touch re-init after persistent I²C wedge | Low | High | reliability | `hal/touch.cpp:236-248,271-277` | Touch dead until reboot | Bounded re-init/reset | Rec. | Phase 2 |
 | RELI-003 | `atomicReplaceStore` removes before rename | Low | High | reliability | `message_store.cpp:351-356` | Store lost on power-cut mid-swap | Replace-rename / promote `.tmp` | No | Phase 2 |
 | DEAD-001 | `ctrl_held`/`is_ctrl()` always false | Low | Confirmed | DEAD | `hal/keyboard.cpp:161,607` | none | Remove or wire up | **PR #776** | ✅ Fixed |
@@ -683,9 +683,9 @@ Each PR below is independently reviewable; none is created here.
 | CI-002 | Large raw-`Serial.print` whitelist | Low | Confirmed | CI | `pr-ci.yml` logging grep | Policy under-enforced | Shrink whitelist | No | Phase 5 |
 | TEST-001 | No GPS time-sync/epoch test | Medium | Confirmed | TEST | `test/test_gps/` | Let `BUG-001` ship | Add epoch table test | No | PR 1 |
 | TEST-002 | No screen-transition lifecycle test | Medium | Confirmed | TEST | `test/` (missing) | Let `BUG-002` ship | Add UI-lifecycle test | No | PR 2 |
-| ARCH-001 | Global widget pointers, convention ownership | Low | Confirmed | ARCH | `ui/*` | Fragile (root of BUG-002) | Centralize status-icon ownership | No | Phase 5 |
+| ARCH-001 | Global widget pointers, convention ownership | Low | Confirmed | ARCH | `ui/screens_common.cpp` | Fragile (root of BUG-002) | lv_obj_is_valid guards | **PR #786** | ✅ Fixed |
 | COMPAT-001 | Wrong-contact path-return vs upstream | Medium | High | COMPAT | `sigurd_mesh_v2.cpp:459-481` | Protocol divergence | See BUG-004 | Opt. | PR 4 |
-| DIAG-001 | Crash telemetry captures shutdown, not crash site | Low | Confirmed | diagnostics | `telemetry_crash.cpp:86` | Unreliable crash PCs | Use panic-handler API | Rec. | Phase 5 |
+| DIAG-001 | Crash telemetry captures shutdown, not crash site | Low | Confirmed | diagnostics | `telemetry_crash.cpp:86` | Unreliable crash PCs | Use panic-handler API | **Deferred** | API availability |
 
 ---
 

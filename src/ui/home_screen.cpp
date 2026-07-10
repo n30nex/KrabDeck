@@ -25,8 +25,9 @@
 #include "theme.h"
 #include "responsive.h"
 #include "../hal/tdeck_pins.h"
-#include "../mesh/mesh_wrapper.h"
 #include "../hal/prefs.h"
+#include "../hal/battery.h"
+#include "../mesh/mesh_wrapper.h"
 #include "../diagnostics/debug_cfg.h"
 #if SIGURDOS_DEBUG_UI
 #include "../diagnostics/debug.h"
@@ -416,12 +417,14 @@ static void build_home_screen(lv_scr_load_anim_t anim, uint32_t duration)
 void home_screen_create()
 {
     build_home_screen(LV_SCR_LOAD_ANIM_FADE_ON, 300);
+    home_screen_update_battery(sigurdos_battery_pct());
     home_screen_update_badges();
 }
 
 void home_screen_show()
 {
     build_home_screen(LV_SCR_LOAD_ANIM_NONE, 0);
+    home_screen_update_battery(sigurdos_battery_pct());
     home_screen_update_badges();
 }
 

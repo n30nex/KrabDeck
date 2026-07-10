@@ -94,6 +94,24 @@ void signal_screen_show()
             lv_obj_set_style_text_color(ch_label, lv_color_hex(TEXT_SECONDARY), 0);
             lv_obj_set_style_text_font(ch_label, emoji_wrapped_montserrat_12, 0);
             lv_obj_align_to(ch_label, chart, LV_ALIGN_OUT_TOP_LEFT, 0, -2);
+
+            // Y-axis labels (dBm scale)
+            const int y_labels[] = {0, -30, -60, -90, -120};
+            for (int yi = 0; yi < 5; yi++) {
+                int chart_h = 60;
+                int pad = 4;
+                int usable_h = chart_h - pad * 2;
+                float ratio = (float)(0 - y_labels[yi]) / 120.0f;
+                int y_pos = pad + (int)(ratio * usable_h);
+
+                lv_obj_t* yl = lv_label_create(scr);
+                char ybuf[8];
+                snprintf(ybuf, sizeof(ybuf), "%d", y_labels[yi]);
+                lv_label_set_text(yl, ybuf);
+                lv_obj_set_style_text_color(yl, lv_color_hex(TEXT_MUTED), 0);
+                lv_obj_set_style_text_font(yl, emoji_wrapped_montserrat_10, 0);
+                lv_obj_align_to(yl, chart, LV_ALIGN_OUT_LEFT_TOP, -30, y_pos - 6);
+            }
         }
     } else {
         // ── Two-column flex row ─────────────────────────────
@@ -182,6 +200,24 @@ void signal_screen_show()
             lv_obj_set_style_text_color(ch_label, lv_color_hex(TEXT_SECONDARY), 0);
             lv_obj_set_style_text_font(ch_label, emoji_wrapped_montserrat_12, 0);
             lv_obj_align_to(ch_label, chart, LV_ALIGN_OUT_TOP_LEFT, 0, -2);
+
+            // Y-axis labels (dBm scale)
+            const int y_labels[] = {0, -30, -60, -90, -120};
+            for (int yi = 0; yi < 5; yi++) {
+                int chart_h = 60;
+                int pad = 4;
+                int usable_h = chart_h - pad * 2;
+                float ratio = (float)(0 - y_labels[yi]) / 120.0f;
+                int y_pos = pad + (int)(ratio * usable_h);
+
+                lv_obj_t* yl = lv_label_create(scr);
+                char ybuf[8];
+                snprintf(ybuf, sizeof(ybuf), "%d", y_labels[yi]);
+                lv_label_set_text(yl, ybuf);
+                lv_obj_set_style_text_color(yl, lv_color_hex(TEXT_MUTED), 0);
+                lv_obj_set_style_text_font(yl, emoji_wrapped_montserrat_10, 0);
+                lv_obj_align_to(yl, chart, LV_ALIGN_OUT_LEFT_TOP, -30, y_pos - 6);
+            }
         }
     }
 

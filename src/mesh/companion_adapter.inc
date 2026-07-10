@@ -480,7 +480,11 @@ public:
     }
 
     bool setBlePin(uint32_t pin) override {
-        if (pin != 0 && (pin < 100000 || pin > 999999)) return false;
+        // Align with the on-device 4-digit PIN gate (screens_common.cpp:280)
+        // and settings PIN setter (screen_settings_system.cpp:678), which both
+        // cap at 4 digits (0–9999). Previously required 100000–999999 (6-digit),
+        // making companion-set PINs impossible to enter on the device (SEC-002).
+        if (pin > 9999) return false;
         sigurdos::NodePrefs p = sigurdos::prefs_get();
         p.device_pin = pin;
         sigurdos::prefs_set(p);

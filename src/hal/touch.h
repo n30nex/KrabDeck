@@ -89,6 +89,7 @@ struct SigurdOSTouchDiag {
     uint32_t release_count;
     uint32_t move_count;
     uint32_t last_event_ms;
+    uint32_t reinit_count;   // successful touch re-inits (RELI-001)
 };
 
 // Snapshot touch diagnostic state without changing LVGL input state.

@@ -196,7 +196,7 @@ void update_wifi_status() {
 // ════════════════════════════════════════════════════════
 void highlight_back_button(bool show)
 {
-    if (!s_back_btn) return;
+    if (!s_back_btn || !lv_obj_is_valid(s_back_btn)) return;
 
     if (show) {
         lv_obj_set_style_border_width(s_back_btn, 2, 0);

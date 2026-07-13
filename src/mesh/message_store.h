@@ -100,6 +100,8 @@ bool messageStoreGetById(uint32_t store_id, StoredMessage& out);
 bool messageStoreFindRecent(const char* conversation, const char* sender,
                             const char* text, uint32_t timestamp, bool is_self,
                             StoredMessage& out);
+// Oldest-first incoming records that have not yet been delivered to the
+// companion. Self-sent records are intentionally excluded.
 int  messageStoreLoadUnsent(StoredMessage* out, int max);
 int  messageStoreCount();
 

@@ -437,7 +437,7 @@ private:
     bool offlineFrameExists(const uint8_t* frame, size_t len) const;
     bool addToOfflineQueue(uint32_t store_id, bool persistent,
                            const uint8_t* frame, size_t len);
-    void seedOfflineQueueFromStore();
+    bool refillOfflineQueueFromStore(bool notify_waiting);
     // Peek does not dequeue. removeFirstOfflineFrame() is called only after the
     // transport accepts the complete frame.
     int  peekOfflineQueue(uint8_t* frame, uint32_t* store_id, bool* persistent);

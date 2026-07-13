@@ -1,11 +1,12 @@
 # SigurdOS T-Deck Roadmap
 
-This roadmap is the current source of truth for bringing SigurdOS T-Deck to feature parity with core MeshCore field workflows, then beyond them. It is paired with [AUDIT.md](AUDIT.md), which records the 2026-06-07 end-to-end audit evidence and risk register.
+This roadmap is the current source of truth for bringing SigurdOS T-Deck to feature parity with core MeshCore field workflows, then beyond them. It is paired with [`audit.md`](../audit.md), which records the end-to-end audit evidence and risk register.
 
 ## Current Baseline
 
-- Source audit baseline: `f74ee234c5a1f0f5ad5ad3a8f1ef17e3b7c2f5f5` on `dev` (`origin/dev`)
-- MeshCore submodule: `07a3ca9e05b0ab23b878200b2c44b04e08131972`
+- Source audit baseline: `dev` branch (latest)
+- MeshCore submodule: `60ea4a91bf14363e837037a79ce1bff7fa37483f` (companion family ~v1.15.0 + patches)
+  - **Note:** volatile SHA pinning is intentionally removed here. The submodule and source tree evolve independently; the authoritative per-document pin lives in each document that depends on a specific snapshot (e.g. `COMPANION_SUPPORT.md` and `COMPANION_PARITY_ACTION_PLAN.md` have their own pinned references).
 - Target board: LilyGo T-Deck, ESP32-S3, SX1262, ST7789, GT911, I2C keyboard, trackball
 - Validation status: 2026-06-07 upstream-aligned release/BLE validation and CANADA-preset
   hardware smoke executed on `COM8`; `pio run -e SigurdOS_TDeck`,
@@ -20,14 +21,16 @@ SigurdOS already has a strong base: standalone chat, channel and DM messaging, B
 
 This audit records what is already present in the codebase so future roadmap work starts from the current implementation instead of re-planning shipped pieces.
 
+> **Authoritative tracker note:** This roadmap is the broad product-direction document. For companion-protocol parity, [`docs/COMPANION_PARITY_ACTION_PLAN.md`](COMPANION_PARITY_ACTION_PLAN.md) is the authoritative per-feature tracker. For release-gate requirements, [`docs/RELEASE_EVIDENCE.md`](RELEASE_EVIDENCE.md) defines what must be proven before a release ships. Both of those documents are maintained in lockstep with their respective workstreams and should be consulted alongside this roadmap.
+
 | Area | Implemented now | Remaining roadmap work |
 | --- | --- | --- |
 | Mesh core | `SigurdMeshV2` extends `BaseChatMesh`; DMs, group channels, ACK tracking, advert discovery, trace, ping nearby, telemetry request/answer, client repeat, packet stats, and duty-cycle APIs exist. | Hardware interop matrix, release warning budget, and third-party warning isolation still need to catch up with the source state. |
 | Regions | `src/mesh/regions.*` wraps `RegionMap`; channel names can seed regions; active scope persists in prefs; `sendFloodScoped()` stamps transport codes; Settings/region UI surfaces exist. | Physical scoped-flood interop, `$` private key persistence, collision tests, and app-driven flood-scope edge cases need validation. |
 | Message persistence | Chat and companion sync share the versioned `/companion_msgs` log with dedup, ACK/delivery flags, path/text metadata, 512-record capacity, amortized atomic compaction, power-loss recovery, and one-time `/msgs` migration. | Physical reboot/flash-wear soak and richer delivery-attempt/unread metadata remain. |
 | Companion app bridge | `CompanionBridge` implements the stock frame dispatcher for device query, app start, contacts, DMs, channel text/data, channels, time get/set, stats, signing, identity import/export, flood scope, login, status, telemetry, trace, and async pushes. `SigurdOS_TDeck_ble_validation` links the MeshCore ESP32 BLE NUS transport. | Treat BLE as experimental until official app hardware pairing, reconnect, sync, security, RAM, and repeater-management flows are validated. |
-| Time | `CMD_GET_DEVICE_TIME` and `CMD_SET_DEVICE_TIME` are implemented through the companion host. GPS parsing includes NMEA checksum validation and currently sets the system RTC on first valid GPS date/time when GPS is active. | Add a clock policy and UI that identifies time source/age. GPS time sync should be user-polled or opportunistic when GPS is already active; it must not keep GPS powered or polling solely to maintain time. |
-| GPS | GPS init, baud probing, interval-gated polling, fix data, satellite diagnostics, map/adverts, and settings toggles exist. GPS is off by default; when enabled, the current default interval still maps to every-loop polling. | Add a "Sync time from GPS" action, add fix-acquisition timeout/status UX, make enabled-GPS polling less aggressive by default, and test sleep/wake behavior with GPS disabled/enabled. |
+| Time | `CMD_GET_DEVICE_TIME` and `CMD_SET_DEVICE_TIME` are implemented through the companion host. GPS parsing includes NMEA checksum validation and currently sets the system RTC on first valid GPS date/time when GPS is active. GPS time sync is available via the Settings → GPS screen (`screen_settings_gps.cpp`); the clock policy identifies the time source. Time-source UI identifies source (`GPS`, `App`, or `Manual`) in Settings. | ✅ Implemented: time-source identification and GPS sync action exist in Settings UI. Remaining hardening: ensure GPS time sync cannot keep the receiver powered solely for the clock. |
+| GPS | GPS init, baud probing, interval-gated polling, fix data, satellite diagnostics, map/adverts, and settings toggles exist. GPS is off by default; when enabled, the current default interval still maps to every-loop polling. | ✅ "Sync time from GPS" action implemented in Settings → GPS. Remaining: fix-acquisition timeout/status UX, less aggressive polling by default, and sleep/wake testing with GPS disabled/enabled. |
 | Repeater/room workflows | Local UI supports repeater/room login, saved passwords, CLI command rows, fetch messages, status/telemetry requests, command response display, and profile-aware allowed repeat-frequency replies. Companion bridge sends login/status/telemetry and CLI-data requests. | Official MeshCore app repeater management still needs app-level hardware validation. |
 | OTA and release ops | AP upload OTA, GitHub pull OTA, WiFi credential prefs, merged firmware script, and release docs exist. | Negative OTA tests, rollback/recovery docs, checksums, and release evidence still need to become routine. |
 
@@ -42,9 +45,10 @@ is gated by the following work:
 2. Complete hardware validation that is still missing from the RC2 matrix: RF
    interop, repeater/room workflows, OTA positive and negative cases, SD/map
    behavior, sleep/wake/power, and multi-hour soak.
-3. Harden persistence and state sync: unify message stores, version schemas,
+3. Harden persistence and state sync: version schemas,
    add migration/power-loss tests, and preserve metadata needed for companion
-   sync and repeater command replies.
+   sync and repeater command replies. (Message store unification is complete;
+   `/companion_msgs` is the shared persistent log.)
 4. Close companion parity: official MeshCore phone-app pairing, RX/TX,
    reconnect, sync, security policy, connection-state UI, and
    repeater-management flows.
@@ -78,7 +82,7 @@ Goal: make the repository easy to audit and safe for parallel contributors.
 
 Priority tasks:
 
-- Keep this roadmap as the planning source of truth and use [AUDIT.md](AUDIT.md) for findings.
+- Keep this roadmap as the planning source of truth and use [`audit.md`](../audit.md) for findings.
 - Open follow-up issues for stale or superseded feature docs instead of mixing fixes into feature PRs.
 - Reconcile [MISSING_FEATURES.md](MISSING_FEATURES.md) and [FEATURES_OVERVIEW.md](FEATURES_OVERVIEW.md) with the current implementation in dedicated docs PRs. (Done for the telemetry plans: `TELEMETRY_ARCHITECTURE.md` and `TELEMETRY_EXPANSION_PLAN.md` were retired in #617 after the telemetry implementation landed — `src/diagnostics/` is the authoritative reference.)
 - Add a short capability matrix to the README that points to feature docs, tests, hardware docs, and this roadmap.
@@ -140,15 +144,15 @@ Goal: make message, contact, channel, region, and clock state durable enough for
 
 Priority tasks:
 
-- Persist message metadata beyond sender/text/timestamp/self: ACK state, delivery attempts, route/path hints, RSSI/SNR, channel/DM identity, unread state, stable message IDs, companion-sent state, path length, and text subtype (`TXT_TYPE_PLAIN`, `TXT_TYPE_CLI_DATA`, signed text).
+- Persist message metadata beyond sender/text/timestamp/self: ACK state, delivery attempts, route/path hints, RSSI/SNR, channel/DM identity, unread state, stable message IDs, companion-sent state, path length, and text subtype (`TXT_TYPE_PLAIN`, `TXT_TYPE_CLI_DATA`, signed text). **(Message metadata for companion V3 frames implemented in `StoredMessage`.)**
 - Version every persistent schema and add migration tests for older SPIFFS/NVS data.
 - Harden contact persistence so path metadata, shared secrets, permissions, favorite/pinned state, manual contacts, app-imported contacts, and repeater session hints survive reboot.
 - Add import/export flows for identity, contacts, channels, regions, WiFi profiles, and clock/source diagnostics.
 - Track storage budgets for SPIFFS, SD, NVS, and PSRAM-backed caches.
 - Add deduplication for repeated packets and repeated companion-sync events.
-- Add a unified clock policy covering manual time, MeshCore RTC, companion-app `CMD_SET_DEVICE_TIME`, and GPS time.
-- Add a user action for "Sync time from GPS" and allow automatic GPS time sync only when GPS is already active for another user-visible workflow, such as map/location/adverts. Do not keep GPS powered or polling solely to maintain the clock.
-- Surface the active time source, last-sync age, and confidence in Settings and diagnostics.
+- Add a unified clock policy covering manual time, MeshCore RTC, companion-app `CMD_SET_DEVICE_TIME`, and GPS time. ✅ **Implemented:** clock policy identifies source (`GPS`, `App`, `Manual`) and `CMD_SET_DEVICE_TIME` records the app as source.
+- Add a user action for "Sync time from GPS" and allow automatic GPS time sync only when GPS is already active for another user-visible workflow, such as map/location/adverts. Do not keep GPS powered or polling solely to maintain the clock. ✅ **Implemented:** Settings → GPS includes "Sync time from GPS" action.
+- Surface the active time source, last-sync age, and confidence in Settings and diagnostics. ✅ **Implemented:** time-source identification in Settings UI.
 
 Done when:
 
@@ -194,8 +198,8 @@ Priority tasks:
 
 - Verify region support over real hardware and interop nodes, including scoped sends, active region switching, `$` private region keys, and collision behavior.
 - Add terminal-style contact sorting, filtering, favorites, manual contact add, and richer contact badges.
-- Expand message detail views with path, hop count, RSSI/SNR, ACK status, repeaters, route hints, and packet metadata.
-- Add path hash mode and route-reset workflows where compatible with MeshCore behavior.
+- Expand message detail views with path, hop count, RSSI/SNR, ACK status, repeaters, route hints, and packet metadata. (chat_screen message composition details exist; dedicated detail-view screen is still future work.)
+- Add path hash mode and route-reset workflows where compatible with MeshCore behavior. ✅ Implemented via companion bridge.
 - Finish local and app-driven room server/repeater management: login status, permissions, CLI-data command responses, fetch message history, status/telemetry pushes, allowed repeat-frequency reporting, explicit errors, retries/timeouts, and keep-alive behavior.
 - Add telemetry history views for battery/GPS/sensor data and remote node snapshots.
 - Add QR/import/export flows for contacts, channels, regions, and identity backup.
@@ -212,14 +216,14 @@ Goal: make the device feel responsive and conserve battery during real field use
 
 Priority tasks:
 
-- Decompose large UI files, especially `src/ui/screens.cpp` and `src/ui/chat_screen.cpp`, into focused screen modules with shared helpers.
+- Decompose large UI files, especially `src/ui/screens.cpp` and `src/ui/chat_screen.cpp`, into focused screen modules with shared helpers. ✅ **Partial:** 22 focused screen modules now live in `src/ui/screens/`; `screens.cpp` still exists as a thin routing/dispatch layer.)
 - Virtualize remaining telemetry history and map-marker lists as those datasets grow.
 - Reduce release RAM pressure below 80% before adding large BLE or map features.
 - Profile LVGL buffer use, PSRAM fallback behavior, map tile decode allocations, and worst-case chat rendering.
 - Add online tile fetch and negative tile cache for map parity, while preserving offline SD-first behavior.
 - Add map tile prefetch, cache budget settings, and graceful no-SD/no-network states.
 - Improve autolock, sleep, wake sources, and backlight behavior around radio receive, trackball, keyboard, touch, GPS, and companion BLE.
-- Make enabled-GPS polling demand-driven, avoid every-loop polling as the enabled default, and ensure GPS time sync cannot keep the receiver active on its own.
+- Make enabled-GPS polling demand-driven, avoid every-loop polling as the enabled default, and ensure GPS time sync cannot keep the receiver active on its own. ✅ **Implemented:** `gps_demand.h` provides demand-based GPS control.
 - Add battery and duty-cycle status surfaces that are visible without opening deep diagnostics.
 - Add keyboard editor polish: shortcuts, selection, clipboard or draft persistence, and faster correction flows.
 

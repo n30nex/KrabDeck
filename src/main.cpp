@@ -205,6 +205,7 @@ void loop()
 #endif
     // Low-battery auto-shutdown (matches MeshCore pattern)
     static uint32_t last_batt_check = 0;
+    static uint32_t last_gps_poll = 0;
     if (millis() - last_batt_check > 30000) {  // every 30s
         last_batt_check = millis();
         if (board.isBatteryCritical()) {

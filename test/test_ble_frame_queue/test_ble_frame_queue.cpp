@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 #include "comms/ble_frame_queue.h"
+#include "comms/ble_init_gate.h"
 
 #include <atomic>
 #include <cstring>
@@ -12,11 +13,62 @@
 namespace {
 
 using sigurdos::comms::BleFrameQueue;
+using sigurdos::comms::BleInitGate;
 
 constexpr size_t MAX_LEN = 176;   // MAX_FRAME_SIZE on target
 constexpr size_t CAPACITY = 4;    // FRAME_QUEUE_SIZE on target
 
 using Queue = BleFrameQueue<MAX_LEN, CAPACITY>;
+
+TEST(BleInitGate, ConfigurationDoesNotInitializeController)
+{
+    BleInitGate gate;
+    int init_calls = 0;
+    gate.configure();
+
+    EXPECT_TRUE(gate.configured());
+    EXPECT_FALSE(gate.initialized());
+    EXPECT_EQ(init_calls, 0);
+
+    EXPECT_TRUE(gate.ensureInitialized([&] {
+        ++init_calls;
+        return true;
+    }));
+    EXPECT_TRUE(gate.initialized());
+    EXPECT_EQ(init_calls, 1);
+
+    EXPECT_TRUE(gate.ensureInitialized([&] {
+        ++init_calls;
+        return true;
+    }));
+    EXPECT_EQ(init_calls, 1);
+}
+
+TEST(BleInitGate, RequiresConfigurationAndRetriesFailedInitialization)
+{
+    BleInitGate gate;
+    int init_calls = 0;
+    EXPECT_FALSE(gate.ensureInitialized([&] {
+        ++init_calls;
+        return true;
+    }));
+    EXPECT_EQ(init_calls, 0);
+
+    gate.configure();
+    EXPECT_FALSE(gate.ensureInitialized([&] {
+        ++init_calls;
+        return false;
+    }));
+    EXPECT_FALSE(gate.initialized());
+    EXPECT_EQ(init_calls, 1);
+
+    EXPECT_TRUE(gate.ensureInitialized([&] {
+        ++init_calls;
+        return true;
+    }));
+    EXPECT_TRUE(gate.initialized());
+    EXPECT_EQ(init_calls, 2);
+}
 
 // Frames carry a 32-bit sequence number followed by a deterministic fill so
 // the consumer can detect torn or corrupted frames.

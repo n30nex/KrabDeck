@@ -3,6 +3,8 @@
 
 #include "observed_ble_interface.h"
 
+#include <cstring>
+
 #if defined(ESP32_PLATFORM) && defined(SIGURDOS_COMPANION_BLE) && SIGURDOS_COMPANION_BLE
 
 namespace sigurdos {
@@ -15,18 +17,47 @@ void ObservedSerialBLEInterface::refreshConnectionState()
     _stats.advertising_expected = _stats.enabled && !_stats.connected;
 }
 
-void ObservedSerialBLEInterface::begin(const char* prefix, char* name, uint32_t pin_code)
+void ObservedSerialBLEInterface::configure(const char* prefix, const char* name,
+                                           uint32_t pin_code)
 {
-    SerialBLEInterface::begin(prefix, name, pin_code);
+    if (_init_gate.initialized()) return;
+    if (!prefix) prefix = "";
+    if (!name) name = "";
+    std::strncpy(_configured_prefix, prefix, sizeof(_configured_prefix) - 1);
+    _configured_prefix[sizeof(_configured_prefix) - 1] = '\0';
+    std::strncpy(_configured_name, name, sizeof(_configured_name) - 1);
+    _configured_name[sizeof(_configured_name) - 1] = '\0';
+    _configured_pin = pin_code;
+    _init_gate.configure();
     _rx_queue.clear();
     _stats = BleSerialObserverStats{};
-    _stats.begun = true;
-    _stats.begin_count = 1;
     refreshConnectionState();
+}
+
+bool ObservedSerialBLEInterface::initializeConfigured()
+{
+    return _init_gate.ensureInitialized([this] {
+        char mutable_name[sizeof(_configured_name)]{};
+        std::memcpy(mutable_name, _configured_name, sizeof(mutable_name));
+        SerialBLEInterface::begin(_configured_prefix, mutable_name,
+                                  _configured_pin);
+        _rx_queue.clear();
+        _stats.begun = true;
+        _stats.begin_count++;
+        refreshConnectionState();
+        return true;
+    });
+}
+
+void ObservedSerialBLEInterface::begin(const char* prefix, char* name, uint32_t pin_code)
+{
+    configure(prefix, name, pin_code);
+    initializeConfigured();
 }
 
 void ObservedSerialBLEInterface::enable()
 {
+    if (!initializeConfigured()) return;
     SerialBLEInterface::enable();  // also clears the (now unused) base buffers
     _rx_queue.clear();
     _stats.enable_count++;
@@ -35,6 +66,12 @@ void ObservedSerialBLEInterface::enable()
 
 void ObservedSerialBLEInterface::disable()
 {
+    if (!_init_gate.initialized()) {
+        _rx_queue.clear();
+        _stats.disable_count++;
+        refreshConnectionState();
+        return;
+    }
     SerialBLEInterface::disable();
     _rx_queue.clear();
     _stats.disable_count++;
@@ -43,11 +80,12 @@ void ObservedSerialBLEInterface::disable()
 
 bool ObservedSerialBLEInterface::isConnected() const
 {
-    return SerialBLEInterface::isConnected();
+    return _init_gate.initialized() && SerialBLEInterface::isConnected();
 }
 
 size_t ObservedSerialBLEInterface::writeFrame(const uint8_t src[], size_t len)
 {
+    if (!_init_gate.initialized()) return 0;
     size_t written = SerialBLEInterface::writeFrame(src, len);
     if (written > 0) {
         _stats.tx_frame_count++;
@@ -61,6 +99,7 @@ size_t ObservedSerialBLEInterface::writeFrame(const uint8_t src[], size_t len)
 
 size_t ObservedSerialBLEInterface::checkRecvFrame(uint8_t dest[])
 {
+    if (!_init_gate.initialized()) return 0;
     // Drives the base transmit queue and connection housekeeping. The base
     // receive queue stays empty (onWrite no longer feeds it), so any frame
     // returned here comes from _rx_queue.
@@ -75,6 +114,11 @@ size_t ObservedSerialBLEInterface::checkRecvFrame(uint8_t dest[])
     refreshConnectionState();
     return len;
 }
+
+/*
+ * BLE callbacks below can only run after initializeConfigured() creates the
+ * controller, server, service, and characteristics.
+ */
 
 uint32_t ObservedSerialBLEInterface::onPassKeyRequest()
 {

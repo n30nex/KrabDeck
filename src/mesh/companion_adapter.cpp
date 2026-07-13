@@ -1175,7 +1175,9 @@ void sigurdos::mesh::companionAdapterInit()
     char ble_name[32];
     strncpy(ble_name, meshOwnName(), sizeof(ble_name) - 1);
     ble_name[sizeof(ble_name) - 1] = '\0';
-    g_ble_serial.begin("MeshCore-", ble_name, g_companion_host.blePin());
+    // Store BLE configuration without initializing the controller. The first
+    // successful enable performs the expensive BLEDevice::init lazily.
+    g_ble_serial.configure("MeshCore-", ble_name, g_companion_host.blePin());
     if (CompanionBridge* b = companionBridge()) {
         b->begin(&g_ble_serial, &g_companion_host);
         if (sigurdos::prefs_get().ble_enabled) {

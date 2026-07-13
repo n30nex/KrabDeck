@@ -10,6 +10,7 @@
 
 #include <helpers/esp32/SerialBLEInterface.h>
 #include "ble_frame_queue.h"
+#include "ble_init_gate.h"
 
 namespace sigurdos {
 namespace comms {
@@ -40,6 +41,7 @@ struct BleSerialObserverStats {
 
 class ObservedSerialBLEInterface final : public SerialBLEInterface {
 public:
+    void configure(const char* prefix, const char* name, uint32_t pin_code);
     void begin(const char* prefix, char* name, uint32_t pin_code);
     void enable() override;
     void disable() override;
@@ -63,8 +65,13 @@ protected:
 
 private:
     void refreshConnectionState();
+    bool initializeConfigured();
 
     BleSerialObserverStats _stats{};
+    BleInitGate _init_gate;
+    char _configured_prefix[16]{};
+    char _configured_name[32]{};
+    uint32_t _configured_pin = 0;
 
     // NET-002 (#813): the base class receive queue is written from the
     // Bluedroid host task (onWrite) and drained from the app loop task

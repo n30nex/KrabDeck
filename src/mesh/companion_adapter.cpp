@@ -10,6 +10,7 @@
 #include "companion_adapter.h"
 #include "utils/utf8_util.h"
 #include "companion_message_policy.h"
+#include "companion_ble_pin.h"
 #include "mesh_wrapper.h"
 #include "mesh_wrapper_internal.h"
 #include "scope_key_hex.h"
@@ -103,14 +104,13 @@ static sigurdos::comms::ObservedSerialBLEInterface g_ble_serial;
 static ArduinoSerialInterface g_usb_serial;
 #endif
 
-static constexpr uint32_t SIGURDOS_BLE_PIN_MIN = 100000;
-static constexpr uint32_t SIGURDOS_BLE_PIN_MAX = 999999;
-
 static void generate_random_ble_pin() {
     sigurdos::NodePrefs p = sigurdos::prefs_get();
     if (p.ble_pin != 0) return;  // already generated
     // Generate a random 6-digit PIN using ESP32 hardware RNG
-    uint32_t pin = SIGURDOS_BLE_PIN_MIN + (esp_random() % (SIGURDOS_BLE_PIN_MAX - SIGURDOS_BLE_PIN_MIN + 1));
+    uint32_t pin = sigurdos::comms::SIGURDOS_COMPANION_BLE_PIN_MIN +
+        (esp_random() % (sigurdos::comms::SIGURDOS_COMPANION_BLE_PIN_MAX -
+                         sigurdos::comms::SIGURDOS_COMPANION_BLE_PIN_MIN + 1));
     p.ble_pin = pin;
     sigurdos::prefs_set(p);
 }
@@ -542,15 +542,9 @@ public:
     }
 
     bool setBlePin(uint32_t pin) override {
-        // Align with the on-device 4-digit PIN gate (screens_common.cpp:280)
-        // and settings PIN setter (screen_settings_system.cpp:678), which both
-        // cap at 4 digits (0–9999). Previously required 100000–999999 (6-digit),
-        // making companion-set PINs impossible to enter on the device (SEC-002).
-        if (pin > 9999) return false;
         sigurdos::NodePrefs p = sigurdos::prefs_get();
-        p.device_pin = pin;
-        sigurdos::prefs_set(p);
-        return true;
+        if (!sigurdos::mesh::applyCompanionBlePin(p, pin)) return false;
+        return sigurdos::prefs_set(p);
     }
 
     bool exportPrivateKey(uint8_t* out64) const override {

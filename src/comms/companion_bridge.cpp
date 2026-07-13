@@ -954,7 +954,7 @@ bool CompanionBridge::handleFrame(const uint8_t* frame, size_t len)
     if (cmd == CMD_SET_DEVICE_PIN && len >= 5) {
         uint32_t pin = 0;
         std::memcpy(&pin, &_cmd_frame[1], 4);
-        if (_host->setBlePin(pin)) writeOKFrame();
+        if (companionBlePinValid(pin) && _host->setBlePin(pin)) writeOKFrame();
         else writeErrFrame(ERR_CODE_ILLEGAL_ARG);
         return true;
     }

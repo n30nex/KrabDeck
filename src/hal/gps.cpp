@@ -26,6 +26,10 @@
 #include <cstdlib>
 #include <cctype>
 
+#if !defined(ESP32_PLATFORM) && !defined(_WIN32)
+#include <sys/time.h>
+#endif
+
 // ── GPS state ────────────────────────────────────────────
 static struct GPSData {
     float    latitude;

@@ -18,12 +18,14 @@
 
 #include "../screens.h"
 #include "../screens_common.h"
+#include "../finder_contact_policy.h"
 #include "../theme.h"
 #include "../responsive.h"
 #include "../../mesh/mesh_wrapper.h"
 #include "../../fonts/emoji_font.h"
 #include <lvgl.h>
 #include <cstdio>
+#include <new>
 
 namespace sigurdos::ui {
 
@@ -112,42 +114,31 @@ void finder_screen_show()
         }
     }
 
-    // ── Repeaters from contact list ────────────────
-    sigurdos::mesh::ContactInfo contacts[32];
-    int total = sigurdos::mesh::exportContactsFull(contacts, 32);
-    if (total > 32) total = 32;
-    if (total < 0) total = 0;
+    // ── Recently heard contacts (fallback) ─────────
+    if (!have_ping) {
+        sigurdos::mesh::ContactInfo* all_contacts =
+            new(std::nothrow) sigurdos::mesh::ContactInfo[MAX_CONTACTS];
+        if (all_contacts) {
+            int total = sigurdos::mesh::exportContactsFull(all_contacts, MAX_CONTACTS);
+            if (total > MAX_CONTACTS) total = MAX_CONTACTS;
+            if (total < 0) total = 0;
 
-    // Build a set of ping responder names so we don't double-show
-    bool is_ping_responder[32] = {};
-    if (have_ping) {
-        int np = sigurdos::mesh::getPingResultCount();
-        for (int i = 0; i < np && i < 32; i++) {
-            auto* r = sigurdos::mesh::getPingResult(i);
-            if (!r) continue;
-            for (int j = 0; j < total; j++) {
-                if (strcmp(r->name, contacts[j].name) == 0) {
-                    is_ping_responder[j] = true;
-                    break;
-                }
+            sigurdos::mesh::ContactInfo recent[FINDER_RECENT_CONTACT_LIMIT];
+            const uint32_t now = sigurdos::mesh::getCurrentTime();
+            const int recent_count = finder_select_recent_contacts(
+                all_contacts, total, recent, FINDER_RECENT_CONTACT_LIMIT, now);
+            delete[] all_contacts;
+
+            for (int i = 0; i < recent_count; i++) {
+                row_n++;
+                const uint32_t age = finder_contact_age(now, recent[i].last_seen);
+                snprintf(buf, sizeof(buf), "%s  %lus ago  %ddBm",
+                         recent[i].name, (unsigned long)age, recent[i].rssi);
+                lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_WIFI, buf);
+                lv_obj_set_style_bg_color(item,
+                    lv_color_hex(row_n % 2 == 1 ? BG_TERTIARY : BG_INPUT), 0);
             }
         }
-    }
-
-    int n_repeaters = 0;
-    for (int i = 0; i < total; i++) {
-        if (contacts[i].type == ADV_TYPE_REPEATER && !is_ping_responder[i]) {
-            if (n_repeaters < i) contacts[n_repeaters] = contacts[i];
-            n_repeaters++;
-        }
-    }
-
-    for (int i = 0; i < n_repeaters; i++) {
-        row_n++;
-        snprintf(buf, sizeof(buf), "%s  %ddBm", contacts[i].name, contacts[i].rssi);
-        lv_obj_t* item = lv_list_add_btn(list, LV_SYMBOL_WIFI, buf);
-        lv_obj_set_style_bg_color(item,
-            lv_color_hex(row_n % 2 == 1 ? BG_TERTIARY : BG_INPUT), 0);
     }
 
     // ── Empty state ────────────────────────────────

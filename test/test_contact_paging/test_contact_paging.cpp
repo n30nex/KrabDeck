@@ -2,9 +2,11 @@
 // Copyright (C) 2025 Ben
 
 #include <gtest/gtest.h>
+#include <cstdio>
 
 #include "ui/contact_paging.h"
 #include "ui/contact_list_power.h"
+#include "ui/finder_contact_policy.h"
 
 namespace {
 
@@ -91,6 +93,55 @@ TEST(ContactPowerTest, QualityBadgeUsesRssiAndSnr) {
     EXPECT_STREQ(sigurdos::ui::contact_quality_name(-105, -4.0f), "FAIR");
     EXPECT_STREQ(sigurdos::ui::contact_quality_name(-120, -12.0f), "WEAK");
     EXPECT_STREQ(sigurdos::ui::contact_quality_name(0, 0.0f), "?");
+}
+
+struct FinderContactCandidate {
+    char name[16]{};
+    uint8_t type = 0;
+    uint32_t last_seen = 0;
+};
+
+TEST(FinderContactPolicyTest, ScansBeyondFirst32AcrossMixedNodeTypes) {
+    constexpr uint32_t now = 1000;
+    FinderContactCandidate contacts[40]{};
+    for (int i = 0; i < 40; i++) {
+        std::snprintf(contacts[i].name, sizeof(contacts[i].name), "Node%02d", i);
+        contacts[i].type = static_cast<uint8_t>((i % 3) + 1);
+        contacts[i].last_seen = now - static_cast<uint32_t>(40 - i);
+    }
+
+    FinderContactCandidate selected[sigurdos::ui::FINDER_RECENT_CONTACT_LIMIT]{};
+    const int count = sigurdos::ui::finder_select_recent_contacts(
+        contacts, 40, selected, sigurdos::ui::FINDER_RECENT_CONTACT_LIMIT, now);
+
+    ASSERT_EQ(count, sigurdos::ui::FINDER_RECENT_CONTACT_LIMIT);
+    EXPECT_STREQ(selected[0].name, "Node39");
+    EXPECT_STREQ(selected[31].name, "Node08");
+
+    bool saw_type[4] = {};
+    for (int i = 0; i < count; i++) saw_type[selected[i].type] = true;
+    EXPECT_TRUE(saw_type[1]);
+    EXPECT_TRUE(saw_type[2]);
+    EXPECT_TRUE(saw_type[3]);
+}
+
+TEST(FinderContactPolicyTest, Includes120SecondBoundaryAndRejectsOlderContacts) {
+    constexpr uint32_t now = 1000;
+    FinderContactCandidate contacts[4] = {
+        {"Newest", 1, now},
+        {"Boundary", 2, now - 120},
+        {"TooOld", 3, now - 121},
+        {"Unknown", 1, 0},
+    };
+    FinderContactCandidate selected[4]{};
+
+    const int count = sigurdos::ui::finder_select_recent_contacts(
+        contacts, 4, selected, 4, now);
+
+    ASSERT_EQ(count, 2);
+    EXPECT_STREQ(selected[0].name, "Newest");
+    EXPECT_STREQ(selected[1].name, "Boundary");
+    EXPECT_EQ(sigurdos::ui::finder_contact_age(now, selected[1].last_seen), 120u);
 }
 
 } // namespace

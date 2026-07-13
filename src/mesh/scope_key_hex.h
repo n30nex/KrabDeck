@@ -11,6 +11,7 @@
 // to a zero nibble (it never fails), and encode emits lowercase hex.
 
 #include <stdint.h>
+#include <string.h>
 
 namespace sigurdos {
 namespace mesh {
@@ -47,6 +48,21 @@ inline void scopeKeyHexDecode(const char* hex32, uint8_t* out16)
         else if (lo >= 'A' && lo <= 'F') b |= (lo - 'A' + 10);
         out16[i] = b;
     }
+}
+
+// Strict validation for persisted/private companion keys. The legacy decoder
+// remains permissive for compatibility, but activation must never accept a
+// truncated or non-hex key as if it were installed successfully.
+inline bool scopeKeyHexValid(const char* hex32)
+{
+    if (!hex32 || strlen(hex32) != SCOPE_KEY_HEX_LEN) return false;
+    for (int i = 0; i < SCOPE_KEY_HEX_LEN; ++i) {
+        const char c = hex32[i];
+        if (!((c >= '0' && c <= '9') ||
+              (c >= 'a' && c <= 'f') ||
+              (c >= 'A' && c <= 'F'))) return false;
+    }
+    return true;
 }
 
 } // namespace mesh

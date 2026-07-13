@@ -279,7 +279,9 @@ public:
     bool     has_connection = false;
     bool     rebooted = false, factory_reset_called = false;
     bool     scope_is_set = false;
+    bool     scope_set_succeeds = true;
     char     last_scope_name[32]{};
+    uint8_t  last_scope_key[16]{};
     bool     scope_unscoped = false, scope_cleared = false;
     bool     last_send_ok = true;
     uint32_t last_trace_tag = 0; uint8_t last_trace_path_len = 0;
@@ -347,9 +349,12 @@ public:
         if (key) std::memset(key, 0x7E, 16);
         return true;
     }
-    void setDefaultFloodScope(const char* name, const uint8_t*) override {
+    bool setDefaultFloodScope(const char* name, const uint8_t* key) override {
+        if (!scope_set_succeeds) return false;
         if (!name || !name[0]) { scope_cleared = true; last_scope_name[0] = '\0'; }
         else std::strncpy(last_scope_name, name, sizeof(last_scope_name) - 1);
+        if (key) std::memcpy(last_scope_key, key, sizeof(last_scope_key));
+        return true;
     }
     void setFloodScopeOverride(const uint8_t* key, bool unscoped) override {
         scope_unscoped = unscoped; scope_cleared = (!unscoped && !key);
@@ -1135,10 +1140,34 @@ TEST_F(CompanionProtocolTest, DefaultFloodScopeGetSet) {
     EXPECT_STREQ(host.last_scope_name, "#crew");
 
     serial.writes.clear();
+    std::fill(set.begin(), set.end(), 0);
+    set[0] = cc::CMD_SET_DEFAULT_FLOOD_SCOPE;
+    std::strcpy((char*)&set[1], "$private");
+    std::memset(&set[1 + 31], 0x5A, 16);
+    ASSERT_TRUE(bridge.handleFrame(set.data(), set.size()));
+    EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_OK);
+    EXPECT_STREQ(host.last_scope_name, "$private");
+    EXPECT_EQ(host.last_scope_key[0], 0x5A);
+
+    serial.writes.clear();
     uint8_t clr[1] = { cc::CMD_SET_DEFAULT_FLOOD_SCOPE };  // <1+31+16 → clear
     ASSERT_TRUE(bridge.handleFrame(clr, sizeof(clr)));
     EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_OK);
     EXPECT_TRUE(host.scope_cleared);
+}
+
+TEST_F(CompanionProtocolTest, DefaultFloodScopeRejectsFailedCommit) {
+    host.scope_set_succeeds = false;
+    std::vector<uint8_t> set(1 + 31 + 16, 0);
+    set[0] = cc::CMD_SET_DEFAULT_FLOOD_SCOPE;
+    std::strcpy((char*)&set[1], "$private");
+    ASSERT_TRUE(bridge.handleFrame(set.data(), set.size()));
+    EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_ERR);
+
+    serial.writes.clear();
+    uint8_t clear[1] = { cc::CMD_SET_DEFAULT_FLOOD_SCOPE };
+    ASSERT_TRUE(bridge.handleFrame(clear, sizeof(clear)));
+    EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_ERR);
 }
 
 TEST_F(CompanionProtocolTest, FloodScopeKeyOverride) {

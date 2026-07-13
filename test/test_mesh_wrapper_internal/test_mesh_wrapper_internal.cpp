@@ -9,6 +9,7 @@
 
 #include <gtest/gtest.h>
 #include "mesh/scope_key_hex.h"
+#include "mesh/scope_activation_policy.h"
 #include "mesh/mesh_init_lifecycle.h"
 #include "mesh/mesh_wrapper_internal.h"
 
@@ -19,6 +20,8 @@ namespace {
 
 using sigurdos::mesh::scopeKeyHexEncode;
 using sigurdos::mesh::scopeKeyHexDecode;
+using sigurdos::mesh::scopeKeyHexValid;
+using sigurdos::mesh::scopeActivationInputsValid;
 using sigurdos::mesh::formatDmConversation;
 using sigurdos::mesh::detail::MeshInitState;
 
@@ -78,6 +81,36 @@ TEST(ScopeKeyHex, NullArgumentsAreNoOps)
     scopeKeyHexDecode(nullptr, out);
     EXPECT_EQ(out[0], 7);
     scopeKeyHexDecode("00", nullptr);  // must not crash
+}
+
+TEST(ScopeKeyHex, StrictValidationRejectsStalePersistedKeys)
+{
+    EXPECT_TRUE(scopeKeyHexValid("00010a0f107f80abcdefff42995aa53c"));
+    EXPECT_TRUE(scopeKeyHexValid("00010A0F107F80ABCDEFFF42995AA53C"));
+    EXPECT_FALSE(scopeKeyHexValid("00010a0f107f80abcdefff42995aa53"));
+    EXPECT_FALSE(scopeKeyHexValid("00010a0f107f80abcdefff42995aa53cg"));
+    EXPECT_FALSE(scopeKeyHexValid(nullptr));
+}
+
+TEST(ScopeActivationPolicy, AcceptsPublicHashtagAndPrivateScopes)
+{
+    uint8_t key[16] = {1};
+    EXPECT_TRUE(scopeActivationInputsValid("Public", nullptr));
+    EXPECT_TRUE(scopeActivationInputsValid("#crew", nullptr));
+    EXPECT_TRUE(scopeActivationInputsValid("$private", key));
+    EXPECT_TRUE(scopeActivationInputsValid("", nullptr));
+}
+
+TEST(ScopeActivationPolicy, RejectsMissingPrivateKeysAndInvalidNames)
+{
+    uint8_t zero[16]{};
+    uint8_t key[16] = {1};
+    EXPECT_FALSE(scopeActivationInputsValid("$private", nullptr));
+    EXPECT_FALSE(scopeActivationInputsValid("$private", zero));
+    EXPECT_FALSE(scopeActivationInputsValid("bad scope", key));
+    EXPECT_FALSE(scopeActivationInputsValid("bad/name", key));
+    EXPECT_FALSE(scopeActivationInputsValid(
+        "#123456789012345678901234567890", key));
 }
 
 TEST(FormatDmConversation, PrefixesNameWithDmMarker)

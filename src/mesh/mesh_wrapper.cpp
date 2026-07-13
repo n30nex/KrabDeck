@@ -18,6 +18,8 @@
 #include "contact_uri.h"
 #include "persistence_store.h"
 #include "response_copy.h"
+#include "scope_key_hex.h"
+#include "scope_activation_policy.h"
 #include "hal/tdeck_board.h"
 #include "hal/tdeck_pins.h"
 #include "hal/gps.h"
@@ -1085,16 +1087,25 @@ bool init(bool spiffs_ok)
     regionsLoad();
     syncRegionsFromChannels();
 
-    // Restore the active flood-scope region after reboot so outgoing floods
-    // continue to be stamped with the correct transport code.
+    // Restore the active flood-scope region after reboot. Private keys live in
+    // NodePrefs and must be reinstalled into the runtime transport-key store
+    // before the name can be activated.
     {
         const sigurdos::NodePrefs& np = sigurdos::prefs_get();
         if (np.active_region[0] && g_mesh) {
             RegionEntry* r = sigurdos::mesh::findRegion(np.active_region);
-            if (r) {
-                TransportKey keys[1];
-                int nk = sigurdos::mesh::getRegionMap() ? sigurdos::mesh::getRegionMap()->getTransportKeysFor(*r, keys, 1) : 0;
-                if (nk > 0) g_mesh->setActiveScope(keys[0].key);
+            bool ready = r != nullptr;
+            if (ready && r->name[0] == '$') {
+                uint8_t key[16]{};
+                ready = sigurdos::mesh::scopeKeyHexValid(np.default_scope_key_hex);
+                if (ready) {
+                    sigurdos::mesh::scopeKeyHexDecode(np.default_scope_key_hex, key);
+                    ready = sigurdos::mesh::installPrivateRegionKey(*r, key);
+                }
+            }
+            if (!ready || !setActiveRegion(np.active_region)) {
+                Serial.println("[mesh] WARNING: clearing stale active flood scope");
+                setActiveRegionWithKey("", nullptr);
             }
         }
     }
@@ -2405,30 +2416,65 @@ bool getChannelSecretHex(int channel_idx, char* hex_out, size_t hex_sz)
 // mesh_wrapper provides g_mesh-dependent extras.
 
 bool setActiveRegion(const char* name) {
-    // Update NodePrefs + cache (via regions module)
-    sigurdos::mesh::setActiveRegionName(name);
-
-    // Propagate the TransportKey to the mesh instance
-    if (g_mesh) {
-        if (name && name[0]) {
-            ::RegionEntry* r = sigurdos::mesh::findRegion(name);
-            if (r) {
-                RegionMap* map = sigurdos::mesh::getRegionMap();
-                if (map) {
-                    TransportKey keys[1];
-                    int nk = map->getTransportKeysFor(*r, keys, 1);
-                    if (nk > 0) {
-                        g_mesh->setActiveScope(keys[0].key);
-                        return true;
-                    }
-                }
-            }
-            // Region name saved but key not in store — clear scope
-            g_mesh->clearActiveScope();
-        } else {
-            g_mesh->clearActiveScope();
-        }
+    if (!g_mesh) return false;
+    if (!name || !name[0]) {
+        if (!sigurdos::mesh::setActiveRegionName("")) return false;
+        g_mesh->clearActiveScope();
+        return true;
     }
+
+    ::RegionEntry* region = sigurdos::mesh::findRegion(name);
+    RegionMap* map = sigurdos::mesh::getRegionMap();
+    if (!region || !map) return false;
+    TransportKey key{};
+    if (map->getTransportKeysFor(*region, &key, 1) != 1) return false;
+    if (!sigurdos::mesh::setActiveRegionName(region->name)) return false;
+    g_mesh->setActiveScope(key.key);
+    return true;
+}
+
+bool setActiveRegionWithKey(const char* name, const uint8_t* private_key) {
+    if (!g_mesh) return false;
+    if (!name || !name[0]) {
+        if (!sigurdos::mesh::setActiveRegionNameWithKey("", nullptr)) return false;
+        g_mesh->clearActiveScope();
+        return true;
+    }
+    if (!sigurdos::mesh::scopeActivationInputsValid(name, private_key)) return false;
+
+    ::RegionEntry* region = sigurdos::mesh::findRegion(name);
+    if (!region) region = sigurdos::mesh::addRegion(name);
+    RegionMap* map = sigurdos::mesh::getRegionMap();
+    if (!region || !map) return false;
+
+    TransportKey selected{};
+    TransportKey previous{};
+    int previous_count = 0;
+    char key_hex[sigurdos::mesh::SCOPE_KEY_HEX_LEN + 1]{};
+    if (region->name[0] == '$') {
+        if (!private_key) return false;
+        previous_count = map->getTransportKeysFor(*region, &previous, 1);
+        if (!sigurdos::mesh::installPrivateRegionKey(*region, private_key)) {
+            return false;
+        }
+        if (map->getTransportKeysFor(*region, &selected, 1) != 1) return false;
+        sigurdos::mesh::scopeKeyHexEncode(private_key, key_hex);
+    } else {
+        if (map->getTransportKeysFor(*region, &selected, 1) != 1) return false;
+    }
+
+    if (!sigurdos::mesh::setActiveRegionNameWithKey(
+            region->name, region->name[0] == '$' ? key_hex : nullptr)) {
+        if (region->name[0] == '$') {
+            if (previous_count == 1) {
+                sigurdos::mesh::installPrivateRegionKey(*region, previous.key);
+            } else {
+                sigurdos::mesh::removePrivateRegionKey(*region);
+            }
+        }
+        return false;
+    }
+    g_mesh->setActiveScope(selected.key);
     return true;
 }
 

@@ -1262,14 +1262,17 @@ bool CompanionBridge::handleFrame(const uint8_t* frame, size_t len)
             name[31] = '\0';
             size_t nlen = strnlen(name, 31);
             if (nlen > 0) {
-                _host->setDefaultFloodScope(name, &_cmd_frame[1 + 31]);
-                writeOKFrame();
+                if (_host->setDefaultFloodScope(name, &_cmd_frame[1 + 31])) {
+                    writeOKFrame();
+                } else {
+                    writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+                }
             } else {
                 writeErrFrame(ERR_CODE_ILLEGAL_ARG);
             }
         } else {
-            _host->setDefaultFloodScope(nullptr, nullptr);  // clear
-            writeOKFrame();
+            if (_host->setDefaultFloodScope(nullptr, nullptr)) writeOKFrame();
+            else writeErrFrame(ERR_CODE_ILLEGAL_ARG);
         }
         return true;
     }

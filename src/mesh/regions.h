@@ -34,6 +34,11 @@ bool regionsPersistenceDirty();
 /// Returns the global RegionMap instance (non-null after regionsInit).
 RegionMap* getRegionMap();
 
+/// Install and verify the single key for a private ($) region. The key store
+/// is updated atomically and unrelated region keys are preserved.
+bool installPrivateRegionKey(const ::RegionEntry& region, const uint8_t* key16);
+bool removePrivateRegionKey(const ::RegionEntry& region);
+
 // ── CRUD ────────────────────────────────────────────────
 
 /// Add or update a region. For public (#) names, transport keys are
@@ -101,6 +106,11 @@ const char* getActiveRegion();
 /// Set the active flood-scope region name (NodePrefs only — does NOT
 /// propagate to mesh; call mesh_wrapper::setActiveRegion for that).
 bool setActiveRegionName(const char* name);
+
+/// Commit the active name and its matching private-key preference together.
+/// A null key_hex clears the persisted private key. The in-memory name cache
+/// changes only after prefs_set() succeeds.
+bool setActiveRegionNameWithKey(const char* name, const char* key_hex);
 
 // ── Channel sync ────────────────────────────────────────
 

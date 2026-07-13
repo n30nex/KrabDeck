@@ -746,12 +746,13 @@ static bool loaded_message_exists(int idx, const char* sender, const char* text,
 }
 
 static bool append_loaded_channel_message(int idx, const char* sender, const char* text,
-                                          uint32_t timestamp, bool is_self, bool acked)
+                                          uint32_t timestamp, bool is_self, bool acked,
+                                          bool confirmation_lost)
 {
     if (idx < 0 || idx >= MAX_CHANNELS) return false;
     ensure_channel_buffer(idx);
     if (loaded_message_exists(idx, sender, text, timestamp, is_self)) {
-        if (acked && has_channel_buffer(idx)) {
+        if ((acked || confirmation_lost) && has_channel_buffer(idx)) {
             for (uint16_t i = 0; i < ch_buffers[idx].count(); i++) {
                 ChannelMessage& msg = ch_buffers[idx].at(i);
                 uint32_t delta = msg.timestamp > timestamp
@@ -760,7 +761,12 @@ static bool append_loaded_channel_message(int idx, const char* sender, const cha
                 if (msg.is_self == is_self && delta <= 2 &&
                     strcmp(msg.sender, sender ? sender : "") == 0 &&
                     strcmp(msg.text, text ? text : "") == 0) {
-                    msg.acked = true;
+                    if (acked) {
+                        msg.acked = true;
+                        msg.confirmation_lost = false;
+                    } else if (!msg.acked) {
+                        msg.confirmation_lost = true;
+                    }
                 }
             }
         }
@@ -770,6 +776,9 @@ static bool append_loaded_channel_message(int idx, const char* sender, const cha
     append_channel_message(idx, sender, text, timestamp, is_self);
     if (acked && has_channel_buffer(idx) && ch_buffers[idx].count() > 0) {
         ch_buffers[idx].markLastAcked();
+    } else if (confirmation_lost && has_channel_buffer(idx) &&
+               ch_buffers[idx].count() > 0) {
+        ch_buffers[idx].at(ch_buffers[idx].count() - 1).confirmation_lost = true;
     }
     return true;
 }
@@ -817,7 +826,8 @@ static void chat_load_stored_messages()
             }
         }
         append_loaded_channel_message(idx, msg.sender, text, msg.timestamp,
-                                      msg.is_self, msg.acked);
+                                      msg.is_self, msg.acked,
+                                      msg.confirmation_lost);
     }
     heap_caps_free(recent);
 }
@@ -1272,7 +1282,8 @@ static void create_top_bar()
 // ════════════════════════════════════════════════════
 static lv_obj_t* create_bubble(lv_obj_t* parent, const char* sender,
                                 const char* text, uint32_t timestamp,
-                                bool is_self, bool acked)
+                                bool is_self, bool acked,
+                                bool confirmation_lost)
 {
     lv_obj_t* container = lv_obj_create(parent);
     lv_obj_set_width(container, LV_PCT(100));
@@ -1323,10 +1334,14 @@ static lv_obj_t* create_bubble(lv_obj_t* parent, const char* sender,
         is_self ? lv_color_hex(0xffffff) : lv_color_hex(ACCENT), 0);
     lv_obj_set_style_text_font(name, emoji_wrapped_montserrat_10, 0);
 
-    char time_buf[10];
+    char time_buf[16];
     if (is_self && acked) {
         uint32_t t = timestamp % 86400;
         snprintf(time_buf, sizeof(time_buf), "%02d:%02d \xe2\x9c\x85",
+                 (t / 3600) % 24, (t / 60) % 60);
+    } else if (is_self && confirmation_lost) {
+        uint32_t t = timestamp % 86400;
+        snprintf(time_buf, sizeof(time_buf), "%02d:%02d NO ACK",
                  (t / 3600) % 24, (t / 60) % 60);
     } else {
         format_time(time_buf, sizeof(time_buf), timestamp);
@@ -1350,7 +1365,7 @@ static lv_obj_t* create_bubble(lv_obj_t* parent, const char* sender,
 
 static void bind_bubble(lv_obj_t* container, const char* sender,
                         const char* text, uint32_t timestamp,
-                        bool is_self, bool acked)
+                        bool is_self, bool acked, bool confirmation_lost)
 {
     if (!container) return;
     lv_obj_t* bubble = lv_obj_get_child(container, 0);
@@ -1376,6 +1391,10 @@ static void bind_bubble(lv_obj_t* container, const char* sender,
     if (is_self && acked) {
         const uint32_t t = timestamp % 86400;
         snprintf(time_buf, sizeof(time_buf), "%02d:%02d \xe2\x9c\x85",
+                 (t / 3600) % 24, (t / 60) % 60);
+    } else if (is_self && confirmation_lost) {
+        const uint32_t t = timestamp % 86400;
+        snprintf(time_buf, sizeof(time_buf), "%02d:%02d NO ACK",
                  (t / 3600) % 24, (t / 60) % 60);
     } else {
         format_time(time_buf, sizeof(time_buf), timestamp);
@@ -1428,7 +1447,7 @@ static void create_message_list()
     lv_obj_add_flag(chat_older_btn, LV_OBJ_FLAG_HIDDEN);
 
     for (int i = 0; i < CHAT_RENDER_WINDOW; ++i) {
-        chat_bubble_pool[i] = create_bubble(msg_list, "", "", 0, false, false);
+        chat_bubble_pool[i] = create_bubble(msg_list, "", "", 0, false, false, false);
         lv_obj_add_flag(chat_bubble_pool[i], LV_OBJ_FLAG_HIDDEN);
     }
 
@@ -1453,6 +1472,21 @@ static void create_message_list()
     // No scroll snap — messages stay at bottom naturally.
     // Overscroll is prevented by the flag removals above,
     // and the trackball handler also clamps scroll deltas.
+}
+
+static void refresh_delivery_state(ChannelMessage& msg)
+{
+    if (!msg.is_self || msg.acked || msg.confirmation_lost ||
+        active_channel < 0 || active_channel >= MAX_CHANNELS ||
+        strncmp(dyn_channels[active_channel], "DM: ", 4) != 0) {
+        return;
+    }
+    const char* dest = dyn_channels[active_channel] + 4;
+    if (sigurdos::mesh::isMessageAcked(dest, msg.timestamp)) {
+        msg.acked = true;
+    } else if (sigurdos::mesh::isMessageConfirmationLost(dest, msg.timestamp)) {
+        msg.confirmation_lost = true;
+    }
 }
 
 static void render_active_messages()
@@ -1489,9 +1523,11 @@ static void render_active_messages()
                 int idx = search_matches[i];
                 if (idx < 0 || idx >= ch_buffers[active_channel].count()) continue;
                 ChannelMessage& msg = ch_buffers[active_channel].at(idx);
+                refresh_delivery_state(msg);
                 lv_obj_t* bubble = chat_bubble_pool[slot];
                 bind_bubble(bubble, msg.sender, msg.text,
-                            msg.timestamp, msg.is_self, msg.acked);
+                            msg.timestamp, msg.is_self, msg.acked,
+                            msg.confirmation_lost);
                 // Highlight the current search match
                 if (i == search_current_match && bubble) {
                     lv_obj_t* first_child = lv_obj_get_child(bubble, 0);
@@ -1531,6 +1567,7 @@ static void render_active_messages()
     int slot = 0;
     for (int i = window.start; i < window.end; i++, slot++) {
         ChannelMessage& msg = ch_buffers[active_channel].at(i);
+        refresh_delivery_state(msg);
 
         // Check ACK status for self-sent DM messages
         if (msg.is_self && !msg.acked) {
@@ -1543,7 +1580,8 @@ static void render_active_messages()
         }
 
         bind_bubble(chat_bubble_pool[slot], msg.sender, msg.text,
-                    msg.timestamp, msg.is_self, msg.acked);
+                    msg.timestamp, msg.is_self, msg.acked,
+                    msg.confirmation_lost);
     }
 
     if (window.end < total) {
@@ -2579,10 +2617,10 @@ void chat_screen_add_msg_at(const char* channel, const char* sender, const char*
 void chat_screen_refresh_acks()
 {
     if (!msg_list) return;
-    static int last_ack_counter = 0;
-    int cur = sigurdos::mesh::getAckCounter();
-    if (cur != last_ack_counter) {
-        last_ack_counter = cur;
+    static int last_delivery_counter = 0;
+    int cur = sigurdos::mesh::getDeliveryCounter();
+    if (cur != last_delivery_counter) {
+        last_delivery_counter = cur;
         render_active_messages();
     }
 }

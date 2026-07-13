@@ -422,6 +422,9 @@ float    sigurdos_gps_speed_kn()     { return gps.speed_kn; }
 float    sigurdos_gps_heading()      { return gps.heading; }
 uint8_t  sigurdos_gps_satellites()   { return gps.satellites; }
 uint8_t  sigurdos_gps_fix_quality()  { return gps.fix_quality; }
+uint32_t sigurdos_gps_active_baud()       { return gps.active_baud; }
+uint32_t sigurdos_gps_chars_processed()   { return gps.chars_processed; }
+uint32_t sigurdos_gps_sentences_received(){ return gps.sentences_received; }
 bool     sigurdos_gps_has_fix()      { return gps.has_fix; }
 uint8_t  sigurdos_gps_hour()         { return gps.hour; }
 uint8_t  sigurdos_gps_minute()       { return gps.minute; }

@@ -25,7 +25,6 @@
 #include "notifications.h"
 #include "theme.h"
 #include "responsive.h"
-#include "screen_lifetime.h"
 using namespace sigurdos::responsive;
 #include "../mesh/mesh_wrapper.h"
 #include "../hal/battery.h"
@@ -40,7 +39,6 @@ namespace ui {
 
 static lv_obj_t* splash_scr = nullptr;
 static lv_obj_t* splash_status = nullptr;
-static ScreenLifetime splash_lifetime;
 static uint32_t splash_start = 0;
 static bool home_shown = false;
 static bool persisted_state_loaded = false;
@@ -54,9 +52,6 @@ void init()
     // ── Splash Screen ─────────────────────────────────
     splash_scr = lv_obj_create(nullptr);
     theme::apply_dark_bg(splash_scr);
-    splash_lifetime.bind(splash_scr);
-    splash_lifetime.track(&splash_scr);
-    splash_lifetime.track(&splash_status);
 
     lv_obj_t* logo = lv_label_create(splash_scr);
     lv_label_set_text(logo, "SigurdOS");
@@ -166,6 +161,38 @@ void loop()
                 chat_screen_add_msg_at(msgs[i].channel, msgs[i].sender,
                                        msgs[i].text, msgs[i].timestamp,
                                        msgs[i].is_self);
-                chat_screen_add_stored_msg(msgs[i].channel, msgs[i].sender,
-                                           msgs[i].text, msgs[i].timestamp,
-                                           msgs[i].is_self, msgs[i].store_id);
+            }
+            if (n > 0) home_screen_update_badges();
+            // Refresh ACK status on the current chat screen
+            chat_screen_refresh_acks();
+        }
+        notifications_loop();
+    }
+}
+
+bool handle_trackball_event(SigurdOSTrackballEvent event)
+{
+    if (!home_shown) return false;
+    // Block all trackball events while PIN entry screen is displayed
+    // Prevents back-swipe bypass of PIN authentication (#541)
+    if (is_pin_entry_active()) return true;
+    if (current_screen() == Screen::Home) {
+        home_screen_handle_trackball(event);
+        return true;
+    }
+    if (current_screen() == Screen::Chat) {
+        // Chat handles its own Left (channel list toggle); fall through
+        // for non-messaging states where chat returns false
+        if (chat_screen_handle_trackball(event)) return true;
+    }
+    if (current_screen() == Screen::Map) {
+        if (map_screen_handle_trackball(event)) return true;
+        // Allow Left to still work for back navigation
+        return handle_back_swipe(event);
+    }
+    // Universal back-swipe: two-swipe commit for all other screens
+    return handle_back_swipe(event);
+}
+
+} // namespace ui
+} // namespace sigurdos

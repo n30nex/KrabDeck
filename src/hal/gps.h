@@ -64,3 +64,8 @@ void sigurdos_gps_service(bool background_enabled, uint16_t background_interval_
 // through the system clock setter and mark it synced only after that succeeds.
 bool    sigurdos_gps_get_pending_time(SigurdOSGpsUtcTime* out);
 void    sigurdos_gps_mark_time_synced();
+
+// GPS diagnostic counters
+uint32_t sigurdos_gps_active_baud();
+uint32_t sigurdos_gps_chars_processed();
+uint32_t sigurdos_gps_sentences_received();

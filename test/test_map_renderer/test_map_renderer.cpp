@@ -18,6 +18,7 @@
 
 #include <cmath>
 #include <array>
+#include <cstdlib>
 
 #include <gtest/gtest.h>
 
@@ -253,6 +254,30 @@ TEST_F(MapRendererMathTest, ContactApisRejectInvalidPointerCountCombinations) {
     EXPECT_FALSE(sigurdos_map_contact_args_valid(nullptr, 1));
     EXPECT_FALSE(sigurdos_map_contact_args_valid(nullptr, -1));
     EXPECT_FALSE(sigurdos_map_contact_args_valid(&contact_storage, -1));
+}
+
+TEST_F(MapRendererMathTest, OwnedDiscoveryBufferIsFreedExactlyOnce) {
+    int allocations = 0;
+    int frees = 0;
+    void* buffer = std::malloc(40960);
+    ASSERT_NE(buffer, nullptr);
+    ++allocations;
+
+    EXPECT_TRUE(sigurdos_map_release_owned_buffer(
+        buffer, [&frees](void* allocation) {
+            ++frees;
+            std::free(allocation);
+        }));
+    EXPECT_EQ(buffer, nullptr);
+    EXPECT_EQ(allocations, 1);
+    EXPECT_EQ(frees, 1);
+
+    EXPECT_FALSE(sigurdos_map_release_owned_buffer(
+        buffer, [&frees](void* allocation) {
+            ++frees;
+            std::free(allocation);
+        }));
+    EXPECT_EQ(frees, 1);
 }
 
 } // namespace

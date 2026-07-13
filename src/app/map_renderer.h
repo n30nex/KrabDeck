@@ -237,6 +237,14 @@ inline bool sigurdos_map_contact_args_valid(const void* contacts, int count) {
     return count >= 0 && (count == 0 || contacts != nullptr);
 }
 
+template <typename T, typename FreeFn>
+inline bool sigurdos_map_release_owned_buffer(T*& buffer, FreeFn free_fn) {
+    if (!buffer) return false;
+    free_fn(buffer);
+    buffer = nullptr;
+    return true;
+}
+
 // Initialize the map renderer with LVGL parent object
 // Call after LVGL is initialized and SD card is mounted
 void sigurdos_map_init();

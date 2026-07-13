@@ -16,6 +16,7 @@
 #include "regions.h"
 #include "sigurd_mesh_v2.h"
 #include "advert_blob.h"
+#include "path_codec.h"
 #include "comms/companion_bridge.h"
 #include "comms/observed_ble_interface.h"
 #include "hal/tdeck_pins.h"
@@ -612,7 +613,9 @@ public:
         return true;
     }
     bool addOrUpdateContact(const CompanionContact& c) override {
-        if (!mesh_ptr()) return false;
+        if (!mesh_ptr() || !sigurdos::mesh::path::storedLengthValid(c.out_path_len)) {
+            return false;
+        }
         ::ContactInfo* existing = mesh_ptr()->lookupContactByPubKey((const uint8_t*)c.pub_key, 32);
         ::ContactInfo ci{};
         if (existing) ci = *existing;
@@ -935,15 +938,13 @@ public:
                        uint32_t* timestamp_out) const override {
         if (!mesh_ptr() || !pub_key) return false;
         const auto* entry = mesh_ptr()->getAdvertPathByKey(pub_key);
-        if (!entry || !::mesh::Packet::isValidPathLen(entry->path_len)) return false;
-        const size_t path_bytes =
-            (size_t)(entry->path_len & 63) * (size_t)((entry->path_len >> 6) + 1);
+        if (!entry || !sigurdos::mesh::path::encodedLengthValid(
+                          entry->encoded_path_len)) return false;
+        const size_t path_bytes = sigurdos::mesh::path::byteCount(
+            entry->encoded_path_len);
         if (path_bytes > path_capacity || (path_bytes > 0 && !path_out)) return false;
-        if (path_bytes > 0 &&
-            ::mesh::Packet::writePath(path_out, entry->path, entry->path_len) != path_bytes) {
-            return false;
-        }
-        if (path_descriptor_out) *path_descriptor_out = entry->path_len;
+        if (path_bytes > 0) memcpy(path_out, entry->path, path_bytes);
+        if (path_descriptor_out) *path_descriptor_out = entry->encoded_path_len;
         if (path_bytes_out) *path_bytes_out = path_bytes;
         if (timestamp_out) *timestamp_out = entry->recv_timestamp;
         return true;

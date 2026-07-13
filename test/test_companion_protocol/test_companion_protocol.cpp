@@ -274,6 +274,7 @@ public:
     int32_t  last_lat = 0, last_lon = 0;
     bool     contact_found = true;
     bool     add_contact_ok = true;
+    bool     add_contact_called = false;
     sigurdos::comms::CompanionContact last_added{};
     bool     has_connection = false;
     bool     rebooted = false, factory_reset_called = false;
@@ -303,7 +304,7 @@ public:
         return true;
     }
     bool addOrUpdateContact(const sigurdos::comms::CompanionContact& c) override {
-        last_added = c; return add_contact_ok;
+        add_contact_called = true; last_added = c; return add_contact_ok;
     }
     bool removeContactByPubKey(const uint8_t*) override { return contact_found; }
     bool resetPathByPubKey(const uint8_t*) override { return contact_found; }
@@ -931,6 +932,74 @@ TEST_F(CompanionProtocolTest, AddUpdateContactParsesFrame) {
     EXPECT_EQ(host.last_added.type, 1);
     EXPECT_EQ(host.last_added.pub_key[0], 0x10);
     EXPECT_STREQ(host.last_added.name, "Bob");
+}
+
+TEST_F(CompanionProtocolTest, AddUpdateContactRejectsInvalidEncodedPathBeforeMutation) {
+    std::vector<uint8_t> f(1 + 32 + 2 + 1 + 64 + 32 + 4, 0);
+    f[0] = cc::CMD_ADD_UPDATE_CONTACT;
+    f[35] = 0x61;  // 33 two-byte hashes require 66 bytes
+
+    ASSERT_TRUE(bridge.handleFrame(f.data(), f.size()));
+    EXPECT_FALSE(host.add_contact_called);
+    ASSERT_EQ(serial.writes.size(), 1u);
+    EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_ERR);
+    EXPECT_EQ(serial.writes[0][1], cc::ERR_CODE_ILLEGAL_ARG);
+}
+
+TEST_F(CompanionProtocolTest, AdvertPathCopiesPhysicalBytesNotEncodedValue) {
+    host.advert_path_found = true;
+    host.advert_path_descriptor = 0x41;  // one two-byte hash
+    host.advert_path_bytes = {0xAA, 0xBB};
+    host.advert_path_timestamp = 0x10203040;
+    std::vector<uint8_t> f(2 + 32, 0);
+    f[0] = cc::CMD_GET_ADVERT_PATH;
+
+    ASSERT_TRUE(bridge.handleFrame(f.data(), f.size()));
+    ASSERT_EQ(serial.writes.size(), 1u);
+    const auto& out = serial.writes[0];
+    ASSERT_EQ(out.size(), 8u);  // code + timestamp + encoding + 2 path bytes
+    EXPECT_EQ(out[0], cc::RESP_CODE_ADVERT_PATH);
+    EXPECT_EQ(out[5], 0x41);
+    EXPECT_EQ(out[6], 0xAA);
+    EXPECT_EQ(out[7], 0xBB);
+}
+
+TEST_F(CompanionProtocolTest, AdvertPathRejectsMismatchedCopiedByteCount) {
+    host.advert_path_found = true;
+    host.advert_path_descriptor = 0x41;  // requires two physical bytes
+    host.advert_path_bytes = {0xAA};
+    std::vector<uint8_t> f(2 + 32, 0);
+    f[0] = cc::CMD_GET_ADVERT_PATH;
+
+    ASSERT_TRUE(bridge.handleFrame(f.data(), f.size()));
+    ASSERT_EQ(serial.writes.size(), 1u);
+    EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_ERR);
+    EXPECT_EQ(serial.writes[0][1], cc::ERR_CODE_NOT_FOUND);
+}
+
+TEST_F(CompanionProtocolTest, AdvertPathSupportsMaximumPathsInEveryHashMode) {
+    const struct {
+        uint8_t encoded_len;
+        size_t byte_count;
+    } cases[] = {
+        {0x3F, 63},  // 63 one-byte hashes
+        {0x60, 64},  // 32 two-byte hashes
+        {0x95, 63},  // 21 three-byte hashes
+    };
+    std::vector<uint8_t> f(2 + 32, 0);
+    f[0] = cc::CMD_GET_ADVERT_PATH;
+    host.advert_path_found = true;
+
+    for (const auto& c : cases) {
+        serial.writes.clear();
+        host.advert_path_descriptor = c.encoded_len;
+        host.advert_path_bytes.assign(c.byte_count, 0xA5);
+        ASSERT_TRUE(bridge.handleFrame(f.data(), f.size()));
+        ASSERT_EQ(serial.writes.size(), 1u);
+        EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_ADVERT_PATH);
+        EXPECT_EQ(serial.writes[0][5], c.encoded_len);
+        EXPECT_EQ(serial.writes[0].size(), c.byte_count + 6);
+    }
 }
 
 TEST_F(CompanionProtocolTest, GetContactByKeyAndNotFound) {
@@ -1684,6 +1753,25 @@ TEST_F(CompanionProtocolTest, StatusAndTelemetryPushesRejectOversizedBlobs) {
     EXPECT_FALSE(bridge.pushStatusResponse(prefix, nullptr, 1));
     EXPECT_FALSE(bridge.pushTelemetryResponse(prefix, nullptr, 1));
     EXPECT_TRUE(serial.writes.empty());
+}
+
+TEST_F(CompanionProtocolTest, TracePushUsesHashBytesAndHopSnrCountSeparately) {
+    uint8_t hashes[8] = {0, 1, 2, 3, 4, 5, 6, 7};
+    uint8_t snrs[4] = {10, 11, 12, 13};
+
+    ASSERT_TRUE(bridge.pushTraceData(1, 2, 1, hashes, snrs, 8, -4));
+    ASSERT_EQ(serial.writes.size(), 1u);
+    EXPECT_EQ(serial.writes[0].size(), 25u);  // 12 + 8 hashes + 4 SNRs + final
+
+    serial.writes.clear();
+    ASSERT_TRUE(bridge.pushTraceData(1, 2, 2, hashes, snrs, 8, -4));
+    ASSERT_EQ(serial.writes.size(), 1u);
+    EXPECT_EQ(serial.writes[0].size(), 23u);  // 12 + 8 hashes + 2 SNRs + final
+
+    serial.writes.clear();
+    EXPECT_FALSE(bridge.pushTraceData(1, 2, 1, hashes, snrs, 7, -4));
+    EXPECT_TRUE(serial.writes.empty());
+    EXPECT_FALSE(bridge.pushTraceData(1, 2, 0, hashes, nullptr, 1, -4));
 }
 
 TEST_F(CompanionProtocolTest, PushRawDataMatchesStockFrameLayout) {

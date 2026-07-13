@@ -10,7 +10,7 @@ SigurdOS-TDeck is a standalone **companion-radio firmware** for the LilyGo T-Dec
 
 ## Where to find things in upstream MeshCore
 
-Every reference below links directly into **`https://github.com/meshcore-dev/MeshCore`** (main branch) so other agents can jump straight to the source. The repo submodule (`lib/meshcore/`) is pinned to companion firmware **v1.15.0 / `FIRMWARE_VER_CODE 12`** ([`examples/companion_radio/MyMesh.h`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.h)). Line numbers drift between versions — references cite **symbol names**, so grep the linked file if a line has moved. If a symbol can't be found upstream, check `lib/meshcore/` directly (the pinned commit is authoritative for what SigurdOS actually builds against).
+Every reference below links directly into **`https://github.com/meshcore-dev/MeshCore`** (main branch) so other agents can jump straight to the source. The repo submodule (`lib/meshcore/`) is pinned to commit `60ea4a91bf14` (room-server-v1.15.0-158-g60ea4a91, **`FIRMWARE_VER_CODE 13`** — see [`examples/companion_radio/MyMesh.h`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.h)). SigurdOS **deliberately advertises bridge version 12** (`FIRMWARE_VER_CODE = 12` via `companion_bridge.h`) for official-app compatibility — the mismatch between the upstream pin (13) and the advertised version (12) is intentional: SigurdOS's bridge host implements the companion protocol surface that the official app expects from a v12-class companion radio, while tracking upstream at a later pin for follow-along development. Line numbers in upstream files drift between versions — references cite **symbol names**, so grep the linked file if a line has moved. If a symbol can't be found upstream, check `lib/meshcore/` directly (the pinned commit is authoritative for what SigurdOS actually builds against).
 
 The single most useful reference is the companion radio command dispatcher:
 [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) — `handleCmdFrame()` defines all **58 `CMD_*` request codes** (numbered up to 65, with gaps), **28 `RESP_CODE_*` reply codes**, and **17 `PUSH_CODE_*` async push codes**. Almost every protocol feature below has a worked example in this one file.
@@ -177,7 +177,7 @@ struct SigurdRegion {
 
 ## Companion BLE — Connect to the Official MeshCore App ✅ IMPLEMENTED
 
-> **✅ IMPLEMENTED** — Complete `CompanionBridge` with 38+ `CMD_*` codes, `ObservedSerialBLEInterface` wrapping `SerialBLEInterface`, offline queue with `seedOfflineQueueFromStore()`, dual-consumer hook via `companion_adapter.inc`, SPIFFS message store, Bluetooth UI screen, Settings entry, build envs in `platformio.ini`, and 53 companion protocol + 5 message store native tests. The detailed plan below is preserved as historical reference.
+> **✅ IMPLEMENTED** — Complete `CompanionBridge` with 58 `CMD_*` codes (numbered up to 65, with gaps), `ObservedSerialBLEInterface` wrapping `SerialBLEInterface`, offline queue with `seedOfflineQueueFromStore()`, dual-consumer hook via `companion_adapter.cpp/h`, SPIFFS message store, Bluetooth UI screen, Settings entry, build envs in `platformio.ini`, and 53 companion protocol + 5 message store native tests. The detailed plan below is preserved as historical reference.
 
 **Goal:** let the T-Deck pair with and serve the **official MeshCore phone app** (Android/iOS) over Bluetooth LE, speaking the same companion frame protocol as a stock companion radio. The phone becomes a full client of the T-Deck's radio — sync contacts, read/send DMs and channel messages, configure the radio — *alongside* the built-in LVGL UI.
 
@@ -197,7 +197,7 @@ The MeshCore lib already ships the exact transport the app expects: [`src/helper
 
 ### Protocol surface
 
-`frame[0]` selects the operation. Companion firmware v1.15.0 defines **60+ `CMD_*`**, **28 `RESP_CODE_*`**, **16 `PUSH_CODE_*`** — all in one ~1150-line dispatcher: [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) `handleCmdFrame()`.
+`frame[0]` selects the operation. Companion firmware v1.15.0 defines **58 `CMD_*` request codes** (numbered up to 65, with gaps), **28 `RESP_CODE_*` reply codes**, and **17 `PUSH_CODE_*` async push codes** — all in one ~1150-line dispatcher: [`examples/companion_radio/MyMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp) `handleCmdFrame()`.
 
 **Connect handshake the app drives (must be byte-accurate or the app reports "incompatible"):**
 
@@ -221,7 +221,7 @@ The stock companion is a **stateless dumb modem**: the phone app is the *only* U
 
 #### R1 — the T-Deck must NEVER lose its messages
 
-1. **Persist messages to flash (prerequisite — should already be standard).** Today SigurdOS messages are **RAM-only**: per-channel arrays in [`src/ui/chat_screen.cpp`](../src/ui/chat_screen.cpp) (`ch_msgs[]` / `ch_msg_count[]`, capped at `NodePrefs.chat_msg_cap`, default 200) — **lost on every reboot** (contacts and channels persist; messages do not). Add an **append-only message log in SPIFFS** (per-conversation file or a single ring file, size-capped/rotated), written on every send/receive and **loaded into the chat UI on boot**. This is independent of BLE and overdue on its own — treat it as a foundational step that lands first.
+1. **Persist messages to flash (prerequisite — should already be standard).** ~~Today SigurdOS messages are **RAM-only**~~ **(This has been implemented in the `message_store` — messages are now persisted to SPIFFS.)** The historical plan below described per-channel arrays in [`src/ui/chat_screen.cpp`](../src/ui/chat_screen.cpp) (`ch_msgs[]` / `ch_msg_count[]`, capped at `NodePrefs.chat_msg_cap`, default 200) — **lost on every reboot**. The `message_store` now provides an append-only message log in SPIFFS (per-conversation file or a single ring file, size-capped/rotated), written on every send/receive and loaded into the chat UI on boot. This was treated as foundational and landed before BLE.
 2. **Keep the app-sync queue separate from the store.** The drain-on-read offline queue must be a **mirror for the phone**, never SigurdOS's store. On message arrival, **fan out to BOTH**: (i) the persistent log + chat UI, and (ii) the offline queue. Draining the queue to the app must never touch the log. → the T-Deck keeps its history regardless of what the app syncs or deletes.
 
 #### R2 — sent messages sync both directions
@@ -229,8 +229,8 @@ The stock companion is a **stateless dumb modem**: the phone app is the *only* U
 - **App → T-Deck (clean, fully supported):** when the bridge handles `CMD_SEND_TXT_MSG`, after calling `sendMessage()` it must **also append the outgoing text to the persistent log + chat UI** (as a self/outgoing entry keyed by recipient + `msg_timestamp`). → messages composed on the phone show up on the T-Deck.
 - **T-Deck → app (the protocol gap — be explicit):** the companion protocol has **no "device-originated send" frame.** The app only learns of sends *it* initiated (`CMD_SEND_TXT_MSG` → `RESP_CODE_SENT`, later `PUSH_CODE_SEND_CONFIRMED`) and messages *received* (the offline queue). There is **no `RESP_CODE_*`/`PUSH_CODE_*` meaning "the device sent this on its own."** So with the **unmodified official app**, a message composed on the T-Deck's own keyboard cannot appear in the app's history. Options:
   1. **Accept the limitation** (official-app compatible): T-Deck-composed messages still transmit fine over LoRa; they just aren't mirrored into the official app's thread.
-  2. **Protocol extension:** define a new `PUSH_CODE_*` ("device sent message") that **our own client** (`SlopOS-client`, the Flutter app) renders. The official app ignores unknown push codes → true two-way authored-message sync only with a cooperating client.
-  - **Recommendation:** ship R1 + the app→T-Deck direction now (works with the official app), and add the extension to `SlopOS-client` for full bidirectional authoring. **Dedup hazard:** do **not** echo a self-sent message back as a `RESP_CODE_CONTACT_MSG_RECV` — the app would mis-attribute it to the *recipient* as an incoming message.
+  2. **Protocol extension:** define a new `PUSH_CODE_*` ("device sent message") that **our own client** (`SigurdOS-client`, the Flutter app) renders. The official app ignores unknown push codes → true two-way authored-message sync only with a cooperating client.
+  - **Recommendation:** ship R1 + the app→T-Deck direction now (works with the official app), and add the extension to `SigurdOS-client` for full bidirectional authoring. **Dedup hazard:** do **not** echo a self-sent message back as a `RESP_CODE_CONTACT_MSG_RECV` — the app would mis-attribute it to the *recipient* as an incoming message.
 
 #### R3 — other changes reflect both ways
 

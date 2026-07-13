@@ -4,7 +4,7 @@
 **Repo:** `hermes-gadget/SigurdOS-tdeck`  
 **Branch audited:** `dev` (post-RC6 fix commits through `7c91dd6`)  
 **MeshCore submodule:** `60ea4a91bf14363e837037a79ce1bff7fa37483f` (companion family ~v1.15.0 + patches)  
-**Primary references:** `examples/companion_radio/MyMesh.{h,cpp}`, `src/helpers/BaseChatMesh.*`, `src/comms/companion_bridge.*`, `src/mesh/sigurd_mesh_v2.*`, `docs/MISSING_FEATURES.md`, `docs/COMPANION_SUPPORT.md`, `docs/ROADMAP.md`, `RC6.md`, `audit.md`
+**Primary references:** `examples/companion_radio/MyMesh.{h,cpp}`, `src/helpers/BaseChatMesh.*`, `src/comms/companion_bridge.*`, `src/mesh/sigurd_mesh_v2.*`, `docs/MISSING_FEATURES.md`, `docs/COMPANION_SUPPORT.md`, `docs/ROADMAP.md`, `audit.md`
 
 This document is the **actionable worklist** for bringing SigurdOS-TDeck to durable parity with MeshCore **companion-radio** behaviour (protocol + field workflows), while preserving the project identity as a standalone handheld with its own UI — not a dumb modem.
 
@@ -334,7 +334,6 @@ Parity is **not** “implements every MyMesh line.” It is:
 | `docs/ROADMAP.md` | Broader product phases |
 | `docs/FEATURES_OVERVIEW.md` | Implemented feature index |
 | `docs/KNOWN_ISSUES.md` | Open hardware/validation gaps |
-| `RC6.md` | Latest release-readiness audit |
 | `audit.md` | Static defect audit (GPS, UAF, sleep, perf) |
 | `lib/meshcore/examples/companion_radio/MyMesh.cpp` | Stock companion behaviour reference |
 | `lib/meshcore/docs/companion_protocol.md` | Host protocol narrative (may lag code) |

@@ -212,7 +212,7 @@ void repeaters_screen_show()
             lv_obj_t* target = (lv_obj_t*)lv_event_get_target(e);
             const char* name = (const char*)lv_obj_get_user_data(target);
             if (name) {
-                repeater_detail_screen_show(name);
+                navigate_to_repeater_detail(name);
             }
         }, LV_EVENT_CLICKED, nullptr);
 

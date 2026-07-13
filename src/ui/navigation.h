@@ -50,11 +50,19 @@ enum class Screen {
     WiFiNetworks,
     Bluetooth,
     Regions,
+    RepeaterDetail,
+    CustomRadioSetup,
     COUNT
 };
 
 // Navigate to a screen
 void navigate_to(Screen screen);
+
+// Parameterized nested routes. These retain the route arguments so Back can
+// re-dispatch a detail screen without bypassing navigation history.
+void navigate_to_contact_detail(const char* contact_name);
+void navigate_to_repeater_detail(const char* contact_name, bool skip_login = false);
+void navigate_to_custom_radio_setup();
 
 // Go back to previous screen
 void go_back();

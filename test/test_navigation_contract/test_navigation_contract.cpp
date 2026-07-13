@@ -27,7 +27,7 @@ namespace {
 
 using sigurdos::ui::Screen;
 
-constexpr std::array<Screen, 26> kScreens = {
+constexpr std::array<Screen, 28> kScreens = {
     Screen::Home,
     Screen::Chat,
     Screen::Contacts,
@@ -54,6 +54,8 @@ constexpr std::array<Screen, 26> kScreens = {
     Screen::WiFiNetworks,
     Screen::Bluetooth,
     Screen::Regions,
+    Screen::RepeaterDetail,
+    Screen::CustomRadioSetup,
 };
 
 TEST(NavigationContractTest, ScreenEnumCountMatchesInventory) {
@@ -103,6 +105,22 @@ TEST(NavigationContractTest, DiagnosticsAndConnectivityScreensRemainInInventory)
     EXPECT_EQ(static_cast<int>(Screen::WiFiNetworks), 23);
     EXPECT_EQ(static_cast<int>(Screen::Bluetooth), 24);
     EXPECT_EQ(static_cast<int>(Screen::Regions), 25);
+}
+
+TEST(NavigationContractTest, NestedRoutesRemainInInventory) {
+    EXPECT_EQ(static_cast<int>(Screen::RepeaterDetail), 26);
+    EXPECT_EQ(static_cast<int>(Screen::CustomRadioSetup), 27);
+}
+
+TEST(NavigationContractTest, ParameterizedRouteAPIsExist) {
+    using contact_route_fn = void (*)(const char*);
+    using repeater_route_fn = void (*)(const char*, bool);
+    using custom_route_fn = void (*)();
+
+    (void)static_cast<contact_route_fn>(sigurdos::ui::navigate_to_contact_detail);
+    (void)static_cast<repeater_route_fn>(sigurdos::ui::navigate_to_repeater_detail);
+    (void)static_cast<custom_route_fn>(sigurdos::ui::navigate_to_custom_radio_setup);
+    SUCCEED();
 }
 
 } // namespace

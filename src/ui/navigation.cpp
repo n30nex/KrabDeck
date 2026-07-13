@@ -23,6 +23,7 @@
 #include "screens.h"
 #include "onboarding_screen.h"
 #include <lvgl.h>
+#include <cstring>
 #if SIGURDOS_TELEMETRY
 #include "../diagnostics/telemetry.h"
 #endif
@@ -62,6 +63,17 @@ static bool history_empty() {
 }
 
 static int back_swipe_commit = 0; // counter for two-swipe commit
+static char contact_detail_name[32] = {};
+static char repeater_detail_name[32] = {};
+static bool repeater_detail_skip_login = false;
+
+static bool copy_route_name(char* destination, size_t capacity, const char* name)
+{
+    if (!destination || capacity == 0 || !name || !name[0]) return false;
+    std::strncpy(destination, name, capacity - 1);
+    destination[capacity - 1] = '\0';
+    return true;
+}
 
 static void dispatch_screen(Screen screen) {
     switch (screen) {
@@ -90,6 +102,16 @@ static void dispatch_screen(Screen screen) {
     case Screen::WiFiNetworks:    wifi_networks_screen_show(); break;
     case Screen::Bluetooth:       bluetooth_screen_show(); break;
     case Screen::Regions:        regions_screen_show();      break;
+    case Screen::ContactDetail:
+        if (contact_detail_name[0]) contact_detail_screen_show(contact_detail_name);
+        break;
+    case Screen::RepeaterDetail:
+        if (repeater_detail_name[0]) {
+            repeater_detail_screen_show(
+                repeater_detail_name, repeater_detail_skip_login);
+        }
+        break;
+    case Screen::CustomRadioSetup: custom_rf_screen_show(); break;
     default: break;
     }
 }
@@ -116,6 +138,32 @@ void navigate_to(Screen screen)
         static_cast<uint8_t>(screen),
         lv_tick_get());
 #endif
+}
+
+void navigate_to_contact_detail(const char* contact_name)
+{
+    if (!copy_route_name(contact_detail_name, sizeof(contact_detail_name), contact_name)) return;
+    if (current == Screen::ContactDetail) {
+        contact_detail_screen_show(contact_detail_name);
+        return;
+    }
+    navigate_to(Screen::ContactDetail);
+}
+
+void navigate_to_repeater_detail(const char* contact_name, bool skip_login)
+{
+    if (!copy_route_name(repeater_detail_name, sizeof(repeater_detail_name), contact_name)) return;
+    repeater_detail_skip_login = skip_login;
+    if (current == Screen::RepeaterDetail) {
+        repeater_detail_screen_show(repeater_detail_name, repeater_detail_skip_login);
+        return;
+    }
+    navigate_to(Screen::RepeaterDetail);
+}
+
+void navigate_to_custom_radio_setup()
+{
+    navigate_to(Screen::CustomRadioSetup);
 }
 
 void go_back()

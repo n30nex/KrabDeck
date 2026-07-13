@@ -395,6 +395,24 @@ TEST_F(MessageStoreTest, LoadUnsentOnlyReturnsUnmarkedRecords) {
     EXPECT_EQ(out[1].store_id, 3u);
 }
 
+TEST_F(MessageStoreTest, LoadUnsentPagesOldestIncomingRecordsFirst) {
+    for (uint32_t i = 1; i <= 20; ++i) {
+        char text[24];
+        std::snprintf(text, sizeof(text), "message-%lu", (unsigned long)i);
+        auto msg = makeMsg("DM: Alice", i == 3 ? "self" : "Alice", text,
+                           i, i == 3, false);
+        ASSERT_TRUE(sigurdos::mesh::messageStoreAppend(msg));
+    }
+    ASSERT_TRUE(sigurdos::mesh::messageStoreMarkCompanionSent(2));
+
+    sigurdos::mesh::StoredMessage out[16]{};
+    const int n = sigurdos::mesh::messageStoreLoadUnsent(out, 16);
+    ASSERT_EQ(n, 16);
+    EXPECT_EQ(out[0].store_id, 1u);
+    EXPECT_EQ(out[1].store_id, 4u);  // sent id 2 and self-sent id 3 are skipped
+    EXPECT_EQ(out[15].store_id, 18u);
+}
+
 TEST_F(MessageStoreTest, MetadataRoundTrips) {
     auto msg = makeMsg("DM: Alice", "Alice", "hello", 42, false, false);
     msg.txt_type = 2;  // COMPANION_TXT_SIGNED_PLAIN

@@ -653,6 +653,46 @@ TEST_F(CompanionProtocolTest, RepeatedAppStartDoesNotDuplicateSnapshotMessages) 
     EXPECT_EQ(serial.writes[4][0], sigurdos::comms::RESP_CODE_NO_MORE_MESSAGES);
 }
 
+TEST_F(CompanionProtocolTest, SyncRefillsUntilCompletePersistentBacklogDrains) {
+    constexpr uint32_t backlog_size = 33;
+    for (uint32_t i = 0; i < backlog_size; ++i) {
+        sigurdos::mesh::StoredMessage msg{};
+        std::strncpy(msg.conversation, "DM: Alice", sizeof(msg.conversation) - 1);
+        std::strncpy(msg.sender, "Alice", sizeof(msg.sender) - 1);
+        std::snprintf(msg.text, sizeof(msg.text), "backlog-%lu", (unsigned long)i);
+        msg.timestamp = 1000 + i;
+        for (int p = 0; p < 6; ++p) msg.sender_prefix[p] = (uint8_t)(0xA0 + p);
+        ASSERT_TRUE(sigurdos::mesh::messageStoreAppend(msg));
+    }
+
+    const uint8_t start[8] = {sigurdos::comms::CMD_APP_START};
+    ASSERT_TRUE(bridge.handleFrame(start, sizeof(start)));
+    ASSERT_EQ(serial.writes.size(), 2u);  // SELF_INFO + MSG_WAITING
+
+    const uint8_t sync[] = {sigurdos::comms::CMD_SYNC_NEXT_MESSAGE};
+    for (uint32_t i = 0; i < backlog_size; ++i) {
+        ASSERT_TRUE(bridge.handleFrame(sync, sizeof(sync)));
+        ASSERT_EQ(serial.writes.size(), 3u + i);
+        const auto& frame = serial.writes[2 + i];
+        ASSERT_GE(frame.size(), 16u);
+        EXPECT_EQ(frame[0], sigurdos::comms::RESP_CODE_CONTACT_MSG_RECV_V3);
+        uint32_t timestamp = 0;
+        std::memcpy(&timestamp, &frame[12], sizeof(timestamp));
+        EXPECT_EQ(timestamp, 1000u + i);
+    }
+
+    ASSERT_TRUE(bridge.handleFrame(sync, sizeof(sync)));
+    ASSERT_EQ(serial.writes.size(), 3u + backlog_size);
+    EXPECT_EQ(serial.writes.back()[0],
+              sigurdos::comms::RESP_CODE_NO_MORE_MESSAGES);
+
+    std::vector<sigurdos::mesh::StoredMessage> stored(backlog_size);
+    ASSERT_EQ(sigurdos::mesh::messageStoreLoadAll(
+                  stored.data(), static_cast<int>(stored.size())),
+              static_cast<int>(backlog_size));
+    for (const auto& msg : stored) EXPECT_TRUE(msg.companion_sent);
+}
+
 TEST_F(CompanionProtocolTest, AppStartDoesNotEchoSelfSentMessages) {
     // A message the device sent itself (is_self) must never be mirrored back to
     // the app: the app already has the ones it sent, and the protocol has no

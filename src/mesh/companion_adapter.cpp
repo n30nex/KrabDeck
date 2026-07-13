@@ -25,6 +25,7 @@
 #include "hal/radio_profiles.h"
 #include "hal/gps.h"
 #include "hal/battery.h"
+#include "diagnostics/companion_usb_console.h"
 #include "diagnostics/log.h"
 
 #include <Arduino.h>
@@ -1197,7 +1198,7 @@ void sigurdos::mesh::companionAdapterInit()
         bleValidationStartLog();
     }
 #elif defined(SIGURDOS_COMPANION_USB) && SIGURDOS_COMPANION_USB
-    g_usb_serial.begin(Serial);
+    g_usb_serial.begin(sigurdos::diagnostics::companionUsbDataStream());
     if (CompanionBridge* b = companionBridge()) {
         b->begin(&g_usb_serial, &g_companion_host);
         b->setEnabled(true);

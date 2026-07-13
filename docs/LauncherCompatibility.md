@@ -202,9 +202,7 @@ The problem: the C3 MCU may not respond to the I2C probe immediately after the S
 
 **The user-reported breakage** ("keyboard doesn't work, many things break") has never been root-caused on physical hardware. This requires bench debugging with a logic analyzer on the I2C lines (pins 18/8) and GPIO 10 during the handoff.
 
-**Trackball ISR collision:** Launcher's `interface.cpp` sets up `attachInterrupt(FALLING)` on GPIOs 1, 2, 3, 15. After `ESP.restart()`, the S3's GPIO matrix resets but the **ISR vectors remain registered** (they survive software reset). SigurdOS's trackball driver uses polling (`digitalRead` in a loop), not ISRs. When SigurdOS calls `pinMode(x, INPUT_PULLUP)`, it configures the GPIO but does **not** detach Launcher's ISRs. If the user moves the trackball, Launcher's `ISR_left()`/etc fire, incrementing Launcher's volatile globals (`trackball_axis_x/y`) in Launcher's BSS — which still exists in memory but is never read by SigurdOS.
-
-**This is a real issue** but low-severity: the ISRs are simple integer ops that won't crash SigurdOS, but they will fire on every trackball movement, consuming CPU cycles and potentially causing timing jitter in the LVGL loop. The fix is a 4-line addition to `sigurdos_trackball_init()` — see [Section 7](#7-things-that-might-get-in-the-way).
+**Trackball ISR collision:** Launcher's `interface.cpp` sets up `attachInterrupt(FALLING)` on GPIOs 1, 2, 3, 15. After `ESP.restart()`, the S3's CPU and interrupt controller are fully reset, so **ISR vectors are cleared** and Launcher's interrupt handlers no longer fire. However, the GPIO pin configuration (direction, pull-up/pull-down) set by Launcher's `pinMode()` calls may persist through a software-only reset, potentially conflicting with SigurdOS's own `pinMode(x, INPUT_PULLUP)` calls. This is a lower risk than previously assessed — `pinMode()` reconfigures the GPIO registers regardless of prior state.
 
 ---
 
@@ -367,22 +365,11 @@ Arduino `Update` targets `esp_ota_get_next_update_partition()`. Under Launcher w
 
 **Fix:** Already gated (C4). Both WiFi AP OTA and GitHub OTA refuse to start when Launcher is detected, with the message "Update SigurdOS through Launcher instead."
 
-#### 3. Trackball ISR collision with Launcher
+#### 3. Trackball GPIO pin state from Launcher
 
-Launcher's `attachInterrupt(FALLING)` handlers on GPIOs 1,2,3,15 remain registered after `ESP.restart()`. When SigurdOS calls `pinMode(x, INPUT_PULLUP)`, the GPIO is reconfigured but the ISR vectors are **not detached**. If the user moves the trackball, Launcher's ISRs fire, incrementing Launcher's volatile globals. These ISRs won't crash SigurdOS but consume CPU cycles and may cause timing jitter in the LVGL loop.
+Launcher's `interface.cpp` calls `pinMode()` and `attachInterrupt(FALLING)` on GPIOs 1, 2, 3, 15. After `ESP.restart()`, the interrupt controller is reset and ISR vectors are cleared — Launcher's interrupt handlers no longer fire. However, the GPIO pin configuration (direction, pull-up/down) set by Launcher may persist through a software-only reset. When SigurdOS calls `pinMode(x, INPUT_PULLUP)`, it reconfigures the GPIO regardless of prior state, so this is effectively harmless.
 
-**Fix needed (4 lines in `src/hal/trackball.cpp`):**
-
-In `sigurdos_trackball_init()`, add before the `for` loop that sets `pinMode`:
-
-```cpp
-detachInterrupt(PIN_TRACKBALL_UP);
-detachInterrupt(PIN_TRACKBALL_DOWN);
-detachInterrupt(PIN_TRACKBALL_LEFT);
-detachInterrupt(PIN_TRACKBALL_RIGHT);
-```
-
-This is safe on cold boot (detaching an ISR that was never attached is a no-op per Arduino docs).
+No code change is required. The original `detachInterrupt()` concern was based on an incorrect assumption that ISR vectors survive `ESP.restart()` on ESP32-S3. `pinMode()` fully overrides any prior GPIO configuration.
 
 ### MEDIUM RISK — Could Break (Needs Verification)
 
@@ -443,7 +430,7 @@ Updated 2026-06-17. Cross-references to the [Launcher Roadmap](LAUNCHER_ROADMAP.
 
 | # | Change | Status | Code Impact | Roadmap ID |
 |---|--------|--------|-------------|------------|
-| 1 | Detach Launcher's trackball ISRs in `sigurdos_trackball_init()` | **NOT DONE** | ~4 lines: `detachInterrupt(1); detachInterrupt(2); detachInterrupt(3); detachInterrupt(15);` | — (new finding) |
+| 1 | Detach Launcher's trackball ISRs in `sigurdos_trackball_init()` | **NOT NEEDED** | ISR vectors are cleared by `ESP.restart()` on ESP32-S3; `pinMode()` overrides any lingering GPIO config. The original `detachInterrupt()` concern was based on an incorrect assumption — no code change required. | — (retracted) |
 | 2 | Publish Launcher-specific artifact name | ✅ Done | CI copies `firmware-merged.bin` → `SigurdOS-tdeck-launcher.bin` | C1 |
 | 3 | Document Launcher install path | ✅ Done | `firmware/README.md` | C2 |
 | 4 | Runtime Launcher detection | ✅ Done | `src/hal/launcher_env.cpp` — dual-signal probe | C3 |
@@ -456,9 +443,9 @@ Updated 2026-06-17. Cross-references to the [Launcher Roadmap](LAUNCHER_ROADMAP.
 | 11 | LauncherHub catalog listing | **NOT DONE** | External — needs maintainer submission | O1 |
 | 12 | "Reboot to Launcher" Settings entry | **NOT DONE** | Blocked — needs otadata write feasibility study | O2 |
 
-### The ONLY Remaining Code Change
+### The ONLY Remaining Work
 
-**#1 — detach trackball ISRs.** Everything else is either already done or requires physical hardware testing.
+**Bench validation of keyboard warm-handoff (RC3).** Everything else is either already done, requires physical hardware testing, or (like the ISR concern) is retired as incorrect. No code changes are needed for Launcher compatibility beyond what is already merged.
 
 ---
 
@@ -468,7 +455,7 @@ SigurdOS is **architecturally compatible** with bmorcelli/Launcher — the pin m
 
 **The two things that would actually prevent a working experience today:**
 
-1. **Trackball ISR collision** (fix: 4 lines of `detachInterrupt()`)
+1. ~~Trackball ISR collision~~ — **retired.** ISR vectors are cleared by `ESP.restart()` on ESP32-S3. `pinMode()` overrides any lingering GPIO state. No code change needed.
 2. **Warm-handoff keyboard timing** (may already be fixed by C6 hardening; needs bench testing on physical hardware)
 
 **The biggest user-facing gap** is that users who install the obvious `firmware.bin` (app-only) file get a silently-broken experience with no persistence. This is addressed by documentation and the clear naming of the Launcher artifact (`SigurdOS-tdeck-launcher.bin`) but remains a UX trap.

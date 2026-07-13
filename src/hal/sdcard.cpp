@@ -18,6 +18,7 @@
 
 
 #include "sdcard.h"
+#include "sdcard_replace.h"
 #include "tdeck_pins.h"
 #include "spi_shared.h"
 #include <Arduino.h>
@@ -25,6 +26,9 @@
 #include <SD.h>
 #include <cstdio>
 #include <cstring>
+#include <cerrno>
+#include <sys/stat.h>
+#include <unistd.h>
 
 // T-Deck SD card uses SPI on the shared LoRa/display bus (GPIO40/38/41).
 // FSPI (SPI2_HOST) is used here; the display also uses SPI2_HOST (via
@@ -43,6 +47,123 @@ static constexpr uint8_t SDCARD_INIT_MAX_ATTEMPTS = 3;
 static constexpr uint8_t SDCARD_LAZY_RETRY_MAX_ATTEMPTS = 3;
 
 static int sdcard_retry_count = 0;  // total additional lazy retry attempts
+
+namespace {
+
+using sigurdos::sdcard::detail::RenameResult;
+using sigurdos::sdcard::detail::ReplaceOps;
+
+bool sdcard_vfs_path(const char* path, char* out, size_t out_size)
+{
+    if (!path || !out || out_size == 0) return false;
+    constexpr size_t mount_len = sizeof(SIGURDOS_SD_MOUNTPOINT) - 1;
+    const bool already_prefixed = std::strncmp(
+        path, SIGURDOS_SD_MOUNTPOINT, mount_len) == 0 &&
+        (path[mount_len] == '\0' || path[mount_len] == '/');
+    const int written = already_prefixed
+        ? std::snprintf(out, out_size, "%s", path)
+        : std::snprintf(out, out_size, "%s%s", SIGURDOS_SD_MOUNTPOINT, path);
+    return written > 0 && static_cast<size_t>(written) < out_size;
+}
+
+bool sdcard_temp_path(const char* path, char* out, size_t out_size)
+{
+    const int written = std::snprintf(out, out_size, "%s.tmp", path);
+    return written > 0 && static_cast<size_t>(written) < out_size;
+}
+
+bool sdcard_ready_path(const char* path, char* out, size_t out_size)
+{
+    const int written = std::snprintf(out, out_size, "%s.ready", path);
+    return written > 0 && static_cast<size_t>(written) < out_size;
+}
+
+bool posix_exists(void*, const char* path)
+{
+    struct stat info {};
+    return ::stat(path, &info) == 0;
+}
+
+bool posix_remove(void*, const char* path)
+{
+    return std::remove(path) == 0 || errno == ENOENT;
+}
+
+void* posix_open(void*, const char* path)
+{
+    return std::fopen(path, "wb");
+}
+
+size_t posix_write(void*, void* file, const uint8_t* data, size_t length)
+{
+    return std::fwrite(data, 1, length, static_cast<FILE*>(file));
+}
+
+bool posix_sync(void*, void* file)
+{
+    FILE* stream = static_cast<FILE*>(file);
+    return std::fflush(stream) == 0 && ::fsync(::fileno(stream)) == 0;
+}
+
+bool posix_size(void*, void* file, size_t* size)
+{
+    if (!size) return false;
+    struct stat info {};
+    if (::fstat(::fileno(static_cast<FILE*>(file)), &info) != 0 || info.st_size < 0) {
+        return false;
+    }
+    *size = static_cast<size_t>(info.st_size);
+    return true;
+}
+
+bool posix_close(void*, void* file)
+{
+    return std::fclose(static_cast<FILE*>(file)) == 0;
+}
+
+RenameResult posix_rename(void*, const char* from, const char* to)
+{
+    if (std::rename(from, to) == 0) return RenameResult::Success;
+    return errno == EEXIST || errno == ENOTEMPTY
+        ? RenameResult::DestinationExists
+        : RenameResult::Failure;
+}
+
+const ReplaceOps SDCARD_REPLACE_OPS = {
+    nullptr,
+    posix_exists,
+    posix_remove,
+    posix_open,
+    posix_write,
+    posix_sync,
+    posix_size,
+    posix_close,
+    posix_rename,
+    nullptr,
+};
+
+bool sdcard_file_paths(const char* path, char* live_path, size_t live_size,
+                       char* temp_path, size_t temp_size,
+                       char* ready_path, size_t ready_size)
+{
+    return sdcard_vfs_path(path, live_path, live_size) &&
+        sdcard_temp_path(live_path, temp_path, temp_size) &&
+        sdcard_ready_path(live_path, ready_path, ready_size);
+}
+
+bool sdcard_recover_file(const char* path)
+{
+    char live_path[sizeof(SIGURDOS_SD_MOUNTPOINT) + SIGURDOS_SD_MAX_PATH_LEN + 1];
+    char temp_path[sizeof(live_path) + 4];
+    char ready_path[sizeof(live_path) + 6];
+    return sdcard_file_paths(path, live_path, sizeof(live_path),
+                             temp_path, sizeof(temp_path),
+                             ready_path, sizeof(ready_path)) &&
+        sigurdos::sdcard::detail::recoverPending(
+            live_path, temp_path, ready_path, SDCARD_REPLACE_OPS);
+}
+
+} // namespace
 
 static SigurdosSdMountDiagnostic sdcard_diag = {
     false,
@@ -258,18 +379,23 @@ const char* sigurdos_sdcard_format_size(uint64_t bytes, char* buf, size_t buf_sz
 bool sigurdos_sdcard_exists(const char* path)
 {
     if (!mounted || !sigurdos_sdcard_path_valid(path)) return false;
-    return SD.exists(path);
+    if (!sdcard_recover_file(path)) return false;
+    char live_path[sizeof(SIGURDOS_SD_MOUNTPOINT) + SIGURDOS_SD_MAX_PATH_LEN + 1];
+    return sdcard_vfs_path(path, live_path, sizeof(live_path)) &&
+        posix_exists(nullptr, live_path);
 }
 
 size_t sigurdos_sdcard_read(const char* path, uint8_t* buf, size_t max_len)
 {
     if (!mounted || !sigurdos_sdcard_path_valid(path) || !buf || max_len == 0) return 0;
 
-    File f = SD.open(path, FILE_READ);
-    if (!f) return 0;
-
-    size_t read = f.read(buf, max_len);
-    f.close();
+    if (!sdcard_recover_file(path)) return 0;
+    char live_path[sizeof(SIGURDOS_SD_MOUNTPOINT) + SIGURDOS_SD_MAX_PATH_LEN + 1];
+    if (!sdcard_vfs_path(path, live_path, sizeof(live_path))) return 0;
+    FILE* file = std::fopen(live_path, "rb");
+    if (!file) return 0;
+    const size_t read = std::fread(buf, 1, max_len, file);
+    std::fclose(file);
     return read;
 }
 
@@ -278,20 +404,15 @@ bool sigurdos_sdcard_write(const char* path, const uint8_t* data, size_t len)
     if (!mounted || !sigurdos_sdcard_path_valid(path)) return false;
     if (len > 0 && !data) return false;  // data required only for non-empty writes
 
-    // SD.begin() with FILE_WRITE opens for append — remove first so we replace the file
-    if (SD.exists(path)) {
-        SD.remove(path);
+    char live_path[sizeof(SIGURDOS_SD_MOUNTPOINT) + SIGURDOS_SD_MAX_PATH_LEN + 1];
+    char temp_path[sizeof(live_path) + 4];
+    char ready_path[sizeof(live_path) + 6];
+    if (!sdcard_file_paths(path, live_path, sizeof(live_path),
+                           temp_path, sizeof(temp_path),
+                           ready_path, sizeof(ready_path))) {
+        return false;
     }
 
-    File f = SD.open(path, FILE_WRITE);
-    if (!f) return false;
-
-    if (len > 0) {
-        size_t written = f.write(data, len);
-        f.close();
-        return written == len;
-    }
-    // Zero-length write — create/truncate an empty file
-    f.close();
-    return true;
+    return sigurdos::sdcard::detail::replaceFile(
+        live_path, temp_path, ready_path, data, len, SDCARD_REPLACE_OPS);
 }

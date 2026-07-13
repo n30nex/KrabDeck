@@ -169,7 +169,7 @@ upstream/dev  ─────►  your-fork/dev
 
 ## Style Guide
 
-Follow the existing C++ style (no `.clang-format` file — conventions are listed below):
+Follow the existing C++ style (a `.clang-format` file is tracked in the repo root):
 
 | Convention | Rule |
 |------------|------|

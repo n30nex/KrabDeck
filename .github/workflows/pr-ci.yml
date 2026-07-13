@@ -272,3 +272,17 @@ jobs:
           done
           [ "$status" -eq 0 ] && echo "Doc references: OK"
           exit "$status"
+
+      - name: AGENTS.md / CLAUDE.md mirror check
+        run: |
+          # Both files must be byte-identical in their shared content sections
+          # (the first few lines differ — CLAUDE.md carries a mirror notice).
+          # Strip header lines that legitimately differ, then diff the rest.
+          awk 'NR>7' AGENTS.md > /tmp/agents_core.md
+          awk 'NR>9' CLAUDE.md > /tmp/claude_core.md
+          if ! diff -q /tmp/agents_core.md /tmp/claude_core.md > /dev/null; then
+            echo "::error::AGENTS.md and CLAUDE.md are out of sync — they must be true mirrors"
+            diff -u /tmp/agents_core.md /tmp/claude_core.md
+            exit 1
+          fi
+          echo "AGENTS.md ↔ CLAUDE.md mirror check: OK"

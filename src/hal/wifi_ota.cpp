@@ -23,6 +23,7 @@ static char server_ip[16] = "";
 static char ap_password[17] = "";
 static uint32_t session_started_at = 0;
 static String csrf_token;  // regenerated per OTA session
+static OtaUploadSessionState upload_state;
 
 // OTA PIN brute-force protection (SEC-001)
 static constexpr int MAX_PIN_FAILURES = 5;
@@ -167,8 +168,10 @@ bool start(const char* ssid, const char* password) {
         // Completion handler
         []() {
             server->sendHeader("Connection", "close");
-            if (Update.hasError()) {
-                server->send(500, "text/plain", Update.errorString());
+            if (!upload_state.completed || upload_state.failed || Update.hasError()) {
+                const char* error = Update.hasError()
+                    ? Update.errorString() : "Upload incomplete";
+                server->send(500, "text/plain", error);
             } else {
                 server->send(200, "text/plain", "OK");
                 delay(2000);
@@ -179,6 +182,7 @@ bool start(const char* ssid, const char* password) {
         []() {
             HTTPUpload& upload = server->upload();
             if (upload.status == UPLOAD_FILE_START) {
+                upload_state = {};
                 // Validate device PIN before accepting upload
                 const NodePrefs& p = prefs_get();
                 String pin_arg = server->arg("pin");
@@ -186,6 +190,7 @@ bool start(const char* ssid, const char* password) {
                 String csrf_arg = server->arg("csrf");
                 if (csrf_arg.length() == 0 || csrf_arg != csrf_token) {
                     SIG_LOGW("[ota] Upload rejected: invalid CSRF token");
+                    upload_state.failed = true;
                     Update.abort();
                     return;
                 }
@@ -194,6 +199,7 @@ bool start(const char* ssid, const char* password) {
                 if (pin_fail_count >= MAX_PIN_FAILURES) {
                     SIG_LOGW("[ota] Upload rejected: too many failed PIN attempts (%d) — restart OTA to retry",
                              pin_fail_count);
+                    upload_state.failed = true;
                     Update.abort();
                     return;
                 }
@@ -205,30 +211,63 @@ bool start(const char* ssid, const char* password) {
                     pin_fail_count++;
                     SIG_LOGW("[ota] Upload rejected: invalid PIN (attempt %d/%d)",
                              pin_fail_count, MAX_PIN_FAILURES);
-                    // Reject by setting a zero-length update so the write/end
-                    // callbacks become no-ops. The completion handler will
-                    // report the error.
+                    // Keep the upload session failed so WRITE/END callbacks
+                    // cannot touch flash or reboot the device.
+                    upload_state.failed = true;
                     Update.abort();
                     return;
                 }
+                upload_state.authenticated = true;
                 SIG_LOGD("[ota] Update start: %s (%u bytes)",
                          upload.filename.c_str(), upload.totalSize);
-                if (!Update.begin(upload.totalSize)) {
+                static_assert(OTA_UPDATE_SIZE_UNKNOWN == UPDATE_SIZE_UNKNOWN,
+                              "Arduino Update unknown-size sentinel changed");
+                const size_t update_size = otaUpdateBeginSize(upload.totalSize);
+                if (!Update.begin(update_size)) {
+                    upload_state.failed = true;
                     SIG_LOGW("[ota] Update.begin failed: %s", Update.errorString());
                     Update.printError(Serial);
+                } else {
+                    upload_state.started = true;
                 }
             } else if (upload.status == UPLOAD_FILE_WRITE) {
-                if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+                if (!otaUploadAcceptsChunk(upload_state)) return;
+                const size_t written = Update.write(upload.buf, upload.currentSize);
+                if (written != upload.currentSize) {
+                    upload_state.failed = true;
+                    upload_state.started = false;
                     SIG_LOGW("[ota] Update.write failed: %s", Update.errorString());
                     Update.printError(Serial);
+                    Update.abort();
+                } else {
+                    upload_state.received += written;
                 }
             } else if (upload.status == UPLOAD_FILE_END) {
+                if (!otaUploadCanFinish(upload_state, upload.totalSize)) {
+                    upload_state.failed = true;
+                    upload_state.started = false;
+                    Update.abort();
+                    SIG_LOGW("[ota] Upload incomplete: received=%u total=%u",
+                             static_cast<unsigned>(upload_state.received),
+                             static_cast<unsigned>(upload.totalSize));
+                    return;
+                }
                 if (Update.end(true)) {
+                    upload_state.started = false;
+                    upload_state.completed = true;
                     SIG_LOGW("[ota] Update success: %u bytes", upload.totalSize);
                 } else {
+                    upload_state.failed = true;
+                    upload_state.started = false;
                     SIG_LOGW("[ota] Update.end failed: %s", Update.errorString());
                     Update.printError(Serial);
                 }
+            } else if (upload.status == UPLOAD_FILE_ABORTED) {
+                upload_state.failed = true;
+                upload_state.started = false;
+                Update.abort();
+                SIG_LOGW("[ota] Upload aborted after %u bytes",
+                         static_cast<unsigned>(upload_state.received));
             }
         }
     );
@@ -266,6 +305,7 @@ void stop() {
     server_ip[0] = '\0';
     ap_password[0] = '\0';
     session_started_at = 0;
+    upload_state = {};
 }
 
 bool isActive() {

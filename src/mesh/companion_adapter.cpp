@@ -10,6 +10,7 @@
 #include "companion_adapter.h"
 #include "utils/utf8_util.h"
 #include "companion_message_policy.h"
+#include "durable_mutation.h"
 #include "mesh_wrapper.h"
 #include "mesh_wrapper_internal.h"
 #include "scope_key_hex.h"
@@ -45,7 +46,7 @@ using sigurdos::mesh::meshRtcTimeUnique;
 using sigurdos::mesh::meshRadioTxAllowed;
 using sigurdos::mesh::meshQueuePushOutgoing;
 using sigurdos::mesh::meshStoreOutgoingMessage;
-using sigurdos::mesh::meshSaveSelfIdentity;
+using sigurdos::mesh::meshImportSelfIdentity;
 using sigurdos::mesh::formatDmConversation;
 
 // Local shorthand for the wrapper-owned mesh instance (was the file-scope
@@ -294,11 +295,16 @@ public:
     }
     bool setChannel(int index, const CompanionChannel& channel) override {
         if (!mesh_ptr() || index < 0 || index >= MAX_GROUP_CHANNELS) return false;
+        ChannelDetails before{};
+        if (!mesh_ptr()->BaseChatMesh::getChannel(index, before)) return false;
         ChannelDetails cd{};
         strncpy(cd.name, channel.name, sizeof(cd.name) - 1);
         memcpy(cd.channel.secret, channel.secret, sizeof(cd.channel.secret));
-        if (!mesh_ptr()->BaseChatMesh::setChannel(index, cd)) return false;
-        sigurdos::mesh::saveChannels();
+        bool committed = sigurdos::mesh::detail::applyAndCommit(
+            [&]() { return mesh_ptr()->BaseChatMesh::setChannel(index, cd); },
+            []() { return sigurdos::mesh::saveChannels(); },
+            [&]() { mesh_ptr()->BaseChatMesh::setChannel(index, before); });
+        if (!committed) return false;
         sigurdos::mesh::syncRegionsFromChannels();
         return true;
     }
@@ -559,20 +565,7 @@ public:
     }
 
     bool importPrivateKey(const uint8_t* key64) override {
-        if (!mesh_ptr() || !key64) return false;
-        if (!::mesh::LocalIdentity::validatePrivateKey(key64)) return false;
-        mesh_ptr()->self_id.readFrom(key64, PRV_KEY_SIZE);
-        meshSaveSelfIdentity();
-        // Invalidate ECDH shared secrets derived from the old identity and
-        // reload persisted contacts with the new identity (matches upstream
-        // MyMesh::CMD_IMPORT_PRIVATE_KEY — resetContacts + loadContacts).
-        mesh_ptr()->resetAllContacts();
-        sigurdos::mesh::loadContacts();
-        // Clear login session state — stale LOGIN_OK/permission entries from
-        // the old identity would otherwise persist against contact-name keys
-        // and present false-positive login UI after identity change (RC6-MED-002).
-        mesh_ptr()->clearAllLoginEntries();
-        return true;
+        return meshImportSelfIdentity(key64);
     }
 
     void setOtherParams(const CompanionOtherParams& op) override {
@@ -631,27 +624,38 @@ public:
         ci.gps_lat = c.gps_lat;
         ci.gps_lon = c.gps_lon;
         ci.lastmod = c.lastmod;
-        bool ok;
-        if (existing) { *existing = ci; ok = true; }
-        else ok = mesh_ptr()->addContact(ci);
-        if (ok) sigurdos::mesh::saveContacts();
-        return ok;
+        if (existing) {
+            ::ContactInfo before = *existing;
+            *existing = ci;
+            if (sigurdos::mesh::saveContacts()) return true;
+            *existing = before;
+            return false;
+        }
+        if (!mesh_ptr()->addContact(ci)) return false;
+        if (sigurdos::mesh::saveContacts()) return true;
+        ::ContactInfo* added = mesh_ptr()->lookupContactByPubKey(ci.id.pub_key, 32);
+        if (added) mesh_ptr()->BaseChatMesh::removeContact(*added);
+        return false;
     }
     bool removeContactByPubKey(const uint8_t* pub_key) override {
         if (!mesh_ptr() || !pub_key) return false;
         ::ContactInfo* c = mesh_ptr()->lookupContactByPubKey(pub_key, 32);
         if (!c) return false;
-        bool ok = mesh_ptr()->BaseChatMesh::removeContact(*c);
-        if (ok) sigurdos::mesh::saveContacts();
-        return ok;
+        ::ContactInfo before = *c;
+        if (!mesh_ptr()->BaseChatMesh::removeContact(*c)) return false;
+        if (sigurdos::mesh::saveContacts()) return true;
+        mesh_ptr()->addContact(before);
+        return false;
     }
     bool resetPathByPubKey(const uint8_t* pub_key) override {
         if (!mesh_ptr() || !pub_key) return false;
         ::ContactInfo* c = mesh_ptr()->lookupContactByPubKey(pub_key, 32);
         if (!c) return false;
+        ::ContactInfo before = *c;
         mesh_ptr()->BaseChatMesh::resetPathTo(*c);
-        sigurdos::mesh::saveContacts();
-        return true;
+        if (sigurdos::mesh::saveContacts()) return true;
+        *c = before;
+        return false;
     }
     bool shareContactByPubKey(const uint8_t* pub_key) override {
         if (!mesh_ptr() || !pub_key) return false;
@@ -668,9 +672,9 @@ public:
     }
     bool importContact(const uint8_t* data, size_t len) override {
         if (!mesh_ptr() || !data) return false;
-        bool ok = mesh_ptr()->importContact(data, (uint8_t)len);
-        if (ok) sigurdos::mesh::saveContacts();
-        return ok;
+        // Import queues a validated advert for loopback; onAdvertRecv owns the
+        // resulting contact mutation and marks it for deferred persistence.
+        return mesh_ptr()->importContact(data, (uint8_t)len);
     }
     bool hasConnectionTo(const uint8_t* pub_key) const override {
         return mesh_ptr() && pub_key && mesh_ptr()->companionHasConnection(pub_key);

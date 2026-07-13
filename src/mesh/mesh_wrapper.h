@@ -131,7 +131,7 @@ int  exportContactsFull(ContactInfo* out, int max);
 bool getContactByName(const char* name, ContactInfo* out);
 bool addContactManual(const char* name, const char* pubkey_hex, uint8_t type = ADV_TYPE_CHAT);
 bool isContactFavourite(const char* name);
-void setContactFavourite(const char* name, bool favourite);
+bool setContactFavourite(const char* name, bool favourite);
 
 int  getChannelCount();
 int  exportChannels(char names[][37], int max);
@@ -157,8 +157,8 @@ bool sendAdvert();
 uint32_t getLastAdvertTime();
 bool     getLastAdvertSuccess();
 bool     getLastAdvertUsedGps();
-void saveState();
-void saveChannels();
+bool saveState();
+bool saveChannels();
 void loadChannels();
 void shutdown();
 void factoryReset();
@@ -172,7 +172,7 @@ uint32_t companionBleLastSyncTime();
 uint32_t companionBlePin();
 
 // ── Contact persistence ─────────────────────────
-void saveContacts();
+bool saveContacts();
 void loadContacts();
 void reloadContactsAfterIdentityChange();  // after private key import
 

@@ -126,38 +126,79 @@ TEST_F(PrefsTest, GpsIntervalIsNormalizedWhenUpdatedAtRuntime) {
     EXPECT_EQ(5, sigurdos::prefs_get().gps_interval);
 }
 
+TEST(BlePrefsMigrationTest, FreshInstallUsesDiscoverableDefault) {
+    const auto state = sigurdos::detail::resolveBlePrefs(
+        false, false, false, false, 0);
+
+    EXPECT_TRUE(state.enabled);
+    EXPECT_FALSE(state.user_set);
+    EXPECT_TRUE(state.needs_migration);
+}
+
+TEST(BlePrefsMigrationTest, LegacyFalseWithoutIntentMigratesToEnabled) {
+    const auto state = sigurdos::detail::resolveBlePrefs(
+        true, false, false, false, 0);
+
+    EXPECT_TRUE(state.enabled);
+    EXPECT_FALSE(state.user_set);
+    EXPECT_TRUE(state.needs_migration);
+}
+
+TEST(BlePrefsMigrationTest, LegacyExplicitDisableIsPreservedAndVersioned) {
+    const auto state = sigurdos::detail::resolveBlePrefs(
+        true, false, true, true, 0);
+
+    EXPECT_FALSE(state.enabled);
+    EXPECT_TRUE(state.user_set);
+    EXPECT_TRUE(state.needs_migration);
+}
+
+TEST(BlePrefsMigrationTest, SubsequentBootPreservesExplicitDisable) {
+    const auto state = sigurdos::detail::resolveBlePrefs(
+        true, false, true, true, sigurdos::detail::BLE_PREFS_SCHEMA_VERSION);
+
+    EXPECT_FALSE(state.enabled);
+    EXPECT_TRUE(state.user_set);
+    EXPECT_FALSE(state.needs_migration);
+}
+
 struct FailingNvsWriter {
     int fail_at = -1;
     int write_calls = 0;
     int commit_calls = 0;
+    int ble_write_calls = 0;
     int32_t error = -42;
     bool fail_commit = false;
 
-    int32_t write() {
+    int32_t write(const char* key) {
+        if (strcmp(key, "ble_en") == 0 || strcmp(key, "ble_user") == 0 ||
+            strcmp(key, "ble_ver") == 0) {
+            ble_write_calls++;
+        }
         const int call = write_calls++;
         return call == fail_at ? error : 0;
     }
 
-    static int32_t setI8(void* raw, const char*, int8_t) {
-        return static_cast<FailingNvsWriter*>(raw)->write();
+    static int32_t setI8(void* raw, const char* key, int8_t) {
+        return static_cast<FailingNvsWriter*>(raw)->write(key);
     }
-    static int32_t setU8(void* raw, const char*, uint8_t) {
-        return static_cast<FailingNvsWriter*>(raw)->write();
+    static int32_t setU8(void* raw, const char* key, uint8_t) {
+        return static_cast<FailingNvsWriter*>(raw)->write(key);
     }
-    static int32_t setU16(void* raw, const char*, uint16_t) {
-        return static_cast<FailingNvsWriter*>(raw)->write();
+    static int32_t setU16(void* raw, const char* key, uint16_t) {
+        return static_cast<FailingNvsWriter*>(raw)->write(key);
     }
-    static int32_t setI32(void* raw, const char*, int32_t) {
-        return static_cast<FailingNvsWriter*>(raw)->write();
+    static int32_t setI32(void* raw, const char* key, int32_t) {
+        return static_cast<FailingNvsWriter*>(raw)->write(key);
     }
-    static int32_t setU32(void* raw, const char*, uint32_t) {
-        return static_cast<FailingNvsWriter*>(raw)->write();
+    static int32_t setU32(void* raw, const char* key, uint32_t) {
+        return static_cast<FailingNvsWriter*>(raw)->write(key);
     }
-    static int32_t setBlob(void* raw, const char*, const void*, size_t) {
-        return static_cast<FailingNvsWriter*>(raw)->write();
+    static int32_t setBlob(void* raw, const char* key, const void*, size_t) {
+        return static_cast<FailingNvsWriter*>(raw)->write(key);
     }
-    static int32_t setString(void* raw, const char*, const char*) {
-        return static_cast<FailingNvsWriter*>(raw)->write();
+    static int32_t setString(void* raw, const char* key, const char*) {
+        return static_cast<FailingNvsWriter*>(raw)->write(key);
     }
     static int32_t commit(void* raw) {
         auto* self = static_cast<FailingNvsWriter*>(raw);
@@ -176,8 +217,10 @@ TEST(PrefsWritePolicyTest, EveryNvsSetFailureIsReturnedWithoutCommit) {
 
     FailingNvsWriter successful;
     sigurdos::detail::PrefsWriteFailure failure;
-    ASSERT_TRUE(sigurdos::detail::prefsWriteAll(prefs, successful.ops(), &failure));
-    ASSERT_EQ(45, successful.write_calls);
+    ASSERT_TRUE(sigurdos::detail::prefsWriteAll(
+        prefs, successful.ops(), sigurdos::detail::BlePrefsWriteMode::Write, &failure));
+    ASSERT_EQ(47, successful.write_calls);
+    ASSERT_EQ(3, successful.ble_write_calls);
     ASSERT_EQ(1, successful.commit_calls);
 
     for (int fail_at = 0; fail_at < successful.write_calls; ++fail_at) {
@@ -185,7 +228,8 @@ TEST(PrefsWritePolicyTest, EveryNvsSetFailureIsReturnedWithoutCommit) {
         failing.fail_at = fail_at;
         failure = {};
 
-        EXPECT_FALSE(sigurdos::detail::prefsWriteAll(prefs, failing.ops(), &failure))
+        EXPECT_FALSE(sigurdos::detail::prefsWriteAll(
+            prefs, failing.ops(), sigurdos::detail::BlePrefsWriteMode::Write, &failure))
             << "write index " << fail_at;
         EXPECT_EQ(failing.error, failure.error) << "write index " << fail_at;
         EXPECT_NE(nullptr, failure.key) << "write index " << fail_at;
@@ -200,11 +244,26 @@ TEST(PrefsWritePolicyTest, CommitFailureIsReturned) {
     failing.fail_commit = true;
     sigurdos::detail::PrefsWriteFailure failure;
 
-    EXPECT_FALSE(sigurdos::detail::prefsWriteAll(prefs, failing.ops(), &failure));
-    EXPECT_EQ(45, failing.write_calls);
+    EXPECT_FALSE(sigurdos::detail::prefsWriteAll(
+        prefs, failing.ops(), sigurdos::detail::BlePrefsWriteMode::Write, &failure));
+    EXPECT_EQ(47, failing.write_calls);
     EXPECT_EQ(1, failing.commit_calls);
     EXPECT_STREQ("commit", failure.key);
     EXPECT_EQ(failing.error, failure.error);
+}
+
+TEST(PrefsWritePolicyTest, PreserveModeLeavesCrossVariantBleKeysUntouched) {
+    sigurdos::NodePrefs prefs;
+    prefs.set_defaults();
+    prefs.ble_enabled = false;
+    prefs.ble_user_set = true;
+    FailingNvsWriter writer;
+
+    EXPECT_TRUE(sigurdos::detail::prefsWriteAll(
+        prefs, writer.ops(), sigurdos::detail::BlePrefsWriteMode::Preserve));
+    EXPECT_EQ(44, writer.write_calls);
+    EXPECT_EQ(0, writer.ble_write_calls);
+    EXPECT_EQ(1, writer.commit_calls);
 }
 
 } // namespace

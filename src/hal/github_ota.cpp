@@ -77,6 +77,8 @@ static bool                   s_cancelled = false;
 
 // Current download URL (constructed from API or fallback)
 static char                   s_download_url[256] = "";
+static char                   s_resolved_tag[64] = "";
+static char                   s_resolved_target[16] = "";
 
 // API response buffer (heap-allocated during FetchingRelease)
 static char*                  s_api_buf = nullptr;
@@ -159,6 +161,54 @@ static void fail(const char* msg) {
     s_active = false;
 }
 
+static ApiBodyStatus readApiResponse(WiFiClient* stream, int content_length,
+                                     char* out, size_t out_size,
+                                     int* bytes_read) {
+    if (bytes_read) *bytes_read = 0;
+    if (!stream || !out || out_size < 2) return ApiBodyStatus::Incomplete;
+
+    const size_t payload_capacity = out_size - 1;
+    ApiBodyStatus initial = classifyApiResponseBody(
+        content_length, 0, payload_capacity, false);
+    if (initial == ApiBodyStatus::TooLarge) return initial;
+
+    size_t total = 0;
+    unsigned long last_data_at = millis();
+    while (total < payload_capacity) {
+        const int available = stream->available();
+        if (available > 0) {
+            size_t to_read = static_cast<size_t>(available);
+            const size_t remaining = payload_capacity - total;
+            if (to_read > remaining) to_read = remaining;
+            if (content_length >= 0) {
+                const size_t expected_remaining =
+                    static_cast<size_t>(content_length) - total;
+                if (to_read > expected_remaining) to_read = expected_remaining;
+            }
+            if (to_read == 0) break;
+
+            const int read = stream->readBytes(out + total, to_read);
+            if (read <= 0) break;
+            total += static_cast<size_t>(read);
+            last_data_at = millis();
+            if (content_length >= 0 &&
+                total == static_cast<size_t>(content_length)) {
+                break;
+            }
+            continue;
+        }
+
+        if (!stream->connected()) break;
+        if (millis() - last_data_at >= HTTP_TIMEOUT_MS) break;
+        delay(1);
+    }
+
+    out[total] = '\0';
+    if (bytes_read) *bytes_read = static_cast<int>(total);
+    return classifyApiResponseBody(content_length, total, payload_capacity,
+                                   !stream->connected());
+}
+
 // Release selection and URL construction live in github_ota_plan.cpp.
 
 // ── Public API ──────────────────────────────────────────────────
@@ -188,6 +238,8 @@ bool startGitHubUpdate() {
     s_content_length = 0;
     s_connect_start = millis();
     s_download_url[0] = '\0';
+    s_resolved_tag[0] = '\0';
+    s_resolved_target[0] = '\0';
 
     Serial.printf("[gh-ota] Starting update: branch=%s allow_prerelease=%d\n",
                   p.ota_branch, p.ota_allow_prerelease ? 1 : 0);
@@ -222,7 +274,12 @@ void loop() {
 
             // Check if we need to fetch release info from API
             const NodePrefs& p = prefs_get();
-            bool needs_api = branchNeedsReleaseApi(p.ota_branch, p.ota_allow_prerelease);
+            if (!isSupportedReleaseChannel(p.ota_branch)) {
+                fail("Invalid OTA release channel");
+                return;
+            }
+            const bool needs_api = branchNeedsReleaseApi(
+                p.ota_branch, p.ota_allow_prerelease);
 
             if (needs_api) {
                 setStatus(GitHubOTAState::FetchingRelease, 0,
@@ -268,41 +325,59 @@ void loop() {
 
                 s_http_code = s_http->GET();
                 if (s_http_code <= 0) {
-                    Serial.printf("[gh-ota] API GET failed (HTTP %d), using fallback URL\n",
-                                  s_http_code);
-                    // Fall through to fallback URL
-                    needs_api = false;
+                    char error[64];
+                    snprintf(error, sizeof(error), "Release API request failed (%d)",
+                             s_http_code);
+                    fail(error);
+                    return;
                 } else if (s_http_code != HTTP_CODE_OK) {
-                    Serial.printf("[gh-ota] API returned HTTP %d, using fallback URL\n",
-                                  s_http_code);
-                    needs_api = false;
+                    char error[64];
+                    snprintf(error, sizeof(error), "Release API HTTP %d", s_http_code);
+                    fail(error);
+                    return;
                 } else {
                     // Read response body
                     WiFiClient* stream = s_http->getStreamPtr();
-                    int total_read = 0;
-                    while (stream->available() && total_read < (int)API_RESPONSE_MAX - 1) {
-                        int r = stream->readBytes(
-                            s_api_buf + total_read,
-                            API_RESPONSE_MAX - 1 - total_read);
-                        if (r <= 0) break;
-                        total_read += r;
-                    }
-                    s_api_buf[total_read] = '\0';
-                    s_api_buf_len = total_read;
+                    const int api_content_length = s_http->getSize();
+                    const ApiBodyStatus body_status = readApiResponse(
+                        stream, api_content_length, s_api_buf,
+                        API_RESPONSE_MAX, &s_api_buf_len);
 
-                    Serial.printf("[gh-ota] API response: %d bytes\n", total_read);
+                    Serial.printf("[gh-ota] API response: %d/%d bytes\n",
+                                  s_api_buf_len, api_content_length);
+                    if (body_status == ApiBodyStatus::TooLarge) {
+                        fail("Release API response too large");
+                        return;
+                    }
+                    if (body_status != ApiBodyStatus::Complete) {
+                        fail("Incomplete release API response");
+                        return;
+                    }
 
                     // Parse to find matching release
                     char tag_name[64] = "";
-                    if (selectReleaseTagFromJson(s_api_buf, p.ota_branch,
-                                                 p.ota_allow_prerelease,
-                                                 tag_name, sizeof(tag_name))) {
+                    char target_name[16] = "";
+                    const ReleaseSelectionResult selection =
+                        selectReleaseTagResultFromJson(
+                            s_api_buf, p.ota_branch, p.ota_allow_prerelease,
+                            tag_name, sizeof(tag_name),
+                            target_name, sizeof(target_name));
+                    if (selection == ReleaseSelectionResult::Matched) {
                         buildReleaseDownloadUrl(tag_name, s_download_url,
                                                 sizeof(s_download_url));
+                        strncpy(s_resolved_tag, tag_name,
+                                sizeof(s_resolved_tag) - 1);
+                        s_resolved_tag[sizeof(s_resolved_tag) - 1] = '\0';
+                        strncpy(s_resolved_target, target_name,
+                                sizeof(s_resolved_target) - 1);
+                        s_resolved_target[sizeof(s_resolved_target) - 1] = '\0';
                         Serial.printf("[gh-ota] Download URL: %s\n", s_download_url);
+                    } else if (selection == ReleaseSelectionResult::NoMatch) {
+                        fail("No matching release for selected channel");
+                        return;
                     } else {
-                        Serial.printf("[gh-ota] No matching release found, using fallback\n");
-                        needs_api = false;
+                        fail("Malformed release API response");
+                        return;
                     }
                 }
 
@@ -317,9 +392,16 @@ void loop() {
                 }
             }
 
-            if (!needs_api && s_download_url[0] == '\0') {
-                // Use fallback URL (latest non-prerelease)
+            if (!needs_api && s_download_url[0] == '\0' &&
+                releaseChannelAllowsFallback(p.ota_branch)) {
+                // The global fallback is valid only for an explicit "latest"
+                // selection that does not need API prerelease filtering.
                 copyFallbackDownloadUrl(s_download_url, sizeof(s_download_url));
+                strncpy(s_resolved_tag, "latest", sizeof(s_resolved_tag) - 1);
+                s_resolved_tag[sizeof(s_resolved_tag) - 1] = '\0';
+                strncpy(s_resolved_target, "latest",
+                        sizeof(s_resolved_target) - 1);
+                s_resolved_target[sizeof(s_resolved_target) - 1] = '\0';
                 Serial.printf("[gh-ota] Using fallback URL: %s\n", s_download_url);
             }
 
@@ -329,8 +411,11 @@ void loop() {
                 return;
             }
 
-            setStatus(GitHubOTAState::Downloading, 0,
-                      "Downloading firmware...");
+            char resolved_status[80];
+            snprintf(resolved_status, sizeof(resolved_status),
+                     "Downloading [%.15s] %.44s...",
+                     s_resolved_target, s_resolved_tag);
+            setStatus(GitHubOTAState::Downloading, 0, resolved_status);
 
             hal::OtaHttpObjects download_objects;
             if (!hal::allocate_ota_http_objects(
@@ -471,9 +556,8 @@ void loop() {
                     ? (int)(((long)s_downloaded * 100) / s_content_length)
                     : 0;
                 char msg[64];
-                snprintf(msg, sizeof(msg), "Downloading... %d%% (%d/%d KB)",
-                         pct, s_downloaded / 1024,
-                         s_content_length / 1024);
+                snprintf(msg, sizeof(msg), "[%.15s] %.24s %d%%",
+                         s_resolved_target, s_resolved_tag, pct);
                 setStatus(GitHubOTAState::Writing, pct, msg);
                 Serial.printf("[gh-ota] %s\n", msg);
             }

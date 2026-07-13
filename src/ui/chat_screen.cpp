@@ -34,6 +34,7 @@
 #include "../mesh/public_channel.h"
 #include "../mesh/message_store.h"
 #include "../hal/prefs.h"
+#include "chat_store_migration.h"
 #include "../fonts/emoji_font.h"
 #include <lvgl.h>
 #include <cstring>

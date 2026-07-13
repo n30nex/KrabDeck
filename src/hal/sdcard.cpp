@@ -100,6 +100,17 @@ static bool sdcard_mount_once(SigurdosSdMountSource source)
                                   PIN_LORA_MOSI, PIN_SD_CS);
     }
 
+    // The shared SPI bus has three devices (Display CS=12, LoRa CS=9,
+    // SD CS=39). Before probing the SD card, explicitly de-assert the
+    // other CS lines so they don't float low and corrupt the bus during
+    // the card's CMD0 handshake. The ESP32 default pin state is input-
+    // only with internal pull-up disabled, so an unconfigured device CS
+    // can sit at an indeterminate level.
+    pinMode(PIN_LORA_NSS, OUTPUT);
+    digitalWrite(PIN_LORA_NSS, HIGH);
+    pinMode(PIN_TFT_CS, OUTPUT);
+    digitalWrite(PIN_TFT_CS, HIGH);
+
     // Give the SD card time to stabilise before CMD0.
     // Some cards need >1ms after power-on before they accept CMD0.
     delay(10);

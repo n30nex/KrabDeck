@@ -4,6 +4,7 @@
 #include "message_store.h"
 
 #include "hal/atomic_file.h"
+#include "utils/utf8_util.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -154,7 +155,8 @@ static bool readRecordRaw(StoredMessage& msg, const uint8_t* rec, size_t len)
     pos += SIGURDOS_MSG_SENDER_LEN;
 
     std::memcpy(msg.text, rec + pos, SIGURDOS_MSG_TEXT_LEN);
-    msg.text[SIGURDOS_MSG_TEXT_LEN - 1] = '\0';
+    sigurdos::utf8_copy_truncate_n(msg.text, sizeof(msg.text), msg.text,
+                                   sizeof(msg.text));
     pos += SIGURDOS_MSG_TEXT_LEN;
 
     std::memcpy(&msg.timestamp, rec + pos, 4);
@@ -931,7 +933,8 @@ void storedMessageNormalize(StoredMessage& msg)
 {
     msg.conversation[SIGURDOS_MSG_CONVERSATION_LEN - 1] = '\0';
     msg.sender[SIGURDOS_MSG_SENDER_LEN - 1] = '\0';
-    msg.text[SIGURDOS_MSG_TEXT_LEN - 1] = '\0';
+    sigurdos::utf8_copy_truncate_n(msg.text, sizeof(msg.text), msg.text,
+                                   sizeof(msg.text));
     if (msg.extra_len > sizeof(msg.extra)) msg.extra_len = sizeof(msg.extra);
     if (msg.timestamp == 0) msg.timestamp = 1;
 }

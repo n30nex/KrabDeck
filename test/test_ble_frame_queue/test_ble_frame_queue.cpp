@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 #include "comms/ble_frame_queue.h"
+#include "comms/ble_task_mutex.h"
 
 #include <atomic>
 #include <cstring>
@@ -12,11 +13,39 @@
 namespace {
 
 using sigurdos::comms::BleFrameQueue;
+using sigurdos::comms::BleTaskMutex;
 
 constexpr size_t MAX_LEN = 176;   // MAX_FRAME_SIZE on target
 constexpr size_t CAPACITY = 4;    // FRAME_QUEUE_SIZE on target
 
 using Queue = BleFrameQueue<MAX_LEN, CAPACITY>;
+
+TEST(BleTaskMutex, IsRecursiveAndSerializesSharedState)
+{
+    BleTaskMutex mutex;
+    uint32_t counter = 0;
+
+    {
+        BleTaskMutex::Guard outer(mutex);
+        BleTaskMutex::Guard inner(mutex);
+        ++counter;
+    }
+
+    constexpr uint32_t THREADS = 4;
+    constexpr uint32_t INCREMENTS = 10000;
+    std::vector<std::thread> workers;
+    for (uint32_t i = 0; i < THREADS; ++i) {
+        workers.emplace_back([&] {
+            for (uint32_t n = 0; n < INCREMENTS; ++n) {
+                BleTaskMutex::Guard guard(mutex);
+                ++counter;
+            }
+        });
+    }
+    for (auto& worker : workers) worker.join();
+
+    EXPECT_EQ(counter, 1u + THREADS * INCREMENTS);
+}
 
 // Frames carry a 32-bit sequence number followed by a deterministic fill so
 // the consumer can detect torn or corrupted frames.

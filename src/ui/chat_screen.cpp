@@ -34,8 +34,6 @@
 #include "../mesh/public_channel.h"
 #include "../mesh/message_store.h"
 #include "../hal/prefs.h"
-#include "chat_history_store.h"
-#include "chat_store_migration.h"
 #include "../fonts/emoji_font.h"
 #include <lvgl.h>
 #include <cstring>
@@ -146,12 +144,6 @@ static lv_obj_t* chat_older_btn = nullptr;
 static lv_obj_t* chat_newer_btn = nullptr;
 static lv_obj_t* chat_no_results = nullptr;
 static lv_obj_t* chat_bubble_pool[CHAT_RENDER_WINDOW] = {};
-static ChatHistoryCheckpoint chat_checkpoint;
-
-static void mark_chat_history_dirty()
-{
-    chat_checkpoint.markDirty(millis());
-}
 // ── Channel filter mode ────────────────────────────────────
 // 0 = show all, 1 = channels only, 2 = DMs only
 static int   chat_filter_mode = 0;

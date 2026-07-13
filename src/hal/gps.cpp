@@ -425,6 +425,18 @@ uint8_t  sigurdos_gps_fix_quality()  { return gps.fix_quality; }
 uint32_t sigurdos_gps_active_baud()       { return gps.active_baud; }
 uint32_t sigurdos_gps_chars_processed()   { return gps.chars_processed; }
 uint32_t sigurdos_gps_sentences_received(){ return gps.sentences_received; }
+uint32_t sigurdos_gps_valid_sentences()   { return gps.valid_sentences; }
+uint32_t sigurdos_gps_checksum_failures() { return gps.checksum_failures; }
+uint32_t sigurdos_gps_baud_switches()     { return gps.baud_switches; }
+uint32_t sigurdos_gps_gga_sentences()     { return gps.gga_sentences; }
+uint32_t sigurdos_gps_rmc_sentences()     { return gps.rmc_sentences; }
+uint32_t sigurdos_gps_gsv_sentences()     { return gps.gsv_sentences; }
+uint32_t sigurdos_gps_gsa_sentences()     { return gps.gsa_sentences; }
+uint8_t  sigurdos_gps_satellites_in_view(){ return gps.satellites_in_view; }
+uint8_t  sigurdos_gps_fix_type()          { return gps.fix_type; }
+uint8_t  sigurdos_gps_gsv_snr_max()       { return gps.gsv_snr_max; }
+uint8_t  sigurdos_gps_gsv_snr_count()     { return gps.gsv_snr_count; }
+char     sigurdos_gps_rmc_status()        { return gps.rmc_status; }
 bool     sigurdos_gps_has_fix()      { return gps.has_fix; }
 uint8_t  sigurdos_gps_hour()         { return gps.hour; }
 uint8_t  sigurdos_gps_minute()       { return gps.minute; }

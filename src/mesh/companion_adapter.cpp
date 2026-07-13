@@ -297,7 +297,7 @@ public:
         ChannelDetails cd{};
         strncpy(cd.name, channel.name, sizeof(cd.name) - 1);
         memcpy(cd.channel.secret, channel.secret, sizeof(cd.channel.secret));
-        if (!mesh_ptr()->BaseChatMesh::setChannel(index, cd)) return false;
+        if (!mesh_ptr()->setChannelSlot(index, cd)) return false;
         sigurdos::mesh::saveChannels();
         sigurdos::mesh::syncRegionsFromChannels();
         return true;
@@ -360,6 +360,7 @@ public:
         if (!mesh_ptr() || !text) return result;
         ChannelDetails cd;
         if (!mesh_ptr()->BaseChatMesh::getChannel(channel_index, cd)) return result;
+        if (cd.name[0] == '\0') return result;
         uint32_t ts = timestamp ? timestamp : meshRtcTime();
         const size_t prefix_len = strnlen(meshOwnName(), MAX_TEXT_LEN) + 2;
         if (prefix_len >= MAX_TEXT_LEN) return result;

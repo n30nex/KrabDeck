@@ -21,9 +21,11 @@
  * Unit tests for channel name validation and sanitisation.
  */
 #include <gtest/gtest.h>
+#include <array>
 #include <cstring>
 #include <cstdio>
 
+#include "mesh/channel_slot_policy.h"
 #include "mesh/channel_validation.h"
 
 namespace {
@@ -343,6 +345,83 @@ TEST(ChannelValidationTest, ReasonJustHash) {
     EXPECT_FALSE(sigurdos::mesh::channel_name_valid("#", &reason));
     ASSERT_NE(reason, nullptr);
     EXPECT_STREQ(reason, "Name is just '#'");
+}
+
+// ---------------------------------------------------------------------------
+// Companion channel slot updates
+// ---------------------------------------------------------------------------
+
+struct TestChannelSlot {
+    char name[16];
+    int value;
+};
+
+bool updateChannelSlot(std::array<TestChannelSlot, 4>& slots, size_t index,
+                       const TestChannelSlot& replacement) {
+    return sigurdos::mesh::set_contiguous_channel_slot<4>(
+        index, replacement,
+        [&slots](size_t i, TestChannelSlot& out) {
+            out = slots[i];
+            return true;
+        },
+        [&slots](size_t i, const TestChannelSlot& value) {
+            slots[i] = value;
+            return true;
+        },
+        [](const TestChannelSlot& slot) { return slot.name[0] == '\0'; });
+}
+
+TestChannelSlot channelSlot(const char* name, int value) {
+    TestChannelSlot slot{};
+    std::strncpy(slot.name, name, sizeof(slot.name) - 1);
+    slot.value = value;
+    return slot;
+}
+
+TEST(ChannelSlotPolicyTest, ClearingMiddleSlotCompactsLaterChannels) {
+    std::array<TestChannelSlot, 4> slots{{
+        channelSlot("alpha", 1), channelSlot("bravo", 2),
+        channelSlot("charlie", 3), TestChannelSlot{}}};
+
+    ASSERT_TRUE(updateChannelSlot(slots, 1, TestChannelSlot{}));
+
+    EXPECT_STREQ(slots[0].name, "alpha");
+    EXPECT_STREQ(slots[1].name, "charlie");
+    EXPECT_EQ(slots[1].value, 3);
+    EXPECT_STREQ(slots[2].name, "");
+}
+
+TEST(ChannelSlotPolicyTest, RejectsInsertionThatWouldCreateGap) {
+    std::array<TestChannelSlot, 4> slots{{
+        channelSlot("alpha", 1), TestChannelSlot{}, TestChannelSlot{},
+        TestChannelSlot{}}};
+    const std::array<TestChannelSlot, 4> before = slots;
+
+    EXPECT_FALSE(updateChannelSlot(slots, 2, channelSlot("charlie", 3)));
+    EXPECT_EQ(std::memcmp(slots.data(), before.data(), sizeof(slots)), 0);
+}
+
+TEST(ChannelSlotPolicyTest, AllowsAppendAtFirstEmptySlot) {
+    std::array<TestChannelSlot, 4> slots{{
+        channelSlot("alpha", 1), TestChannelSlot{}, TestChannelSlot{},
+        TestChannelSlot{}}};
+
+    ASSERT_TRUE(updateChannelSlot(slots, 1, channelSlot("bravo", 2)));
+    EXPECT_STREQ(slots[0].name, "alpha");
+    EXPECT_STREQ(slots[1].name, "bravo");
+    EXPECT_EQ(slots[1].value, 2);
+    EXPECT_STREQ(slots[2].name, "");
+}
+
+TEST(ChannelSlotPolicyTest, EmptyUpdateRepairsLegacySparseSlots) {
+    std::array<TestChannelSlot, 4> slots{{
+        channelSlot("alpha", 1), TestChannelSlot{},
+        channelSlot("charlie", 3), TestChannelSlot{}}};
+
+    ASSERT_TRUE(updateChannelSlot(slots, 1, TestChannelSlot{}));
+    EXPECT_STREQ(slots[0].name, "alpha");
+    EXPECT_STREQ(slots[1].name, "charlie");
+    EXPECT_STREQ(slots[2].name, "");
 }
 
 } // namespace

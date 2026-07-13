@@ -589,6 +589,11 @@ public:
     bool removeChannel(int idx);
 
 
+    // Apply a companion slot update without allowing holes in the populated
+    // channel prefix. Empty replacements remove and compact the target slot.
+    bool setChannelSlot(int idx, const ChannelDetails& details);
+
+
     // Base64 PSK decode (self-contained, matches MeshCore's alphabet).
     static int decode_b64(const char* in, size_t in_len, uint8_t* out, size_t out_cap);
 

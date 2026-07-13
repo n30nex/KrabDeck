@@ -35,12 +35,15 @@
 #include "ui/chat_screen.h"
 #include "fonts/emoji_font.h"
 #include "fonts/emoji_data.h"
+#include "utils/utf8_util.h"
 #include <lvgl.h>
 #include <Arduino.h>
 #include <cstring>
 #include <cstdlib>
 #include <new>
 #include <cctype>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <lvgl.h>
 #include <others/snapshot/lv_snapshot.h>
 #include <esp_heap_caps.h>
@@ -54,6 +57,11 @@ static constexpr uint32_t CMD_POLL_MS = 50;   // check Serial every 50ms
 static constexpr size_t   CMD_BUF_SIZE = 256;
 static constexpr size_t   TYPE_BUF_SIZE = 256;   // max codepoints in type queue
 static constexpr size_t   TYPE_CHUNK_DELAY = 120; // ms between injected codepoints, must give LVGL time to consume
+static constexpr uint32_t DIAGNOSTIC_STALL_TIMEOUT_MS = 5000;
+static constexpr uint32_t CAPTURE_TOTAL_TIMEOUT_MS = 60000;
+static constexpr uint32_t TREE_TOTAL_TIMEOUT_MS = 30000;
+static constexpr size_t CAPTURE_DATA_BYTES_PER_LINE = 32;
+static constexpr uint8_t DIAGNOSTIC_LINES_PER_LOOP = 4;
 
 // ── State ────────────────────────────────────────────────
 static bool     initialized = false;
@@ -66,6 +74,152 @@ static uint32_t type_buf[TYPE_BUF_SIZE];
 static size_t   type_pos = 0;    // next codepoint to inject
 static size_t   type_count = 0;  // remaining codepoints in queue
 static uint32_t type_last_inject_ms = 0;
+
+struct AsyncSerialLine {
+    char data[192];
+    size_t length;
+    size_t offset;
+};
+
+static AsyncSerialLine diagnostic_line = {};
+
+enum class CapturePhase : uint8_t {
+    Idle,
+    Snapshot,
+    Header,
+    Data,
+    Stats,
+    End,
+    Done,
+};
+
+struct CaptureJob {
+    CapturePhase phase;
+    uint8_t* buffer;
+    uint32_t width;
+    uint32_t height;
+    uint32_t stride;
+    uint32_t total_bytes;
+    uint32_t offset;
+    uint32_t started_ms;
+    uint32_t last_progress_ms;
+};
+
+static CaptureJob capture_job = {};
+
+struct TreeFrame {
+    lv_obj_t* obj;
+    uint32_t next_child;
+    bool printed;
+};
+
+struct TreeJob {
+    bool active;
+    bool finishing;
+    bool depth_limited;
+    bool node_limited;
+    bool summary_queued;
+    uint8_t stack_size;
+    uint8_t max_depth_seen;
+    uint16_t nodes;
+    uint32_t started_ms;
+    uint32_t last_progress_ms;
+    TreeFrame stack[SIGURDOS_TEST_TREE_MAX_DEPTH + 1];
+};
+
+static TreeJob tree_job = {};
+
+struct EmojiGridState {
+    lv_obj_t* dialog;
+    lv_obj_t* title;
+    lv_obj_t* grid;
+    lv_obj_t* previous;
+    lv_obj_t* page_label;
+    lv_obj_t* next;
+    uint16_t page;
+    uint16_t total;
+};
+
+static EmojiGridState emoji_grid = {};
+
+static uint32_t stress_min_stack_words = 0xFFFFFFFFUL;
+static uint32_t stress_min_lvgl_free = 0xFFFFFFFFUL;
+static uint8_t stress_max_lvgl_used_pct = 0;
+
+static void sample_stress_metrics() {
+    const uint32_t stack_words = (uint32_t)uxTaskGetStackHighWaterMark(nullptr);
+    if (stack_words < stress_min_stack_words) stress_min_stack_words = stack_words;
+
+    lv_mem_monitor_t mon;
+    lv_mem_monitor(&mon);
+    if (mon.free_size < stress_min_lvgl_free) stress_min_lvgl_free = mon.free_size;
+    if (mon.used_pct > stress_max_lvgl_used_pct) stress_max_lvgl_used_pct = mon.used_pct;
+}
+
+static void reset_stress_metrics() {
+    stress_min_stack_words = 0xFFFFFFFFUL;
+    stress_min_lvgl_free = 0xFFFFFFFFUL;
+    stress_max_lvgl_used_pct = 0;
+    sample_stress_metrics();
+}
+
+static void clear_diagnostic_line() {
+    diagnostic_line.length = 0;
+    diagnostic_line.offset = 0;
+    diagnostic_line.data[0] = '\0';
+}
+
+static bool diagnostic_line_pending() {
+    return diagnostic_line.offset < diagnostic_line.length;
+}
+
+static bool queue_diagnostic_line(size_t length) {
+    if (diagnostic_line_pending()) return false;
+    if (length >= sizeof(diagnostic_line.data)) {
+        length = sizeof(diagnostic_line.data) - 1;
+    }
+    diagnostic_line.data[length] = '\0';
+    diagnostic_line.length = length;
+    diagnostic_line.offset = 0;
+    return true;
+}
+
+static uint32_t* diagnostic_progress_clock() {
+    if (capture_job.phase != CapturePhase::Idle) return &capture_job.last_progress_ms;
+    if (tree_job.active) return &tree_job.last_progress_ms;
+    return nullptr;
+}
+
+static bool drain_diagnostic_line(uint32_t now) {
+    if (!diagnostic_line_pending()) return true;
+
+    const int available = Serial.availableForWrite();
+    if (available <= 0) return false;
+    size_t remaining = diagnostic_line.length - diagnostic_line.offset;
+    size_t chunk = static_cast<size_t>(available);
+    if (chunk > remaining) chunk = remaining;
+    const size_t written = Serial.write(
+        reinterpret_cast<const uint8_t*>(diagnostic_line.data + diagnostic_line.offset),
+        chunk);
+    if (written == 0) return false;
+
+    diagnostic_line.offset += written;
+    if (uint32_t* progress = diagnostic_progress_clock()) *progress = now;
+    if (!diagnostic_line_pending()) clear_diagnostic_line();
+    return !diagnostic_line_pending();
+}
+
+static size_t format_stress_line(const char* operation) {
+    sample_stress_metrics();
+    const int n = snprintf(diagnostic_line.data, sizeof(diagnostic_line.data),
+                           "[stress] op=%s stack_hwm_words=%lu "
+                           "lvgl_min_free=%lu lvgl_max_used_pct=%u\n",
+                           operation ? operation : "?",
+                           (unsigned long)stress_min_stack_words,
+                           (unsigned long)stress_min_lvgl_free,
+                           (unsigned)stress_max_lvgl_used_pct);
+    return n > 0 ? static_cast<size_t>(n) : 0;
+}
 
 // ── Screen name lookup ───────────────────────────────────
 struct ScreenEntry {
@@ -153,8 +307,8 @@ static void print_help() {
     Serial.println(F("║  opendm <name>                  Open DM conversation        ║"));
     Serial.println(F("║  emoji       Show emoji test grid     ║"));
     Serial.println(F("║  emoji-ac <p> Emoji autocomplete test ║"));
-    Serial.println(F("║  capture     Capture framebuffer(hex)║"));
-    Serial.println(F("║  tree        Dump LVGL widget tree   ║"));
+    Serial.println(F("║  capture [cancel]  Stream framebuffer║"));
+    Serial.println(F("║  tree [cancel]     Dump bounded tree ║"));
     Serial.println(F("║  widgets     List visible widgets    ║"));
     Serial.println(F("║  tap <x> <y> Sim touch at coords    ║"));
     Serial.println(F("║  backlight   Get/set backlight bri  ║"));
@@ -451,15 +605,21 @@ static void cmd_screen() {
 }
 
 static void cmd_status() {
+    sample_stress_metrics();
     lv_mem_monitor_t mon;
     lv_mem_monitor(&mon);
-    Serial.printf("[test] heap=%u psram=%u lvmem_used_pct=%u lvmem_free=%u lvmem_total=%u lvmem_frag=%u\n",
+    Serial.printf("[test] heap=%u psram=%u lvmem_used_pct=%u lvmem_free=%u "
+                  "lvmem_total=%u lvmem_frag=%u stack_hwm_words=%lu "
+                  "stress_lvgl_min_free=%lu stress_lvgl_max_used_pct=%u\n",
                   (unsigned)ESP.getFreeHeap(),
                   (unsigned)ESP.getFreePsram(),
                   (unsigned)mon.used_pct,
                   (unsigned)mon.free_size,
                   (unsigned)mon.total_size,
-                  (unsigned)mon.frag_pct);
+                  (unsigned)mon.frag_pct,
+                  (unsigned long)stress_min_stack_words,
+                  (unsigned long)stress_min_lvgl_free,
+                  (unsigned)stress_max_lvgl_used_pct);
 }
 
 static void cmd_contactstats() {
@@ -596,15 +756,119 @@ static void cmd_debug(const char* arg) {
     Serial.println("[test] debug: usage: debug <1|2|3>  |  debug <display|mesh|ui|map|diag|all> <1|0>  |  debug level <1|2|3>");
 }
 
-// Show full emoji grid for visual verification
+static void clear_emoji_grid_state() {
+    emoji_grid = {};
+}
+
+static void close_emoji_grid() {
+    lv_obj_t* dialog = emoji_grid.dialog;
+    clear_emoji_grid_state();
+    if (dialog && lv_obj_is_valid(dialog)) lv_obj_del_async(dialog);
+}
+
+static void fail_emoji_grid(const char* detail) {
+    Serial.printf("[test] emoji: allocation failed (%s)\n", detail ? detail : "unknown");
+    close_emoji_grid();
+}
+
+static bool render_emoji_page() {
+    if (!emoji_grid.dialog || !emoji_grid.grid || !emoji_grid.title ||
+        !emoji_grid.page_label || !lv_obj_is_valid(emoji_grid.dialog)) {
+        return false;
+    }
+
+    const uint16_t pages = sigurdos_test_controller_emoji_page_count(emoji_grid.total);
+    if (pages == 0) return false;
+    if (emoji_grid.page >= pages) emoji_grid.page = pages - 1;
+    const uint16_t page_items = sigurdos_test_controller_emoji_page_items(
+        emoji_grid.total, emoji_grid.page);
+    if (!sigurdos_test_controller_emoji_object_count_allowed(page_items)) return false;
+
+    lv_obj_clean(emoji_grid.grid);
+    const uint16_t first = emoji_grid.page * SIGURDOS_TEST_EMOJI_PAGE_SIZE;
+    for (uint16_t item = 0; item < page_items; ++item) {
+        const char* emoji_str = emoji_font_get_by_index(first + item);
+        if (!emoji_str) continue;
+
+        lv_obj_t* btn = lv_btn_create(emoji_grid.grid);
+        if (!btn) {
+            lv_obj_clean(emoji_grid.grid);
+            return false;
+        }
+        lv_obj_set_size(btn, 28, 26);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(0x1A1A2E), 0);
+        lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+        lv_obj_set_style_radius(btn, 0, 0);
+        lv_obj_set_style_border_width(btn, 0, 0);
+        lv_obj_set_style_pad_all(btn, 0, 0);
+
+        lv_obj_t* lbl = lv_label_create(btn);
+        if (!lbl) {
+            lv_obj_clean(emoji_grid.grid);
+            return false;
+        }
+        lv_label_set_text(lbl, emoji_str);
+        lv_obj_set_style_text_font(lbl, &emoji_font, 0);
+        lv_obj_center(lbl);
+    }
+
+    char title[48];
+    snprintf(title, sizeof(title), "Emoji Test %u-%u / %u",
+             (unsigned)(first + 1), (unsigned)(first + page_items),
+             (unsigned)emoji_grid.total);
+    lv_label_set_text(emoji_grid.title, title);
+
+    char page_text[24];
+    snprintf(page_text, sizeof(page_text), "%u / %u",
+             (unsigned)(emoji_grid.page + 1), (unsigned)pages);
+    lv_label_set_text(emoji_grid.page_label, page_text);
+    sample_stress_metrics();
+    Serial.printf("[test] emoji page %u/%u: %u emoji, <=%u objects\n",
+                  (unsigned)(emoji_grid.page + 1), (unsigned)pages,
+                  (unsigned)page_items, (unsigned)SIGURDOS_TEST_EMOJI_OBJECT_LIMIT);
+    return true;
+}
+
+static void emoji_page_cb(lv_event_t* e) {
+    if (!e || !emoji_grid.dialog || !lv_obj_is_valid(emoji_grid.dialog)) return;
+    lv_obj_t* target = (lv_obj_t*)lv_event_get_current_target(e);
+    const uint16_t pages = sigurdos_test_controller_emoji_page_count(emoji_grid.total);
+    if (target == emoji_grid.previous && emoji_grid.page > 0) {
+        --emoji_grid.page;
+    } else if (target == emoji_grid.next && emoji_grid.page + 1 < pages) {
+        ++emoji_grid.page;
+    } else {
+        return;
+    }
+    if (!render_emoji_page()) fail_emoji_grid("page");
+}
+
+// Show a virtualized emoji grid for visual verification.  Only one page is
+// materialized, keeping the dialog below the fixed object budget.
 static void cmd_emoji() {
     lv_obj_t* parent = lv_scr_act();
     if (!parent) {
         Serial.println("[test] emoji: no active screen");
         return;
     }
+    if (emoji_grid.dialog && lv_obj_is_valid(emoji_grid.dialog)) {
+        Serial.println("[test] emoji: grid already open");
+        return;
+    }
+    clear_emoji_grid_state();
+    reset_stress_metrics();
 
     lv_obj_t* dlg = lv_obj_create(parent);
+    if (!dlg) {
+        Serial.println("[test] emoji: allocation failed (dialog)");
+        return;
+    }
+    emoji_grid.dialog = dlg;
+    lv_obj_add_event_cb(dlg, [](lv_event_t* e) {
+        if ((lv_obj_t*)lv_event_get_target(e) == emoji_grid.dialog) {
+            clear_emoji_grid_state();
+        }
+    }, LV_EVENT_DELETE, nullptr);
     lv_obj_set_size(dlg, LV_PCT(100), LV_PCT(100));
     lv_obj_center(dlg);
     lv_obj_set_style_bg_color(dlg, lv_color_hex(0x0F0F0F), 0);
@@ -612,14 +876,16 @@ static void cmd_emoji() {
     lv_obj_set_style_radius(dlg, 0, 0);
     lv_obj_set_style_border_width(dlg, 0, 0);
     lv_obj_set_style_pad_all(dlg, 4, 0);
+    lv_obj_remove_flag(dlg, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t* title = lv_label_create(dlg);
-    lv_label_set_text(title, "Emoji Test Grid (362)");
-    lv_obj_set_style_text_color(title, lv_color_hex(0x00BFFF), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_12, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 4);
+    emoji_grid.title = lv_label_create(dlg);
+    if (!emoji_grid.title) { fail_emoji_grid("title"); return; }
+    lv_obj_set_style_text_color(emoji_grid.title, lv_color_hex(0x00BFFF), 0);
+    lv_obj_set_style_text_font(emoji_grid.title, &lv_font_montserrat_12, 0);
+    lv_obj_align(emoji_grid.title, LV_ALIGN_TOP_MID, 0, 4);
 
     lv_obj_t* close_btn = lv_btn_create(dlg);
+    if (!close_btn) { fail_emoji_grid("close button"); return; }
     lv_obj_set_size(close_btn, 24, 20);
     lv_obj_align(close_btn, LV_ALIGN_TOP_RIGHT, -4, 4);
     lv_obj_set_style_bg_color(close_btn, lv_color_hex(0xCC3333), 0);
@@ -627,46 +893,59 @@ static void cmd_emoji() {
     lv_obj_set_style_radius(close_btn, 0, 0);
     lv_obj_set_style_border_width(close_btn, 0, 0);
     lv_obj_t* close_lbl = lv_label_create(close_btn);
+    if (!close_lbl) { fail_emoji_grid("close label"); return; }
     lv_label_set_text(close_lbl, "X");
     lv_obj_set_style_text_font(close_lbl, &lv_font_montserrat_10, 0);
     lv_obj_set_style_text_color(close_lbl, lv_color_hex(0xffffff), 0);
     lv_obj_center(close_lbl);
-    lv_obj_add_event_cb(close_btn, [](lv_event_t* e) {
-        lv_obj_t* d = lv_obj_get_parent((lv_obj_t*)lv_event_get_current_target(e));
-        if (d) lv_obj_del_async(d);
-    }, LV_EVENT_CLICKED, nullptr);
+    lv_obj_add_event_cb(close_btn, [](lv_event_t*) { close_emoji_grid(); },
+                        LV_EVENT_CLICKED, nullptr);
 
-    lv_obj_t* grid = lv_obj_create(dlg);
-    lv_obj_set_size(grid, LV_PCT(96), LV_PCT(85));
-    lv_obj_align(grid, LV_ALIGN_TOP_MID, 0, 28);
-    lv_obj_set_style_bg_opa(grid, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(grid, 0, 0);
-    lv_obj_set_style_pad_all(grid, 4, 0);
-    lv_obj_set_flex_flow(grid, LV_FLEX_FLOW_ROW_WRAP);
-    lv_obj_set_flex_align(grid, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-    lv_obj_set_scroll_dir(grid, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(grid, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_remove_flag(grid, (lv_obj_flag_t)(
-        LV_OBJ_FLAG_SCROLL_ELASTIC | LV_OBJ_FLAG_SCROLL_MOMENTUM | LV_OBJ_FLAG_SCROLL_CHAIN));
+    emoji_grid.grid = lv_obj_create(dlg);
+    if (!emoji_grid.grid) { fail_emoji_grid("grid"); return; }
+    lv_obj_set_size(emoji_grid.grid, LV_PCT(96), LV_PCT(72));
+    lv_obj_align(emoji_grid.grid, LV_ALIGN_TOP_MID, 0, 28);
+    lv_obj_set_style_bg_opa(emoji_grid.grid, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(emoji_grid.grid, 0, 0);
+    lv_obj_set_style_pad_all(emoji_grid.grid, 4, 0);
+    lv_obj_set_flex_flow(emoji_grid.grid, LV_FLEX_FLOW_ROW_WRAP);
+    lv_obj_set_flex_align(emoji_grid.grid, LV_FLEX_ALIGN_START,
+                          LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_scroll_dir(emoji_grid.grid, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(emoji_grid.grid, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_remove_flag(emoji_grid.grid, (lv_obj_flag_t)(
+        LV_OBJ_FLAG_SCROLL_ELASTIC | LV_OBJ_FLAG_SCROLL_MOMENTUM |
+        LV_OBJ_FLAG_SCROLL_CHAIN));
 
-    int count = emoji_font_get_count();
-    for (int i = 0; i < count; i++) {
-        if (const char* emoji_str = emoji_font_get_by_index(i)) {
-            lv_obj_t* btn = lv_btn_create(grid);
-            lv_obj_set_size(btn, 28, 26);
-            lv_obj_set_style_bg_color(btn, lv_color_hex(0x1A1A2E), 0);
-            lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
-            lv_obj_set_style_radius(btn, 0, 0);
-            lv_obj_set_style_border_width(btn, 0, 0);
-            lv_obj_set_style_pad_all(btn, 0, 0);
+    emoji_grid.previous = lv_btn_create(dlg);
+    if (!emoji_grid.previous) { fail_emoji_grid("previous button"); return; }
+    lv_obj_set_size(emoji_grid.previous, 54, 24);
+    lv_obj_align(emoji_grid.previous, LV_ALIGN_BOTTOM_LEFT, 4, -2);
+    lv_obj_t* previous_label = lv_label_create(emoji_grid.previous);
+    if (!previous_label) { fail_emoji_grid("previous label"); return; }
+    lv_label_set_text(previous_label, "PREV");
+    lv_obj_center(previous_label);
+    lv_obj_add_event_cb(emoji_grid.previous, emoji_page_cb, LV_EVENT_CLICKED, nullptr);
 
-            lv_obj_t* lbl = lv_label_create(btn);
-            lv_label_set_text(lbl, emoji_str);
-            lv_obj_set_style_text_font(lbl, &emoji_font, 0);
-            lv_obj_center(lbl);
-        }
-    }
-    Serial.printf("[test] emoji grid: %d emoji displayed\n", count);
+    emoji_grid.page_label = lv_label_create(dlg);
+    if (!emoji_grid.page_label) { fail_emoji_grid("page label"); return; }
+    lv_obj_set_style_text_font(emoji_grid.page_label, &lv_font_montserrat_10, 0);
+    lv_obj_align(emoji_grid.page_label, LV_ALIGN_BOTTOM_MID, 0, -8);
+
+    emoji_grid.next = lv_btn_create(dlg);
+    if (!emoji_grid.next) { fail_emoji_grid("next button"); return; }
+    lv_obj_set_size(emoji_grid.next, 54, 24);
+    lv_obj_align(emoji_grid.next, LV_ALIGN_BOTTOM_RIGHT, -4, -2);
+    lv_obj_t* next_label = lv_label_create(emoji_grid.next);
+    if (!next_label) { fail_emoji_grid("next label"); return; }
+    lv_label_set_text(next_label, "NEXT");
+    lv_obj_center(next_label);
+    lv_obj_add_event_cb(emoji_grid.next, emoji_page_cb, LV_EVENT_CLICKED, nullptr);
+
+    const int count = emoji_font_get_count();
+    emoji_grid.total = count > 0 && count <= 0xFFFF ? static_cast<uint16_t>(count) : 0;
+    emoji_grid.page = 0;
+    if (!render_emoji_page()) fail_emoji_grid("initial page");
 }
 
 // Test emoji autocomplete for a given prefix
@@ -690,108 +969,324 @@ static void cmd_emoji_ac(const char* arg) {
 
 // ── Remote test commands ─────────────────────────────────
 
-static void cmd_capture() {
+static void reset_capture_job() {
+    if (capture_job.buffer) heap_caps_free(capture_job.buffer);
+    capture_job = {};
+    clear_diagnostic_line();
+}
+
+static void abort_capture(const char* reason, bool announce) {
+    if (announce) {
+        Serial.printf("[capture] ABORT: %s\n", reason ? reason : "cancelled");
+    }
+    reset_capture_job();
+}
+
+static void cmd_capture(const char* arg) {
+    while (arg && *arg == ' ') ++arg;
+    if (arg && strcmp(arg, "cancel") == 0) {
+        if (capture_job.phase == CapturePhase::Idle) {
+            Serial.println("[test] capture: no capture active");
+        } else {
+            abort_capture("cancelled", true);
+        }
+        return;
+    }
+    if (arg && arg[0]) {
+        Serial.println("[test] capture: usage: capture [cancel]");
+        return;
+    }
+    if (capture_job.phase != CapturePhase::Idle) {
+        Serial.println("[test] capture: already active (use 'capture cancel')");
+        return;
+    }
+    if (tree_job.active) {
+        Serial.println("[test] capture: tree dump active (use 'tree cancel')");
+        return;
+    }
+
     lv_display_t* disp = lv_display_get_default();
     if (!disp) {
         Serial.println("[test] capture: no display");
         return;
     }
-
-    uint32_t w = (uint32_t)lv_display_get_horizontal_resolution(disp);
-    uint32_t h = (uint32_t)lv_display_get_vertical_resolution(disp);
-    uint32_t stride = lv_draw_buf_width_to_stride(w, LV_COLOR_FORMAT_RGB565);
-    uint32_t total_bytes = stride * h;
-
-    uint8_t* snap_buf = (uint8_t*)heap_caps_malloc(total_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!snap_buf) {
-        Serial.println("[test] capture: pre-alloc failed");
+    const uint32_t width = (uint32_t)lv_display_get_horizontal_resolution(disp);
+    const uint32_t height = (uint32_t)lv_display_get_vertical_resolution(disp);
+    const uint32_t stride = lv_draw_buf_width_to_stride(width, LV_COLOR_FORMAT_RGB565);
+    if (!sigurdos_test_controller_capture_size_allowed(width, height, stride)) {
+        Serial.printf("[test] capture: frame exceeds %lu-byte bound\n",
+                      (unsigned long)SIGURDOS_TEST_CAPTURE_MAX_BYTES);
         return;
     }
 
-    lv_draw_buf_t snap_db;
-    lv_draw_buf_init(&snap_db, w, h, LV_COLOR_FORMAT_RGB565, stride, snap_buf, total_bytes);
-
-    lv_result_t res = lv_snapshot_take_to_draw_buf(lv_scr_act(), LV_COLOR_FORMAT_RGB565, &snap_db);
-    if (res != LV_RES_OK) {
-        heap_caps_free(snap_buf);
-        Serial.println("[test] capture: snapshot failed");
-        return;
-    }
-
-    Serial.printf("[capture] W=%lu H=%lu S=%lu\n",
-                  (unsigned long)w, (unsigned long)h, (unsigned long)stride);
-
-    char hex_line[128];
-    const int HEX_PER_LINE = 64;
-
-    for (uint32_t y = 0; y < h; y++) {
-        uint8_t* row = snap_buf + y * stride;
-        uint32_t offset = 0;
-        while (offset < stride) {
-            uint32_t remaining = stride - offset;
-            uint32_t chunk = (remaining > (HEX_PER_LINE / 2))
-                             ? (HEX_PER_LINE / 2) : remaining;
-            int n = 0;
-            for (uint32_t i = 0; i < chunk; i++) {
-                n += snprintf(hex_line + n, sizeof(hex_line) - n, "%02X", row[offset + i]);
-            }
-            hex_line[n] = '\0';
-            Serial.printf("[cdata] %s\n", hex_line);
-            offset += chunk;
-        }
-        if (y % 16 == 0) yield();
-    }
-
-    heap_caps_free(snap_buf);
-    Serial.println("[capture] END");
+    const uint32_t now = millis();
+    capture_job.phase = CapturePhase::Snapshot;
+    capture_job.width = width;
+    capture_job.height = height;
+    capture_job.stride = stride;
+    capture_job.total_bytes = stride * height;
+    capture_job.offset = 0;
+    capture_job.started_ms = now;
+    capture_job.last_progress_ms = now;
+    reset_stress_metrics();
+    Serial.printf("[test] capture queued: %lu bytes (cancel with 'capture cancel')\n",
+                  (unsigned long)capture_job.total_bytes);
 }
 
-static void dump_widget_tree(lv_obj_t* obj, int depth) {
-    if (!obj) return;
-    for (int i = 0; i < depth; i++) Serial.print("  ");
+static void service_capture(uint32_t now) {
+    if (capture_job.phase == CapturePhase::Idle) return;
+    if (static_cast<uint32_t>(now - capture_job.started_ms) > CAPTURE_TOTAL_TIMEOUT_MS) {
+        abort_capture("deadline exceeded", Serial.availableForWrite() > 0);
+        return;
+    }
+    if (static_cast<uint32_t>(now - capture_job.last_progress_ms) >
+        DIAGNOSTIC_STALL_TIMEOUT_MS) {
+        abort_capture("serial stalled", Serial.availableForWrite() > 0);
+        return;
+    }
+    if (diagnostic_line_pending()) return;
 
+    if (capture_job.phase == CapturePhase::Snapshot) {
+        capture_job.buffer = (uint8_t*)heap_caps_malloc(
+            capture_job.total_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!capture_job.buffer) {
+            abort_capture("snapshot allocation failed", true);
+            return;
+        }
+        lv_obj_t* screen = lv_scr_act();
+        if (!screen || !lv_obj_is_valid(screen)) {
+            abort_capture("active screen unavailable", true);
+            return;
+        }
+
+        lv_draw_buf_t snapshot;
+        lv_draw_buf_init(&snapshot, capture_job.width, capture_job.height,
+                         LV_COLOR_FORMAT_RGB565, capture_job.stride,
+                         capture_job.buffer, capture_job.total_bytes);
+        if (lv_snapshot_take_to_draw_buf(screen, LV_COLOR_FORMAT_RGB565, &snapshot) !=
+            LV_RES_OK) {
+            abort_capture("snapshot failed", true);
+            return;
+        }
+        sample_stress_metrics();
+        capture_job.phase = CapturePhase::Header;
+        capture_job.last_progress_ms = now;
+    }
+
+    if (capture_job.phase == CapturePhase::Header) {
+        const int n = snprintf(diagnostic_line.data, sizeof(diagnostic_line.data),
+                               "[capture] W=%lu H=%lu S=%lu\n",
+                               (unsigned long)capture_job.width,
+                               (unsigned long)capture_job.height,
+                               (unsigned long)capture_job.stride);
+        queue_diagnostic_line(n > 0 ? static_cast<size_t>(n) : 0);
+        capture_job.phase = CapturePhase::Data;
+    } else if (capture_job.phase == CapturePhase::Data) {
+        if (capture_job.offset >= capture_job.total_bytes) {
+            capture_job.phase = CapturePhase::Stats;
+        } else {
+            const uint32_t remaining = capture_job.total_bytes - capture_job.offset;
+            const uint32_t chunk = remaining > CAPTURE_DATA_BYTES_PER_LINE
+                                       ? CAPTURE_DATA_BYTES_PER_LINE
+                                       : remaining;
+            size_t n = 0;
+            n += static_cast<size_t>(snprintf(diagnostic_line.data + n,
+                                              sizeof(diagnostic_line.data) - n,
+                                              "[cdata] "));
+            for (uint32_t i = 0; i < chunk; ++i) {
+                n += static_cast<size_t>(snprintf(
+                    diagnostic_line.data + n, sizeof(diagnostic_line.data) - n,
+                    "%02X", capture_job.buffer[capture_job.offset + i]));
+            }
+            n += static_cast<size_t>(snprintf(diagnostic_line.data + n,
+                                              sizeof(diagnostic_line.data) - n,
+                                              "\n"));
+            queue_diagnostic_line(n);
+            capture_job.offset += chunk;
+        }
+    }
+
+    if (capture_job.phase == CapturePhase::Stats && !diagnostic_line_pending()) {
+        queue_diagnostic_line(format_stress_line("capture"));
+        capture_job.phase = CapturePhase::End;
+    } else if (capture_job.phase == CapturePhase::End && !diagnostic_line_pending()) {
+        const char end[] = "[capture] END\n";
+        memcpy(diagnostic_line.data, end, sizeof(end) - 1);
+        queue_diagnostic_line(sizeof(end) - 1);
+        capture_job.phase = CapturePhase::Done;
+    } else if (capture_job.phase == CapturePhase::Done && !diagnostic_line_pending()) {
+        reset_capture_job();
+    }
+}
+
+static const char* widget_type_name(lv_obj_t* obj) {
+    if (!obj) return "?";
     const char* type = "?";
     if (lv_obj_check_type(obj, &lv_button_class))      type = "btn";
     else if (lv_obj_check_type(obj, &lv_label_class))   type = "label";
-    else if (lv_obj_check_type(obj, &lv_obj_class))     type = "obj";
     else if (lv_obj_check_type(obj, &lv_image_class))   type = "img";
     else if (lv_obj_check_type(obj, &lv_textarea_class)) type = "textarea";
     else if (lv_obj_check_type(obj, &lv_list_class))    type = "list";
     else if (lv_obj_check_type(obj, &lv_roller_class))  type = "roller";
     else if (lv_obj_check_type(obj, &lv_dropdown_class)) type = "dropdown";
+    else if (lv_obj_check_type(obj, &lv_obj_class))     type = "obj";
+    return type;
+}
+
+static size_t format_widget_tree_line(lv_obj_t* obj, uint8_t depth) {
+    if (!obj || !lv_obj_is_valid(obj)) return 0;
+    size_t n = 0;
+    for (uint8_t i = 0; i < depth && n + 2 < sizeof(diagnostic_line.data); ++i) {
+        diagnostic_line.data[n++] = ' ';
+        diagnostic_line.data[n++] = ' ';
+    }
 
     lv_area_t coords;
     lv_obj_get_coords(obj, &coords);
-
-    Serial.printf("%s x=%d y=%d w=%d h=%d visible=%d",
-                  type, lv_obj_get_x(obj), lv_obj_get_y(obj),
-                  coords.x2 - coords.x1 + 1, coords.y2 - coords.y1 + 1,
-                  lv_obj_is_valid(obj) && !lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN));
+    const int written = snprintf(
+        diagnostic_line.data + n, sizeof(diagnostic_line.data) - n,
+        "%s x=%d y=%d w=%d h=%d visible=%d",
+        widget_type_name(obj), lv_obj_get_x(obj), lv_obj_get_y(obj),
+        coords.x2 - coords.x1 + 1, coords.y2 - coords.y1 + 1,
+        !lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN));
+    if (written <= 0) return 0;
+    n += static_cast<size_t>(written);
+    if (n >= sizeof(diagnostic_line.data)) n = sizeof(diagnostic_line.data) - 1;
 
     if (lv_obj_check_type(obj, &lv_label_class)) {
         const char* text = lv_label_get_text(obj);
         if (text) {
             char buf[48];
-            strncpy(buf, text, 44);
-            buf[44] = '\0';
+            sigurdos::utf8_copy_truncate(buf, sizeof(buf), text);
             for (char* p = buf; *p; p++) if (*p == '\n') *p = ' ';
-            Serial.printf(" \"%s\"", buf);
+            const int text_written = snprintf(
+                diagnostic_line.data + n, sizeof(diagnostic_line.data) - n,
+                " \"%s\"", buf);
+            if (text_written > 0) n += static_cast<size_t>(text_written);
+            if (n >= sizeof(diagnostic_line.data)) n = sizeof(diagnostic_line.data) - 1;
         }
     }
-    Serial.println();
-
-    uint32_t child_cnt = lv_obj_get_child_count(obj);
-    for (uint32_t i = 0; i < child_cnt; i++) {
-        lv_obj_t* child = lv_obj_get_child(obj, i);
-        if (child) dump_widget_tree(child, depth + 1);
-    }
+    if (n + 1 < sizeof(diagnostic_line.data)) diagnostic_line.data[n++] = '\n';
+    return n;
 }
 
-static void cmd_tree() {
+static void reset_tree_job() {
+    tree_job = {};
+    clear_diagnostic_line();
+}
+
+static void abort_tree(const char* reason, bool announce) {
+    if (announce) Serial.printf("[test] tree: aborted (%s)\n", reason ? reason : "cancelled");
+    reset_tree_job();
+}
+
+static void cmd_tree(const char* arg) {
+    while (arg && *arg == ' ') ++arg;
+    if (arg && strcmp(arg, "cancel") == 0) {
+        if (!tree_job.active) Serial.println("[test] tree: no dump active");
+        else abort_tree("cancelled", true);
+        return;
+    }
+    if (arg && arg[0]) {
+        Serial.println("[test] tree: usage: tree [cancel]");
+        return;
+    }
+    if (tree_job.active) {
+        Serial.println("[test] tree: already active (use 'tree cancel')");
+        return;
+    }
+    if (capture_job.phase != CapturePhase::Idle) {
+        Serial.println("[test] tree: capture active (use 'capture cancel')");
+        return;
+    }
+
     lv_obj_t* scr = lv_scr_act();
     if (!scr) { Serial.println("[test] tree: no active screen"); return; }
-    dump_widget_tree(scr, 0);
-    Serial.println("[test] tree: see above");
+    const uint32_t now = millis();
+    tree_job.active = true;
+    tree_job.stack_size = 1;
+    tree_job.stack[0] = {scr, 0, false};
+    tree_job.started_ms = now;
+    tree_job.last_progress_ms = now;
+    reset_stress_metrics();
+    Serial.printf("[test] tree queued: depth<=%u nodes<=%u (cancel with 'tree cancel')\n",
+                  (unsigned)SIGURDOS_TEST_TREE_MAX_DEPTH,
+                  (unsigned)SIGURDOS_TEST_TREE_MAX_NODES);
+}
+
+static void service_tree(uint32_t now) {
+    if (!tree_job.active) return;
+    if (static_cast<uint32_t>(now - tree_job.started_ms) > TREE_TOTAL_TIMEOUT_MS) {
+        abort_tree("deadline exceeded", Serial.availableForWrite() > 0);
+        return;
+    }
+    if (static_cast<uint32_t>(now - tree_job.last_progress_ms) >
+        DIAGNOSTIC_STALL_TIMEOUT_MS) {
+        abort_tree("serial stalled", Serial.availableForWrite() > 0);
+        return;
+    }
+    if (diagnostic_line_pending()) return;
+
+    if (tree_job.finishing) {
+        if (tree_job.summary_queued) {
+            reset_tree_job();
+            return;
+        }
+        sample_stress_metrics();
+        const int n = snprintf(
+            diagnostic_line.data, sizeof(diagnostic_line.data),
+            "[test] tree: nodes=%u max_depth=%u depth_limited=%u node_limited=%u "
+            "stack_hwm_words=%lu lvgl_min_free=%lu lvgl_max_used_pct=%u\n",
+            (unsigned)tree_job.nodes, (unsigned)tree_job.max_depth_seen,
+            tree_job.depth_limited ? 1U : 0U, tree_job.node_limited ? 1U : 0U,
+            (unsigned long)stress_min_stack_words,
+            (unsigned long)stress_min_lvgl_free,
+            (unsigned)stress_max_lvgl_used_pct);
+        queue_diagnostic_line(n > 0 ? static_cast<size_t>(n) : 0);
+        tree_job.summary_queued = true;
+        return;
+    }
+
+    while (tree_job.stack_size > 0) {
+        const uint8_t depth = tree_job.stack_size - 1;
+        TreeFrame& frame = tree_job.stack[depth];
+        if (!frame.obj || !lv_obj_is_valid(frame.obj)) {
+            --tree_job.stack_size;
+            continue;
+        }
+
+        if (!frame.printed) {
+            if (tree_job.nodes >= SIGURDOS_TEST_TREE_MAX_NODES) {
+                tree_job.node_limited = true;
+                tree_job.finishing = true;
+                return;
+            }
+            const size_t line_len = format_widget_tree_line(frame.obj, depth);
+            frame.printed = true;
+            ++tree_job.nodes;
+            if (depth > tree_job.max_depth_seen) tree_job.max_depth_seen = depth;
+            sample_stress_metrics();
+            if (line_len > 0) queue_diagnostic_line(line_len);
+            return;
+        }
+
+        const uint32_t child_count = lv_obj_get_child_count(frame.obj);
+        if (!sigurdos_test_controller_tree_can_descend(depth)) {
+            if (child_count > 0) tree_job.depth_limited = true;
+            --tree_job.stack_size;
+            continue;
+        }
+        if (frame.next_child >= child_count) {
+            --tree_job.stack_size;
+            continue;
+        }
+
+        lv_obj_t* child = lv_obj_get_child(frame.obj, frame.next_child++);
+        if (!child || !lv_obj_is_valid(child)) continue;
+        tree_job.stack[tree_job.stack_size++] = {child, 0, false};
+    }
+
+    tree_job.finishing = true;
 }
 
 static void cmd_widgets() {
@@ -1491,7 +1986,7 @@ static bool dispatch(const char* line) {
     } else if (strcmp(cmd, "emoji-ac") == 0) {
         cmd_emoji_ac(arg);
     } else if (strcmp(cmd, "capture") == 0) {
-        cmd_capture();
+        cmd_capture(arg);
     } else if (strcmp(cmd, "acmd") == 0) {
         if (!arg) { Serial.println("[test] acmd: missing name"); return true; }
         Serial.printf("[test] acmd -> %s\n", arg);
@@ -1518,7 +2013,7 @@ static bool dispatch(const char* line) {
         uint8_t perm = sigurdos::mesh::getLoginPermission(name);
         Serial.printf("[test] loginstat %s: status=%d perm=%d\n", name, (int)st, (int)perm);
     } else if (strcmp(cmd, "tree") == 0) {
-        cmd_tree();
+        cmd_tree(arg);
     } else if (strcmp(cmd, "widgets") == 0) {
         cmd_widgets();
     } else if (strcmp(cmd, "telemetry") == 0) {
@@ -1584,6 +2079,10 @@ bool sigurdos_test_controller_exec(const char* cmd) {
 }
 
 void sigurdos_test_controller_init() {
+    reset_capture_job();
+    reset_tree_job();
+    clear_emoji_grid_state();
+    reset_stress_metrics();
     initialized = true;
     cmd_pos = 0;
     cmd_buf[0] = '\0';
@@ -1601,6 +2100,15 @@ void sigurdos_test_controller_loop() {
     if (!initialized) return;
 
     uint32_t now = millis();
+    sample_stress_metrics();
+
+    // Long diagnostics own their current output line until it is fully sent,
+    // preventing command echoes from splitting the capture/tree protocol.
+    if (diagnostic_line_pending() && !drain_diagnostic_line(now)) {
+        service_capture(now);
+        service_tree(now);
+        return;
+    }
 
     // Drain type queue: inject one codepoint per loop iteration
     if (type_count > 0 && (now - type_last_inject_ms >= TYPE_CHUNK_DELAY)) {
@@ -1615,21 +2123,30 @@ void sigurdos_test_controller_loop() {
         }
     }
 
-    if (now - last_poll_ms < CMD_POLL_MS) return;
-    last_poll_ms = now;
+    if (now - last_poll_ms >= CMD_POLL_MS) {
+        last_poll_ms = now;
 
-    // Read characters from Serial
-    while (Serial.available()) {
-        char c = (char)Serial.read();
-        if (c == '\n' || c == '\r') {
-            if (cmd_pos > 0) {
-                cmd_buf[cmd_pos] = '\0';
-                Serial.printf("[test] > %s\n", cmd_buf);  // echo
-                dispatch(cmd_buf);
-                cmd_pos = 0;
+        // Read characters from Serial.  Cancellation remains available between
+        // every bounded output line while mesh/UI work continues in main loop.
+        while (Serial.available()) {
+            char c = (char)Serial.read();
+            if (c == '\n' || c == '\r') {
+                if (cmd_pos > 0) {
+                    cmd_buf[cmd_pos] = '\0';
+                    Serial.printf("[test] > %s\n", cmd_buf);  // echo
+                    dispatch(cmd_buf);
+                    cmd_pos = 0;
+                }
+            } else if (cmd_pos < CMD_BUF_SIZE - 1) {
+                cmd_buf[cmd_pos++] = c;
             }
-        } else if (cmd_pos < CMD_BUF_SIZE - 1) {
-            cmd_buf[cmd_pos++] = c;
         }
+    }
+
+    for (uint8_t i = 0; i < DIAGNOSTIC_LINES_PER_LOOP; ++i) {
+        service_capture(now);
+        service_tree(now);
+        if (diagnostic_line_pending() && !drain_diagnostic_line(now)) break;
+        if (capture_job.phase == CapturePhase::Idle && !tree_job.active) break;
     }
 }

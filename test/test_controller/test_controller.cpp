@@ -170,6 +170,38 @@ TEST(TestControllerRfParserTest, ExtraTrailingArgsIgnoredGracefully) {
     EXPECT_TRUE(out.rx_boosted_gain);
 }
 
+TEST(TestControllerBoundsTest, EmojiPageNeverExceedsObjectBudget) {
+    EXPECT_EQ(sigurdos_test_controller_emoji_page_count(0), 0);
+    EXPECT_EQ(sigurdos_test_controller_emoji_page_count(362), 16);
+    EXPECT_EQ(sigurdos_test_controller_emoji_page_items(362, 0), 24);
+    EXPECT_EQ(sigurdos_test_controller_emoji_page_items(362, 15), 2);
+    EXPECT_EQ(sigurdos_test_controller_emoji_page_items(362, 16), 0);
+    EXPECT_TRUE(sigurdos_test_controller_emoji_object_count_allowed(24));
+    EXPECT_FALSE(sigurdos_test_controller_emoji_object_count_allowed(25));
+    EXPECT_LE(SIGURDOS_TEST_EMOJI_FIXED_OBJECTS + SIGURDOS_TEST_EMOJI_PAGE_SIZE * 2,
+              SIGURDOS_TEST_EMOJI_OBJECT_LIMIT);
+}
+
+TEST(TestControllerBoundsTest, WidgetTreeDepthAndNodeCapsAreFinite) {
+    EXPECT_TRUE(sigurdos_test_controller_tree_can_descend(0));
+    EXPECT_TRUE(sigurdos_test_controller_tree_can_descend(
+        SIGURDOS_TEST_TREE_MAX_DEPTH - 1));
+    EXPECT_FALSE(sigurdos_test_controller_tree_can_descend(
+        SIGURDOS_TEST_TREE_MAX_DEPTH));
+    EXPECT_GE(SIGURDOS_TEST_TREE_MAX_NODES, 1);
+    EXPECT_LE(SIGURDOS_TEST_TREE_MAX_NODES, 128);
+}
+
+TEST(TestControllerBoundsTest, CaptureAcceptsOnlyBoundedRgb565Frames) {
+    EXPECT_TRUE(sigurdos_test_controller_capture_size_allowed(320, 240, 640));
+    EXPECT_FALSE(sigurdos_test_controller_capture_size_allowed(0, 240, 640));
+    EXPECT_FALSE(sigurdos_test_controller_capture_size_allowed(320, 0, 640));
+    EXPECT_FALSE(sigurdos_test_controller_capture_size_allowed(320, 240, 639));
+    EXPECT_FALSE(sigurdos_test_controller_capture_size_allowed(321, 240, 642));
+    EXPECT_FALSE(sigurdos_test_controller_capture_size_allowed(320, 241, 640));
+    EXPECT_FALSE(sigurdos_test_controller_capture_size_allowed(320, 240, 644));
+}
+
 // getrf does not use the parser — it reads prefs directly and prints via Serial.
 // Dispatch/Serial smoke tests require the full controller linked on hardware.
 

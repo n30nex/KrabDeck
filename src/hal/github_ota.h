@@ -27,6 +27,11 @@ enum class GitHubOTAState {
     Failed,         // Error occurred
 };
 
+inline bool githubOtaFlashSessionActive(GitHubOTAState state) {
+    return state == GitHubOTAState::Downloading ||
+           state == GitHubOTAState::Writing;
+}
+
 struct GitHubOTAStatus {
     GitHubOTAState state = GitHubOTAState::Idle;
     int  progress_pct = 0;       // 0-100 (download + write combined)
@@ -51,7 +56,7 @@ bool isActive();
 // Returns the current status (call from UI to show progress).
 const GitHubOTAStatus& getStatus();
 
-// Cancel an in-progress OTA (best effort).
+// Synchronously cancel an in-progress OTA and abort any open flash session.
 void cancel();
 
 // ── Settings helpers (usable from UI without starting an update) ──

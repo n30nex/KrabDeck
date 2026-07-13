@@ -490,8 +490,13 @@ const GitHubOTAStatus& getStatus() {
 }
 
 void cancel() {
+    if (!s_active) return;
     s_cancelled = true;
     Serial.println("[gh-ota] Cancel requested");
+    if (githubOtaFlashSessionActive(s_status.state)) {
+        Update.abort();
+    }
+    fail("Cancelled");
 }
 
 const char* getDownloadLabel() {

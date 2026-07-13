@@ -22,6 +22,8 @@
 #include "hal/tdeck_pins.h"
 #include "hal/gps.h"
 #include "hal/prefs.h"
+#include "hal/github_ota.h"
+#include "hal/wifi_ota.h"
 #include "sigurd_mesh_v2.h"
 #include "regions.h"
 #include "utils/utf8_util.h"
@@ -280,10 +282,10 @@ static bool loadIdentity(::mesh::LocalIdentity& id) {
     return true;
 }
 
-static void saveIdentity(::mesh::LocalIdentity& id) {
+static bool saveIdentity(::mesh::LocalIdentity& id) {
     uint8_t buf[128];
     size_t len = id.writeTo(buf, sizeof(buf));
-    sigurdos::mesh::identityStoreSave(buf, len);
+    return sigurdos::mesh::identityStoreSave(buf, len);
 }
 
 // ════════════════════════════════════════════════════
@@ -1624,8 +1626,8 @@ const PingResult* getPingResult(int i) {
     return reinterpret_cast<const PingResult*>(r);
 }
 
-void saveChannels() {
-    if (!g_mesh) return;
+bool saveChannels() {
+    if (!g_mesh) return true;
     int n = g_mesh->getChannelCount();
 
     // Channel read callback for the store
@@ -1644,7 +1646,7 @@ void saveChannels() {
         return true;
     };
 
-    sigurdos::mesh::channelStoreSave(n, read_fn, g_mesh);
+    return sigurdos::mesh::channelStoreSave(n, read_fn, g_mesh);
 }
 
 void loadChannels() {
@@ -1661,8 +1663,8 @@ void loadChannels() {
     sigurdos::mesh::channelStoreLoad(load_fn, g_mesh);
 }
 
-void saveState() {
-    if (g_mesh) saveIdentity(g_mesh->self_id);
+bool saveState() {
+    return !g_mesh || saveIdentity(g_mesh->self_id);
 }
 
 // ── Contact persistence ─────────────────────────
@@ -1717,11 +1719,15 @@ static bool writeStoredContact(const sigurdos::mesh::StoredContact& stored, void
 static bool     g_contacts_dirty = false;
 static uint32_t g_contacts_dirty_since = 0;
 
-void saveContacts() {
-    if (!g_mesh) return;
+bool saveContacts() {
+    if (!g_mesh) return true;
     int n = g_mesh->getNumContacts();
-    sigurdos::mesh::contactStoreSave(n, readStoredContact, nullptr);
-    g_contacts_dirty = false;  // explicit saves cover any pending checkpoint
+    const bool saved = sigurdos::mesh::contactStoreSave(
+        n, readStoredContact, nullptr);
+    if (saved) {
+        g_contacts_dirty = false;  // explicit saves cover pending checkpoint
+    }
+    return saved;
 }
 
 void markContactsDirty() {
@@ -1752,17 +1758,39 @@ void reloadContactsAfterIdentityChange() {
 
 void shutdown()
 {
-    if (!sigurdos::mesh::detail::meshInitUsable(init_state)) return;
-    // Save all persistent state to NVS/SPIFFS before shutting down
-    saveChannels();
-    saveState();
-    saveContacts();
-    // Give flash writes time to complete before power cut
-    delay(150);
-    // Enter deep sleep indefinitely. User must press power button
-    // (long press) or reset to wake. This is functionally equivalent
-    // to power-off for the T-Deck.
-    board.sleep(0);
+    sigurdos::mesh::detail::coordinateShutdown(
+        init_state,
+        []() {
+            // Stop services that can start network or flash work while the
+            // persistence checkpoint is being written.
+            sigurdos::github_ota::cancel();
+            sigurdos::ota::stop();
+        },
+        []() {
+            // Settings are normally committed on every change. Re-commit the
+            // cached snapshot here so the orderly shutdown has a checked NVS
+            // checkpoint alongside the mesh's SPIFFS-backed state.
+            const bool settings_saved = sigurdos::prefs_save(sigurdos::prefs_get());
+            const bool channels_saved = saveChannels();
+            const bool identity_saved = saveState();
+            const bool contacts_saved = saveContacts();
+            const bool saved = settings_saved && channels_saved &&
+                               identity_saved && contacts_saved;
+            if (!saved) {
+                Serial.printf(
+                    "[power] persistence failed: prefs=%d channels=%d identity=%d contacts=%d\n",
+                    settings_saved, channels_saved, identity_saved, contacts_saved);
+            }
+            // The stores close/commit synchronously; retain a short settling
+            // interval before changing peripheral power domains.
+            delay(150);
+            return saved;
+        },
+        []() {
+            // TDeckBoard owns wake configuration, bus quiescing, safe signal
+            // states, rail removal, and the final deep-sleep transition.
+            board.sleep(0);
+        });
 }
 
 void factoryReset()

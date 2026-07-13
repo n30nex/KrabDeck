@@ -138,6 +138,38 @@ TEST(MeshInitLifecycle, DistinguishesStoppedClockOnlyAndReady)
         MeshInitState::Ready));
 }
 
+TEST(MeshInitLifecycle, EarlyShutdownQuiescesAndSleepsWithoutPersistence)
+{
+    std::vector<int> order;
+    const bool persisted = sigurdos::mesh::detail::coordinateShutdown(
+        MeshInitState::Stopped,
+        [&order]() { order.push_back(1); },
+        [&order]() {
+            order.push_back(2);
+            return false;
+        },
+        [&order]() { order.push_back(3); });
+
+    EXPECT_TRUE(persisted);
+    EXPECT_EQ(order, (std::vector<int>{1, 3}));
+}
+
+TEST(MeshInitLifecycle, UsableShutdownPersistsBeforeSleepEvenOnWriteFailure)
+{
+    std::vector<int> order;
+    const bool persisted = sigurdos::mesh::detail::coordinateShutdown(
+        MeshInitState::Ready,
+        [&order]() { order.push_back(1); },
+        [&order]() {
+            order.push_back(2);
+            return false;
+        },
+        [&order]() { order.push_back(3); });
+
+    EXPECT_FALSE(persisted);
+    EXPECT_EQ(order, (std::vector<int>{1, 2, 3}));
+}
+
 TEST(MeshInitLifecycle, CleansEveryPartialAllocationInReverseOrder)
 {
     for (int allocated = 0; allocated <= 4; ++allocated) {

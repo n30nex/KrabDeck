@@ -157,8 +157,8 @@ bool sendAdvert();
 uint32_t getLastAdvertTime();
 bool     getLastAdvertSuccess();
 bool     getLastAdvertUsedGps();
-void saveState();
-void saveChannels();
+bool saveState();
+bool saveChannels();
 void loadChannels();
 void shutdown();
 void factoryReset();
@@ -172,7 +172,7 @@ uint32_t companionBleLastSyncTime();
 uint32_t companionBlePin();
 
 // ── Contact persistence ─────────────────────────
-void saveContacts();
+bool saveContacts();
 void loadContacts();
 void reloadContactsAfterIdentityChange();  // after private key import
 

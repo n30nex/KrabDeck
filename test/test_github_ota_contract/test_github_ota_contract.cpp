@@ -26,6 +26,7 @@ namespace {
 
 using sigurdos::github_ota::GitHubOTAState;
 using sigurdos::github_ota::GitHubOTAStatus;
+using sigurdos::github_ota::githubOtaFlashSessionActive;
 using sigurdos::github_ota::branchNeedsReleaseApi;
 using sigurdos::github_ota::buildReleaseDownloadUrl;
 using sigurdos::github_ota::copyFallbackDownloadUrl;
@@ -68,6 +69,16 @@ TEST(GitHubOTAContractTest, PublicApiSignaturesStayStable) {
     (void)static_cast<void_fn>(sigurdos::github_ota::cancel);
     (void)static_cast<label_fn>(sigurdos::github_ota::getDownloadLabel);
     SUCCEED();
+}
+
+TEST(GitHubOTAContractTest, OnlyDownloadAndWriteStatesOwnAFlashSession) {
+    EXPECT_FALSE(githubOtaFlashSessionActive(GitHubOTAState::Idle));
+    EXPECT_FALSE(githubOtaFlashSessionActive(GitHubOTAState::Connecting));
+    EXPECT_FALSE(githubOtaFlashSessionActive(GitHubOTAState::FetchingRelease));
+    EXPECT_TRUE(githubOtaFlashSessionActive(GitHubOTAState::Downloading));
+    EXPECT_TRUE(githubOtaFlashSessionActive(GitHubOTAState::Writing));
+    EXPECT_FALSE(githubOtaFlashSessionActive(GitHubOTAState::Success));
+    EXPECT_FALSE(githubOtaFlashSessionActive(GitHubOTAState::Failed));
 }
 
 TEST(GitHubOTAPlanTest, LatestAndEmptyBranchUseFallbackWithoutApi) {

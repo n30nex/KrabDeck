@@ -25,9 +25,12 @@
 #include <driver/rtc_io.h>
 #endif
 #ifdef SIGURDOS_TDECK
+#include <SD.h>
+#include <SPI.h>
 #include "tdeck_pins.h"
 #include "battery.h"
 #include "i2c_bus.h"
+#include "spi_shared.h"
 #include <helpers/ESP32Board.h>
 #endif
 
@@ -46,6 +49,14 @@ inline bool tdeck_should_resleep_early(bool deep_sleep_reset,
            tdeck_battery_mv_is_critical(battery_mv);
 }
 
+inline uint32_t tdeck_sleep_wake_seconds(uint32_t requested_seconds) {
+    return requested_seconds > 0 ? requested_seconds : 900U;
+}
+
+inline bool tdeck_wake_configuration_succeeded(int error) {
+    return error == 0;
+}
+
 #ifdef SIGURDOS_TDECK
 class TDeckBoard : public ESP32Board {
     uint8_t  _startup_reason;
@@ -54,6 +65,47 @@ class TDeckBoard : public ESP32Board {
     // Low-battery auto-shutdown (matches MeshCore's AUTO_SHUTDOWN_MILLIVOLTS pattern)
     static constexpr uint16_t AUTO_SHUTDOWN_MV = SIGURDOS_TDECK_AUTO_SHUTDOWN_MV;
     bool _shutdown_pending = false;
+
+    static void highImpedance(int pin) {
+        if (sigurdos_gpio_is_valid(pin)) pinMode(pin, INPUT);
+    }
+
+    static void quiescePeripheralRail() {
+        // Silence outputs and deassert every chip-select while the rail is
+        // still present. This prevents a final peripheral transaction during
+        // bus shutdown.
+        pinMode(PIN_TFT_BL, OUTPUT);
+        digitalWrite(PIN_TFT_BL, LOW);
+        pinMode(PIN_BUZZER, OUTPUT);
+        digitalWrite(PIN_BUZZER, LOW);
+
+        const int chip_selects[] = {PIN_LORA_NSS, PIN_TFT_CS, PIN_SD_CS};
+        for (int pin : chip_selects) {
+            if (!sigurdos_gpio_is_valid(pin)) continue;
+            pinMode(pin, OUTPUT);
+            digitalWrite(pin, HIGH);
+        }
+
+        // Stop clients before releasing the shared signal pins. SD must
+        // unmount before its underlying SPI bus is ended.
+        SD.end();
+        Wire.end();
+        Serial1.flush();
+        Serial1.end();
+        sigurdos_shared_spi().end();
+
+        // No MCU output may remain connected to an unpowered peripheral.
+        // Backlight and buzzer stay actively low; all data/control pins become
+        // high impedance before the peripheral rail is removed.
+        const int signal_pins[] = {
+            PIN_LORA_NSS, PIN_LORA_DIO1, PIN_LORA_RESET, PIN_LORA_BUSY,
+            PIN_LORA_SCLK, PIN_LORA_MISO, PIN_LORA_MOSI,
+            PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_RST,
+            PIN_TOUCH_SDA, PIN_TOUCH_SCL, PIN_TOUCH_INT, PIN_TOUCH_RST,
+            PIN_GPS_RX, PIN_GPS_TX, PIN_SD_CS,
+        };
+        for (int pin : signal_pins) highImpedance(pin);
+    }
 
 public:
     TDeckBoard() : _startup_reason(BD_STARTUP_NORMAL), _inhibit_sleep(false) {}
@@ -136,36 +188,56 @@ public:
     }
 
     void sleep(uint32_t secs) override {
-        if (_inhibit_sleep) return;
-        // Power down peripherals to save battery during deep sleep
-        digitalWrite(PIN_PERIPH_PWR, LOW);
-        // Optionally turn off display backlight
-        pinMode(PIN_TFT_BL, OUTPUT);
-        digitalWrite(PIN_TFT_BL, LOW);
+        if (_inhibit_sleep) {
+            Serial.println("[power] deep sleep inhibited");
+            return;
+        }
 
-        esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
+        // Validate the mandatory recovery wake source before touching powered
+        // peripherals. If configuration fails, leave the device fully powered
+        // so the caller can log/retry instead of entering an unwakeable state.
+        const uint32_t wake_secs = tdeck_sleep_wake_seconds(secs);
+        const esp_err_t timer_error =
+            esp_sleep_enable_timer_wakeup(wake_secs * 1000000ULL);
+        if (!tdeck_wake_configuration_succeeded(timer_error)) {
+            Serial.printf("[power] timer wake setup failed: %d\n", timer_error);
+            return;
+        }
+
+        const esp_err_t domain_error =
+            esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
+        if (!tdeck_wake_configuration_succeeded(domain_error)) {
+            Serial.printf("[power] RTC power-domain setup failed: %d\n",
+                          domain_error);
+        }
+
+        quiescePeripheralRail();
 
         // GPIO45 (DIO1) is not RTC-capable on ESP32-S3 (RTC GPIOs are
         // 0-21). Guard all RTC-GPIO/ext1 calls so they don't silently
         // fail with ESP_ERR_INVALID_ARG. Wake-on-packet from deep sleep
         // is not supported on the T-Deck because DIO1 is on a non-RTC pin.
         if (rtc_gpio_is_valid_gpio((gpio_num_t)PIN_LORA_DIO1)) {
-            rtc_gpio_set_direction((gpio_num_t)PIN_LORA_DIO1, RTC_GPIO_MODE_INPUT_ONLY);
-            rtc_gpio_pulldown_en((gpio_num_t)PIN_LORA_DIO1);
-            esp_sleep_enable_ext1_wakeup(SIGURDOS_LORA_DIO1_WAKE_MASK, ESP_EXT1_WAKEUP_ANY_HIGH);
+            const esp_err_t direction_error = rtc_gpio_set_direction(
+                (gpio_num_t)PIN_LORA_DIO1, RTC_GPIO_MODE_INPUT_ONLY);
+            const esp_err_t pull_error =
+                rtc_gpio_pulldown_en((gpio_num_t)PIN_LORA_DIO1);
+            const esp_err_t ext1_error = esp_sleep_enable_ext1_wakeup(
+                SIGURDOS_LORA_DIO1_WAKE_MASK, ESP_EXT1_WAKEUP_ANY_HIGH);
+            if (!tdeck_wake_configuration_succeeded(direction_error) ||
+                !tdeck_wake_configuration_succeeded(pull_error) ||
+                !tdeck_wake_configuration_succeeded(ext1_error)) {
+                Serial.printf(
+                    "[power] optional radio wake setup failed: dir=%d pull=%d ext1=%d\n",
+                    direction_error, pull_error, ext1_error);
+            }
         }
 
-        // GPIO9 (NSS) IS RTC-capable — hold to prevent floating during sleep
-        if (rtc_gpio_is_valid_gpio((gpio_num_t)PIN_LORA_NSS)) {
-            rtc_gpio_hold_en((gpio_num_t)PIN_LORA_NSS);
-        }
-
-        // Always arm a timer wakeup so the device can recover even when
-        // external wake (DIO1) is unavailable. For the critical-battery
-        // path (secs == 0 → indefinite sleep), wake every 15 minutes to
-        // re-check battery level and re-sleep if still below threshold.
-        uint32_t wake_secs = (secs > 0) ? secs : 900;
-        esp_sleep_enable_timer_wakeup(wake_secs * 1000000ULL);
+        // Only now remove peripheral power. All connected outputs are already
+        // low or high impedance, preventing GPIO back-power into the dead rail.
+        pinMode(PIN_PERIPH_PWR, OUTPUT);
+        digitalWrite(PIN_PERIPH_PWR, LOW);
+        delay(10);
         esp_deep_sleep_start();
     }
 

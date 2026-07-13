@@ -18,6 +18,21 @@ inline bool meshInitUsable(MeshInitState state)
     return state != MeshInitState::Stopped;
 }
 
+// Keep shutdown ordering explicit and testable without ESP32 hardware. Even an
+// early-boot shutdown, where the mesh never became usable, must still quiesce
+// services and enter sleep. Once persistence is available, it must complete
+// before the hardware power-down callback runs.
+template <typename QuiesceFn, typename PersistFn, typename SleepFn>
+bool coordinateShutdown(MeshInitState state, QuiesceFn quiesce,
+                        PersistFn persist, SleepFn sleep)
+{
+    quiesce();
+    bool persisted = true;
+    if (meshInitUsable(state)) persisted = persist();
+    sleep();
+    return persisted;
+}
+
 // Release dependent objects in reverse construction order. The module hook
 // handles library-specific state owned indirectly by Module (its HAL).
 template <typename MeshT, typename DriverT, typename RadioT, typename ModuleT,

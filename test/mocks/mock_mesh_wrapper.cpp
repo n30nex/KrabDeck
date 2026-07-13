@@ -87,7 +87,7 @@ int getLastRSSI()   { return mock_rssi; }
 float getLastSNR()  { return mock_snr; }
 
 bool sendAdvert() { return false; }
-void saveState() {}
+bool saveState() { return true; }
 
 bool companionBleAvailable() { return false; }
 bool companionBleSetEnabled(bool enabled) { (void)enabled; return false; }

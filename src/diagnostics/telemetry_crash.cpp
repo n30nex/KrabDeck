@@ -2,7 +2,8 @@
 // Copyright (C) 2026 Ben
 //
 // Crash capture subsystem implementation.
-// Uses RTC slow memory for crash record persistence across deep sleep.
+// Recovers the previous panic's exception context from the ESP-IDF flash
+// core dump and retains a compact, validated copy in RTC slow memory.
 
 #if SIGURDOS_TELEMETRY
 
@@ -10,6 +11,7 @@
 #include "telemetry_protocol.h"
 #include <Arduino.h>
 #include <cstring>
+#include <esp_core_dump.h>
 #include <esp_system.h>
 
 namespace sigurdos {
@@ -17,121 +19,166 @@ namespace telemetry {
 namespace crash {
 
 // ── RTC memory for crash record ────────────────────────
-// RTC_DATA_ATTR places the record in RTC slow memory which survives
-// deep sleep and soft resets (but not power-on reset or brownout).
-static RTC_DATA_ATTR RtcCrashRecord g_crash_record;
+// RTC_NOINIT_ATTR prevents startup code from overwriting a record retained
+// across a reset. Version, length, bounds, and CRC reject random/stale bytes.
+static RTC_NOINIT_ATTR RtcCrashRecord g_crash_record;
 
-static constexpr uint32_t CRASH_MAGIC = 0x43523453;  // "CR4S" little-endian
-
-// ── Backtrace capture using frame pointer walk ─────────
-// Walks the Xtensa/RISC-V frame pointer chain to capture return addresses.
-// Stores low 16 bits of each PC (address space is well below 0x1FFFF for
-// embedded flash, so the high bits are recoverable from the binary).
-//
-// On ESP32-S3 (Xtensa): a1 = stack pointer, a0 = return address
-// Frame layout: [prev_sp, return_addr, ...]
-// We walk: sp = *sp, pc = *(sp+4) (or sp[1] on 32-bit)
-//
-// Returns number of frames captured (max 8).
-static int capture_backtrace(uint16_t* out_pcs, int max_frames) {
-    if (!out_pcs || max_frames <= 0) return 0;
-
-    int count = 0;
-    uint32_t* sp;
-
-    // Read stack pointer register
-#if defined(__XTENSA__)
-    __asm__ volatile("mov %0, a1" : "=r"(sp));
-#else
-    // Fallback: use a dummy frame
-    sp = (uint32_t*)__builtin_frame_address(0);
-#endif
-
-    // Walk up to max_frames levels
-    for (int i = 0; i < max_frames && count < max_frames; i++) {
-        // Sanity check: SP should be in DRAM region (0x3FC8_0000 - 0x3FFF_FFFF)
-        // or internal SRAM (0x3FF0_0000+)
-        uint32_t sp_addr = (uint32_t)sp;
-        if (sp_addr < 0x3F000000 || sp_addr > 0x40000000) break;
-        // Xtensa requires 4-byte aligned stack pointer — unaligned
-        // access triggers Hardware Exception (double-fault) in crash handler
-        if (sp_addr & 0x3) break;
-
-        // The return address is at sp[1] (caller's a0 saved by ENTRY instruction)
-        uint32_t ret_addr = sp[1];
-        if (ret_addr == 0 || ret_addr == 0xFFFFFFFF) break;
-
-        out_pcs[count++] = (uint16_t)(ret_addr & 0xFFFF);
-
-        // Move to previous frame: sp[0] is the previous frame pointer
-        sp = (uint32_t*)(sp[0]);
-
-        // Check we're making progress (avoid infinite loops)
-        if ((uint32_t)sp <= sp_addr) break;
+static bool is_crash_reset(esp_reset_reason_t reason) {
+    switch (reason) {
+        case ESP_RST_PANIC:
+        case ESP_RST_INT_WDT:
+        case ESP_RST_TASK_WDT:
+        case ESP_RST_WDT:
+        case ESP_RST_BROWNOUT:
+            return true;
+        default:
+            return false;
     }
-
-    return count;
 }
 
-// ── Shutdown handler ───────────────────────────────────
-// Registered via esp_register_shutdown_handler().
-// Called before esp_restart() — captures backtrace and saves to RTC memory.
-//
-// ⚠️ LIMITATION: This is a SHUTDOWN handler, not a PANIC handler.
-// It fires AFTER the default panic handler has already processed the
-// exception and called esp_restart(). The captured PC and backtrace
-// reflect the shutdown/restart path, NOT the actual crash site.
-// Debugging from telemetry crash records is therefore unreliable.
-//
-// FIXME: Replace with esp_panic_handler_register_with_id() to capture
-// the actual exception context (ESP-IDF v5.1+ API).
-// See: ESP-IDF Panic Handler documentation.
-// Requires: #include <esp_private/panic_reason.h> or similar.
-static void IRAM_ATTR crash_shutdown_handler(void) {
-    g_crash_record.magic = CRASH_MAGIC;
-    g_crash_record.reset_reason = (uint8_t)esp_reset_reason();
-    g_crash_record.crash_pc = (uint32_t)__builtin_return_address(0);
-    g_crash_record.crash_timestamp = (uint32_t)(esp_timer_get_time() / 1000);  // hw timer, safe during shutdown
-    g_crash_record.backtrace_count = (uint8_t)capture_backtrace(
-        g_crash_record.backtrace_pcs, RTC_CRASH_BACKTRACE_CAPACITY);
+static bool reset_has_core_dump(esp_reset_reason_t reason) {
+    return reason == ESP_RST_PANIC || reason == ESP_RST_INT_WDT ||
+           reason == ESP_RST_TASK_WDT || reason == ESP_RST_WDT;
+}
+
+static const char* reset_reason_description(esp_reset_reason_t reason) {
+    switch (reason) {
+        case ESP_RST_UNKNOWN:   return "unknown";
+        case ESP_RST_POWERON:   return "power-on reset";
+        case ESP_RST_EXT:       return "external reset";
+        case ESP_RST_SW:        return "software reset";
+        case ESP_RST_PANIC:     return "panic/exception";
+        case ESP_RST_INT_WDT:   return "interrupt watchdog";
+        case ESP_RST_TASK_WDT:  return "task watchdog";
+        case ESP_RST_WDT:       return "watchdog";
+        case ESP_RST_DEEPSLEEP: return "deep sleep wake";
+        case ESP_RST_BROWNOUT:  return "brownout";
+        case ESP_RST_SDIO:      return "SDIO reset";
+        default:                return "unknown";
+    }
+}
+
+static void seal_record(RtcCrashRecord& record) {
+    record.magic = RTC_CRASH_MAGIC;
+    record.version = RTC_CRASH_VERSION;
+    record.length = sizeof(record);
+    record.exception_task[RTC_CRASH_TASK_NAME_CAPACITY - 1] = '\0';
+    record.app_elf_sha256[RTC_CRASH_ELF_SHA_CAPACITY - 1] = '\0';
+    record.crc32 = crash_record_crc32(record);
+}
+
+static void recover_crash_record(esp_reset_reason_t reason) {
+    RtcCrashRecord recovered{};
+    recovered.reset_reason = static_cast<uint8_t>(reason);
+
+    if (reset_has_core_dump(reason)) {
+        esp_core_dump_summary_t summary{};
+        if (esp_core_dump_get_summary(&summary) == ESP_OK) {
+            recovered.flags |= RTC_CRASH_FLAG_CORE_DUMP_VALID;
+            if (summary.exc_bt_info.corrupted) {
+                recovered.flags |= RTC_CRASH_FLAG_BACKTRACE_CORRUPTED;
+            }
+
+            recovered.crash_pc = summary.exc_pc;
+            recovered.exception_tcb = summary.exc_tcb;
+            recovered.exception_cause = summary.ex_info.exc_cause;
+            recovered.exception_vaddr = summary.ex_info.exc_vaddr;
+            recovered.core_dump_version = summary.core_dump_version;
+            memcpy(recovered.exception_task, summary.exc_task,
+                   sizeof(recovered.exception_task));
+            memcpy(recovered.app_elf_sha256, summary.app_elf_sha256,
+                   sizeof(recovered.app_elf_sha256));
+            memcpy(recovered.exception_a, summary.ex_info.exc_a,
+                   sizeof(recovered.exception_a));
+
+            recovered.backtrace_count = bounded_backtrace_count(
+                summary.exc_bt_info.depth);
+            for (uint8_t i = 0; i < recovered.backtrace_count; ++i) {
+                recovered.backtrace_pcs[i] = summary.exc_bt_info.bt[i];
+            }
+        }
+    }
+
+    seal_record(recovered);
+    g_crash_record = recovered;
+}
+
+static uint32_t emit_crash_record() {
+    const esp_reset_reason_t reason =
+        static_cast<esp_reset_reason_t>(g_crash_record.reset_reason);
+    const bool has_context =
+        (g_crash_record.flags & RTC_CRASH_FLAG_CORE_DUMP_VALID) != 0;
+
+    emit_tag(tag::CRASH);
+    emit_sep();
+    emit_kv_u(key::REASON, g_crash_record.reset_reason);
+    emit_sep();
+    emit_kv_s(key::DESC, reset_reason_description(reason));
+    emit_sep();
+    emit_kv_u("core_dump", has_context ? 1U : 0U);
+    if (has_context) {
+        emit_sep();
+        emit_kv_u(key::PC, g_crash_record.crash_pc);
+        emit_sep();
+        emit_kv_s(key::TASK_NAME, g_crash_record.exception_task);
+        emit_sep();
+        emit_kv_u("tcb", g_crash_record.exception_tcb);
+        emit_sep();
+        emit_kv_u("cause", g_crash_record.exception_cause);
+        emit_sep();
+        emit_kv_u("vaddr", g_crash_record.exception_vaddr);
+        emit_sep();
+        emit_kv_u("core_ver", g_crash_record.core_dump_version);
+        emit_sep();
+        emit_kv_s("elf_sha", g_crash_record.app_elf_sha256);
+        emit_sep();
+        emit_kv_u("bt_bad",
+                  (g_crash_record.flags & RTC_CRASH_FLAG_BACKTRACE_CORRUPTED)
+                      ? 1U : 0U);
+    }
+    emit_end();
+
+    uint32_t line_count = 1;
+    if (!has_context) return line_count;
+
+    const uint8_t bt_count =
+        bounded_backtrace_count(g_crash_record.backtrace_count);
+    for (uint8_t i = 0; i < bt_count; ++i) {
+        emit_tag(tag::BT);
+        emit_sep();
+        emit_kv_u(key::I, i);
+        emit_sep();
+        emit_kv_u(key::PC, g_crash_record.backtrace_pcs[i]);
+        emit_end();
+        ++line_count;
+    }
+
+    for (uint8_t i = 0; i < RTC_CRASH_REGISTER_COUNT; ++i) {
+        emit_tag("reg");
+        emit_sep();
+        emit_kv_u(key::I, i);
+        emit_sep();
+        emit_kv_u("value", g_crash_record.exception_a[i]);
+        emit_end();
+        ++line_count;
+    }
+
+    return line_count;
 }
 
 // ── Public API ─────────────────────────────────────────
 
 void init() {
-    // Register shutdown handler (non-critical; if it fails, crash capture
-    // simply won't work — we continue booting)
-    esp_err_t err = esp_register_shutdown_handler(&crash_shutdown_handler);
-    if (err != ESP_OK) {
-        // Shutdown handler registration failed — most likely already registered
-        // or called too late. Non-fatal, continue booting.
+    const esp_reset_reason_t reason = esp_reset_reason();
+    if (is_crash_reset(reason)) {
+        // ESP-IDF writes the exception frame to flash before reboot. Recover it
+        // now, when flash and the normal runtime are safe to use.
+        recover_crash_record(reason);
     }
 
-    // Check if we have a valid crash record from a previous run
     if (has_record()) {
-        // Auto-report the existing crash record on boot
-        emit_tag(tag::CRASH);
-        emit_sep();
-        emit_kv_s(key::DESC, "previous crash recovered");
-        emit_sep();
-        emit_kv_u(key::REASON, g_crash_record.reset_reason);
-        emit_sep();
-        emit_kv_u(key::PC, g_crash_record.crash_pc);
-        emit_end();
-
-        // Emit backtrace frames
-        uint8_t bt_count = bounded_backtrace_count(g_crash_record.backtrace_count);
-        for (uint8_t i = 0; i < bt_count; i++) {
-            emit_tag(tag::BT);
-            emit_sep();
-            emit_kv_u(key::I, i);
-            emit_sep();
-            emit_kv_u(key::PC, g_crash_record.backtrace_pcs[i]);
-            emit_end();
-        }
-
-        // Do NOT clear the record on auto-report — agent can query it again
-        // and clear it explicitly with 'query crash clear'
+        emit_crash_record();
+        // Keep the record until an explicit `query crash clear` command.
     }
 }
 
@@ -142,43 +189,7 @@ void query() {
         return;
     }
 
-    // Map reset reason code to human-readable string
-    const char* reason_desc = "unknown";
-    switch (g_crash_record.reset_reason) {
-        case 1:  reason_desc = "power-on reset";    break;
-        case 2:  reason_desc = "external reset";     break;
-        case 3:  reason_desc = "software reset";     break;
-        case 4:  reason_desc = "panic/exception";    break;
-        case 5:  reason_desc = "deep sleep wake";    break;
-        case 6:  reason_desc = "brownout";           break;
-        case 7:  reason_desc = "watchdog";           break;
-        default: reason_desc = "unknown";            break;
-    }
-
-    emit_tag(tag::CRASH);
-    emit_sep();
-    emit_kv_u(key::REASON, g_crash_record.reset_reason);
-    emit_sep();
-    emit_kv_s(key::DESC, reason_desc);
-    emit_sep();
-    emit_kv_u(key::PC, g_crash_record.crash_pc);
-    emit_end();
-
-    uint32_t n = 1;  // CRASH line
-
-    // Emit backtrace frames
-    uint8_t bt_count = bounded_backtrace_count(g_crash_record.backtrace_count);
-    for (uint8_t i = 0; i < bt_count; i++) {
-        emit_tag(tag::BT);
-        emit_sep();
-        emit_kv_u(key::I, i);
-        emit_sep();
-        emit_kv_u(key::PC, g_crash_record.backtrace_pcs[i]);
-        emit_end();
-        n++;
-    }
-
-    emit_end_resp("crash", n);
+    emit_end_resp("crash", emit_crash_record());
 }
 
 void clear() {
@@ -196,7 +207,7 @@ void test() {
 }
 
 bool has_record() {
-    return g_crash_record.magic == CRASH_MAGIC;
+    return crash_record_valid(g_crash_record);
 }
 
 RtcCrashRecord* get_record() {

@@ -136,7 +136,8 @@ jobs:
           cp webflasher_release/sigurdos-tdeck-boot_app0.bin     artifacts/sigurdos-tdeck-boot_app0.bin
           cp webflasher_release/sigurdos-tdeck-firmware.bin      artifacts/sigurdos-tdeck-firmware.bin
           cp webflasher_release/sigurdos-tdeck-full.bin          artifacts/sigurdos-tdeck-full.bin
-          cp webflasher_release/sigurdos-tdeck-launcher.bin      artifacts/sigurdos-tdeck-launcher-webflasher.bin
+          # Keep the exact filename referenced by manifest.json.
+          cp webflasher_release/sigurdos-tdeck-launcher.bin      artifacts/sigurdos-tdeck-launcher.bin
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             cp "release-evidence/${GITHUB_REF_NAME}.json" artifacts/release-evidence.json
           fi
@@ -216,5 +217,5 @@ jobs:
             firmware/sigurdos-tdeck-boot_app0.bin
             firmware/sigurdos-tdeck-firmware.bin
             firmware/sigurdos-tdeck-full.bin
-            firmware/sigurdos-tdeck-launcher-webflasher.bin
+            firmware/sigurdos-tdeck-launcher.bin
             firmware/release-evidence.json

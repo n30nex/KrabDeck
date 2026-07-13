@@ -338,6 +338,10 @@ public:
     virtual CompanionSendResult sendLogin(const uint8_t* pub_key, const char* password) = 0;
     virtual CompanionSendResult sendStatusReq(const uint8_t* pub_key) = 0;
     virtual CompanionSendResult sendTelemetryReq(const uint8_t* pub_key) = 0;
+    virtual CompanionSendResult sendBinaryReq(const uint8_t* pub_key,
+                                              const uint8_t* data,
+                                              uint8_t data_len) = 0;
+    virtual void cancelBinaryReqs() = 0;
     virtual CompanionSendResult sendTracePath(uint32_t tag, uint32_t auth, uint8_t flags,
                                               const uint8_t* path, uint8_t path_len) = 0;
     // sendPathDiscovery initiates flood path discovery for a contact by pubkey.
@@ -393,6 +397,7 @@ public:
                             const uint8_t* blob, size_t blob_len);
     bool pushTelemetryResponse(const uint8_t* pubkey_prefix,
                                const uint8_t* blob, size_t blob_len);
+    bool pushBinaryResponse(uint32_t tag, const uint8_t* blob, size_t blob_len);
     bool pushRawData(int8_t snr_quarters, int8_t rssi,
                      const uint8_t* payload, size_t payload_len);
     bool pushTraceData(uint32_t tag, uint32_t auth, uint8_t flags,
@@ -401,6 +406,7 @@ public:
 
 private:
     static constexpr int OFFLINE_QUEUE_SIZE = 16;
+    static constexpr int MAX_PENDING_BINARY_REQUESTS = 4;
     struct Frame {
         uint32_t store_id;
         bool persistent;    // channel-data frames have no message-store record
@@ -425,6 +431,9 @@ private:
     void removeFirstOfflineFrame();
     bool buildMessageFrame(const sigurdos::mesh::StoredMessage& msg,
                            uint8_t* out, size_t* out_len);
+    int findPendingBinary(uint32_t tag) const;
+    int findFreePendingBinary() const;
+    void clearPendingBinary();
 
     BaseSerialInterface* _serial = nullptr;
     CompanionBridgeHost* _host = nullptr;
@@ -435,6 +444,7 @@ private:
     int _contact_iter = -1;
     int _offline_len = 0;
     Frame _offline[OFFLINE_QUEUE_SIZE];
+    uint32_t _pending_binary[MAX_PENDING_BINARY_REQUESTS]{};
     uint8_t _cmd_frame[MAX_FRAME_SIZE + 1];
     uint8_t _out_frame[MAX_FRAME_SIZE + 1];
 

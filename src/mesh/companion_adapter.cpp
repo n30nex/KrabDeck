@@ -796,6 +796,30 @@ public:
     CompanionSendResult sendTelemetryReq(const uint8_t* pub_key) override {
         return sendReqByPubKey(pub_key, /*telemetry=*/true);
     }
+    CompanionSendResult sendBinaryReq(const uint8_t* pub_key,
+                                      const uint8_t* data,
+                                      uint8_t data_len) override {
+        CompanionSendResult r{};
+        if (!meshRadioTxAllowed() || !mesh_ptr() || !pub_key ||
+            !data || data_len == 0) {
+            return r;
+        }
+        ::ContactInfo* contact = mesh_ptr()->lookupContactByPubKey(pub_key, 32);
+        if (!contact) return r;
+        uint32_t tag = 0;
+        uint32_t est_timeout = 0;
+        const int result = mesh_ptr()->sendBinaryRequestCompanion(
+            *contact, data, data_len, tag, est_timeout);
+        if (result == MSG_SEND_FAILED) return r;
+        r.ok = true;
+        r.sent_flood = result == MSG_SEND_SENT_FLOOD;
+        r.expected_ack = tag;
+        r.est_timeout = est_timeout;
+        return r;
+    }
+    void cancelBinaryReqs() override {
+        if (mesh_ptr()) mesh_ptr()->cancelCompanionBinaryRequests();
+    }
     CompanionSendResult sendTracePath(uint32_t tag, uint32_t auth, uint8_t flags,
                                       const uint8_t* path, uint8_t path_len) override {
         CompanionSendResult r{};
@@ -972,6 +996,12 @@ void sigurdos::mesh::mesh_v2_companion_telemetry_push(const uint8_t* pub_key,
         g_companion_bridge_ptr->pushTelemetryResponse(pub_key, blob, len);
 }
 
+void sigurdos::mesh::mesh_v2_companion_binary_push(uint32_t tag,
+                                                   const uint8_t* blob,
+                                                   size_t len)
+{
+    if (g_companion_bridge_ptr)
+        g_companion_bridge_ptr->pushBinaryResponse(tag, blob, len);
 void sigurdos::mesh::mesh_v2_companion_raw_data_push(int8_t snr_quarters, int8_t rssi,
                                                      const uint8_t* payload,
                                                      size_t payload_len)

@@ -106,7 +106,8 @@ static lv_display_t* lv_disp = nullptr;
 // multiple tear lines caused by partial flushes.
 static uint8_t* draw_buf  = nullptr;
 static uint8_t* draw_buf2 = nullptr;
-static bool input_initialized = false;
+static bool input_init_attempted = false;
+static SigurdOSInputInitStatus input_status = {};
 static constexpr uint8_t BOOT_DISPLAY_BRIGHTNESS = 200;
 static constexpr uint16_t BOOT_AUTO_OFF_TIMEOUT_SEC = 30;
 
@@ -883,9 +884,13 @@ bool sigurdos_display_init()
     return true;
 }
 
-void sigurdos_display_init_inputs()
+SigurdOSInputInitStatus sigurdos_display_init_inputs()
 {
-    if (input_initialized || !lv_disp) return;
+    if (input_init_attempted) return input_status;
+    if (!lv_disp) {
+        Serial.println("[input] ERROR: display is not initialized");
+        return input_status;
+    }
 
     const sigurdos::hal::DisplayInputObjects inputs =
         sigurdos::hal::allocate_display_inputs(DISPLAY_ALLOCATOR);
@@ -904,7 +909,8 @@ void sigurdos_display_init_inputs()
     if (kb) {
         lv_indev_set_type(kb, LV_INDEV_TYPE_KEYPAD);
         lv_indev_set_read_cb(kb, lvgl_kb_cb);
-        lv_timer_set_period(lv_indev_get_read_timer(kb), 10);  // 10ms vs ~33ms default
+        lv_timer_t* read_timer = lv_indev_get_read_timer(kb);
+        if (read_timer) lv_timer_set_period(read_timer, 10);  // 10ms vs ~33ms default
     } else {
         Serial.println("[disp] keyboard input disabled: LVGL allocation failed");
     }
@@ -915,7 +921,6 @@ void sigurdos_display_init_inputs()
     } else {
         Serial.println("[disp] trackball input disabled: LVGL allocation failed");
     }
-
     if (g) {
         if (kb) lv_indev_set_group(kb, g);
         if (trackball) lv_indev_set_group(trackball, g);
@@ -923,24 +928,20 @@ void sigurdos_display_init_inputs()
     } else if (inputs.group_allocation_failed) {
         Serial.println("[disp] keyboard/trackball disabled: LVGL group allocation failed");
     }
+    input_status.lvgl_ready = touch && kb && trackball && g;
+    if (!input_status.lvgl_ready) {
+        Serial.printf("[input] LVGL setup degraded: touch=%d keyboard=%d trackball=%d group=%d\n",
+                      touch ? 1 : 0, kb ? 1 : 0, trackball ? 1 : 0, g ? 1 : 0);
+    }
 
     sigurdos::keyboard_layouts::init();
 
-    // Initialize touch controller
-    if (touch && !sigurdos_touch_init()) {
-        // Touch init failed — device works with keyboard only
-    }
-
-    // Initialize the ESP32-C3 I2C keyboard driver
-    if (kb && !sigurdos_keyboard_init()) {
-        // Keyboard init failed — device works with touch only
-    }
-
-    // Initialize trackball GPIO input
-    if (trackball) sigurdos_trackball_init();
-
-    input_initialized = true;
+    input_status.touch_ready = touch && sigurdos_touch_init();
+    input_status.keyboard_ready = kb && sigurdos_keyboard_init();
+    input_status.trackball_ready = trackball && sigurdos_trackball_init();
+    input_init_attempted = true;
     reset_auto_off();
+    return input_status;
 }
 
 void sigurdos_display_loop()
@@ -1025,11 +1026,13 @@ void sigurdos_display_loop()
     }
 #endif
 
-    if (input_initialized) {
-        sigurdos_touch_loop();
-        sigurdos_keyboard_scan();
-        sigurdos_trackball_scan();
-        dispatch_trackball_events();
+    if (input_init_attempted) {
+        if (input_status.touch_ready) sigurdos_touch_loop();
+        if (input_status.keyboard_ready) sigurdos_keyboard_scan();
+        if (input_status.trackball_ready) {
+            sigurdos_trackball_scan();
+            dispatch_trackball_events();
+        }
     }
 
     if (wake_refresh_pending) {

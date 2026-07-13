@@ -1036,6 +1036,8 @@ void sigurdos::mesh::mesh_v2_companion_binary_push(uint32_t tag,
 {
     if (g_companion_bridge_ptr)
         g_companion_bridge_ptr->pushBinaryResponse(tag, blob, len);
+}
+
 void sigurdos::mesh::mesh_v2_companion_raw_data_push(int8_t snr_quarters, int8_t rssi,
                                                      const uint8_t* payload,
                                                      size_t payload_len)

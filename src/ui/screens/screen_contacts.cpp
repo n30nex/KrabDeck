@@ -23,6 +23,7 @@
 #include "../responsive.h"
 #include "../contact_paging.h"
 #include "../chat_screen.h"
+#include "../notifications.h"
 #include "../contact_list_power.h"
 #include "../repeater_transcript.h"
 #include "../../hal/prefs.h"
@@ -681,6 +682,7 @@ static void on_login_poll_timer(lv_timer_t* t) {
 
     uint8_t st = sigurdos::mesh::getLoginStatus(ctx->name);
     if (st == LOGIN_STATUS_OK) {
+        notifications_login_result(ctx->name, true);
         if (ctx->watch_connection) return;
         char* n = strdup(ctx->name);
         free(ctx->name);
@@ -694,6 +696,7 @@ static void on_login_poll_timer(lv_timer_t* t) {
     } else if (st == LOGIN_STATUS_FAILED || st == LOGIN_STATUS_TIMEOUT ||
                st == LOGIN_STATUS_DROPPED ||
                (ctx->watch_connection && st == LOGIN_STATUS_NONE)) {
+        notifications_login_result(ctx->name, false);
         // Rebuild pre-login view so the terminal reason and Login button show.
         char* n = strdup(ctx->name);
         free(ctx->name);

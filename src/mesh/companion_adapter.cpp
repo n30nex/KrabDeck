@@ -1123,9 +1123,9 @@ static void bleValidationEmit(bool force)
     ble_validation_last_log_ms = now;
 
     const sigurdos::comms::BleSerialObserverStats s = g_ble_serial.stats();
-    char line[320];
+    char line[336];
     snprintf(line, sizeof(line),
-             "@ble_hw|ms=%lu|begun=%u|en=%u|conn=%u|adv=%u|authok=%lu|authfail=%lu|connect=%lu|disconnect=%lu|mtu=%u|rxw=%lu|rxd=%lu|rx=%lu|tx=%lu|txd=%lu|lrx=%u|ltx=%u",
+             "@ble_hw|ms=%lu|begun=%u|en=%u|conn=%u|adv=%u|authok=%lu|authfail=%lu|authtimeout=%lu|connect=%lu|disconnect=%lu|mtu=%u|rxw=%lu|rxd=%lu|rx=%lu|tx=%lu|txd=%lu|lrx=%u|ltx=%u",
              (unsigned long)now,
              s.begun ? 1u : 0u,
              s.enabled ? 1u : 0u,
@@ -1133,6 +1133,7 @@ static void bleValidationEmit(bool force)
              s.advertising_expected ? 1u : 0u,
              (unsigned long)s.auth_success_count,
              (unsigned long)s.auth_failure_count,
+             (unsigned long)s.auth_timeout_count,
              (unsigned long)s.connect_count,
              (unsigned long)s.disconnect_count,
              (unsigned int)s.last_mtu,

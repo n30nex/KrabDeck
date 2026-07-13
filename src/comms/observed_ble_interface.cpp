@@ -19,6 +19,8 @@ void ObservedSerialBLEInterface::begin(const char* prefix, char* name, uint32_t 
 {
     SerialBLEInterface::begin(prefix, name, pin_code);
     _rx_queue.clear();
+    _auth_watchdog.cancel();
+    _physical_server.store(nullptr, std::memory_order_release);
     _stats = BleSerialObserverStats{};
     _stats.begun = true;
     _stats.begin_count = 1;
@@ -29,12 +31,16 @@ void ObservedSerialBLEInterface::enable()
 {
     SerialBLEInterface::enable();  // also clears the (now unused) base buffers
     _rx_queue.clear();
+    _auth_watchdog.cancel();
+    _physical_server.store(nullptr, std::memory_order_release);
     _stats.enable_count++;
     refreshConnectionState();
 }
 
 void ObservedSerialBLEInterface::disable()
 {
+    _auth_watchdog.cancel();
+    _physical_server.store(nullptr, std::memory_order_release);
     SerialBLEInterface::disable();
     _rx_queue.clear();
     _stats.disable_count++;
@@ -61,6 +67,18 @@ size_t ObservedSerialBLEInterface::writeFrame(const uint8_t src[], size_t len)
 
 size_t ObservedSerialBLEInterface::checkRecvFrame(uint8_t dest[])
 {
+    uint16_t expired_conn_id = 0;
+    if (_auth_watchdog.takeExpired(millis(), expired_conn_id)) {
+        _stats.auth_timeout_count++;
+        _rx_queue.clear();
+        BLEServer* server =
+            _physical_server.load(std::memory_order_acquire);
+        if (server) {
+            // SerialBLEInterface::onDisconnect schedules advertising restart.
+            server->disconnect(expired_conn_id);
+        }
+    }
+
     // Drives the base transmit queue and connection housekeeping. The base
     // receive queue stays empty (onWrite no longer feeds it), so any frame
     // returned here comes from _rx_queue.
@@ -98,6 +116,7 @@ bool ObservedSerialBLEInterface::onSecurityRequest()
 
 void ObservedSerialBLEInterface::onAuthenticationComplete(esp_ble_auth_cmpl_t cmpl)
 {
+    _auth_watchdog.cancel();
     if (cmpl.success) {
         _stats.auth_success_count++;
     } else {
@@ -109,6 +128,7 @@ void ObservedSerialBLEInterface::onAuthenticationComplete(esp_ble_auth_cmpl_t cm
 
 void ObservedSerialBLEInterface::onConnect(BLEServer* server)
 {
+    _physical_server.store(server, std::memory_order_release);
     SerialBLEInterface::onConnect(server);
     refreshConnectionState();
 }
@@ -117,8 +137,10 @@ void ObservedSerialBLEInterface::onConnect(BLEServer* server,
                                            esp_ble_gatts_cb_param_t* param)
 {
     _stats.connect_count++;
+    _physical_server.store(server, std::memory_order_release);
     if (param) {
         _stats.last_conn_id = param->connect.conn_id;
+        _auth_watchdog.arm(param->connect.conn_id, millis());
     }
     SerialBLEInterface::onConnect(server, param);
     refreshConnectionState();
@@ -138,6 +160,8 @@ void ObservedSerialBLEInterface::onMtuChanged(BLEServer* server,
 
 void ObservedSerialBLEInterface::onDisconnect(BLEServer* server)
 {
+    _auth_watchdog.cancel();
+    _physical_server.store(nullptr, std::memory_order_release);
     _stats.disconnect_count++;
     SerialBLEInterface::onDisconnect(server);
     // Pending frames belong to the dead connection; the base class drops its

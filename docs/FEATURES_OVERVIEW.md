@@ -142,6 +142,7 @@ is green while an official companion is connected. See
 ### Display & LVGL
 - **LovyanGFX** driver for ST7789 240×320 TFT via SPI
 - **LVGL v9.3.0** — full widget toolkit, 16-bit color, animation support, and full-frame double buffering in PSRAM with single/partial fallbacks
+- **Lost-frame handling** — when the full double buffer cannot be swapped in time (mesh activity, GPS polling), LVGL falls back to partial rendering of dirty areas only; no visible tearing because LVGL's internal dirty-region tracking still produces correct output, but frame rate drops until the bottleneck clears
 - **Auto-off** backlight timeout (30s default) with wake on touch/keyboard input
 - **Programmable brightness** via PWM (0–255)
 - **Screen capture** via serial hex dump (`lv_snapshot_take_to_draw_buf`)
@@ -220,8 +221,8 @@ is green while an official companion is connected. See
 **Sources:** [`src/diagnostics/debug.cpp`](../src/diagnostics/debug.cpp), [`src/diagnostics/debug.h`](../src/diagnostics/debug.h), [`src/diagnostics/debug_cfg.h`](../src/diagnostics/debug_cfg.h)
 
 ### Logging Subsystem
-- **Lightweight serial logging** — header-only macros for tagged log messages (`LOG_I`, `LOG_W`, `LOG_E`)
-- **Compile-time gating** — logging compiles away entirely when `SIGURDOS_DEBUG` is not defined
+- **Lightweight serial logging** — header-only macros for tagged log messages (`SIG_LOGE`, `SIG_LOGW`, `SIG_LOGD`)
+- **Compile-time gating** — only `SIG_LOGD` (debug logging) compiles away when `SIGURDOS_DEBUG` is not defined; `SIG_LOGE` and `SIG_LOGW` always produce output
 - **Flexible backends** — supports both USB CDC serial and the telemetry framing layer
 - **Full documentation:** [`docs/LOGGING.md`](LOGGING.md)
 **Sources:** [`src/diagnostics/log.h`](../src/diagnostics/log.h)
@@ -292,13 +293,13 @@ is green while an official companion is connected. See
 
 - **CompanionBridge** — broad BLE companion protocol implementation driven by `loop()` via `ObservedSerialBLEInterface` wrapping `SerialBLEInterface`; five recognized upstream command families intentionally return `ERR_CODE_UNSUPPORTED_CMD` (see the [support matrix](COMPANION_SUPPORT.md))
 - **Offline queue** — `seedOfflineQueueFromStore()` buffers messages received while phone is disconnected; drained via `CMD_SYNC_NEXT_MESSAGE` on reconnect
-- **Dual-consumer hook** — `companion_adapter.inc` fans out message/advert/ack events to both UI and BLE simultaneously
+- **Dual-consumer hook** — `companion_adapter.cpp/h` fans out message/advert/ack events to both UI and BLE simultaneously
 - **SPIFFS message store** — persistent, append-only, dedup-keyed by (conversation, sender, timestamp); survives reboot; shared between chat UI and BLE sync
 - **Bluetooth UI screen** — enable/disable toggle, PIN display, connection status indicator, Settings → Network entry
 - **Build envs** — BLE is in the default env (`[env:SigurdOS_TDeck]` sets `-D SIGURDOS_COMPANION_BLE=1`; `SigurdOS_TDeck_ble_validation` adds the validation harness); 53 companion protocol + 5 message store native tests
 - **PIN pairing** — independently generated six-digit `NodePrefs.ble_pin` with MITM bonding
 - **Phased implementation** — Phase 0 (message store persistence), Phase 1 (MVP: handshake, contact sync, DM send/recv), Phase 2 (channels, adverts, radio config), Phase 3 (repeater login, trace, telemetry, private-key export)
-**Sources:** [`src/comms/companion_bridge.h`](../src/comms/companion_bridge.h), [`src/comms/companion_bridge.cpp`](../src/comms/companion_bridge.cpp), [`src/comms/companion_adapter.inc`](../src/comms/companion_adapter.inc), [`src/mesh/message_store.h`](../src/mesh/message_store.h), [`src/mesh/message_store.cpp`](../src/mesh/message_store.cpp), [`src/ui/screens/screen_bluetooth.cpp`](../src/ui/screens/screen_bluetooth.cpp), [`platformio.ini`](../platformio.ini), [`test/test_companion_protocol/`](../test/test_companion_protocol/), [`test/test_message_store/`](../test/test_message_store/)
+**Sources:** [`src/comms/companion_bridge.h`](../src/comms/companion_bridge.h), [`src/comms/companion_bridge.cpp`](../src/comms/companion_bridge.cpp), [`src/mesh/companion_adapter.cpp`](../src/mesh/companion_adapter.cpp), [`src/mesh/companion_adapter.h`](../src/mesh/companion_adapter.h), [`src/mesh/message_store.h`](../src/mesh/message_store.h), [`src/mesh/message_store.cpp`](../src/mesh/message_store.cpp), [`src/ui/screens/screen_bluetooth.cpp`](../src/ui/screens/screen_bluetooth.cpp), [`platformio.ini`](../platformio.ini), [`test/test_companion_protocol/`](../test/test_companion_protocol/), [`test/test_message_store/`](../test/test_message_store/)
 
 ---
 

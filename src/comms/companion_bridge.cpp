@@ -537,6 +537,8 @@ bool CompanionBridge::pushBinaryResponse(uint32_t tag,
     const bool written = _serial->writeFrame(_out_frame, i) == (size_t)i;
     if (written) _pending_binary[pending] = 0;
     return written;
+}
+
 bool CompanionBridge::pushRawData(int8_t snr_quarters, int8_t rssi,
                                   const uint8_t* payload, size_t payload_len)
 {
@@ -1460,11 +1462,7 @@ bool CompanionBridge::handleFrame(const uint8_t* frame, size_t len)
     // These are recognized command IDs but return unsupported error until
     // full implementations and security review are added. Recognition is not
     // advertised as feature parity; see docs/COMPANION_SUPPORT.md.
-    if (cmd == CMD_SEND_RAW_DATA) {
     if (cmd == CMD_SEND_BINARY_REQ) {
-        writeErrFrame(ERR_CODE_UNSUPPORTED_CMD); return true;
-    }
-    if (cmd == CMD_SEND_CONTROL_DATA) {
         writeErrFrame(ERR_CODE_UNSUPPORTED_CMD); return true;
     }
     if (cmd == CMD_SEND_ANON_REQ) {

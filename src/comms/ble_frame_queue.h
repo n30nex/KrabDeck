@@ -17,6 +17,12 @@
 namespace sigurdos {
 namespace comms {
 
+enum class BleFrameQueuePushResult : uint8_t {
+    Accepted,
+    InvalidFrame,
+    Full,
+};
+
 // Bounded FIFO carrying BLE frames across the Bluedroid host-task to
 // app-loop-task boundary (audit NET-002, issue #813). Both sides run in task
 // context, so the target locks with a FreeRTOS critical section — the hold
@@ -25,18 +31,25 @@ namespace comms {
 template <size_t MAX_LEN, size_t CAPACITY>
 class BleFrameQueue {
 public:
-    // Producer side (BLE host task). Returns false and drops the frame when
-    // the queue is full or the frame is empty/oversize.
-    bool push(const uint8_t* data, size_t len)
+    // Producer side (BLE host task). Reports queue saturation separately so
+    // callers can apply backpressure instead of silently dropping a frame.
+    BleFrameQueuePushResult tryPush(const uint8_t* data, size_t len)
     {
-        if (!data || len == 0 || len > MAX_LEN) return false;
+        if (!data || len == 0 || len > MAX_LEN) {
+            return BleFrameQueuePushResult::InvalidFrame;
+        }
         LockGuard guard(*this);
-        if (_count >= CAPACITY) return false;
+        if (_count >= CAPACITY) return BleFrameQueuePushResult::Full;
         Frame& slot = _frames[(_head + _count) % CAPACITY];
         slot.len = (uint16_t)len;
         memcpy(slot.buf, data, len);
         _count++;
-        return true;
+        return BleFrameQueuePushResult::Accepted;
+    }
+
+    bool push(const uint8_t* data, size_t len)
+    {
+        return tryPush(data, len) == BleFrameQueuePushResult::Accepted;
     }
 
     // Consumer side (app loop task). Copies the oldest frame into dest,

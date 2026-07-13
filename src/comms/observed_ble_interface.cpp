@@ -19,6 +19,8 @@ void ObservedSerialBLEInterface::begin(const char* prefix, char* name, uint32_t 
 {
     SerialBLEInterface::begin(prefix, name, pin_code);
     _rx_queue.clear();
+    _connected_server = nullptr;
+    _active_conn_id = 0;
     _stats = BleSerialObserverStats{};
     _stats.begun = true;
     _stats.begin_count = 1;
@@ -109,6 +111,7 @@ void ObservedSerialBLEInterface::onAuthenticationComplete(esp_ble_auth_cmpl_t cm
 
 void ObservedSerialBLEInterface::onConnect(BLEServer* server)
 {
+    _connected_server = server;
     SerialBLEInterface::onConnect(server);
     refreshConnectionState();
 }
@@ -117,8 +120,10 @@ void ObservedSerialBLEInterface::onConnect(BLEServer* server,
                                            esp_ble_gatts_cb_param_t* param)
 {
     _stats.connect_count++;
+    _connected_server = server;
     if (param) {
         _stats.last_conn_id = param->connect.conn_id;
+        _active_conn_id = param->connect.conn_id;
     }
     SerialBLEInterface::onConnect(server, param);
     refreshConnectionState();
@@ -143,13 +148,14 @@ void ObservedSerialBLEInterface::onDisconnect(BLEServer* server)
     // Pending frames belong to the dead connection; the base class drops its
     // own buffers on the disconnect transition, mirror that for _rx_queue.
     _rx_queue.clear();
+    _connected_server = nullptr;
+    _active_conn_id = 0;
     refreshConnectionState();
 }
 
 void ObservedSerialBLEInterface::onWrite(BLECharacteristic* characteristic,
                                          esp_ble_gatts_cb_param_t* param)
 {
-    (void)param;
     // NET-002 (#813): deliberately NOT forwarded to the base class. Its
     // receive queue is written here on the Bluedroid host task and drained
     // on the app loop task with no synchronization — concurrent access tears
@@ -158,8 +164,25 @@ void ObservedSerialBLEInterface::onWrite(BLECharacteristic* characteristic,
     const size_t len = characteristic->getLength();
     if (len == 0) return;
     _stats.ble_write_count++;
-    if (!_rx_queue.push(characteristic->getData(), len)) {
-        _stats.ble_write_drop_count++;  // oversize frame or queue full
+    const BleFrameQueuePushResult result =
+        _rx_queue.tryPush(characteristic->getData(), len);
+    if (result == BleFrameQueuePushResult::InvalidFrame) {
+        _stats.ble_write_drop_count++;
+        _stats.rx_invalid_frame_count++;
+    } else if (result == BleFrameQueuePushResult::Full) {
+        _stats.ble_write_drop_count++;
+        _stats.rx_queue_full_count++;
+
+        // Arduino-BLE sends ESP_GATT_OK before invoking onWrite(), so it is too
+        // late to NACK this write. Drop the incomplete burst and disconnect as
+        // an explicit retry signal instead of silently losing one command.
+        _rx_queue.clear();
+        if (_connected_server) {
+            _stats.rx_backpressure_disconnect_count++;
+            const uint16_t conn_id = param ? param->write.conn_id
+                                           : _active_conn_id;
+            _connected_server->disconnect(conn_id);
+        }
     }
     refreshConnectionState();
 }

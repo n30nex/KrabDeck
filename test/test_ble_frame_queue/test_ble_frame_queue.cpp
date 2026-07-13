@@ -12,6 +12,7 @@
 namespace {
 
 using sigurdos::comms::BleFrameQueue;
+using sigurdos::comms::BleFrameQueuePushResult;
 
 constexpr size_t MAX_LEN = 176;   // MAX_FRAME_SIZE on target
 constexpr size_t CAPACITY = 4;    // FRAME_QUEUE_SIZE on target
@@ -83,6 +84,26 @@ TEST(BleFrameQueue, DropsWhenFullAndRejectsBadFrames)
     uint8_t out[MAX_LEN];
     EXPECT_EQ(queue.pop(out), 0u);               // empty pop
     EXPECT_EQ(queue.pop(nullptr), 0u);           // null dest
+}
+
+TEST(BleFrameQueue, ReportsFullSeparatelyForBackpressure)
+{
+    Queue queue;
+    uint8_t frame[MAX_LEN] = {1};
+    for (size_t i = 0; i < CAPACITY; ++i) {
+        EXPECT_EQ(queue.tryPush(frame, 8), BleFrameQueuePushResult::Accepted);
+    }
+
+    EXPECT_EQ(queue.tryPush(frame, 8), BleFrameQueuePushResult::Full);
+    EXPECT_EQ(queue.tryPush(nullptr, 8), BleFrameQueuePushResult::InvalidFrame);
+    EXPECT_EQ(queue.tryPush(frame, MAX_LEN + 1),
+              BleFrameQueuePushResult::InvalidFrame);
+
+    // The BLE callback clears a saturated burst before disconnecting the peer,
+    // so no already-ACKed partial command sequence leaks into the app loop.
+    queue.clear();
+    EXPECT_EQ(queue.size(), 0u);
+    EXPECT_EQ(queue.tryPush(frame, 8), BleFrameQueuePushResult::Accepted);
 }
 
 TEST(BleFrameQueue, WrapsAroundRepeatedly)

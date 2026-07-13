@@ -260,4 +260,17 @@ void loop()
             }
         }
     }
+#if defined(SIGURDOS_REMOTE_TEST) && SIGURDOS_REMOTE_TEST
+    sigurdos_test_controller_loop();
+#endif
+
+#if SIGURDOS_TELEMETRY
+    sigurdos::telemetry::loop();
+    // Report loop timing after telemetry processing.
+    uint32_t loop_elapsed_us = micros() - loop_start_us;
+    sigurdos::telemetry::report_loop_timing(loop_elapsed_us);
+#endif
+#if SIGURDOS_DEBUG_DIAG
+    sigurdos::debug::loop();
+#endif
 }

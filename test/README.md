@@ -66,6 +66,7 @@ test/
 |-- test_list_virtualization/       Bounded newest-first list window and page math
 |-- test_lodepng_alloc/             LodePNG PSRAM allocator with DRAM fallback
 |-- test_log/                       Logging macro levels and compile-time gating
+|-- test_main_loop/                 Cooperative service dispatch and ordering contract
 |-- test_map/                       Map projection, LRU/negative cache, and load budgets
 |-- test_map_renderer/              Map renderer constants, zoom validation, and tile math
 |-- test_mesh_contract/             Mesh advert types, contact flags, and buffer capacity stability

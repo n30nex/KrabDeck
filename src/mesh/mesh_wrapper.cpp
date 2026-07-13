@@ -434,6 +434,7 @@ static constexpr int MAX_PACKET_LOG = 50;
 static PacketLogEntry pkt_log[MAX_PACKET_LOG];
 static int pkt_log_head = 0;
 static int pkt_log_count = 0;
+static uint32_t pkt_log_generation = 0;
 
 void pushPacketLog(const char* source, int rssi, float snr, const char* type) {
     if (!source || !type) return;
@@ -447,6 +448,7 @@ void pushPacketLog(const char* source, int rssi, float snr, const char* type) {
     e.type[sizeof(e.type) - 1] = '\0';
     pkt_log_head = (pkt_log_head + 1) % MAX_PACKET_LOG;
     if (pkt_log_count < MAX_PACKET_LOG) pkt_log_count++;
+    pkt_log_generation++;
 }
 
 // ── ACK tracking bridge ──────────────────────
@@ -1717,6 +1719,7 @@ void factoryReset()
 }
 
 int getPacketLogCount() { return pkt_log_count; }
+uint32_t getPacketLogGeneration() { return pkt_log_generation; }
 
 bool getPacketLogEntry(int index, PacketLogEntry* out) {
     if (index < 0 || index >= pkt_log_count || !out) return false;

@@ -193,6 +193,7 @@ uint32_t makeEpoch(int year, int month, int day, int hour, int minute);
 
 // Packet log
 int  getPacketLogCount();
+uint32_t getPacketLogGeneration();
 bool getPacketLogEntry(int index, PacketLogEntry* out);
 void pushPacketLog(const char* source, int rssi, float snr, const char* type);
 

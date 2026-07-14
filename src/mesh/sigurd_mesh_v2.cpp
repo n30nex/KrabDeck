@@ -1076,6 +1076,21 @@ namespace mesh {
         return -1; // table full
     }
 
+    void SigurdMeshV2::invalidateAllLoginSessions() {
+        for (int i = 0; i < MAX_LOGIN_ENTRIES; i++) {
+            const LoginEntry& entry = _login_entries[i];
+            if (!entry.in_use) continue;
+            for (int j = 0; j < getContactCount(); j++) {
+                const ::ContactInfo* contact = getContact(j);
+                if (contact && strcmp(contact->name, entry.contact_name) == 0) {
+                    BaseChatMesh::stopConnection(contact->id.pub_key);
+                    break;
+                }
+            }
+        }
+        clearAllLoginEntries();
+    }
+
     void SigurdMeshV2::updateLoginSessions(uint32_t now_ms) {
         for (int i = 0; i < MAX_LOGIN_ENTRIES; i++) {
             LoginEntry& entry = _login_entries[i];

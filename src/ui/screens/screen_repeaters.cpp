@@ -570,6 +570,16 @@ void repeater_detail_screen_show(const char* contact_name, bool skip_login)
             lv_label_set_text(login_v, login_text);
             lv_obj_set_style_text_color(login_v, lv_color_hex(login_color), 0);
             lv_obj_set_style_text_font(login_v, emoji_wrapped_montserrat_10, 0);
+            if (login_st == LOGIN_STATUS_FAILED ||
+                login_st == LOGIN_STATUS_TIMEOUT ||
+                login_st == LOGIN_STATUS_DROPPED) {
+                // Terminal session failures remain visible as a compact badge
+                // after the management view is rebuilt. In particular, a
+                // failed keep-alive must not look like an ordinary logout.
+                apply_pixel_badge(login_v);
+                lv_obj_set_style_bg_color(login_v, lv_color_hex(ACCENT_RED), 0);
+                lv_obj_set_style_border_color(login_v, lv_color_hex(ACCENT_RED), 0);
+            }
             lv_obj_align(login_v, LV_ALIGN_RIGHT_MID, -4, 0);
             row++;
         }

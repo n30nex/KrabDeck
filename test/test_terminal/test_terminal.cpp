@@ -163,7 +163,47 @@ TEST(RepeaterTranscriptTest, UnknownCommandTimeIsExplicit) {
     char out[64];
     EXPECT_TRUE(sigurdos::ui::format_repeater_cli_command(
         out, sizeof(out), 0, "get name"));
-    EXPECT_STREQ(out, "[--:--:--] > get name\n");
+    EXPECT_STREQ(out, "[--:--:--] > [CMD] get name\n");
+}
+
+TEST(RepeaterTranscriptTest, HistoryPreservesTypeContactAndTimestamp) {
+    sigurdos::ui::RepeaterTranscript<2> history;
+    ASSERT_TRUE(history.append(
+        "alpha", sigurdos::ui::RepeaterTranscriptType::Command,
+        101, "ver"));
+    ASSERT_TRUE(history.append(
+        "alpha", sigurdos::ui::RepeaterTranscriptType::CliReply,
+        202, "v1.2"));
+
+    ASSERT_EQ(history.size(), 2U);
+    const auto* command = history.at(0);
+    const auto* reply = history.at(1);
+    ASSERT_NE(command, nullptr);
+    ASSERT_NE(reply, nullptr);
+    EXPECT_STREQ(command->contact, "alpha");
+    EXPECT_EQ(command->type, sigurdos::ui::RepeaterTranscriptType::Command);
+    EXPECT_EQ(command->timestamp, 101U);
+    EXPECT_STREQ(reply->text, "v1.2");
+    EXPECT_EQ(reply->type, sigurdos::ui::RepeaterTranscriptType::CliReply);
+    EXPECT_EQ(reply->timestamp, 202U);
+}
+
+TEST(RepeaterTranscriptTest, HistoryEvictsOldestAtFixedCapacity) {
+    sigurdos::ui::RepeaterTranscript<2> history;
+    ASSERT_TRUE(history.append(
+        "alpha", sigurdos::ui::RepeaterTranscriptType::Command, 1, "one"));
+    ASSERT_TRUE(history.append(
+        "alpha", sigurdos::ui::RepeaterTranscriptType::Command, 2, "two"));
+    ASSERT_TRUE(history.append(
+        "beta", sigurdos::ui::RepeaterTranscriptType::CliReply, 3, "three"));
+
+    ASSERT_EQ(history.size(), 2U);
+    ASSERT_NE(history.at(0), nullptr);
+    ASSERT_NE(history.at(1), nullptr);
+    EXPECT_STREQ(history.at(0)->text, "two");
+    EXPECT_STREQ(history.at(1)->contact, "beta");
+    EXPECT_EQ(history.at(1)->timestamp, 3U);
+    EXPECT_EQ(history.at(2), nullptr);
 }
 
 TEST(RepeaterTranscriptTest, ResponseQueuePreservesTimestampAndOrder) {

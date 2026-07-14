@@ -13,6 +13,8 @@ void notifications_post(NotificationEvent event, const char* text);
 void notifications_message(const char* channel, const char* sender,
                            const char* text, bool is_self);
 void notifications_login_result(const char* contact_name, bool success);
+void notifications_login_failure(const char* contact_name,
+                                 LoginFailureReason reason);
 bool notifications_has_unread_mention();
 void notifications_clear_unread_mentions();
 

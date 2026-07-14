@@ -514,11 +514,13 @@ public:
 
     void clearAllLoginEntries() {
         for (int i = 0; i < MAX_LOGIN_ENTRIES; i++) {
-            _login_entries[i].in_use = false;
-            _login_entries[i].status = LOGIN_NONE;
-            _login_entries[i].keep_alive_active = false;
+            _login_entries[i] = LoginEntry{};
         }
     }
+
+    // Stop every tracked keep-alive while the old identity and contact table
+    // are still available, then clear all session/permission state.
+    void invalidateAllLoginSessions();
 
     bool isLoggedIn(const char* name) const {
         int idx = findLoginEntry(name);

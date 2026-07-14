@@ -4,7 +4,9 @@
 #pragma once
 
 #include <cctype>
+#include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 
 namespace sigurdos::ui {
@@ -22,6 +24,38 @@ enum class NotificationEvent : uint8_t {
 };
 
 enum class NotificationLevel : uint8_t { Info, Important, Critical };
+
+enum class LoginFailureReason : uint8_t {
+    Rejected,
+    TimedOut,
+    ConnectionDropped,
+    SessionInvalidated,
+};
+
+inline bool notification_login_failure_text(char* out, size_t out_size,
+                                             const char* contact_name,
+                                             LoginFailureReason reason)
+{
+    if (!out || out_size == 0) return false;
+    const char* status = "LOGIN_FAILED";
+    switch (reason) {
+        case LoginFailureReason::TimedOut:
+            status = "LOGIN_FAILED (timeout)";
+            break;
+        case LoginFailureReason::ConnectionDropped:
+            status = "CONNECTION_DROPPED";
+            break;
+        case LoginFailureReason::SessionInvalidated:
+            status = "SESSION_INVALIDATED";
+            break;
+        default:
+            break;
+    }
+    const int written = std::snprintf(out, out_size, "%s: %s",
+                                      contact_name ? contact_name : "Server",
+                                      status);
+    return written >= 0 && static_cast<size_t>(written) < out_size;
+}
 
 struct NotificationPolicy {
     NotificationLevel level;

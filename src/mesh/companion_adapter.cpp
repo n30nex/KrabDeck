@@ -562,6 +562,10 @@ public:
     bool importPrivateKey(const uint8_t* key64) override {
         if (!mesh_ptr() || !key64) return false;
         if (!::mesh::LocalIdentity::validatePrivateKey(key64)) return false;
+        // Stop keep-alives before replacing the identity or contact table.
+        // Clearing only the UI login entries leaves BaseChatMesh connection
+        // slots alive with secrets derived from the previous identity.
+        mesh_ptr()->invalidateAllLoginSessions();
         mesh_ptr()->self_id.readFrom(key64, PRV_KEY_SIZE);
         meshSaveSelfIdentity();
         // Invalidate ECDH shared secrets derived from the old identity and
@@ -569,10 +573,6 @@ public:
         // MyMesh::CMD_IMPORT_PRIVATE_KEY — resetContacts + loadContacts).
         mesh_ptr()->resetAllContacts();
         sigurdos::mesh::loadContacts();
-        // Clear login session state — stale LOGIN_OK/permission entries from
-        // the old identity would otherwise persist against contact-name keys
-        // and present false-positive login UI after identity change (RC6-MED-002).
-        mesh_ptr()->clearAllLoginEntries();
         return true;
     }
 

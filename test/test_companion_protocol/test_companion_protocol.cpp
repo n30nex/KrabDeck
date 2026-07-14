@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "comms/companion_bridge.h"
+#include "mesh/companion_ble_pin.h"
 
 namespace {
 
@@ -95,6 +96,9 @@ public:
     int set_custom_var_calls = 0;
     std::string custom_var_name;
     std::string custom_var_value;
+    int set_ble_pin_calls = 0;
+    uint32_t last_ble_pin = 0;
+    bool set_ble_pin_result = true;
 
     uint32_t blePin() const override { return 123456; }
     uint8_t clientRepeat() const override { return 0; }
@@ -255,7 +259,11 @@ public:
         last_airtime = tx_delay_factor_x1000;
         return rx_delay_base_x1000 <= 20000 && tx_delay_factor_x1000 <= 2000;
     }
-    bool setBlePin(uint32_t) override { return true; }
+    bool setBlePin(uint32_t pin) override {
+        set_ble_pin_calls++;
+        last_ble_pin = pin;
+        return set_ble_pin_result;
+    }
     bool exportPrivateKey(uint8_t* out64) const override {
         std::memset(out64, 0x42, 64);
         return true;
@@ -1120,6 +1128,72 @@ TEST_F(CompanionProtocolTest, HasConnectionAndLogout) {
     uint8_t lo[1 + 32] = { cc::CMD_LOGOUT };
     ASSERT_TRUE(bridge.handleFrame(lo, sizeof(lo)));
     EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_OK);
+}
+
+TEST_F(CompanionProtocolTest, SetDevicePinAcceptsZeroAndSixDigitBounds) {
+    const uint32_t accepted[] = {
+        0,
+        cc::SIGURDOS_COMPANION_BLE_PIN_MIN,
+        cc::SIGURDOS_COMPANION_BLE_PIN_MAX,
+    };
+
+    for (uint32_t pin : accepted) {
+        serial.writes.clear();
+        uint8_t cmd[5] = {cc::CMD_SET_DEVICE_PIN};
+        std::memcpy(&cmd[1], &pin, sizeof(pin));
+        ASSERT_TRUE(bridge.handleFrame(cmd, sizeof(cmd)));
+        ASSERT_EQ(serial.writes.size(), 1u);
+        EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_OK);
+        EXPECT_EQ(host.last_ble_pin, pin);
+    }
+    EXPECT_EQ(host.set_ble_pin_calls, 3);
+}
+
+TEST_F(CompanionProtocolTest, SetDevicePinRejectsNonSixDigitValues) {
+    const uint32_t rejected[] = {
+        cc::SIGURDOS_COMPANION_BLE_PIN_MIN - 1,
+        cc::SIGURDOS_COMPANION_BLE_PIN_MAX + 1,
+    };
+
+    for (uint32_t pin : rejected) {
+        serial.writes.clear();
+        uint8_t cmd[5] = {cc::CMD_SET_DEVICE_PIN};
+        std::memcpy(&cmd[1], &pin, sizeof(pin));
+        ASSERT_TRUE(bridge.handleFrame(cmd, sizeof(cmd)));
+        ASSERT_EQ(serial.writes.size(), 1u);
+        ASSERT_EQ(serial.writes[0].size(), 2u);
+        EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_ERR);
+        EXPECT_EQ(serial.writes[0][1], cc::ERR_CODE_ILLEGAL_ARG);
+    }
+    EXPECT_EQ(host.set_ble_pin_calls, 0);
+}
+
+TEST_F(CompanionProtocolTest, SetDevicePinReportsPersistenceFailure) {
+    host.set_ble_pin_result = false;
+    uint32_t pin = 654321;
+    uint8_t cmd[5] = {cc::CMD_SET_DEVICE_PIN};
+    std::memcpy(&cmd[1], &pin, sizeof(pin));
+
+    ASSERT_TRUE(bridge.handleFrame(cmd, sizeof(cmd)));
+    ASSERT_EQ(serial.writes.size(), 1u);
+    ASSERT_EQ(serial.writes[0].size(), 2u);
+    EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_ERR);
+    EXPECT_EQ(serial.writes[0][1], cc::ERR_CODE_ILLEGAL_ARG);
+    EXPECT_EQ(host.set_ble_pin_calls, 1);
+}
+
+TEST(CompanionBlePinPrefs, UpdatesPairingPinWithoutChangingDeviceLockPin) {
+    sigurdos::NodePrefs prefs;
+    prefs.device_pin = 4321;
+    prefs.ble_pin = 123456;
+
+    ASSERT_TRUE(sigurdos::mesh::applyCompanionBlePin(prefs, 654321));
+    EXPECT_EQ(prefs.ble_pin, 654321u);
+    EXPECT_EQ(prefs.device_pin, 4321u);
+
+    EXPECT_FALSE(sigurdos::mesh::applyCompanionBlePin(prefs, 99999));
+    EXPECT_EQ(prefs.ble_pin, 654321u);
+    EXPECT_EQ(prefs.device_pin, 4321u);
 }
 
 TEST_F(CompanionProtocolTest, RebootAndFactoryResetGuarded) {

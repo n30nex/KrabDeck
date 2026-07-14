@@ -16,6 +16,8 @@ static constexpr uint8_t SIGURDOS_COMPANION_FIRMWARE_VER_CODE = 12;
 static constexpr size_t  SIGURDOS_COMPANION_PUB_KEY_SIZE = 32;
 static constexpr size_t  SIGURDOS_COMPANION_PUB_KEY_PREFIX_SIZE = 6;
 static constexpr size_t  SIGURDOS_COMPANION_PATH_SIZE = 64;
+static constexpr uint32_t SIGURDOS_COMPANION_BLE_PIN_MIN = 100000;
+static constexpr uint32_t SIGURDOS_COMPANION_BLE_PIN_MAX = 999999;
 static constexpr size_t  SIGURDOS_COMPANION_CHANNEL_DATA_MAX_PAYLOAD = MAX_FRAME_SIZE - 9;
 static constexpr size_t  SIGURDOS_COMPANION_PUSH_BLOB_MAX_PAYLOAD =
     MAX_FRAME_SIZE - 2 - SIGURDOS_COMPANION_PUB_KEY_PREFIX_SIZE;
@@ -148,6 +150,13 @@ enum CompanionError : uint8_t {
     ERR_CODE_FILE_IO_ERROR = 5,
     ERR_CODE_ILLEGAL_ARG = 6,
 };
+
+inline bool companionBlePinValid(uint32_t pin)
+{
+    return pin == 0 ||
+           (pin >= SIGURDOS_COMPANION_BLE_PIN_MIN &&
+            pin <= SIGURDOS_COMPANION_BLE_PIN_MAX);
+}
 
 // NOTE: prefixed with COMPANION_ to avoid colliding with the MeshCore
 // TXT_TYPE_* macros in helpers/TxtDataHelpers.h, which are transitively

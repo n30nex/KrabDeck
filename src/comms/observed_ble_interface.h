@@ -10,6 +10,7 @@
 
 #include <helpers/esp32/SerialBLEInterface.h>
 #include "ble_frame_queue.h"
+#include "ble_task_mutex.h"
 
 namespace sigurdos {
 namespace comms {
@@ -43,11 +44,13 @@ public:
     void begin(const char* prefix, char* name, uint32_t pin_code);
     void enable() override;
     void disable() override;
+    bool isEnabled() const override;
     bool isConnected() const override;
+    bool isWriteBusy() const override;
     size_t writeFrame(const uint8_t src[], size_t len) override;
     size_t checkRecvFrame(uint8_t dest[]) override;
 
-    BleSerialObserverStats stats() const { return _stats; }
+    BleSerialObserverStats stats() const;
 
 protected:
     uint32_t onPassKeyRequest() override;
@@ -64,12 +67,14 @@ protected:
 private:
     void refreshConnectionState();
 
+    mutable BleTaskMutex _state_mutex;
     BleSerialObserverStats _stats{};
 
     // NET-002 (#813): the base class receive queue is written from the
     // Bluedroid host task (onWrite) and drained from the app loop task
     // (checkRecvFrame) without synchronization. Received frames are kept
-    // here instead — the base queue stays empty. Same capacity as upstream.
+    // here instead — the base queue stays empty. The task mutex protects all
+    // adapter/base state; this queue retains its own bounded handoff lock.
     BleFrameQueue<MAX_FRAME_SIZE, FRAME_QUEUE_SIZE> _rx_queue;
 };
 

@@ -329,6 +329,9 @@ This project builds on and incorporates open source software from the following 
 | [LilyGo T-Deck Keyboard_ESP32C3](https://github.com/Xinyuan-LilyGO/T-Deck) | MIT | I2C keyboard protocol reference — our `keyboard.cpp` driver is based on the command set and keymap from this firmware (© 2023 Shenzhen Xin Yuan Electronic Technology Co., Ltd) |
 | [wadamesh](https://github.com/ALLFATHER-BV/wadamesh) | GPL-3.0 | Physical-key phonetic mapping tables and 12-layout ordering adapted for the T-Deck keyboard |
 | [DejaVu Fonts](https://dejavu-fonts.github.io/) | Bitstream Vera font license | Greek, Cyrillic, and Arabic fallback glyphs for international keyboard layouts; full notice in `LICENSES/DejaVu-Fonts.txt` |
+| [Noto Emoji](https://fonts.google.com/noto/specimen/Noto+Emoji) | SIL Open Font License 1.1 | Emoji font glyph data in `src/fonts/emoji_font.c` and emoji picker images in `src/fonts/emoji_images/`; full notice in `LICENSES/Noto-Emoji.txt` |
+| [LodePNG](https://github.com/lvandeve/lodepng) | zlib/libpng | PNG decoder for map tile rendering; compiled with PSRAM allocator override in `src/app/lodepng_psram.cpp` |
+| [QRCode](https://github.com/ricmoo/QRCode) | MIT | QR-code generation library used by the identity export screen |
 | [LVGL](https://github.com/lvgl/lvgl) | MIT | Embedded GUI framework (v9.3.0) |
 | [LovyanGFX](https://github.com/lovyan03/LovyanGFX) | FreeBSD | Display driver for ST7789 TFT |
 | [RadioLib](https://github.com/jgromes/RadioLib) | MIT | SX1262 LoRa radio driver |

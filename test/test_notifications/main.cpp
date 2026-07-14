@@ -32,6 +32,31 @@ TEST(NotificationPolicyTest, LowResourceThresholdsAreBounded)
     EXPECT_FALSE(notification_storage_low(0, 0));
 }
 
+TEST(NotificationPolicyTest, LoginFailuresExposeSpecificSessionReason)
+{
+    char text[96];
+    EXPECT_TRUE(notification_login_failure_text(
+        text, sizeof(text), "relay", LoginFailureReason::Rejected));
+    EXPECT_STREQ(text, "relay: LOGIN_FAILED");
+    EXPECT_TRUE(notification_login_failure_text(
+        text, sizeof(text), "relay", LoginFailureReason::TimedOut));
+    EXPECT_STREQ(text, "relay: LOGIN_FAILED (timeout)");
+    EXPECT_TRUE(notification_login_failure_text(
+        text, sizeof(text), "relay", LoginFailureReason::ConnectionDropped));
+    EXPECT_STREQ(text, "relay: CONNECTION_DROPPED");
+    EXPECT_TRUE(notification_login_failure_text(
+        text, sizeof(text), "relay", LoginFailureReason::SessionInvalidated));
+    EXPECT_STREQ(text, "relay: SESSION_INVALIDATED");
+}
+
+TEST(NotificationPolicyTest, LoginFailureTextReportsTruncation)
+{
+    char text[12];
+    EXPECT_FALSE(notification_login_failure_text(
+        text, sizeof(text), "long-repeater-name", LoginFailureReason::TimedOut));
+    EXPECT_EQ(text[sizeof(text) - 1], '\0');
+}
+
 TEST(NotificationQueueTest, HigherPriorityAlertPreemptsAndThenResumes)
 {
     NotificationQueue queue;

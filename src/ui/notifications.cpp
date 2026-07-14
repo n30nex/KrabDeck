@@ -220,6 +220,14 @@ void notifications_login_result(const char* contact_name, bool success)
                                : NotificationEvent::LoginFailure, text);
 }
 
+void notifications_login_failure(const char* contact_name,
+                                 LoginFailureReason reason)
+{
+    char text[96];
+    notification_login_failure_text(text, sizeof(text), contact_name, reason);
+    notifications_post(NotificationEvent::LoginFailure, text);
+}
+
 bool notifications_has_unread_mention() { return g_unread_mention; }
 void notifications_clear_unread_mentions() { g_unread_mention = false; }
 

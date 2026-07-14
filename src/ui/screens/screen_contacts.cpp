@@ -43,6 +43,8 @@ using namespace theme;
 using namespace responsive;
 
 static int g_contacts_page = 0;
+static constexpr size_t REPEATER_TRANSCRIPT_CAPACITY = 16;
+static RepeaterTranscript<REPEATER_TRANSCRIPT_CAPACITY> g_repeater_transcript;
 
 void show_contact_memory_error(lv_obj_t* scr)
 {
@@ -694,8 +696,10 @@ static void on_login_poll_timer(lv_timer_t* t) {
 
     uint8_t st = sigurdos::mesh::getLoginStatus(ctx->name);
     if (st == LOGIN_STATUS_OK) {
-        notifications_login_result(ctx->name, true);
+        // A connection-watch timer remains active for the whole session. Do
+        // not re-post the success toast on every two-second watch tick.
         if (ctx->watch_connection) return;
+        notifications_login_result(ctx->name, true);
         char* n = strdup(ctx->name);
         free(ctx->name);
         delete ctx;
@@ -708,7 +712,17 @@ static void on_login_poll_timer(lv_timer_t* t) {
     } else if (st == LOGIN_STATUS_FAILED || st == LOGIN_STATUS_TIMEOUT ||
                st == LOGIN_STATUS_DROPPED ||
                (ctx->watch_connection && st == LOGIN_STATUS_NONE)) {
-        notifications_login_result(ctx->name, false);
+        if (st == LOGIN_STATUS_TIMEOUT) {
+            notifications_login_failure(ctx->name, LoginFailureReason::TimedOut);
+        } else if (st == LOGIN_STATUS_DROPPED) {
+            notifications_login_failure(
+                ctx->name, LoginFailureReason::ConnectionDropped);
+        } else if (st == LOGIN_STATUS_NONE) {
+            notifications_login_failure(
+                ctx->name, LoginFailureReason::SessionInvalidated);
+        } else {
+            notifications_login_failure(ctx->name, LoginFailureReason::Rejected);
+        }
         // Rebuild pre-login view so the terminal reason and Login button show.
         char* n = strdup(ctx->name);
         free(ctx->name);
@@ -746,14 +760,63 @@ static void start_connection_watch_timer(const char* name) {
     start_session_poll_timer(name, true);
 }
 
+struct RepeaterTermData {
+    char* name;
+    lv_obj_t* ta;
+    lv_obj_t* out;
+    lv_timer_t* timer;
+    bool deleted;
+};
+
+static void trim_repeater_terminal(lv_obj_t* output)
+{
+    const char* full = lv_textarea_get_text(output);
+    if (!full || strlen(full) <= 3500) return;
+
+    const char* mid = full + 1500;
+    while (*mid && *mid != '\n') mid++;
+    if (*mid) mid++;
+    static char mid_copy[2048];
+    sigurdos::utf8_copy_truncate(mid_copy, sizeof(mid_copy), mid);
+    lv_textarea_set_text(output, "(...trimmed...)\n");
+    lv_textarea_add_text(output, mid_copy);
+}
+
+static void render_repeater_transcript_entry(
+    lv_obj_t* output, const RepeaterTranscriptEntry& entry)
+{
+    if (!output) return;
+    trim_repeater_terminal(output);
+    char line[256];
+    format_repeater_transcript_entry(line, sizeof(line), entry);
+    lv_textarea_add_text(output, line);
+}
+
+static void poll_repeater_cli_responses(lv_timer_t* timer)
+{
+    auto* data = static_cast<RepeaterTermData*>(lv_timer_get_user_data(timer));
+    if (!data || data->deleted) return;
+
+    char name[32];
+    char text[160];
+    uint32_t timestamp = 0;
+    while (sigurdos::mesh::pollCmdResponse(
+               name, sizeof(name), text, sizeof(text), &timestamp)) {
+        g_repeater_transcript.append(
+            name, RepeaterTranscriptType::CliReply, timestamp, text);
+        const auto* entry = g_repeater_transcript.at(
+            g_repeater_transcript.size() - 1);
+        if (entry && data->name && strcmp(name, data->name) == 0) {
+            render_repeater_transcript_entry(data->out, *entry);
+        }
+    }
+}
+
 // ── Admin command dialog ──────────────────────────
 // Shows a modal dialog for entering an admin CLI command to send to a logged-in server.
 void show_admin_cmd_dialog(const char* contact_name)
 {
     if (!contact_name) return;
-
-    // Clear stale responses from previous session
-    sigurdos::mesh::clearCmdResponses();
 
     static constexpr int TERM_TOP_H    = TOP_BAR_H;         // 21
     static constexpr int TERM_INPUT_H  = 28;
@@ -830,6 +893,15 @@ void show_admin_cmd_dialog(const char* contact_name)
     lv_textarea_add_text(out, "-- Admin Terminal --\n");
     lv_textarea_add_text(out, "Commands: ver, reboot, password,\n");
     lv_textarea_add_text(out, "set freq, get name, etc.\n");
+    if (g_repeater_transcript.size() > 0) {
+        lv_textarea_add_text(out, "-- Bounded history --\n");
+        for (size_t i = 0; i < g_repeater_transcript.size(); ++i) {
+            const auto* entry = g_repeater_transcript.at(i);
+            if (entry && strcmp(entry->contact, contact_name) == 0) {
+                render_repeater_transcript_entry(out, *entry);
+            }
+        }
+    }
 
     // Divider above input
     lv_obj_t* bdiv = lv_obj_create(dlg);
@@ -865,9 +937,11 @@ void show_admin_cmd_dialog(const char* contact_name)
 
     // Store contact name + widget handles
     char* cmd_name = strdup(contact_name);
-    struct TermData { char* name; lv_obj_t* ta; lv_obj_t* out; lv_timer_t* timer; bool deleted; };
-    TermData* td = new TermData{cmd_name, ta, out, nullptr, false};
+    RepeaterTermData* td = new RepeaterTermData{cmd_name, ta, out, nullptr, false};
     lv_obj_set_user_data(dlg, td);
+    // Start immediately so replies queued while the terminal was closed are
+    // moved into bounded history without requiring another command first.
+    td->timer = lv_timer_create(poll_repeater_cli_responses, 500, td);
 
     // ── Send button ──────────────────────────────
     lv_obj_t* send_btn = lv_btn_create(input_row);
@@ -882,52 +956,22 @@ void show_admin_cmd_dialog(const char* contact_name)
     lv_obj_set_user_data(send_btn, td);
     lv_obj_add_event_cb(send_btn, [](lv_event_t* e) {
         lv_obj_t* btn = (lv_obj_t*)lv_event_get_target(e);
-        TermData* d = (TermData*)lv_obj_get_user_data(btn);
+        RepeaterTermData* d = (RepeaterTermData*)lv_obj_get_user_data(btn);
         if (d) {
-            auto send = [](TermData* dd) {
+            auto send = [](RepeaterTermData* dd) {
                 if (!dd || !dd->name) return;
                 const char* cmd = lv_textarea_get_text(dd->ta);
                 if (!cmd || !cmd[0]) return;
-                char echo[256];
-                lv_textarea_add_text(dd->out, "\n");
-                format_repeater_cli_command(echo, sizeof(echo),
-                                             sigurdos::mesh::getCurrentTime(), cmd);
-                lv_textarea_add_text(dd->out, echo);
+                g_repeater_transcript.append(
+                    dd->name, RepeaterTranscriptType::Command,
+                    sigurdos::mesh::getCurrentTime(), cmd);
+                const auto* entry = g_repeater_transcript.at(
+                    g_repeater_transcript.size() - 1);
+                if (entry) render_repeater_transcript_entry(dd->out, *entry);
                 bool ok = sigurdos::mesh::sendCommand(dd->name, cmd);
                 lv_textarea_set_text(dd->ta, "");
                 if (lv_group_get_default()) lv_group_focus_obj(dd->ta);
                 if (!ok) lv_textarea_add_text(dd->out, "! Send failed\n");
-                if (!dd->timer) {
-                    dd->timer = lv_timer_create([](lv_timer_t* t) {
-                        TermData* dd2 = (TermData*)lv_timer_get_user_data(t);
-                        if (!dd2 || dd2->deleted) return;
-                        char nb[32], tb[160];
-                        uint32_t timestamp = 0;
-                        while (sigurdos::mesh::pollCmdResponse(
-                                   nb, sizeof(nb), tb, sizeof(tb), &timestamp)) {
-                            if (dd2->deleted) return;
-                            if (dd2->name && strcmp(nb, dd2->name) == 0) {
-                                char rb[256];
-                                format_repeater_cli_reply(rb, sizeof(rb), timestamp, tb);
-                                // Trim output if near max to prevent overflow
-                                const char* full = lv_textarea_get_text(dd2->out);
-                                if (full && strlen(full) > 3500) {
-                                    const char* mid = full + 1500;
-                                    while (*mid && *mid != '\n') mid++;
-                                    if (*mid) mid++;
-                                    static char mid_copy[2048];  // static to avoid 2KB on LVGL timer stack
-                                    size_t copy_len = strlen(mid);
-                                    if (copy_len >= sizeof(mid_copy)) copy_len = sizeof(mid_copy) - 1;
-                                    memcpy(mid_copy, mid, copy_len);
-                                    mid_copy[copy_len] = '\0';
-                                    lv_textarea_set_text(dd2->out, "(...trimmed...)\n");
-                                    lv_textarea_add_text(dd2->out, mid_copy);
-                                }
-                                lv_textarea_add_text(dd2->out, rb);
-                            }
-                        }
-                    }, 500, dd);
-                }
             };
             send(d);
         }
@@ -943,7 +987,7 @@ void show_admin_cmd_dialog(const char* contact_name)
             for (uint32_t i = 0; i < c; i++) {
                 lv_obj_t* child = lv_obj_get_child(row, i);
                 if (child && lv_obj_check_type(child, &lv_button_class)) {
-                    TermData* d = (TermData*)lv_obj_get_user_data(child);
+                    RepeaterTermData* d = (RepeaterTermData*)lv_obj_get_user_data(child);
                     if (d) {
                         lv_obj_send_event(child, LV_EVENT_CLICKED, nullptr);
                         break;
@@ -955,14 +999,13 @@ void show_admin_cmd_dialog(const char* contact_name)
 
     // ── Cleanup ──────────────────────────────────
     lv_obj_add_event_cb(dlg, [](lv_event_t* de) {
-        TermData* d = (TermData*)lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(de));
+        RepeaterTermData* d = (RepeaterTermData*)lv_obj_get_user_data((lv_obj_t*)lv_event_get_target(de));
         if (d) {
             d->deleted = true;  // prevent timer callback from using members
             if (d->timer) lv_timer_del(d->timer);
             if (d->name) free(d->name);
             delete d;
         }
-        sigurdos::mesh::clearCmdResponses();
     }, LV_EVENT_DELETE, nullptr);
     // td and td->name are owned by the dialog's user_data (set at creation)
     // and freed in the LV_EVENT_DELETE handler above; not a leak.

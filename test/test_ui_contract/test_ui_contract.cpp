@@ -110,6 +110,7 @@ TEST(UIContractTest, NotificationApisStayStable) {
     using post_fn = void (*)(sigurdos::ui::NotificationEvent, const char*);
     using message_fn = void (*)(const char*, const char*, const char*, bool);
     using login_fn = void (*)(const char*, bool);
+    using login_failure_fn = void (*)(const char*, sigurdos::ui::LoginFailureReason);
     using bool_fn = bool (*)();
 
     (void)static_cast<void_fn>(sigurdos::ui::notifications_init);
@@ -117,6 +118,7 @@ TEST(UIContractTest, NotificationApisStayStable) {
     (void)static_cast<post_fn>(sigurdos::ui::notifications_post);
     (void)static_cast<message_fn>(sigurdos::ui::notifications_message);
     (void)static_cast<login_fn>(sigurdos::ui::notifications_login_result);
+    (void)static_cast<login_failure_fn>(sigurdos::ui::notifications_login_failure);
     (void)static_cast<bool_fn>(sigurdos::ui::notifications_has_unread_mention);
     (void)static_cast<void_fn>(sigurdos::ui::notifications_clear_unread_mentions);
     SUCCEED();

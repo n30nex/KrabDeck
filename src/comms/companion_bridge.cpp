@@ -1255,33 +1255,39 @@ bool CompanionBridge::handleFrame(const uint8_t* frame, size_t len)
         return true;
     }
 
-    if (cmd == CMD_SET_DEFAULT_FLOOD_SCOPE && len >= 1) {
-        if (len >= 1 + 31 + 16) {
+    if (cmd == CMD_SET_DEFAULT_FLOOD_SCOPE) {
+        if (len == 1 + 31 + 16) {
             char name[32];
             std::memcpy(name, &_cmd_frame[1], 31);
             name[31] = '\0';
             size_t nlen = strnlen(name, 31);
-            if (nlen > 0) {
-                _host->setDefaultFloodScope(name, &_cmd_frame[1 + 31]);
-                writeOKFrame();
+            if (nlen > 0 && nlen < 31) {
+                if (_host->setDefaultFloodScope(name, &_cmd_frame[1 + 31])) {
+                    writeOKFrame();
+                } else {
+                    writeErrFrame(ERR_CODE_FILE_IO_ERROR);
+                }
             } else {
                 writeErrFrame(ERR_CODE_ILLEGAL_ARG);
             }
+        } else if (len == 1) {
+            if (_host->setDefaultFloodScope(nullptr, nullptr)) writeOKFrame();
+            else writeErrFrame(ERR_CODE_FILE_IO_ERROR);
         } else {
-            _host->setDefaultFloodScope(nullptr, nullptr);  // clear
-            writeOKFrame();
+            writeErrFrame(ERR_CODE_ILLEGAL_ARG);
         }
         return true;
     }
 
-    if (cmd == CMD_SET_FLOOD_SCOPE_KEY && len >= 2) {
-        if (_cmd_frame[1] == 1) {
-            _host->setFloodScopeOverride(nullptr, true);  // unscoped
-            writeOKFrame();
-        } else if (_cmd_frame[1] == 0) {
-            const uint8_t* key = (len >= 2 + 16) ? &_cmd_frame[2] : nullptr;
-            _host->setFloodScopeOverride(key, false);
-            writeOKFrame();
+    if (cmd == CMD_SET_FLOOD_SCOPE_KEY) {
+        if (len == 2 && _cmd_frame[1] == 1) {
+            if (_host->setFloodScopeOverride(nullptr, true)) writeOKFrame();
+            else writeErrFrame(ERR_CODE_FILE_IO_ERROR);
+        } else if (len >= 2 && _cmd_frame[1] == 0 &&
+                   (len == 2 || len == 2 + 16)) {
+            const uint8_t* key = len == 2 + 16 ? &_cmd_frame[2] : nullptr;
+            if (_host->setFloodScopeOverride(key, false)) writeOKFrame();
+            else writeErrFrame(ERR_CODE_FILE_IO_ERROR);
         } else {
             writeErrFrame(ERR_CODE_ILLEGAL_ARG);
         }

@@ -22,6 +22,7 @@
 #include "../responsive.h"
 #include "../../mesh/mesh_wrapper.h"
 #include "../../mesh/regions.h"
+#include "../../mesh/scope_key_hex.h"
 #include "../../fonts/emoji_font.h"
 #include <lvgl.h>
 #include <cstdio>
@@ -145,19 +146,19 @@ static void regions_add_dialog(lv_obj_t* parent_scr) {
             lv_label_set_text(c->err_lbl, "Name is required");
             return;
         }
-        const char* key = nullptr;
-        char key_buf[33] = {0};
+        uint8_t key[16]{};
+        bool is_private = name[0] == '$';
         if (name[0] == '$') {
             const char* ktext = lv_textarea_get_text(c->key_ta);
-            if (!ktext || strlen(ktext) < 1) {
-                lv_label_set_text(c->err_lbl, "Key is required for $private");
+            if (!sigurdos::mesh::scopeKeyBase64Decode(ktext, key)) {
+                lv_label_set_text(c->err_lbl, "Enter a valid 24-char key");
                 return;
             }
-            snprintf(key_buf, sizeof(key_buf), "%s", ktext);
-            key = key_buf;
         }
         lv_label_set_text(c->err_lbl, "");
-        bool ok = sigurdos::mesh::addRegion(name, key);
+        bool ok = is_private
+            ? sigurdos::mesh::addPrivateRegion(name, key) != nullptr
+            : sigurdos::mesh::addRegion(name) != nullptr;
         if (!ok) {
             lv_label_set_text(c->err_lbl, "Failed to add region");
             return;
@@ -397,6 +398,10 @@ void regions_screen_show()
                 const char* rname = lv_label_get_text(nl);
                 if (!rname || !rname[0]) return;
 
+                const char* active_before = sigurdos::mesh::getActiveRegion();
+                if (active_before && strcmp(active_before, rname) == 0) {
+                    sigurdos::mesh::setActiveRegion("");
+                }
                 sigurdos::mesh::removeRegion(rname);
                 lv_async_call(regions_rebuild_async, nullptr);
 

@@ -24,6 +24,7 @@
 #include "hal/prefs.h"
 #include "sigurd_mesh_v2.h"
 #include "regions.h"
+#include "scope_key_hex.h"
 #include "utils/utf8_util.h"
 #include "../diagnostics/debug_cfg.h"
 #include <helpers/sensors/LPPDataHelpers.h>
@@ -1087,16 +1088,8 @@ bool init(bool spiffs_ok)
 
     // Restore the active flood-scope region after reboot so outgoing floods
     // continue to be stamped with the correct transport code.
-    {
-        const sigurdos::NodePrefs& np = sigurdos::prefs_get();
-        if (np.active_region[0] && g_mesh) {
-            RegionEntry* r = sigurdos::mesh::findRegion(np.active_region);
-            if (r) {
-                TransportKey keys[1];
-                int nk = sigurdos::mesh::getRegionMap() ? sigurdos::mesh::getRegionMap()->getTransportKeysFor(*r, keys, 1) : 0;
-                if (nk > 0) g_mesh->setActiveScope(keys[0].key);
-            }
-        }
+    if (!setActiveRegion(sigurdos::prefs_get().active_region)) {
+        setActiveRegion("");
     }
 
     if (sigurdos::mesh::messageStoreBegin()) {
@@ -2405,29 +2398,39 @@ bool getChannelSecretHex(int channel_idx, char* hex_out, size_t hex_sz)
 // mesh_wrapper provides g_mesh-dependent extras.
 
 bool setActiveRegion(const char* name) {
-    // Update NodePrefs + cache (via regions module)
-    sigurdos::mesh::setActiveRegionName(name);
+    uint8_t resolved_key[16]{};
+    bool has_key = false;
+
+    if (name && name[0]) {
+        const char* default_name = sigurdos::mesh::getDefaultScopeName();
+        const sigurdos::NodePrefs& prefs = sigurdos::prefs_get();
+        if (default_name && strcmp(default_name, name) == 0 &&
+            strlen(prefs.default_scope_key_hex) ==
+                (size_t)sigurdos::mesh::SCOPE_KEY_HEX_LEN) {
+            sigurdos::mesh::scopeKeyHexDecode(
+                prefs.default_scope_key_hex, resolved_key);
+            has_key = true;
+        } else {
+            ::RegionEntry* region = sigurdos::mesh::findRegion(name);
+            RegionMap* map = sigurdos::mesh::getRegionMap();
+            if (region && map) {
+                TransportKey keys[1];
+                if (map->getTransportKeysFor(*region, keys, 1) == 1) {
+                    memcpy(resolved_key, keys[0].key, sizeof(resolved_key));
+                    has_key = true;
+                }
+            }
+        }
+        if (!has_key) return false;
+    }
+
+    // Update NodePrefs + cache only after the scope name resolves to a key.
+    if (!sigurdos::mesh::setActiveRegionName(name)) return false;
 
     // Propagate the TransportKey to the mesh instance
     if (g_mesh) {
-        if (name && name[0]) {
-            ::RegionEntry* r = sigurdos::mesh::findRegion(name);
-            if (r) {
-                RegionMap* map = sigurdos::mesh::getRegionMap();
-                if (map) {
-                    TransportKey keys[1];
-                    int nk = map->getTransportKeysFor(*r, keys, 1);
-                    if (nk > 0) {
-                        g_mesh->setActiveScope(keys[0].key);
-                        return true;
-                    }
-                }
-            }
-            // Region name saved but key not in store — clear scope
-            g_mesh->clearActiveScope();
-        } else {
-            g_mesh->clearActiveScope();
-        }
+        if (has_key) g_mesh->setActiveScope(resolved_key);
+        else g_mesh->clearActiveScope();
     }
     return true;
 }

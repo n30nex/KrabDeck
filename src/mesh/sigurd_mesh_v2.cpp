@@ -1489,6 +1489,8 @@ namespace mesh {
         uint8_t app[MAX_ADVERT_DATA_SIZE];
         uint8_t app_len = builder.encodeTo(app);
         ::mesh::Packet* pkt = createAdvert(self_id, app, app_len);
+        // Adverts are discovery traffic and deliberately bypass the active
+        // message scope so region-aware and legacy repeaters can hear them.
         if (pkt) sendFlood(pkt, 0, pathHashSize());
     }
 
@@ -1497,6 +1499,7 @@ namespace mesh {
         uint8_t app[MAX_ADVERT_DATA_SIZE];
         uint8_t app_len = builder.encodeTo(app);
         ::mesh::Packet* pkt = createAdvert(self_id, app, app_len);
+        // Keep location adverts unscoped for the same discovery guarantee.
         if (pkt) sendFlood(pkt, 0, pathHashSize());
     }
 

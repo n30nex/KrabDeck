@@ -437,9 +437,9 @@ void settings_radio_show()
     {
         const char* active = sigurdos::mesh::getActiveRegion();
         if (!active || active[0] == '\0') {
-            snprintf(buf, sizeof(buf), "  Regions: Public (unscoped)");
+            snprintf(buf, sizeof(buf), "  Flood scope [PUBLIC]");
         } else {
-            snprintf(buf, sizeof(buf), "  Regions: %s", active);
+            snprintf(buf, sizeof(buf), "  Flood scope [%s]", active);
         }
         lv_obj_t* btn_reg = lv_list_add_btn(list, LV_SYMBOL_WIFI, buf);
         lv_obj_set_style_bg_color(btn_reg, lv_color_hex(row % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);

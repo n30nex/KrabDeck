@@ -19,6 +19,7 @@ namespace {
 
 using sigurdos::mesh::scopeKeyHexEncode;
 using sigurdos::mesh::scopeKeyHexDecode;
+using sigurdos::mesh::scopeKeyBase64Decode;
 using sigurdos::mesh::formatDmConversation;
 using sigurdos::mesh::detail::MeshInitState;
 
@@ -78,6 +79,23 @@ TEST(ScopeKeyHex, NullArgumentsAreNoOps)
     scopeKeyHexDecode(nullptr, out);
     EXPECT_EQ(out[0], 7);
     scopeKeyHexDecode("00", nullptr);  // must not crash
+}
+
+TEST(ScopeKeyBase64, DecodesCanonicalPrivateRegionKey)
+{
+    uint8_t out[16]{};
+    ASSERT_TRUE(scopeKeyBase64Decode("AAECAwQFBgcICQoLDA0ODw==", out));
+    for (int i = 0; i < 16; ++i) EXPECT_EQ(out[i], (uint8_t)i);
+}
+
+TEST(ScopeKeyBase64, RejectsMalformedOrNonCanonicalKeys)
+{
+    uint8_t out[16]{};
+    EXPECT_FALSE(scopeKeyBase64Decode(nullptr, out));
+    EXPECT_FALSE(scopeKeyBase64Decode("AAECAwQFBgcICQoLDA0ODw=", out));
+    EXPECT_FALSE(scopeKeyBase64Decode("AAECAwQFBgcICQoLDA0ODw=!", out));
+    EXPECT_FALSE(scopeKeyBase64Decode("AAECAwQFBgcICQoLDA0ODx==", out));
+    EXPECT_FALSE(scopeKeyBase64Decode("AAECAwQFBgcICQoLDA0ODw==", nullptr));
 }
 
 TEST(FormatDmConversation, PrefixesNameWithDmMarker)

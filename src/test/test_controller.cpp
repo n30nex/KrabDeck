@@ -1097,6 +1097,7 @@ static void service_capture(uint32_t now) {
                 n += static_cast<size_t>(snprintf(
                     diagnostic_line.data + n, sizeof(diagnostic_line.data) - n,
                     "%02X", capture_job.buffer[capture_job.offset + i]));
+                if (n >= sizeof(diagnostic_line.data)) n = sizeof(diagnostic_line.data) - 1;
             }
             n += static_cast<size_t>(snprintf(diagnostic_line.data + n,
                                               sizeof(diagnostic_line.data) - n,

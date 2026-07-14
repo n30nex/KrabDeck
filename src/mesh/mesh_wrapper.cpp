@@ -2470,5 +2470,14 @@ size_t urlEncodeQueryValue(const char* in, char* out, size_t out_sz) {
     return urlEncode(in, out, out_sz);
 }
 
+// Forward to global-namespace regions.cpp
+::RegionEntry* addPrivateRegion(const char* name, const uint8_t key[16],
+                                const char* parent_name) {
+    return ::addPrivateRegion(name, key, parent_name);
+}
+bool getPrivateRegionKey(const char* name, uint8_t key_out[16]) {
+    return ::getPrivateRegionKey(name, key_out);
+}
+
 } // namespace mesh
 } // namespace sigurdos

@@ -282,4 +282,7 @@ void loop()
         }
     }
     sigurdos::hal::boot_watchdog_runtime_progress();
+#if defined(SIGURDOS_REMOTE_TEST) && SIGURDOS_REMOTE_TEST
+    sigurdos_test_controller_loop();
+#endif
 }

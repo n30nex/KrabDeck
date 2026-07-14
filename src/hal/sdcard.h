@@ -93,4 +93,6 @@ const char* sigurdos_sdcard_format_size(uint64_t bytes, char* buf, size_t buf_sz
 // File operations (optional — for map tiles, logs)
 bool sigurdos_sdcard_exists(const char* path);
 size_t sigurdos_sdcard_read(const char* path, uint8_t* buf, size_t max_len);
+// Persistence-safe replacement: syncs a same-directory temp, marks it ready,
+// then atomically promotes it. Reads recover any interrupted promotion.
 bool sigurdos_sdcard_write(const char* path, const uint8_t* data, size_t len);

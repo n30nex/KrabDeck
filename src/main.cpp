@@ -11,6 +11,7 @@
 #include "hal/sdcard.h"
 #include "hal/wifi_ota.h"
 #include "hal/github_ota.h"
+#include "hal/ota_boot_health.h"
 #include "hal/prefs.h"
 #include "hal/launcher_env.h"
 #include "hal/buzzer.h"
@@ -50,6 +51,7 @@ static void boot_status(const char* status)
 void setup()
 {
     Serial.begin(115200);
+    sigurdos::ota_boot_health::begin();
 #if defined(SIGURDOS_REMOTE_TEST) && SIGURDOS_REMOTE_TEST
     Serial.println("[boot] HELLO FROM REMOTE_TEST BUILD -v2");
 #endif
@@ -83,6 +85,7 @@ void setup()
         display_failures++;
         Serial.printf("[boot] FATAL: Display init failed (%u/%u attempts)\n",
                       display_failures, MAX_DISPLAY_FAILURES);
+        sigurdos::ota_boot_health::rollbackIfPending("display init");
         if (display_failures >= MAX_DISPLAY_FAILURES) {
             Serial.println("[boot] HALTED: Too many display failures.");
             Serial.println("[boot] USB reflashing remains available; reset to retry.");
@@ -204,6 +207,7 @@ void setup()
 #if SIGURDOS_TELEMETRY
     sigurdos::telemetry::init();
 #endif
+    sigurdos::ota_boot_health::markCoreReady();
 }
 
 void loop()
@@ -260,4 +264,7 @@ void loop()
             }
         }
     }
+    // This is deliberately last: OTA validation requires a complete healthy
+    // pass through every steady-state loop service.
+    sigurdos::ota_boot_health::loop();
 }

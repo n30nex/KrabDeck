@@ -36,6 +36,27 @@ RegionMap* getRegionMap() {
     return g_region_map;
 }
 
+bool installPrivateRegionKey(const ::RegionEntry& region, const uint8_t* key16) {
+    if (!g_region_store || region.id == 0 || region.name[0] != '$' || !key16) {
+        return false;
+    }
+    TransportKey key{};
+    memcpy(key.key, key16, sizeof(key.key));
+    if (key.isNull() || !g_region_store->saveKeysFor(region.id, &key, 1)) {
+        return false;
+    }
+    TransportKey check{};
+    return g_region_store->loadKeysFor(region.id, &check, 1) == 1 &&
+        memcmp(check.key, key.key, sizeof(key.key)) == 0;
+}
+
+bool removePrivateRegionKey(const ::RegionEntry& region) {
+    if (!g_region_store || region.id == 0 || region.name[0] != '$' ||
+        !g_region_store->removeKeys(region.id)) return false;
+    TransportKey check{};
+    return g_region_store->loadKeysFor(region.id, &check, 1) == 0;
+}
+
 bool regionsLoad() {
     if (!g_region_map) return false;
     if (!SPIFFS.begin(false)) {
@@ -250,21 +271,42 @@ const char* getActiveRegion() {
     return g_active_name;
 }
 
-bool setActiveRegionName(const char* name) {
-    // Update NodePrefs (called by mesh_wrapper after g_mesh propagation)
+static bool commitActiveRegionPrefs(const char* name, const char* key_hex,
+                                    bool replace_key) {
+    if (name && strlen(name) >= sizeof(g_active_name)) return false;
     NodePrefs np = prefs_get();
     if (name && name[0]) {
         strncpy(np.active_region, name, sizeof(np.active_region) - 1);
         np.active_region[sizeof(np.active_region) - 1] = '\0';
+    } else {
+        np.active_region[0] = '\0';
+    }
+    if (replace_key) {
+        if (key_hex) {
+            strncpy(np.default_scope_key_hex, key_hex,
+                    sizeof(np.default_scope_key_hex) - 1);
+            np.default_scope_key_hex[sizeof(np.default_scope_key_hex) - 1] = '\0';
+        } else {
+            np.default_scope_key_hex[0] = '\0';
+        }
+    }
+    if (!prefs_set(np)) return false;
+
+    if (name && name[0]) {
         strncpy(g_active_name, name, sizeof(g_active_name) - 1);
         g_active_name[sizeof(g_active_name) - 1] = '\0';
     } else {
-        np.active_region[0] = '\0';
         g_active_name[0] = '\0';
     }
-    prefs_set(np);
-
     return true;
+}
+
+bool setActiveRegionName(const char* name) {
+    return commitActiveRegionPrefs(name, nullptr, false);
+}
+
+bool setActiveRegionNameWithKey(const char* name, const char* key_hex) {
+    return commitActiveRegionPrefs(name, key_hex, true);
 }
 
 // ── Channel sync ────────────────────────────────────────

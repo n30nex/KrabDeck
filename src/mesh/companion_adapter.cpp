@@ -750,42 +750,13 @@ public:
 
         if (name_out) { memset(name_out, 0, 31); strncpy(name_out, r->name, 30); }
         if (key_out) {
-            // Check if a persisted private key exists (for $private scopes)
-            const sigurdos::NodePrefs& p = sigurdos::prefs_get();
-            if (p.default_scope_key_hex[0] != '\0' && active[0] == '$') {
-                sigurdos::mesh::scopeKeyHexDecode(p.default_scope_key_hex, key_out);
-            } else {
-                memcpy(key_out, keys[0].key, 16);
-            }
+            // Return the installed key, never an unverified preference value.
+            memcpy(key_out, keys[0].key, 16);
         }
         return true;
     }
-    void setDefaultFloodScope(const char* name, const uint8_t* key) override {
-        if (!name || !name[0]) {
-            sigurdos::mesh::setActiveRegion("");
-            return;
-        }
-
-        // Ensure the region exists in RegionMap
-        RegionEntry* r = sigurdos::mesh::findRegion(name);
-        if (!r) {
-            r = sigurdos::mesh::addRegion(name);
-        }
-
-        // If a key was provided for a $private region, persist it in NVS
-        // so it survives reboot. The companion app provides it again on connect.
-        if (key && name[0] == '$') {
-            sigurdos::NodePrefs p = sigurdos::prefs_get();
-            sigurdos::mesh::scopeKeyHexEncode(key, p.default_scope_key_hex);
-            sigurdos::prefs_set(p);
-        } else if (key) {
-            // Public or #hashtag key — clear any persisted $private key
-            sigurdos::NodePrefs p = sigurdos::prefs_get();
-            p.default_scope_key_hex[0] = '\0';
-            sigurdos::prefs_set(p);
-        }
-
-        sigurdos::mesh::setActiveRegion(name);
+    bool setDefaultFloodScope(const char* name, const uint8_t* key) override {
+        return sigurdos::mesh::setActiveRegionWithKey(name, key);
     }
     void setFloodScopeOverride(const uint8_t* key, bool unscoped) override {
         if (!mesh_ptr()) return;

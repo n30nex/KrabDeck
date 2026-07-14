@@ -477,6 +477,10 @@ bool removeRegion(const char* name);
 // Set the active flood-scope region (empty = wildcard/unscoped).
 bool setActiveRegion(const char* name);
 
+// Validate/create a companion scope, install a required private key, then
+// commit the active name and activate the scope. Empty clears the scope/key.
+bool setActiveRegionWithKey(const char* name, const uint8_t* private_key);
+
 // Get the current active region name. Returns "" if wildcard.
 const char* getActiveRegion();
 

@@ -333,7 +333,7 @@ public:
     // getDefaultFloodScope returns true and fills name(31)/key(16) if a default
     // scope is set; false means "no default" (null name/key).
     virtual bool getDefaultFloodScope(char* name_out, uint8_t* key_out) const = 0;
-    virtual void setDefaultFloodScope(const char* name, const uint8_t* key) = 0;
+    virtual bool setDefaultFloodScope(const char* name, const uint8_t* key) = 0;
     // setFloodScopeOverride: unscoped=true forces wildcard; else key==nullptr
     // resets to default, non-null sets a transient scope key.
     virtual void setFloodScopeOverride(const uint8_t* key, bool unscoped) = 0;

@@ -14,6 +14,59 @@
 #include <cstdint>
 #include <cstdio>
 
+// Remote diagnostics run on the same cooperative loop as the UI and mesh.
+// Keep their resource policies visible here so native tests can lock the
+// bounds without linking the hardware-only controller implementation.
+static constexpr uint16_t SIGURDOS_TEST_EMOJI_PAGE_SIZE = 24;
+static constexpr uint16_t SIGURDOS_TEST_EMOJI_FIXED_OBJECTS = 10;
+static constexpr uint16_t SIGURDOS_TEST_EMOJI_OBJECT_LIMIT = 64;
+static constexpr uint8_t SIGURDOS_TEST_TREE_MAX_DEPTH = 8;
+static constexpr uint16_t SIGURDOS_TEST_TREE_MAX_NODES = 128;
+static constexpr uint32_t SIGURDOS_TEST_CAPTURE_MAX_WIDTH = 320;
+static constexpr uint32_t SIGURDOS_TEST_CAPTURE_MAX_HEIGHT = 240;
+static constexpr uint32_t SIGURDOS_TEST_CAPTURE_MAX_BYTES =
+    SIGURDOS_TEST_CAPTURE_MAX_WIDTH * SIGURDOS_TEST_CAPTURE_MAX_HEIGHT * 2U;
+
+inline uint16_t sigurdos_test_controller_emoji_page_count(uint16_t item_count) {
+    return item_count == 0
+               ? 0
+               : static_cast<uint16_t>((item_count + SIGURDOS_TEST_EMOJI_PAGE_SIZE - 1U) /
+                                       SIGURDOS_TEST_EMOJI_PAGE_SIZE);
+}
+
+inline uint16_t sigurdos_test_controller_emoji_page_items(uint16_t item_count,
+                                                           uint16_t page) {
+    const uint32_t first = static_cast<uint32_t>(page) * SIGURDOS_TEST_EMOJI_PAGE_SIZE;
+    if (first >= item_count) return 0;
+    const uint32_t remaining = item_count - first;
+    return static_cast<uint16_t>(remaining > SIGURDOS_TEST_EMOJI_PAGE_SIZE
+                                     ? SIGURDOS_TEST_EMOJI_PAGE_SIZE
+                                     : remaining);
+}
+
+inline bool sigurdos_test_controller_emoji_object_count_allowed(uint16_t page_items) {
+    const uint32_t objects = SIGURDOS_TEST_EMOJI_FIXED_OBJECTS +
+                             static_cast<uint32_t>(page_items) * 2U;
+    return page_items <= SIGURDOS_TEST_EMOJI_PAGE_SIZE &&
+           objects <= SIGURDOS_TEST_EMOJI_OBJECT_LIMIT;
+}
+
+inline bool sigurdos_test_controller_tree_can_descend(uint8_t depth) {
+    return depth < SIGURDOS_TEST_TREE_MAX_DEPTH;
+}
+
+inline bool sigurdos_test_controller_capture_size_allowed(uint32_t width,
+                                                           uint32_t height,
+                                                           uint32_t stride) {
+    if (width == 0 || height == 0 || stride < width * 2U) return false;
+    if (width > SIGURDOS_TEST_CAPTURE_MAX_WIDTH ||
+        height > SIGURDOS_TEST_CAPTURE_MAX_HEIGHT) {
+        return false;
+    }
+    const uint64_t total = static_cast<uint64_t>(stride) * height;
+    return total <= SIGURDOS_TEST_CAPTURE_MAX_BYTES;
+}
+
 struct SigurdOSTestRfParams {
     float freq;
     uint8_t sf;

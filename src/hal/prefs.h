@@ -47,6 +47,7 @@ struct NodePrefs {
     bool     buzzer_quiet;            // mute message-arrival buzzer
     uint8_t  client_repeat;           // 0=no forwarding, !=0=opportunistic relay (client-repeat mode)
     bool     ble_enabled;             // BLE companion advertising enabled in BLE build
+    bool     ble_user_set;            // true only after an explicit BLE user toggle
     uint32_t device_pin;               // 4-6 digit device PIN (0 = disabled)
     uint32_t ble_pin;                  // random per-device BLE pairing PIN (0 = not generated yet)
     uint8_t  telemetry_modes;          // bitmask for companion telemetry modes
@@ -96,6 +97,7 @@ struct NodePrefs {
         buzzer_quiet = false;         // default: buzzer enabled
         client_repeat = 0;            // default: no forwarding
         ble_enabled = true;           // default: BLE companion on
+        ble_user_set = false;          // default may migrate; no explicit user choice yet
         device_pin = 0;               // default: no PIN
         ble_pin = 0;                  // default: not generated (will generate on first BLE boot)
         telemetry_modes = 0;          // default: no telemetry sharing
@@ -111,6 +113,36 @@ struct NodePrefs {
     }
 };
 
+namespace detail {
+
+constexpr uint8_t BLE_PREFS_SCHEMA_VERSION = 1;
+
+enum class BlePrefsWriteMode : uint8_t {
+    Preserve,
+    Write,
+};
+
+struct BlePrefsState {
+    bool enabled;
+    bool user_set;
+    bool needs_migration;
+};
+
+// Resolve BLE-capable firmware state without mistaking a legacy build-written
+// false for an explicit user choice. A new-schema intent marker always wins.
+inline BlePrefsState resolveBlePrefs(bool value_present, bool stored_value,
+                                    bool intent_present, bool stored_intent,
+                                    uint8_t schema_version) {
+    const bool user_set = intent_present && stored_intent;
+    const bool legacy = schema_version < BLE_PREFS_SCHEMA_VERSION;
+    const bool enabled = legacy && !user_set
+        ? true
+        : (value_present ? stored_value : true);
+    return {enabled, user_set, legacy};
+}
+
+} // namespace detail
+
 // Load/save from NVS (Preferences)
 bool prefs_load(NodePrefs& p);
 bool prefs_save(const NodePrefs& p);
@@ -119,6 +151,10 @@ bool prefs_exists();
 // Expose loaded prefs globally (read-only after boot)
 const NodePrefs& prefs_get();
 bool             prefs_set(const NodePrefs& p);
+
+// Persist an explicit user BLE choice. Non-BLE variants return false and
+// leave the cross-variant BLE keys untouched.
+bool prefs_set_ble_enabled(bool enabled);
 
 // ── Saved repeater passwords (persist across firmware updates in NVS) ──
 bool saveRepeaterPassword(const char* name, const char* password);

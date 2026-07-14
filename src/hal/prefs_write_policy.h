@@ -28,6 +28,7 @@ struct PrefsWriteFailure {
 };
 
 inline bool prefsWriteAll(const NodePrefs& prefs, const PrefsNvsWriter& writer,
+    BlePrefsWriteMode ble_mode,
     PrefsWriteFailure* failure = nullptr) {
     auto fail = [failure](const char* key, int32_t error) {
         if (failure) {
@@ -81,7 +82,11 @@ inline bool prefsWriteAll(const NodePrefs& prefs, const PrefsNvsWriter& writer,
     if (!wrote("autoadd_cfg", writer.setU8(writer.context, "autoadd_cfg", prefs.autoadd_config))) return false;
     if (!wrote("autoadd_mh", writer.setU8(writer.context, "autoadd_mh", prefs.autoadd_max_hops))) return false;
     if (!wrote("clirep", writer.setU8(writer.context, "clirep", prefs.client_repeat))) return false;
-    if (!wrote("ble_en", writer.setU8(writer.context, "ble_en", prefs.ble_enabled ? 1 : 0))) return false;
+    if (ble_mode == BlePrefsWriteMode::Write) {
+        if (!wrote("ble_en", writer.setU8(writer.context, "ble_en", prefs.ble_enabled ? 1 : 0))) return false;
+        if (!wrote("ble_user", writer.setU8(writer.context, "ble_user", prefs.ble_user_set ? 1 : 0))) return false;
+        if (!wrote("ble_ver", writer.setU8(writer.context, "ble_ver", BLE_PREFS_SCHEMA_VERSION))) return false;
+    }
     if (!wrote("dev_pin", writer.setU32(writer.context, "dev_pin", prefs.device_pin))) return false;
     if (!wrote("ble_pin", writer.setU32(writer.context, "ble_pin", prefs.ble_pin))) return false;
     if (!wrote("tele_mod", writer.setU8(writer.context, "tele_mod", prefs.telemetry_modes))) return false;

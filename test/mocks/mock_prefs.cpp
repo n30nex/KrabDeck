@@ -35,4 +35,10 @@ bool prefs_set(const NodePrefs& p) {
     return true;
 }
 
+bool prefs_set_ble_enabled(bool enabled) {
+    g_prefs.ble_enabled = enabled;
+    g_prefs.ble_user_set = true;
+    return true;
+}
+
 } // namespace sigurdos

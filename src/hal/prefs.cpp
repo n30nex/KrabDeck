@@ -51,6 +51,24 @@ int32_t commit(void* raw) {
     return nvs_commit(static_cast<NvsWriterContext*>(raw)->handle);
 }
 
+#if defined(SIGURDOS_COMPANION_BLE) && SIGURDOS_COMPANION_BLE
+bool persistBleMigration(bool enabled, bool user_set) {
+    nvs_handle_t handle = 0;
+    esp_err_t error = nvs_open(NVS_NS, NVS_READWRITE, &handle);
+    if (error == ESP_OK) error = nvs_set_u8(handle, "ble_en", enabled ? 1 : 0);
+    if (error == ESP_OK) error = nvs_set_u8(handle, "ble_user", user_set ? 1 : 0);
+    if (error == ESP_OK) {
+        error = nvs_set_u8(handle, "ble_ver", detail::BLE_PREFS_SCHEMA_VERSION);
+    }
+    if (error == ESP_OK) error = nvs_commit(handle);
+    if (handle != 0) nvs_close(handle);
+    if (error != ESP_OK) {
+        SIG_LOGW("[prefs] BLE preference migration failed: %s", esp_err_to_name(error));
+    }
+    return error == ESP_OK;
+}
+#endif
+
 } // namespace
 
 #if defined(SIGURDOS_COMPANION_BLE) && SIGURDOS_COMPANION_BLE
@@ -62,6 +80,13 @@ static constexpr bool DEFAULT_BLE_ENABLED = false;
 bool prefs_load(NodePrefs& p) {
     Preferences nvs;
     if (!nvs.begin(NVS_NS, true)) return false;
+
+#if defined(SIGURDOS_COMPANION_BLE) && SIGURDOS_COMPANION_BLE
+    const detail::BlePrefsState ble_state = detail::resolveBlePrefs(
+        nvs.isKey("ble_en"), nvs.getBool("ble_en", DEFAULT_BLE_ENABLED),
+        nvs.isKey("ble_user"), nvs.getBool("ble_user", false),
+        nvs.getUChar("ble_ver", 0));
+#endif
 
     // Use a temp buffer so the default set by set_defaults() is preserved
     // if the NVS key is absent (defensive against library version differences)
@@ -113,9 +138,16 @@ bool prefs_load(NodePrefs& p) {
     p.autoadd_config = nvs.getUChar("autoadd_cfg", 0x1E);
     p.autoadd_max_hops = nvs.getUChar("autoadd_mh", 0);
     p.client_repeat = nvs.getUChar("clirep", 0);
-    // BLE-specific firmware should be discoverable on first boot, while a
-    // saved user preference still controls later boots.
+    // BLE variants migrate stale build-generated false values to the new
+    // discoverable default. Non-BLE variants may observe the keys but never
+    // rewrite them during unrelated preference saves.
+#if defined(SIGURDOS_COMPANION_BLE) && SIGURDOS_COMPANION_BLE
+    p.ble_enabled = ble_state.enabled;
+    p.ble_user_set = ble_state.user_set;
+#else
     p.ble_enabled = nvs.getBool("ble_en", DEFAULT_BLE_ENABLED);
+    p.ble_user_set = nvs.getBool("ble_user", false);
+#endif
     p.device_pin = nvs.getULong("dev_pin", 0);
     p.ble_pin = nvs.getULong("ble_pin", 0);
     p.telemetry_modes = nvs.getUChar("tele_mod", 0);
@@ -151,6 +183,12 @@ bool prefs_load(NodePrefs& p) {
     else { p.radio_profile[sizeof(p.radio_profile) - 1] = '\0'; }
 
     nvs.end();
+
+#if defined(SIGURDOS_COMPANION_BLE) && SIGURDOS_COMPANION_BLE
+    if (ble_state.needs_migration) {
+        (void)persistBleMigration(ble_state.enabled, ble_state.user_set);
+    }
+#endif
     return true;
 }
 
@@ -167,7 +205,12 @@ bool prefs_save(const NodePrefs& p) {
         &context, setI8, setU8, setU16, setI32, setU32, setBlob, setString, commit
     };
     detail::PrefsWriteFailure failure;
-    const bool saved = detail::prefsWriteAll(p, writer, &failure);
+#if defined(SIGURDOS_COMPANION_BLE) && SIGURDOS_COMPANION_BLE
+    constexpr detail::BlePrefsWriteMode ble_mode = detail::BlePrefsWriteMode::Write;
+#else
+    constexpr detail::BlePrefsWriteMode ble_mode = detail::BlePrefsWriteMode::Preserve;
+#endif
+    const bool saved = detail::prefsWriteAll(p, writer, ble_mode, &failure);
     nvs_close(handle);
     if (!saved) {
         SIG_LOGE("[prefs] NVS write failed at %s: %s", failure.key,
@@ -200,6 +243,20 @@ bool prefs_set(const NodePrefs& p) {
     if (!prefs_save(candidate)) return false;
     g_prefs = candidate;
     return true;
+}
+
+bool prefs_set_ble_enabled(bool enabled) {
+#if defined(SIGURDOS_COMPANION_BLE) && SIGURDOS_COMPANION_BLE
+    NodePrefs candidate = prefs_get();
+    candidate.ble_enabled = enabled;
+    candidate.ble_user_set = true;
+    if (!prefs_save(candidate)) return false;
+    g_prefs = candidate;
+    return true;
+#else
+    (void)enabled;
+    return false;
+#endif
 }
 
 // ── Repeater password storage ─────────────────────────────────────────

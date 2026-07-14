@@ -22,18 +22,23 @@ The Signal screen is a read-only dashboard displaying real-time radio statistics
 │ ←  #general  #random         14:32│  ← top bar (from make_screen_full)
 ├──────────────────────────────────┤
 │                                  │
-│         ┌──────────────┐         │
-│         │  RSSI: -87 dBm│         │
-│         │  SNR:   8.2 dB│         │
-│         │  Noise: -112  │         │
-│         │    dBm         │         │
-│         │                │         │
-│         │  Freq: 868.000│         │
-│         │  BW:  125.0   │         │
-│         │  SF:  12      │         │
-│         │  CR:  4/5     │         │
-│         │  TX Pwr: 20   │         │
-│         └──────────────┘         │
+│  ┌─────────────┐  ┌────────────┐ │
+│  │ TX Flood:    │  │ RX Flood:  │ │
+│  │       1,234  │  │      5,678 │ │
+│  │ TX Direct:   │  │ RX Direct: │ │
+│  │         567  │  │        890 │ │
+│  │ Airtime:     │  │ Duty Cycle:│ │
+│  │     12.3%    │  │      4.5%  │ │
+│  └─────────────┘  └────────────┘ │
+│                                  │
+│  ┌──────────────────────────┐    │
+│  │      RSSI History        │    │
+│  │  ▁▂▃▅▇▆▄▃▂▁▃▄▅▆▇▆▅▄▃▂   │    │
+│  │  -70   -85   -95  -110   │    │
+│  └──────────────────────────┘    │
+│                                  │
+│  Freq: 868.000  SF: 12  BW: 125  │
+│  CR: 4/5  TX Pwr: 20 dBm        │
 │                                  │
 ├──────────────────────────────────┤
 │ SigurdOS T-Deck   ▂▄▆█       72%  │  ← bottom bar (from make_screen_full)
@@ -83,16 +88,17 @@ The user must navigate to **Settings > Radio** (`radio_setup_screen_show()`) to 
 ### `signal_screen_show()` (`src/ui/screens/screen_signal.cpp`)
 
 1. Calls `make_screen_full("Signal")` to construct the standard top bar + bottom bar chrome.
-2. Queries three runtime metrics via the mesh wrapper:
-   - `sigurdos::mesh::getLastRSSI()` — most recent RX RSSI
-   - `sigurdos::mesh::getLastSNR()` — most recent RX SNR
-   - `sigurdos::mesh::getNoiseFloor()` — current RF noise floor
-3. Reads persisted `NodePrefs` via `sigurdos::prefs_get()`.
-4. Composes a single multi-line label centred in the content area with `lv_font_montserrat_12`.
-5. Conditional formatting:
-   - **Configured** (`p.configured == true`): displays all 8 metrics (RSSI, SNR, noise, freq, BW, SF, CR, TX power).
-   - **Unconfigured** (`p.configured == false`): only shows RSSI, SNR, noise floor plus a notice directing the user to the Radio setup screen.
-6. Displays the screen via `show_screen(scr)` (slide-in animation).
+2. Retrieves per-category packet counts:
+   - `sigurdos::mesh::getNumSentFlood()` / `getNumRecvFlood()` — flood message counts
+   - `sigurdos::mesh::getNumSentDirect()` / `getNumRecvDirect()` — direct message counts
+   - `sigurdos::mesh::getTotalTxAirtimeMs()` / `getTotalRxAirtimeMs()` — airtime totals
+3. Computes duty cycle and historical RSSI data for the sparkline chart.
+4. Displays results in a **two-column statistics layout** with an optional RSSI history sparkline.
+5. Reads persisted `NodePrefs` via `sigurdos::prefs_get()` for the radio parameters row (freq, SF, BW, CR, TX power).
+6. Conditional formatting:
+   - **Configured** (`p.configured == true`): displays all stats, chart, and radio parameters.
+   - **Unconfigured** (`p.configured == false`): shows packet counts and a notice directing the user to the Radio setup screen.
+7. Displays the screen via `show_screen(scr)` (slide-in animation).
 
 ### Update Behaviour
 
@@ -114,12 +120,13 @@ The Signal screen is a **static snapshot** — it reads current values at creati
 
 | Metric | Typical Range | Interpretation |
 |--------|---------------|----------------|
-| RSSI | −50 to −120 dBm | >−70 excellent, >−85 good, >−100 fair, <−115 poor/noise |
-| SNR | −10 to +15 dB | >+5 excellent, 0 to +5 marginal, <0 noisy link |
-| Noise Floor | −90 to −130 dBm | More negative = quieter; industrial/urban areas are louder |
+| TX/RX Counts | 0–100,000+ | Per-category packet counts (flood, direct) |
+| Airtime | 0–100% | Percentage of time radio spent transmitting/receiving |
+| Duty Cycle | 0–100% | Regulatory TX duty-cycle limit enforcement |
+| RSSI History | −50 to −120 dBm | Historical sparkline of last N RSSI samples |
 
 ## Notes
 
-- RSSI/SNR/noise floor values reflect the **most recently received packet** — not a running average.
-- The `getNoiseFloor()` call returns the SX1262's RSSI value during a fixed-duration noise measurement (typically ~4ms). It does not require a received packet.
-- All text is rendered in `TEXT_PRIMARY` (`#F2F3F5`, `montserrat_12`), centred in the content area with 8px horizontal padding.
+- The display is a **static snapshot** with live counters — values update as the mesh processes packets but the screen does not auto-refresh.
+- RSSI history is stored as a ring buffer of recent packet RSSI values for the sparkline chart.
+- Radio parameters are read from persisted `NodePrefs` at screen creation time.

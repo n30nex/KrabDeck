@@ -120,7 +120,7 @@ SigurdOS-tdeck/
 │   │   ├── keyboard.cpp/h  ← I2C keyboard (ESP32-C3 MCU)
 │   │   ├── gps.cpp/h       ← NMEA GPS parser (Serial1)
 │   │   ├── sdcard.cpp/h    ← microSD card (SPI, shared bus)
-│   │   ├── buzzer.cpp/h    ← Active-low buzzer control (GPIO 46)
+│   │   ├── buzzer.cpp/h    ← Active-high buzzer control (GPIO 46)
 │   │   ├── prefs.cpp/h     ← NVS preferences (radio config, identity, WiFi OTA)
 │   │   ├── wifi_ota.cpp/h  ← AP-mode OTA upload server
 │   │   └── github_ota.cpp/h ← GitHub-release OTA downloader
@@ -283,7 +283,7 @@ See [`firmware/README.md`](firmware/README.md) for details.
 
 ## Screenshots
 
-All screens from the SigurdOS T-Deck UI, captured from a live device running the production firmware build.
+All screens from the SigurdOS T-Deck UI, captured from a device running the current firmware build (screenshots may lag behind the latest UI changes).
 
 | Screen | Screenshot | Description |
 |--------|-----------|-------------|
@@ -298,8 +298,8 @@ All screens from the SigurdOS T-Deck UI, captured from a live device running the
 | **Advertise** | ![Advertise](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/advertise.png) | Send an advert (presence beacon) to the mesh so other nodes discover you. Shows advert type, cooldown, and last advertised timestamp. |
 | **Settings** | ![Settings](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/settings.png) | Device configuration: node name, radio params (frequency, SF, power, gain), display timeout, backlight, GPS toggle, and factory reset. |
 | **Trace** | ![Trace](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/trace.png) | Real-time routing trace showing packet paths through the mesh — source → hops → destination with per-hop RSSI/SNR. |
-| **Terminal** | ![Terminal](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/terminal.png) | Serial-style command interface for direct MeshCore CLI commands (e.g. `info`, `status`, `nodes`, `channels`). |
-| **Signal & SNR** | ![Signal](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/signal.png) | Signal diagnostics screen showing RSSI, SNR, noise floor, and packet success rate for the current radio configuration. |
+| **Terminal** | ![Terminal](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/terminal.png) | Serial-style command interface for direct MeshCore CLI commands (e.g. `help`, `status`, `advert`, `ping`, `sign`, `anon`, `fetchmsgs`, `groupdata`, `emoji-list`, `exportkey`, `importkey`). |
+| **Signal & SNR** | ![Signal](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/signal.png) | Signal diagnostics screen showing TX/RX flood/direct counts, airtime, duty cycle, RSSI history sparkline, and current radio parameters. |
 | **Radio Setup** | ![Radio](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/radio.png) | Advanced radio configuration: frequency band, spreading factor, coding rate, TX power, and RX gain boost. |
 | **WiFiNetworks** | ![WiFi](https://raw.githubusercontent.com/hermes-gadget/SigurdOS-tdeck/dev/docs/screenshots/wifi.png) | WiFi network scanning and connection management for OTA updates and diagnostics. Shows available access points with encryption status, RSSI, and connect flow. |
 | **NodeStats** | *No screenshot* | Node statistics display showing uptime, memory usage, packet counts, and mesh health. |

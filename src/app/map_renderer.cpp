@@ -348,7 +348,17 @@ static TileLoadResult load_tile(int zoom, int tx, int ty,
         return record_tile_failure(zoom, tx, ty, now_ms);
     }
 
-    uint16_t* decoded_pixels = (uint16_t*)map_alloc(TILE_SIZE * TILE_SIZE * 2);
+    // Select and release the victim before requesting another full tile
+    // buffer. A full cache therefore never needs a transient fifth RGB565
+    // allocation, which keeps PSRAM pressure from spilling into internal RAM.
+    CachedTile* slot = tile_cache_evict_slot(tile_cache, TILE_CACHE_SIZE);
+    if (!slot) {
+        set_tile_status("load:no cache slot");
+        lodepng_free(rgba);
+        return record_tile_failure(zoom, tx, ty, now_ms);
+    }
+    uint16_t* decoded_pixels = tile_cache_reallocate_slot(
+        slot, TILE_SIZE * TILE_SIZE * sizeof(uint16_t), map_alloc, map_free);
     if (!decoded_pixels) {
         set_tile_status("load:no tile buf");
         lodepng_free(rgba);
@@ -366,16 +376,6 @@ static TileLoadResult load_tile(int zoom, int tx, int ty,
     }
 
     lodepng_free(rgba);
-
-    // Do not destroy a valid cached tile until the replacement file has been
-    // opened, bounded, read, decoded, validated, and converted successfully.
-    CachedTile* slot = tile_cache_evict_slot(tile_cache, TILE_CACHE_SIZE);
-    if (!slot) {
-        map_free(decoded_pixels);
-        return record_tile_failure(zoom, tx, ty, now_ms);
-    }
-    if (slot->pixels) map_free(slot->pixels);
-    slot->pixels = decoded_pixels;
 
     slot->zoom = zoom;
     slot->tx = tx;

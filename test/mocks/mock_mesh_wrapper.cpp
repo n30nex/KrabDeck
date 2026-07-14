@@ -378,4 +378,12 @@ int listRegions(RegionInfo* out, int max) {
     return n;
 }
 
+// Private region key management stubs (tests use real regions.cpp)
+::RegionEntry* addPrivateRegion(const char*, const uint8_t*, const char*) {
+    return nullptr;  // Tests should use real regions via test_regions fixture
+}
+bool getPrivateRegionKey(const char*, uint8_t*) {
+    return false;
+}
+
 } // namespace sigurdos::mesh

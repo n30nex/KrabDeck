@@ -147,10 +147,13 @@ void setup()
 
 void loop()
 {
+    // Drain the UART before any network state or upload work. The WiFi service
+    // also drains between each bounded operation so reconnects cannot starve
+    // the GPS receiver.
+    sigurdos_gps_loop();
 #if defined(SIGURDOS_GPS_VALIDATION_WIFI) && SIGURDOS_GPS_VALIDATION_WIFI
     sigurdos_gps_validation_wifi_service();
 #endif
-    sigurdos_gps_loop();
 
     const uint32_t now = millis();
     if ((uint32_t)(now - last_status_ms) >= 1000) {

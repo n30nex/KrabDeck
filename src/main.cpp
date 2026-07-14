@@ -6,7 +6,6 @@
 #include "hal/tdeck_board.h"
 #include "hal/tdeck_pins.h"
 #include "hal/display.h"
-#include "hal/display_retry_state.h"
 #include "hal/battery.h"
 #include "hal/gps.h"
 #include "hal/sdcard.h"
@@ -15,6 +14,7 @@
 #include "hal/prefs.h"
 #include "hal/launcher_env.h"
 #include "hal/buzzer.h"
+#include "hal/boot_watchdog.h"
 #include "app/map_renderer.h"
 #include "mesh/mesh_wrapper.h"
 #include "ui/ui.h"
@@ -51,19 +51,22 @@ static void boot_status(const char* status)
 void setup()
 {
     Serial.begin(115200);
+    const esp_reset_reason_t reset_reason = esp_reset_reason();
+    sigurdos::hal::boot_watchdog_begin(reset_reason);
 #if defined(SIGURDOS_REMOTE_TEST) && SIGURDOS_REMOTE_TEST
     Serial.println("[boot] HELLO FROM REMOTE_TEST BUILD -v2");
 #endif
     boot_log("serial OK");
 
+    sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::Board);
     board.begin();
     boot_log("board init OK");
+    sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::Battery);
     sigurdos_battery_init();
 
     // Critical-battery sleep wakes periodically to permit recovery after
     // charging. Re-sleep before display/radio/storage initialization when a
     // timer wake finds that the battery remains below the safe threshold.
-    const esp_reset_reason_t reset_reason = esp_reset_reason();
     const bool deep_sleep_reset = reset_reason == ESP_RST_DEEPSLEEP;
     const bool timer_wakeup = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER;
     const uint16_t early_battery_mv = sigurdos_battery_mv();
@@ -71,42 +74,42 @@ void setup()
             deep_sleep_reset, timer_wakeup, early_battery_mv)) {
         Serial.printf("[boot] battery still critical (%u mV); returning to deep sleep\n",
                       early_battery_mv);
-        sigurdos::mesh::shutdown();
+        board.sleep(0);
         return;
     }
     sigurdos::hal::buzzer_init();
 
-    // RTC_NOINIT_ATTR can contain arbitrary bytes after power-on. Trust this
-    // versioned record only after the deliberate software reset issued below.
-    static RTC_NOINIT_ATTR sigurdos::hal::DisplayRetryState display_retry_state;
-    sigurdos::hal::display_retry_begin(
-        display_retry_state, reset_reason == ESP_RST_SW);
+    // Track display init failures across reboots to detect boot loops.
+    // RTC_NOINIT_ATTR persists through software resets (ESP.restart()).
+    static RTC_NOINIT_ATTR uint8_t display_failures = 0;
+    static constexpr uint8_t MAX_DISPLAY_FAILURES = 3;
 
+    sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::Display);
     if (!sigurdos_display_init()) {
-        const uint8_t display_failures =
-            sigurdos::hal::display_retry_note_failure(display_retry_state);
+        display_failures++;
         Serial.printf("[boot] FATAL: Display init failed (%u/%u attempts)\n",
-                      display_failures,
-                      sigurdos::hal::MAX_DISPLAY_FAILURES);
-        if (sigurdos::hal::display_retry_should_halt(display_retry_state)) {
+                      display_failures, MAX_DISPLAY_FAILURES);
+        if (display_failures >= MAX_DISPLAY_FAILURES) {
             Serial.println("[boot] HALTED: Too many display failures.");
             Serial.println("[boot] USB reflashing remains available; reset to retry.");
             // Mesh, BLE, OTA, and interactive command services have not started.
             // Halt to break the reboot loop while retaining ROM/USB reflashing.
+            sigurdos::hal::boot_watchdog_stop();
             while (true) { delay(1000); }
         }
         Serial.printf("[boot] Restarting in 5s...\n");
         delay(5000);
         ESP.restart();
-        return;
     }
-    sigurdos::hal::display_retry_clear(display_retry_state);
+    display_failures = 0;  // success - reset counter
     boot_log("display core init OK");
 
+    sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::Ui);
     sigurdos::ui::init();
     boot_status("Starting SigurdOS...");
     boot_log("first splash frame flushed");
 
+    sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::Storage);
     boot_status("Mounting storage...");
     // Safe SPIFFS init — auto-formats an erased partition (clean flash)
     // but leaves corrupt data alone (user must factory-reset to recover).
@@ -120,6 +123,7 @@ void setup()
     }
     boot_status(spiffs_ok ? "Storage ready" : "Storage unavailable");
 
+    sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::Settings);
     boot_status("Loading settings...");
     const sigurdos::NodePrefs& p = sigurdos::prefs_get();
     sigurdos::mesh::setOwnName(p.node_name);
@@ -128,6 +132,7 @@ void setup()
     sigurdos_display_reset_auto_off();
     boot_log("settings loaded");
 
+    sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::Input);
     boot_status("Starting input...");
     const SigurdOSInputInitStatus input = sigurdos_display_init_inputs();
     if (input.all_ready()) {
@@ -142,6 +147,7 @@ void setup()
     }
 
     if (p.gps_enabled) {
+        sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::Gps);
         boot_status("Starting GPS...");
         sigurdos_gps_init();
         boot_log("GPS init done");
@@ -151,6 +157,7 @@ void setup()
 
     // Probe/mount SD before the SX1262 begins listening. SD card handshake may
     // reset SPI2; doing so after radio init can invalidate RadioLib state.
+    sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::SdCard);
     boot_status("Checking SD card...");
     if (!sigurdos_sdcard_init()) {
         boot_status("No SD card");
@@ -158,6 +165,7 @@ void setup()
         boot_status("SD card ready");
     }
 
+    sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::Radio);
     boot_status("Starting radio...");
     const char* radio_status = "Radio ready";
 #if defined(SIGURDOS_REMOTE_TEST) && SIGURDOS_REMOTE_TEST
@@ -184,15 +192,19 @@ void setup()
     boot_status(radio_status);
     sigurdos_sdcard_lock_bus_reset();
 
+    sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::Chats);
     boot_status("Loading chats...");
     sigurdos::ui::load_persisted_state();
     boot_status("Chats ready");
 
 #if SIGURDOS_DEBUG_DIAG
+    sigurdos::hal::boot_watchdog_progress(
+        sigurdos::hal::BootStage::Diagnostics);
     sigurdos::debug::init();
     boot_log("debug diagnostics enabled");
 #endif
 
+    sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::Map);
     boot_status("Preparing map...");
     sigurdos_map_init();
 
@@ -200,6 +212,7 @@ void setup()
     boot_log("SigurdOS T-Deck ready");
 
     // Auto-connect WiFi if credentials are saved
+    sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::Wifi);
     {
         const sigurdos::NodePrefs& p = sigurdos::prefs_get();
         if (p.wifi_ssid[0]) {
@@ -208,8 +221,10 @@ void setup()
     }
 
 #if SIGURDOS_TELEMETRY
+    sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::Telemetry);
     sigurdos::telemetry::init();
 #endif
+    sigurdos::hal::boot_watchdog_enter_runtime();
 }
 
 void loop()
@@ -225,7 +240,7 @@ void loop()
         last_batt_check = millis();
         if (board.isBatteryCritical()) {
             Serial.println("CRITICAL: Battery low — entering deep sleep");
-            sigurdos::mesh::shutdown();
+            board.sleep(0);  // sleep indefinitely until charged
             return;
         }
     }
@@ -266,17 +281,5 @@ void loop()
             }
         }
     }
-#if defined(SIGURDOS_REMOTE_TEST) && SIGURDOS_REMOTE_TEST
-    sigurdos_test_controller_loop();
-#endif
-
-#if SIGURDOS_TELEMETRY
-    sigurdos::telemetry::loop();
-    // Report loop timing after telemetry processing.
-    uint32_t loop_elapsed_us = micros() - loop_start_us;
-    sigurdos::telemetry::report_loop_timing(loop_elapsed_us);
-#endif
-#if SIGURDOS_DEBUG_DIAG
-    sigurdos::debug::loop();
-#endif
+    sigurdos::hal::boot_watchdog_runtime_progress();
 }

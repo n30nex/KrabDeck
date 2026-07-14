@@ -21,6 +21,7 @@
 #include "tile_cache.h"
 #include "../hal/tdeck_pins.h"
 #include "../hal/sdcard.h"
+#include "../hal/boot_watchdog.h"
 #include <Arduino.h>
 #include "../hal/prefs.h"
 #include <lvgl.h>
@@ -441,6 +442,12 @@ static bool entry_is_png_tile(const struct dirent* e) {
     return true;
 }
 
+static void map_scan_progress() {
+    sigurdos::hal::boot_watchdog_progress(
+        sigurdos::hal::BootStage::MapDiscovery);
+    delay(1);
+}
+
 static bool scan_y_range(int zoom, int x, int* min_y, int* max_y, int* sample_y) {
     if (!min_y || !max_y || !sample_y) return false;
 
@@ -452,8 +459,10 @@ static bool scan_y_range(int zoom, int x, int* min_y, int* max_y, int* sample_y)
 
     int mn_y = -1;
     int mx_y = -1;
+    int scanned_entries = 0;
     struct dirent* ye;
     while ((ye = readdir(yd)) != nullptr) {
+        if ((++scanned_entries % 32) == 0) map_scan_progress();
         if (!entry_is_png_tile(ye)) continue;
         int y = atoi(ye->d_name);
         if (mn_y < 0) {
@@ -475,7 +484,9 @@ static bool scan_y_range(int zoom, int x, int* min_y, int* max_y, int* sample_y)
 
     yd = opendir(y_path);
     if (!yd) return false;
+    scanned_entries = 0;
     while ((ye = readdir(yd)) != nullptr) {
+        if ((++scanned_entries % 32) == 0) map_scan_progress();
         if (!entry_is_png_tile(ye)) continue;
         int y = atoi(ye->d_name);
         double dist = fabs((double)y - mid_y);
@@ -536,6 +547,7 @@ static bool scan_zoom_coverage(int z, TileCoverage* out) {
     int scanned = 0;
     struct dirent* xe;
     while ((xe = readdir(xd)) != nullptr) {
+        if ((++scanned % 16) == 0) map_scan_progress();
         if (xe->d_name[0] == '.') continue;
         if (!is_decimal_name(xe->d_name)) continue;
 
@@ -560,7 +572,6 @@ static bool scan_zoom_coverage(int z, TileCoverage* out) {
             if (x > c.max_x) c.max_x = x;
             if (mn_y < c.min_y) c.min_y = mn_y;
             if (mx_y > c.max_y) c.max_y = mx_y;
-            if ((++scanned % 16) == 0) delay(1);  // feed ESP32 TWDT
             continue;
         }
 
@@ -585,7 +596,6 @@ static bool scan_zoom_coverage(int z, TileCoverage* out) {
             if (mx_y > c.max_y) c.max_y = mx_y;
         }
 
-        if ((++scanned % 16) == 0) delay(1);
     }
     closedir(xd);
 
@@ -648,7 +658,7 @@ static bool scan_zoom_coverage(int z, TileCoverage* out) {
             have_sample = true;
         }
 
-        if ((++scanned % 16) == 0) delay(1);
+        if ((++scanned % 16) == 0) map_scan_progress();
     }
 
     if (!have_sample) return false;
@@ -676,6 +686,7 @@ static void discover_tiles() {
     closedir(tiles_dir);
 
     for (int z = MIN_ZOOM; z <= MAX_ZOOM; z++) {
+        map_scan_progress();
         TileCoverage c;
         if (!scan_zoom_coverage(z, &c)) {
             MAP_DEBUG_PRINTF("[map] discover: zoom %d has no png tiles\n", z);
@@ -861,8 +872,11 @@ void sigurdos_map_reparent(lv_obj_t* new_parent) {
 void sigurdos_map_discover_tiles() {
     // Tile discovery follows an SD insertion/re-entry and is the natural point
     // to forget stale misses from a previous sparse/missing tile set.
+    sigurdos::hal::boot_watchdog_progress(
+        sigurdos::hal::BootStage::MapDiscovery);
     missing_tile_cache_init(missing_tile_cache, MISSING_TILE_CACHE_SIZE);
     load_metadata();
+    sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::Runtime);
 }
 
 void sigurdos_map_deinit() {

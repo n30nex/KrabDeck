@@ -118,7 +118,7 @@ src/
 │   ├── sigurd_mesh_v2.cpp/h  # SigurdMeshV2 — BaseChatMesh subclass (routing, channels, messages)
 │   ├── mesh_wrapper.cpp/h # Public API for the UI layer (sigurdos::mesh::*)
 │   ├── mesh_wrapper_internal.h  # Internal mesh wrapper API (not for UI)
-│   ├── companion_adapter.cpp/h  # Companion BLE bridge adapter (included from mesh_wrapper.cpp)
+│   ├── companion_adapter.cpp/h  # Companion BLE bridge adapter (separately compiled, included from mesh_wrapper.cpp)
 │   ├── companion_message_policy.h  # Companion message filtering policy
 │   ├── persistence_store.cpp/h  # On-disk state persistence (contacts, channels via SPIFFS)
 │   ├── contact_store.cpp/h     # Contact management (add, remove, lookup, favourites)
@@ -247,10 +247,10 @@ The boot order (PR #625) is documented in detail in [`docs/HARDWARE.md`](docs/HA
  6. SPIFFS mount (or LittleFS via storage abstraction)
  7. Load NodePrefs, apply theme
  8. Deferred input init           ← touch/keyboard/trackball
- 9. GPS init
-10. Mesh init (identity, radio)
-11. UI state restore (chats)
-12. SD card init
+ 9. SD card init
+10. GPS init
+11. Mesh init (identity, radio)
+12. UI state restore (chats)
 13. Map init
 ```
 
@@ -680,9 +680,9 @@ When any `SIGURDOS_DEBUG` build is running, the display auto-off timer is disabl
 
 ## Versioning & Release
 
-Main + dev branch model:
-- `dev` — integration branch. All PRs merge here.
-- `main` — stable releases only.
+Dev-only branch model:
+- `dev` — integration branch. All PRs merge here. Releases are tagged directly on `dev`.
+- There is no `main` branch. See CONTRIBUTING.md.
 - Tags: `beta-0.1.XX` (zero-padded for correct sort: `beta-0.1.09` not `beta-0.1.9`)
 
 **Release flow (maintainer only):**
@@ -729,19 +729,17 @@ Entries are separated by `---`. Place new entries under the right category headi
 ```
 ## Terminal
 
-### Undocumented commands
-The built-in serial/diagnostics terminal exposes several internal commands but there is no documentation on what is available or what each command does. Users have to read the source code to discover features.
-
-**What's needed:** A `help` command that lists all available commands with a one-line description.
+### Terminal labels — fixed (64-line cap exists)
+Each command used to create a new LVGL label with no pruning. This has been fixed with a capped 64-line terminal log buffer. The `screen_terminal.cpp` implementation now recycles labels within a fixed pool.
 ```
 
 ```
 ## GPS
 
-### No NMEA checksum validation
-Raw GPS NMEA sentences from the L76K module include a `*XX` checksum suffix that is never validated (`gps.cpp`). Corrupted sentences from noisy GPS reception are parsed as valid data, potentially giving incorrect coordinates, altitude, or fix status.
+### GPS NMEA checksum — now validated
+The NMEA parser in `gps.cpp:288-318` validates the `*XX` checksum suffix before parsing. Sentences with missing or incorrect checksums are discarded.
 
-**What's needed:** Implement NMEA checksum validation — extract the checksum from after the `*` in the sentence, compute XOR of all bytes between `$` and `*`, and compare. Discard sentences that dont match.
+**What's needed:** N/A — implemented in current code.
 ```
 
 **Important:** Only add issues you have actually observed or can clearly demonstrate from reading the code. Do not add speculative bugs. The maintainer will verify your entry during PR review — if it does not hold up, the entry will be removed before merging.
@@ -833,7 +831,7 @@ Before submitting a PR (or before merging someone else's), use this checklist to
 
 | Rule | Detail |
 |------|--------|
-| **Branch from `dev`** | `main` is for stable releases only. PRs target `dev`. |
+|| **Branch from `dev`** | There is no `main` branch — releases are tagged on `dev`. PRs target `dev`. |
 | **Pull regularly** | Before starting work: `git checkout dev && git pull origin dev` |
 | **Rebase your feature branch** | Before opening a PR: `git rebase dev` to avoid stale-commit noise |
 | **Run the full test suite** | `pio test -e native_test` must pass all tests before pushing |
@@ -863,10 +861,10 @@ Before submitting a PR (or before merging someone else's), use this checklist to
 | Radio first boot | Init radio with compile-time defaults for receive. Gate TRANSMIT behind `configured == true` |
 | Wire.endTransmission | Always check return value — NACK on keyboard init means keyboard MCU is dead |
 | saveState | Call every ~5 min from UI loop. Crashes lose new contacts if not saved |
-| GPS NMEA | No checksum validation in `gps.cpp` — corrupted sentences parse as valid coordinates |
-| Terminal labels | Each command creates a new LVGL label with no pruning — cap at 64 lines |
-| Emoji truncation | Byte-level msg truncation can split 4-byte emoji, sending invalid UTF-8 over mesh |
-| SPI bus sharing | Display (SPI3_HOST, 40MHz) and SD card (HSPI=SPI3_HOST, 4MHz) share same SPI peripheral. LovyanGFX comment says "SPI2" but code uses SPI3 — fragile |
+|| GPS NMEA | NMEA checksum validation implemented in `gps.cpp:288-318` — corrupted sentences are discarded |
+|| Terminal labels | 64-line cap implemented in `screen_terminal.cpp` — labels recycle, not leak |
+|| Emoji truncation | Byte-level msg truncation can split 4-byte emoji — mitigated by `utf8_util.h` truncation helpers and emoji integrity tests |
+|| SPI bus sharing | Display, LoRa, and SD card all share SPI2_HOST with separate CS lines. No SPI3 involved — all devices use SPI2_HOST/FSPI |
 | Debug shadow mode | `SIGURDOS_TRACKBALL_DEBUG_SHADOW` drops trackball events instead of logging+forwarding |
 | Debug.h header guards | Declaration in `debug.h` is unconditional, but `debug.cpp` wraps all implementation in `#if defined(SIGURDOS_DEBUG)` — latent linker risk |
 | SIGURDOS_DEBUG scoping | `SIGURDOS_DEBUG` no longer forces radio parameters. Use `SIGURDOS_DEBUG_FORCE_RADIO_PARAMS` separately to override radio config at boot. |

@@ -761,10 +761,9 @@ public:
         }
         return true;
     }
-    void setDefaultFloodScope(const char* name, const uint8_t* key) override {
+    bool setDefaultFloodScope(const char* name, const uint8_t* key) override {
         if (!name || !name[0]) {
-            sigurdos::mesh::setActiveRegion("");
-            return;
+            return sigurdos::mesh::setActiveRegion("");
         }
 
         // Ensure the region exists in RegionMap
@@ -772,27 +771,29 @@ public:
         if (!r) {
             r = sigurdos::mesh::addRegion(name);
         }
+        if (!r) return false;
 
         // If a key was provided for a $private region, persist it in NVS
         // so it survives reboot. The companion app provides it again on connect.
         if (key && name[0] == '$') {
             sigurdos::NodePrefs p = sigurdos::prefs_get();
             sigurdos::mesh::scopeKeyHexEncode(key, p.default_scope_key_hex);
-            sigurdos::prefs_set(p);
+            if (!sigurdos::prefs_set(p)) return false;
         } else if (key) {
             // Public or #hashtag key — clear any persisted $private key
             sigurdos::NodePrefs p = sigurdos::prefs_get();
             p.default_scope_key_hex[0] = '\0';
-            sigurdos::prefs_set(p);
+            if (!sigurdos::prefs_set(p)) return false;
         }
 
-        sigurdos::mesh::setActiveRegion(name);
+        return sigurdos::mesh::setActiveRegion(name);
     }
-    void setFloodScopeOverride(const uint8_t* key, bool unscoped) override {
-        if (!mesh_ptr()) return;
+    bool setFloodScopeOverride(const uint8_t* key, bool unscoped) override {
+        if (!mesh_ptr()) return false;
         if (unscoped) mesh_ptr()->clearActiveScope();
         else if (key) mesh_ptr()->setActiveScope(key);
         else mesh_ptr()->clearActiveScope();
+        return true;
     }
 
     // ── Async requests ───────────────────────────────────────

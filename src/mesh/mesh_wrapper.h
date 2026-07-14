@@ -492,7 +492,7 @@ void setSendUnscopedOnce(bool v);
 // Worst case: every byte becomes %XX (3x expansion + NUL).
 size_t urlEncodeQueryValue(const char* in, char* out, size_t out_sz);
 
-// Private region key management (wraps global-namespace regions.cpp)
+// Private region key management (implemented by regions.cpp)
 ::RegionEntry* addPrivateRegion(const char* name, const uint8_t key[16],
                                 const char* parent_name);
 bool getPrivateRegionKey(const char* name, uint8_t key_out[16]);

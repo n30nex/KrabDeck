@@ -1341,23 +1341,26 @@ bool isContactFavourite(const char* name) {
     return false;
 }
 
-void setContactFavourite(const char* name, bool favourite) {
-    if (!g_mesh || !name) return;
+bool setContactFavourite(const char* name, bool favourite) {
+    if (!g_mesh || !name) return false;
     for (int i = 0; i < g_mesh->getContactCount(); i++) {
         auto* c = g_mesh->getContact(i);
         if (c && strcmp(c->name, name) == 0) {
-            ::ContactInfo updated = *c;
-            if (favourite) updated.flags |= 0x01;
-            else           updated.flags &= ~0x01;
+            ::ContactInfo* live = g_mesh->lookupContactByPubKey(
+                c->id.pub_key, PUB_KEY_SIZE);
+            if (!live) return false;
+            ::ContactInfo before = *live;
+            if (favourite) live->flags |= 0x01;
+            else           live->flags &= ~0x01;
             // Bump lastmod + persist so a companion app's incremental
             // CMD_GET_CONTACTS(since=…) picks up the favourite change (R3).
-            updated.lastmod = getCurrentTime();
-            if (g_mesh->removeContact(i) && g_mesh->addContact(updated)) {
-                saveContacts();
-            }
-            return;
+            live->lastmod = getCurrentTime();
+            if (saveContacts()) return true;
+            *live = before;
+            return false;
         }
     }
+    return false;
 }
 
 // ── Channels ────────────────────────────────────
@@ -2468,15 +2471,6 @@ void setSendUnscopedOnce(bool v) {
 
 size_t urlEncodeQueryValue(const char* in, char* out, size_t out_sz) {
     return urlEncode(in, out, out_sz);
-}
-
-// Forward to global-namespace regions.cpp
-::RegionEntry* addPrivateRegion(const char* name, const uint8_t key[16],
-                                const char* parent_name) {
-    return ::addPrivateRegion(name, key, parent_name);
-}
-bool getPrivateRegionKey(const char* name, uint8_t key_out[16]) {
-    return ::getPrivateRegionKey(name, key_out);
 }
 
 } // namespace mesh

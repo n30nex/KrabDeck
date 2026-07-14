@@ -69,7 +69,7 @@ void setup()
             deep_sleep_reset, timer_wakeup, early_battery_mv)) {
         Serial.printf("[boot] battery still critical (%u mV); returning to deep sleep\n",
                       early_battery_mv);
-        board.sleep(0);
+        sigurdos::mesh::shutdown();
         return;
     }
     sigurdos::hal::buzzer_init();
@@ -219,7 +219,7 @@ void loop()
         last_batt_check = millis();
         if (board.isBatteryCritical()) {
             Serial.println("CRITICAL: Battery low — entering deep sleep");
-            board.sleep(0);  // sleep indefinitely until charged
+            sigurdos::mesh::shutdown();
             return;
         }
     }

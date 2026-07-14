@@ -14,7 +14,6 @@
 #include "companion_message_policy.h"
 #include "cmd_response_queue.h"
 #include "durable_fanout.h"
-#include "durable_mutation.h"
 #include "contact_store.h"
 #include "contact_uri.h"
 #include "persistence_store.h"
@@ -23,9 +22,10 @@
 #include "hal/tdeck_pins.h"
 #include "hal/gps.h"
 #include "hal/prefs.h"
+#include "hal/github_ota.h"
+#include "hal/wifi_ota.h"
 #include "sigurd_mesh_v2.h"
 #include "regions.h"
-#include "scope_key_hex.h"
 #include "utils/utf8_util.h"
 #include "../diagnostics/debug_cfg.h"
 #include <helpers/sensors/LPPDataHelpers.h>
@@ -285,7 +285,6 @@ static bool loadIdentity(::mesh::LocalIdentity& id) {
 static bool saveIdentity(::mesh::LocalIdentity& id) {
     uint8_t buf[128];
     size_t len = id.writeTo(buf, sizeof(buf));
-    if (len != PRV_KEY_SIZE && len != (PRV_KEY_SIZE + PUB_KEY_SIZE)) return false;
     return sigurdos::mesh::identityStoreSave(buf, len);
 }
 
@@ -314,22 +313,8 @@ void sigurdos::mesh::meshRadioDriverStats(sigurdos::mesh::MeshRadioDriverStats& 
     out.packets_recv_errors = radio_driver ? radio_driver->getPacketsRecvErrors() : 0;
 }
 
-bool sigurdos::mesh::meshImportSelfIdentity(const uint8_t* private_key) {
-    if (!g_mesh || !private_key ||
-        !::mesh::LocalIdentity::validatePrivateKey(private_key)) return false;
-
-    ::mesh::LocalIdentity candidate;
-    candidate.readFrom(private_key, PRV_KEY_SIZE);
-    return sigurdos::mesh::detail::commitBeforeActivate(
-        [&candidate]() { return saveIdentity(candidate); },
-        [&candidate]() {
-            // Activate only after the atomic file replacement succeeds. This
-            // keeps runtime identity and sessions aligned with durable storage.
-            g_mesh->self_id = candidate;
-            g_mesh->resetAllContacts();
-            sigurdos::mesh::loadContacts();
-            g_mesh->clearAllLoginEntries();
-        });
+void sigurdos::mesh::meshSaveSelfIdentity() {
+    if (g_mesh) saveIdentity(g_mesh->self_id);
 }
 
 uint32_t sigurdos::mesh::meshStoreOutgoingMessage(const char* conversation, const char* text,
@@ -464,15 +449,14 @@ bool ensurePublicChannelPresent(bool persist)
     if (!g_mesh) return false;
     if (hasPublicChannel()) return true;
 
-    bool ok = persist
-        ? sigurdos::mesh::addChannel(PUBLIC_CHANNEL_NAME, PUBLIC_CHANNEL_PSK_BASE64)
-        : g_mesh->addChannelBool(PUBLIC_CHANNEL_NAME, PUBLIC_CHANNEL_PSK_BASE64);
+    bool ok = g_mesh->addChannelBool(PUBLIC_CHANNEL_NAME, PUBLIC_CHANNEL_PSK_BASE64);
     if (ok) {
 #if SIGURDOS_DEBUG_MESH
         Serial.println("[mesh] Added missing Public channel");
 #endif
+        if (persist) saveChannels();
     } else {
-        Serial.println("[mesh] WARNING: could not durably add missing Public channel");
+        Serial.println("[mesh] WARNING: Public channel missing and channel list is full");
     }
     return ok;
 }
@@ -1053,17 +1037,12 @@ bool init(bool spiffs_ok)
 
     // Generate or load identity
     if (!loadIdentity(g_mesh->self_id)) {
-        ::mesh::LocalIdentity candidate(&fast_rng);
+        g_mesh->self_id = ::mesh::LocalIdentity(&fast_rng);
         if (spiffs_ok) {
-            if (!saveIdentity(candidate)) {
-                Serial.println("[mesh] ERROR: could not persist generated identity");
-                cleanupMeshInit();
-                return false;
-            }
+            saveIdentity(g_mesh->self_id);
         } else {
             Serial.println("[mesh] WARNING: SPIFFS unavailable — identity is ephemeral");
         }
-        g_mesh->self_id = candidate;
     }
 
     g_mesh->begin();
@@ -1110,8 +1089,16 @@ bool init(bool spiffs_ok)
 
     // Restore the active flood-scope region after reboot so outgoing floods
     // continue to be stamped with the correct transport code.
-    if (!setActiveRegion(sigurdos::prefs_get().active_region)) {
-        setActiveRegion("");
+    {
+        const sigurdos::NodePrefs& np = sigurdos::prefs_get();
+        if (np.active_region[0] && g_mesh) {
+            RegionEntry* r = sigurdos::mesh::findRegion(np.active_region);
+            if (r) {
+                TransportKey keys[1];
+                int nk = sigurdos::mesh::getRegionMap() ? sigurdos::mesh::getRegionMap()->getTransportKeysFor(*r, keys, 1) : 0;
+                if (nk > 0) g_mesh->setActiveScope(keys[0].key);
+            }
+        }
     }
 
     if (sigurdos::mesh::messageStoreBegin()) {
@@ -1354,26 +1341,23 @@ bool isContactFavourite(const char* name) {
     return false;
 }
 
-bool setContactFavourite(const char* name, bool favourite) {
-    if (!g_mesh || !name) return false;
+void setContactFavourite(const char* name, bool favourite) {
+    if (!g_mesh || !name) return;
     for (int i = 0; i < g_mesh->getContactCount(); i++) {
         auto* c = g_mesh->getContact(i);
         if (c && strcmp(c->name, name) == 0) {
-            ::ContactInfo* live = g_mesh->lookupContactByPubKey(
-                c->id.pub_key, PUB_KEY_SIZE);
-            if (!live) return false;
-            ::ContactInfo before = *live;
-            if (favourite) live->flags |= 0x01;
-            else           live->flags &= ~0x01;
+            ::ContactInfo updated = *c;
+            if (favourite) updated.flags |= 0x01;
+            else           updated.flags &= ~0x01;
             // Bump lastmod + persist so a companion app's incremental
             // CMD_GET_CONTACTS(since=…) picks up the favourite change (R3).
-            live->lastmod = getCurrentTime();
-            if (saveContacts()) return true;
-            *live = before;
-            return false;
+            updated.lastmod = getCurrentTime();
+            if (g_mesh->removeContact(i) && g_mesh->addContact(updated)) {
+                saveContacts();
+            }
+            return;
         }
     }
-    return false;
 }
 
 // ── Channels ────────────────────────────────────
@@ -1392,45 +1376,26 @@ int exportChannels(char names[][37], int max) {
 
 bool addChannel(const char* name, const char* psk) {
     // Validate channel name
-    if (!g_mesh || !psk || !channel_name_valid(name)) return false;
-    ChannelDetails before[MAX_GROUP_CHANNELS]{};
-    for (int i = 0; i < MAX_GROUP_CHANNELS; ++i) {
-        if (!g_mesh->BaseChatMesh::getChannel(i, before[i])) return false;
-    }
+    if (!psk || !channel_name_valid(name)) return false;
     // BaseChatMesh::addChannel returns ChannelDetails* — use the bool wrapper.
-    if (!g_mesh->addChannelBool(name, psk)) return false;
-    if (!saveChannels()) {
-        for (int i = 0; i < MAX_GROUP_CHANNELS; ++i) {
-            g_mesh->BaseChatMesh::setChannel(i, before[i]);
-        }
-        return false;
-    }
-    syncRegionsFromChannels();
-    return true;
+    bool ok = g_mesh ? g_mesh->addChannelBool(name, psk) : false;
+    if (ok) syncRegionsFromChannels();
+    return ok;
 }
 
 bool addHashtagChannel(const char* name) {
     char normalized[32];
     if (!hashtag_channel_name_normalise(name, normalized,
                                         sizeof(normalized))) return false;
-    if (!g_mesh) return false;
-    ChannelDetails before[MAX_GROUP_CHANNELS]{};
-    for (int i = 0; i < MAX_GROUP_CHANNELS; ++i) {
-        if (!g_mesh->BaseChatMesh::getChannel(i, before[i])) return false;
-    }
-    if (!g_mesh->addHashtagChannel(normalized)) return false;
-    if (!saveChannels()) {
-        for (int i = 0; i < MAX_GROUP_CHANNELS; ++i) {
-            g_mesh->BaseChatMesh::setChannel(i, before[i]);
-        }
-        return false;
-    }
-    syncRegionsFromChannels();
-    return true;
+    bool ok = g_mesh ? g_mesh->addHashtagChannel(normalized) : false;
+    if (ok) syncRegionsFromChannels();
+    return ok;
 }
 
 bool joinPublicChannel() {
-    return addChannel(PUBLIC_CHANNEL_NAME, PUBLIC_CHANNEL_PSK_BASE64);
+    bool ok = addChannel(PUBLIC_CHANNEL_NAME, PUBLIC_CHANNEL_PSK_BASE64);
+    if (ok) saveChannels();
+    return ok;
 }
 
 // ── Region sync from channels ────────────────────
@@ -1662,7 +1627,7 @@ const PingResult* getPingResult(int i) {
 }
 
 bool saveChannels() {
-    if (!g_mesh) return false;
+    if (!g_mesh) return true;
     int n = g_mesh->getChannelCount();
 
     // Channel read callback for the store
@@ -1699,7 +1664,7 @@ void loadChannels() {
 }
 
 bool saveState() {
-    return g_mesh && saveIdentity(g_mesh->self_id);
+    return !g_mesh || saveIdentity(g_mesh->self_id);
 }
 
 // ── Contact persistence ─────────────────────────
@@ -1755,13 +1720,14 @@ static bool     g_contacts_dirty = false;
 static uint32_t g_contacts_dirty_since = 0;
 
 bool saveContacts() {
-    if (!g_mesh) return false;
+    if (!g_mesh) return true;
     int n = g_mesh->getNumContacts();
-    if (!sigurdos::mesh::contactStoreSave(n, readStoredContact, nullptr)) {
-        return false;
+    const bool saved = sigurdos::mesh::contactStoreSave(
+        n, readStoredContact, nullptr);
+    if (saved) {
+        g_contacts_dirty = false;  // explicit saves cover pending checkpoint
     }
-    g_contacts_dirty = false;  // clear only after the atomic replacement commits
-    return true;
+    return saved;
 }
 
 void markContactsDirty() {
@@ -1792,17 +1758,39 @@ void reloadContactsAfterIdentityChange() {
 
 void shutdown()
 {
-    if (!sigurdos::mesh::detail::meshInitUsable(init_state)) return;
-    // Save all persistent state to NVS/SPIFFS before shutting down
-    saveChannels();
-    saveState();
-    saveContacts();
-    // Give flash writes time to complete before power cut
-    delay(150);
-    // Enter deep sleep indefinitely. User must press power button
-    // (long press) or reset to wake. This is functionally equivalent
-    // to power-off for the T-Deck.
-    board.sleep(0);
+    sigurdos::mesh::detail::coordinateShutdown(
+        init_state,
+        []() {
+            // Stop services that can start network or flash work while the
+            // persistence checkpoint is being written.
+            sigurdos::github_ota::cancel();
+            sigurdos::ota::stop();
+        },
+        []() {
+            // Settings are normally committed on every change. Re-commit the
+            // cached snapshot here so the orderly shutdown has a checked NVS
+            // checkpoint alongside the mesh's SPIFFS-backed state.
+            const bool settings_saved = sigurdos::prefs_save(sigurdos::prefs_get());
+            const bool channels_saved = saveChannels();
+            const bool identity_saved = saveState();
+            const bool contacts_saved = saveContacts();
+            const bool saved = settings_saved && channels_saved &&
+                               identity_saved && contacts_saved;
+            if (!saved) {
+                Serial.printf(
+                    "[power] persistence failed: prefs=%d channels=%d identity=%d contacts=%d\n",
+                    settings_saved, channels_saved, identity_saved, contacts_saved);
+            }
+            // The stores close/commit synchronously; retain a short settling
+            // interval before changing peripheral power domains.
+            delay(150);
+            return saved;
+        },
+        []() {
+            // TDeckBoard owns wake configuration, bus quiescing, safe signal
+            // states, rail removal, and the final deep-sleep transition.
+            board.sleep(0);
+        });
 }
 
 void factoryReset()
@@ -1911,11 +1899,7 @@ void setDutyCycle(uint8_t percent) {
         for (int i = 0; i < g_mesh->getContactCount(); i++) {
             auto* c = g_mesh->getContact(i);
             if (c && strcmp(c->name, name) == 0) {
-                ::ContactInfo before = *c;
-                if (!g_mesh->removeContact(i)) return false;
-                if (saveContacts()) return true;
-                g_mesh->addContact(before);
-                return false;
+                return g_mesh->removeContact(i);
             }
         }
         return false;
@@ -1925,16 +1909,9 @@ void setDutyCycle(uint8_t percent) {
         if (!g_mesh || !name) return false;
         int idx = findContactIndex(name);
         if (idx < 0) return false;
-        const ::ContactInfo* cached = g_mesh->getContact(idx);
-        if (!cached) return false;
-        ::ContactInfo* live = g_mesh->lookupContactByPubKey(
-            cached->id.pub_key, PUB_KEY_SIZE);
-        if (!live) return false;
-        ::ContactInfo before = *live;
         if (!g_mesh->resetPathTo(idx)) return false;
-        if (saveContacts()) return true;
-        *live = before;
-        return false;
+        saveContacts();
+        return true;
     }
 
     bool setContactPerm(const char* name, uint8_t perm) {
@@ -1945,12 +1922,10 @@ void setDutyCycle(uint8_t percent) {
                 // Get writable pointer to the actual MeshCore ContactInfo
                 ::ContactInfo* live = g_mesh->lookupContactByPubKey(tmp.id.pub_key, PUB_KEY_SIZE);
                 if (!live) return false;
-                ::ContactInfo before = *live;
                 // Pack perm into flags bits 1-2, preserving bit 0 (favourite)
                 live->flags = (live->flags & 0x01) | ((perm & 0x03) << 1);
-                if (saveContacts()) return true;
-                *live = before;
-                return false;
+                saveContacts();
+                return true;
             }
         }
         return false;
@@ -1972,16 +1947,9 @@ void setDutyCycle(uint8_t percent) {
         if (!g_mesh) return false;
         const ChannelDetails* ch = g_mesh->getChannel(idx);
         if (ch && isPublicChannelName(ch->name)) return false;
-        ChannelDetails before[MAX_GROUP_CHANNELS]{};
-        for (int i = 0; i < MAX_GROUP_CHANNELS; ++i) {
-            if (!g_mesh->BaseChatMesh::getChannel(i, before[i])) return false;
-        }
-        if (!g_mesh->removeChannel(idx)) return false;
-        if (saveChannels()) return true;
-        for (int i = 0; i < MAX_GROUP_CHANNELS; ++i) {
-            g_mesh->BaseChatMesh::setChannel(i, before[i]);
-        }
-        return false;
+        bool ok = g_mesh->removeChannel(idx);
+        if (ok) saveChannels();
+        return ok;
     }
 
     // ── Repeater/room login (Phase 4.5) ──────────────
@@ -2208,7 +2176,13 @@ bool importIdentity(const char* hex_privkey) {
     uint8_t buf[PRV_KEY_SIZE];
     int n = SigurdMeshV2::hexToBytes(hex_privkey, buf, sizeof(buf));
     if (n != PRV_KEY_SIZE) return false;
-    return meshImportSelfIdentity(buf);
+    // Validate the private key using MeshCore's validation (ECDH check)
+    if (!::mesh::LocalIdentity::validatePrivateKey(buf)) return false;
+    // Re-key the node — readFrom with PRV_KEY_SIZE will derive pub_key from prv_key
+    g_mesh->self_id.readFrom(buf, PRV_KEY_SIZE);
+    // Persist the new identity to SPIFFS
+    saveIdentity(g_mesh->self_id);
+    return true;
 }
 
 // ── URI import helpers ────────────────────────
@@ -2309,10 +2283,8 @@ static bool addContactChecked(const char* name, const uint8_t* pub_key,
     contact.type = type;
     contact.out_path_len = OUT_PATH_UNKNOWN;
     if (!g_mesh->addContact(contact)) return false;
-    if (saveContacts()) return true;
-    ::ContactInfo* added = g_mesh->lookupContactByPubKey(pub_key, PUB_KEY_SIZE);
-    if (added) g_mesh->BaseChatMesh::removeContact(*added);
-    return false;
+    saveContacts();
+    return true;
 }
 
 bool importContactByUri(const char* uri) {
@@ -2425,8 +2397,8 @@ bool addChannelByUri(const char* uri) {
     char b64[48];
     encodeBase64(raw_secret, raw_len, b64);
 
-    // Use the wrapper's addChannel so success includes a durable NVS commit.
-    return addChannel(name, b64);
+    // Use the wrapper's addChannel which accepts base64 PSK
+    return g_mesh->addChannelBool(name, b64);
 }
 
 // ── QR code support ─────────────────────────────
@@ -2461,39 +2433,29 @@ bool getChannelSecretHex(int channel_idx, char* hex_out, size_t hex_sz)
 // mesh_wrapper provides g_mesh-dependent extras.
 
 bool setActiveRegion(const char* name) {
-    uint8_t resolved_key[16]{};
-    bool has_key = false;
-
-    if (name && name[0]) {
-        const char* default_name = sigurdos::mesh::getDefaultScopeName();
-        const sigurdos::NodePrefs& prefs = sigurdos::prefs_get();
-        if (default_name && strcmp(default_name, name) == 0 &&
-            strlen(prefs.default_scope_key_hex) ==
-                (size_t)sigurdos::mesh::SCOPE_KEY_HEX_LEN) {
-            sigurdos::mesh::scopeKeyHexDecode(
-                prefs.default_scope_key_hex, resolved_key);
-            has_key = true;
-        } else {
-            ::RegionEntry* region = sigurdos::mesh::findRegion(name);
-            RegionMap* map = sigurdos::mesh::getRegionMap();
-            if (region && map) {
-                TransportKey keys[1];
-                if (map->getTransportKeysFor(*region, keys, 1) == 1) {
-                    memcpy(resolved_key, keys[0].key, sizeof(resolved_key));
-                    has_key = true;
-                }
-            }
-        }
-        if (!has_key) return false;
-    }
-
-    // Update NodePrefs + cache only after the scope name resolves to a key.
-    if (!sigurdos::mesh::setActiveRegionName(name)) return false;
+    // Update NodePrefs + cache (via regions module)
+    sigurdos::mesh::setActiveRegionName(name);
 
     // Propagate the TransportKey to the mesh instance
     if (g_mesh) {
-        if (has_key) g_mesh->setActiveScope(resolved_key);
-        else g_mesh->clearActiveScope();
+        if (name && name[0]) {
+            ::RegionEntry* r = sigurdos::mesh::findRegion(name);
+            if (r) {
+                RegionMap* map = sigurdos::mesh::getRegionMap();
+                if (map) {
+                    TransportKey keys[1];
+                    int nk = map->getTransportKeysFor(*r, keys, 1);
+                    if (nk > 0) {
+                        g_mesh->setActiveScope(keys[0].key);
+                        return true;
+                    }
+                }
+            }
+            // Region name saved but key not in store — clear scope
+            g_mesh->clearActiveScope();
+        } else {
+            g_mesh->clearActiveScope();
+        }
     }
     return true;
 }

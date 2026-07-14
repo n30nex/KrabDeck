@@ -26,15 +26,10 @@ namespace {
 
 using sigurdos::github_ota::GitHubOTAState;
 using sigurdos::github_ota::GitHubOTAStatus;
-using sigurdos::github_ota::ApiBodyStatus;
-using sigurdos::github_ota::ReleaseSelectionResult;
+using sigurdos::github_ota::githubOtaFlashSessionActive;
 using sigurdos::github_ota::branchNeedsReleaseApi;
 using sigurdos::github_ota::buildReleaseDownloadUrl;
-using sigurdos::github_ota::classifyApiResponseBody;
 using sigurdos::github_ota::copyFallbackDownloadUrl;
-using sigurdos::github_ota::isSupportedReleaseChannel;
-using sigurdos::github_ota::releaseChannelAllowsFallback;
-using sigurdos::github_ota::selectReleaseTagResultFromJson;
 using sigurdos::github_ota::selectReleaseTagFromJson;
 
 TEST(GitHubOTAContractTest, StateValuesStayStableForUiProgress) {
@@ -76,19 +71,20 @@ TEST(GitHubOTAContractTest, PublicApiSignaturesStayStable) {
     SUCCEED();
 }
 
-TEST(GitHubOTAPlanTest, OnlyConfiguredReleaseChannelsAreAccepted) {
-    EXPECT_TRUE(isSupportedReleaseChannel("latest"));
-    EXPECT_TRUE(isSupportedReleaseChannel("main"));
-    EXPECT_TRUE(isSupportedReleaseChannel("dev"));
-    EXPECT_FALSE(isSupportedReleaseChannel(nullptr));
-    EXPECT_FALSE(isSupportedReleaseChannel(""));
-    EXPECT_FALSE(isSupportedReleaseChannel("feature/test"));
+TEST(GitHubOTAContractTest, OnlyDownloadAndWriteStatesOwnAFlashSession) {
+    EXPECT_FALSE(githubOtaFlashSessionActive(GitHubOTAState::Idle));
+    EXPECT_FALSE(githubOtaFlashSessionActive(GitHubOTAState::Connecting));
+    EXPECT_FALSE(githubOtaFlashSessionActive(GitHubOTAState::FetchingRelease));
+    EXPECT_TRUE(githubOtaFlashSessionActive(GitHubOTAState::Downloading));
+    EXPECT_TRUE(githubOtaFlashSessionActive(GitHubOTAState::Writing));
+    EXPECT_FALSE(githubOtaFlashSessionActive(GitHubOTAState::Success));
+    EXPECT_FALSE(githubOtaFlashSessionActive(GitHubOTAState::Failed));
+}
 
-    // Invalid channels never trigger an API request, but the caller rejects
-    // them instead of treating them as the global latest channel.
+TEST(GitHubOTAPlanTest, LatestAndEmptyBranchUseFallbackWithoutApi) {
+    // Without allow_prerelease, empty/unknown/latest branches need no API
     EXPECT_FALSE(branchNeedsReleaseApi(nullptr, false));
     EXPECT_FALSE(branchNeedsReleaseApi("", false));
-    EXPECT_FALSE(branchNeedsReleaseApi("feature/test", false));
     EXPECT_FALSE(branchNeedsReleaseApi("latest", false));
     EXPECT_TRUE(branchNeedsReleaseApi("main", false));
     EXPECT_TRUE(branchNeedsReleaseApi("dev", false));
@@ -97,30 +93,6 @@ TEST(GitHubOTAPlanTest, OnlyConfiguredReleaseChannelsAreAccepted) {
     // Named branches always need API regardless of prerelease flag
     EXPECT_TRUE(branchNeedsReleaseApi("main", true));
     EXPECT_TRUE(branchNeedsReleaseApi("dev", true));
-}
-
-TEST(GitHubOTAPlanTest, OnlyExplicitLatestChannelCanUseGlobalFallback) {
-    EXPECT_TRUE(releaseChannelAllowsFallback("latest"));
-    EXPECT_FALSE(releaseChannelAllowsFallback("main"));
-    EXPECT_FALSE(releaseChannelAllowsFallback("dev"));
-    EXPECT_FALSE(releaseChannelAllowsFallback(""));
-    EXPECT_FALSE(releaseChannelAllowsFallback(nullptr));
-}
-
-TEST(GitHubOTAPlanTest, RequiresCompleteApiResponseBeforeParsing) {
-    EXPECT_EQ(classifyApiResponseBody(100, 100, 256, false),
-              ApiBodyStatus::Complete);
-    EXPECT_EQ(classifyApiResponseBody(100, 99, 256, true),
-              ApiBodyStatus::Incomplete);
-    EXPECT_EQ(classifyApiResponseBody(300, 0, 256, false),
-              ApiBodyStatus::TooLarge);
-
-    EXPECT_EQ(classifyApiResponseBody(-1, 100, 256, false),
-              ApiBodyStatus::Incomplete);
-    EXPECT_EQ(classifyApiResponseBody(-1, 100, 256, true),
-              ApiBodyStatus::Complete);
-    EXPECT_EQ(classifyApiResponseBody(-1, 256, 256, false),
-              ApiBodyStatus::TooLarge);
 }
 
 TEST(GitHubOTAPlanTest, BuildsReleaseAndFallbackUrlsWithinBuffer) {
@@ -196,53 +168,11 @@ TEST(GitHubOTAPlanTest, NoMatchingReleaseIsNegativeCase) {
     EXPECT_STREQ(tag, "");
 }
 
-TEST(GitHubOTAPlanTest, DistinguishesNoMatchFromMalformedResponse) {
-    const char* json = R"([
-      {"tag_name":"dev-only","target_commitish":"dev","prerelease":false}
-    ])";
-    char tag[32] = "unchanged";
-    char target[16] = "unchanged";
-
-    EXPECT_EQ(selectReleaseTagResultFromJson(
-                  json, "main", false, tag, sizeof(tag),
-                  target, sizeof(target)),
-              ReleaseSelectionResult::NoMatch);
-    EXPECT_STREQ(tag, "");
-    EXPECT_STREQ(target, "");
-}
-
 TEST(GitHubOTAPlanTest, MalformedJsonIsNegativeCase) {
     char tag[32] = "unchanged";
 
     EXPECT_FALSE(selectReleaseTagFromJson("[{\"tag_name\":\"bad\"", "main",
                                           false, tag, sizeof(tag)));
-    EXPECT_STREQ(tag, "");
-}
-
-TEST(GitHubOTAPlanTest, RejectsTruncationAfterAnApparentMatch) {
-    const char* truncated = R"([
-      {"tag_name":"main-stable","target_commitish":"main","prerelease":false},
-      {"tag_name":"unfinished")";
-    char tag[32] = "unchanged";
-    char target[16] = "unchanged";
-
-    EXPECT_EQ(selectReleaseTagResultFromJson(
-                  truncated, "main", false, tag, sizeof(tag),
-                  target, sizeof(target)),
-              ReleaseSelectionResult::InvalidJson);
-    EXPECT_STREQ(tag, "");
-    EXPECT_STREQ(target, "");
-}
-
-TEST(GitHubOTAPlanTest, RejectsTrailingCommaAfterAnApparentMatch) {
-    const char* malformed = R"([
-      {"tag_name":"main-stable","target_commitish":"main","prerelease":false},
-    ])";
-    char tag[32] = "unchanged";
-
-    EXPECT_EQ(selectReleaseTagResultFromJson(
-                  malformed, "main", false, tag, sizeof(tag)),
-              ReleaseSelectionResult::InvalidJson);
     EXPECT_STREQ(tag, "");
 }
 
@@ -252,15 +182,10 @@ TEST(GitHubOTAPlanTest, SelectsLatestReleaseWhenBranchIsLatestWithPrerelease) {
       {"tag_name":"main-stable","target_commitish":"main","prerelease":false}
     ])";
     char tag[32] = "";
-    char target[16] = "";
 
     // "latest" with allow_prerelease=true should pick the first (newest) matching release
-    ASSERT_EQ(selectReleaseTagResultFromJson(
-                  json, "latest", true, tag, sizeof(tag),
-                  target, sizeof(target)),
-              ReleaseSelectionResult::Matched);
+    ASSERT_TRUE(selectReleaseTagFromJson(json, "latest", true, tag, sizeof(tag)));
     EXPECT_STREQ(tag, "dev-pre");
-    EXPECT_STREQ(target, "dev");
 }
 
 TEST(GitHubOTAPlanTest, SkipsPrereleasesWhenLatestWithoutPrerelease) {

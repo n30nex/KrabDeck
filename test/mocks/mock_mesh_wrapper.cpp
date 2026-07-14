@@ -72,7 +72,6 @@ bool getContactByName(const char* name, ContactInfo* out) {
     (void)name; (void)out; return false;
 }
 bool addContactManual(const char*, const char*, uint8_t) { return false; }
-bool setContactFavourite(const char*, bool) { return false; }
 int getChannelCount() { return 0; }
 int exportChannels(char names[][37], int max) { return 0; }
 bool addChannel(const char* name, const char* psk) { return false; }
@@ -89,8 +88,6 @@ float getLastSNR()  { return mock_snr; }
 
 bool sendAdvert() { return false; }
 bool saveState() { return true; }
-bool saveChannels() { return true; }
-bool saveContacts() { return true; }
 
 bool companionBleAvailable() { return false; }
 bool companionBleSetEnabled(bool enabled) { (void)enabled; return false; }
@@ -245,8 +242,6 @@ bool importIdentity(const char* hex_privkey) {
 // ── Regions stubs (RegionMap API) ────────────────────
 
 static RegionEntry  mock_region_entries[MAX_REGION_ENTRIES];
-static uint8_t      mock_region_keys[MAX_REGION_ENTRIES][16];
-static bool         mock_region_has_key[MAX_REGION_ENTRIES]{};
 static int          mock_region_count = 0;
 static uint16_t     mock_next_id = 1;
 static char         mock_active_region[31] = "";
@@ -271,51 +266,13 @@ RegionMap* getRegionMap() { return nullptr; }
     return e;
 }
 
-::RegionEntry* addPrivateRegion(const char* name, const uint8_t key[16],
-                                const char* parent_name) {
-    if (!name || name[0] != '$' || !key) return nullptr;
-    ::RegionEntry* entry = addRegion(name, parent_name);
-    if (!entry) return nullptr;
-    const int index = (int)(entry - mock_region_entries);
-    memcpy(mock_region_keys[index], key, 16);
-    mock_region_has_key[index] = true;
-    return entry;
-}
-
-bool setPrivateRegionKey(const char* name, const uint8_t key[16]) {
-    if (!name || name[0] != '$' || !key) return false;
-    for (int i = 0; i < mock_region_count; ++i) {
-        if (strcmp(mock_region_entries[i].name, name) != 0) continue;
-        memcpy(mock_region_keys[i], key, 16);
-        mock_region_has_key[i] = true;
-        return true;
-    }
-    return false;
-}
-
-bool getPrivateRegionKey(const char* name, uint8_t key_out[16]) {
-    if (!name || !key_out) return false;
-    for (int i = 0; i < mock_region_count; ++i) {
-        if (strcmp(mock_region_entries[i].name, name) != 0 ||
-            !mock_region_has_key[i]) continue;
-        memcpy(key_out, mock_region_keys[i], 16);
-        return true;
-    }
-    return false;
-}
-
 bool removeRegion(const char* name) {
     if (!name || !name[0]) return false;
     for (int i = 0; i < mock_region_count; i++) {
         if (strcmp(mock_region_entries[i].name, name) == 0) {
             memmove(&mock_region_entries[i], &mock_region_entries[i + 1],
                     (mock_region_count - i - 1) * sizeof(RegionEntry));
-            memmove(&mock_region_keys[i], &mock_region_keys[i + 1],
-                    (mock_region_count - i - 1) * sizeof(mock_region_keys[0]));
-            memmove(&mock_region_has_key[i], &mock_region_has_key[i + 1],
-                    (mock_region_count - i - 1) * sizeof(mock_region_has_key[0]));
             mock_region_count--;
-            mock_region_has_key[mock_region_count] = false;
             return true;
         }
     }

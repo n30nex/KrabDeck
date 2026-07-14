@@ -52,6 +52,17 @@ TEST_F(TDeckBoardPowerTest, CriticalTimerWakeResleepsBeforeFullBoot) {
     EXPECT_TRUE(sigurdos::tdeck_should_resleep_early(true, true, 3199));
 }
 
+TEST_F(TDeckBoardPowerTest, IndefiniteSleepUsesFifteenMinuteSafetyWake) {
+    EXPECT_EQ(sigurdos::tdeck_sleep_wake_seconds(0), 900u);
+    EXPECT_EQ(sigurdos::tdeck_sleep_wake_seconds(42), 42u);
+}
+
+TEST_F(TDeckBoardPowerTest, WakeConfigurationErrorsAreRecognized) {
+    EXPECT_TRUE(sigurdos::tdeck_wake_configuration_succeeded(0));
+    EXPECT_FALSE(sigurdos::tdeck_wake_configuration_succeeded(-1));
+    EXPECT_FALSE(sigurdos::tdeck_wake_configuration_succeeded(0x102));
+}
+
 TEST_F(TDeckBoardPowerTest, OtherBootReasonsAndRecoveredBatteryContinue) {
     EXPECT_FALSE(sigurdos::tdeck_should_resleep_early(false, true, 3199));
     EXPECT_FALSE(sigurdos::tdeck_should_resleep_early(true, false, 3199));

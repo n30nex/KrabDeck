@@ -5,12 +5,13 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <atomic>
 
 #if defined(ESP32_PLATFORM) && defined(SIGURDOS_COMPANION_BLE) && SIGURDOS_COMPANION_BLE
 
 #include <helpers/esp32/SerialBLEInterface.h>
+#include "ble_auth_watchdog.h"
 #include "ble_frame_queue.h"
-#include "ble_task_mutex.h"
 
 namespace sigurdos {
 namespace comms {
@@ -28,11 +29,9 @@ struct BleSerialObserverStats {
     uint32_t mtu_change_count = 0;
     uint32_t auth_success_count = 0;
     uint32_t auth_failure_count = 0;
+    uint32_t auth_timeout_count = 0;
     uint32_t ble_write_count = 0;
     uint32_t ble_write_drop_count = 0;
-    uint32_t rx_queue_full_count = 0;
-    uint32_t rx_invalid_frame_count = 0;
-    uint32_t rx_backpressure_disconnect_count = 0;
     uint32_t rx_frame_count = 0;
     uint32_t tx_frame_count = 0;
     uint32_t tx_drop_count = 0;
@@ -47,13 +46,11 @@ public:
     void begin(const char* prefix, char* name, uint32_t pin_code);
     void enable() override;
     void disable() override;
-    bool isEnabled() const override;
     bool isConnected() const override;
-    bool isWriteBusy() const override;
     size_t writeFrame(const uint8_t src[], size_t len) override;
     size_t checkRecvFrame(uint8_t dest[]) override;
 
-    BleSerialObserverStats stats() const;
+    BleSerialObserverStats stats() const { return _stats; }
 
 protected:
     uint32_t onPassKeyRequest() override;
@@ -70,16 +67,14 @@ protected:
 private:
     void refreshConnectionState();
 
-    mutable BleTaskMutex _state_mutex;
     BleSerialObserverStats _stats{};
-    BLEServer* _connected_server = nullptr;
-    uint16_t _active_conn_id = 0;
+    BleAuthWatchdog _auth_watchdog;
+    std::atomic<BLEServer*> _physical_server{nullptr};
 
     // NET-002 (#813): the base class receive queue is written from the
     // Bluedroid host task (onWrite) and drained from the app loop task
     // (checkRecvFrame) without synchronization. Received frames are kept
-    // here instead — the base queue stays empty. The task mutex protects all
-    // adapter/base state; this queue retains its own bounded handoff lock.
+    // here instead — the base queue stays empty. Same capacity as upstream.
     BleFrameQueue<MAX_FRAME_SIZE, FRAME_QUEUE_SIZE> _rx_queue;
 };
 

@@ -10,7 +10,6 @@
 #include "companion_adapter.h"
 #include "utils/utf8_util.h"
 #include "companion_message_policy.h"
-#include "durable_mutation.h"
 #include "mesh_wrapper.h"
 #include "mesh_wrapper_internal.h"
 #include "scope_key_hex.h"
@@ -26,7 +25,6 @@
 #include "hal/radio_profiles.h"
 #include "hal/gps.h"
 #include "hal/battery.h"
-#include "diagnostics/companion_usb_console.h"
 #include "diagnostics/log.h"
 
 #include <Arduino.h>
@@ -47,7 +45,7 @@ using sigurdos::mesh::meshRtcTimeUnique;
 using sigurdos::mesh::meshRadioTxAllowed;
 using sigurdos::mesh::meshQueuePushOutgoing;
 using sigurdos::mesh::meshStoreOutgoingMessage;
-using sigurdos::mesh::meshImportSelfIdentity;
+using sigurdos::mesh::meshSaveSelfIdentity;
 using sigurdos::mesh::formatDmConversation;
 
 // Local shorthand for the wrapper-owned mesh instance (was the file-scope
@@ -214,28 +212,6 @@ static void companionContactFromInfo(const ::ContactInfo& c, CompanionContact& o
     out.gps_lon = c.gps_lon;
 }
 
-static bool loadDefaultFloodScopeKey(uint8_t key_out[16])
-{
-    if (!key_out) return false;
-    const char* name = sigurdos::mesh::getDefaultScopeName();
-    if (!name || !name[0]) return false;
-
-    const sigurdos::NodePrefs& prefs = sigurdos::prefs_get();
-    if (strlen(prefs.default_scope_key_hex) ==
-        (size_t)sigurdos::mesh::SCOPE_KEY_HEX_LEN) {
-        sigurdos::mesh::scopeKeyHexDecode(prefs.default_scope_key_hex, key_out);
-        return true;
-    }
-
-    RegionEntry* region = sigurdos::mesh::findRegion(name);
-    RegionMap* map = sigurdos::mesh::getRegionMap();
-    if (!region || !map) return false;
-    TransportKey keys[1];
-    if (map->getTransportKeysFor(*region, keys, 1) != 1) return false;
-    memcpy(key_out, keys[0].key, sizeof(keys[0].key));
-    return true;
-}
-
 class WrapperCompanionHost final : public CompanionBridgeHost {
 public:
     uint32_t blePin() const override {
@@ -318,16 +294,11 @@ public:
     }
     bool setChannel(int index, const CompanionChannel& channel) override {
         if (!mesh_ptr() || index < 0 || index >= MAX_GROUP_CHANNELS) return false;
-        ChannelDetails before{};
-        if (!mesh_ptr()->BaseChatMesh::getChannel(index, before)) return false;
         ChannelDetails cd{};
         strncpy(cd.name, channel.name, sizeof(cd.name) - 1);
         memcpy(cd.channel.secret, channel.secret, sizeof(cd.channel.secret));
-        bool committed = sigurdos::mesh::detail::applyAndCommit(
-            [&]() { return mesh_ptr()->BaseChatMesh::setChannel(index, cd); },
-            []() { return sigurdos::mesh::saveChannels(); },
-            [&]() { mesh_ptr()->BaseChatMesh::setChannel(index, before); });
-        if (!committed) return false;
+        if (!mesh_ptr()->BaseChatMesh::setChannel(index, cd)) return false;
+        sigurdos::mesh::saveChannels();
         sigurdos::mesh::syncRegionsFromChannels();
         return true;
     }
@@ -588,7 +559,20 @@ public:
     }
 
     bool importPrivateKey(const uint8_t* key64) override {
-        return meshImportSelfIdentity(key64);
+        if (!mesh_ptr() || !key64) return false;
+        if (!::mesh::LocalIdentity::validatePrivateKey(key64)) return false;
+        mesh_ptr()->self_id.readFrom(key64, PRV_KEY_SIZE);
+        meshSaveSelfIdentity();
+        // Invalidate ECDH shared secrets derived from the old identity and
+        // reload persisted contacts with the new identity (matches upstream
+        // MyMesh::CMD_IMPORT_PRIVATE_KEY — resetContacts + loadContacts).
+        mesh_ptr()->resetAllContacts();
+        sigurdos::mesh::loadContacts();
+        // Clear login session state — stale LOGIN_OK/permission entries from
+        // the old identity would otherwise persist against contact-name keys
+        // and present false-positive login UI after identity change (RC6-MED-002).
+        mesh_ptr()->clearAllLoginEntries();
+        return true;
     }
 
     void setOtherParams(const CompanionOtherParams& op) override {
@@ -647,38 +631,27 @@ public:
         ci.gps_lat = c.gps_lat;
         ci.gps_lon = c.gps_lon;
         ci.lastmod = c.lastmod;
-        if (existing) {
-            ::ContactInfo before = *existing;
-            *existing = ci;
-            if (sigurdos::mesh::saveContacts()) return true;
-            *existing = before;
-            return false;
-        }
-        if (!mesh_ptr()->addContact(ci)) return false;
-        if (sigurdos::mesh::saveContacts()) return true;
-        ::ContactInfo* added = mesh_ptr()->lookupContactByPubKey(ci.id.pub_key, 32);
-        if (added) mesh_ptr()->BaseChatMesh::removeContact(*added);
-        return false;
+        bool ok;
+        if (existing) { *existing = ci; ok = true; }
+        else ok = mesh_ptr()->addContact(ci);
+        if (ok) sigurdos::mesh::saveContacts();
+        return ok;
     }
     bool removeContactByPubKey(const uint8_t* pub_key) override {
         if (!mesh_ptr() || !pub_key) return false;
         ::ContactInfo* c = mesh_ptr()->lookupContactByPubKey(pub_key, 32);
         if (!c) return false;
-        ::ContactInfo before = *c;
-        if (!mesh_ptr()->BaseChatMesh::removeContact(*c)) return false;
-        if (sigurdos::mesh::saveContacts()) return true;
-        mesh_ptr()->addContact(before);
-        return false;
+        bool ok = mesh_ptr()->BaseChatMesh::removeContact(*c);
+        if (ok) sigurdos::mesh::saveContacts();
+        return ok;
     }
     bool resetPathByPubKey(const uint8_t* pub_key) override {
         if (!mesh_ptr() || !pub_key) return false;
         ::ContactInfo* c = mesh_ptr()->lookupContactByPubKey(pub_key, 32);
         if (!c) return false;
-        ::ContactInfo before = *c;
         mesh_ptr()->BaseChatMesh::resetPathTo(*c);
-        if (sigurdos::mesh::saveContacts()) return true;
-        *c = before;
-        return false;
+        sigurdos::mesh::saveContacts();
+        return true;
     }
     bool shareContactByPubKey(const uint8_t* pub_key) override {
         if (!mesh_ptr() || !pub_key) return false;
@@ -695,9 +668,9 @@ public:
     }
     bool importContact(const uint8_t* data, size_t len) override {
         if (!mesh_ptr() || !data) return false;
-        // Import queues a validated advert for loopback; onAdvertRecv owns the
-        // resulting contact mutation and marks it for deferred persistence.
-        return mesh_ptr()->importContact(data, (uint8_t)len);
+        bool ok = mesh_ptr()->importContact(data, (uint8_t)len);
+        if (ok) sigurdos::mesh::saveContacts();
+        return ok;
     }
     bool hasConnectionTo(const uint8_t* pub_key) const override {
         return mesh_ptr() && pub_key && mesh_ptr()->companionHasConnection(pub_key);
@@ -762,60 +735,63 @@ public:
 
     // ── Flood scope (companion regions) ──────────────────────
     bool getDefaultFloodScope(char* name_out, uint8_t* key_out) const override {
-        const char* name = sigurdos::mesh::getDefaultScopeName();
-        uint8_t key[16];
-        if (!name || !name[0] || !loadDefaultFloodScopeKey(key)) return false;
-        if (name_out) { memset(name_out, 0, 31); strncpy(name_out, name, 30); }
-        if (key_out) memcpy(key_out, key, sizeof(key));
+        const char* active = sigurdos::mesh::getActiveRegion();
+        if (!active || !active[0]) return false;
+
+        RegionEntry* r = sigurdos::mesh::findRegion(active);
+        if (!r) return false;
+
+        RegionMap* map = sigurdos::mesh::getRegionMap();
+        if (!map) return false;
+
+        TransportKey keys[1];
+        int nk = map->getTransportKeysFor(*r, keys, 1);
+        if (nk <= 0) return false;
+
+        if (name_out) { memset(name_out, 0, 31); strncpy(name_out, r->name, 30); }
+        if (key_out) {
+            // Check if a persisted private key exists (for $private scopes)
+            const sigurdos::NodePrefs& p = sigurdos::prefs_get();
+            if (p.default_scope_key_hex[0] != '\0' && active[0] == '$') {
+                sigurdos::mesh::scopeKeyHexDecode(p.default_scope_key_hex, key_out);
+            } else {
+                memcpy(key_out, keys[0].key, 16);
+            }
+        }
         return true;
     }
-    bool setDefaultFloodScope(const char* name, const uint8_t* key) override {
+    void setDefaultFloodScope(const char* name, const uint8_t* key) override {
         if (!name || !name[0]) {
-            if (!sigurdos::mesh::setDefaultScope(nullptr)) return false;
-            sigurdos::NodePrefs prefs = sigurdos::prefs_get();
-            prefs.default_scope_key_hex[0] = '\0';
-            if (!sigurdos::prefs_set(prefs)) return false;
-            return sigurdos::mesh::setActiveRegion("");
+            sigurdos::mesh::setActiveRegion("");
+            return;
         }
-        if (!key) return false;
 
         // Ensure the region exists in RegionMap
         RegionEntry* r = sigurdos::mesh::findRegion(name);
         if (!r) {
-            r = name[0] == '$'
-                ? sigurdos::mesh::addPrivateRegion(name, key)
-                : sigurdos::mesh::addRegion(name);
-        } else if (name[0] == '$' &&
-                   !sigurdos::mesh::setPrivateRegionKey(name, key)) {
-            return false;
+            r = sigurdos::mesh::addRegion(name);
         }
-        if (!r || !sigurdos::mesh::setDefaultScope(name)) return false;
 
-        sigurdos::NodePrefs prefs = sigurdos::prefs_get();
-        sigurdos::mesh::scopeKeyHexEncode(key, prefs.default_scope_key_hex);
-        if (!sigurdos::prefs_set(prefs) || !sigurdos::mesh::setActiveRegion(name)) {
-            return false;
+        // If a key was provided for a $private region, persist it in NVS
+        // so it survives reboot. The companion app provides it again on connect.
+        if (key && name[0] == '$') {
+            sigurdos::NodePrefs p = sigurdos::prefs_get();
+            sigurdos::mesh::scopeKeyHexEncode(key, p.default_scope_key_hex);
+            sigurdos::prefs_set(p);
+        } else if (key) {
+            // Public or #hashtag key — clear any persisted $private key
+            sigurdos::NodePrefs p = sigurdos::prefs_get();
+            p.default_scope_key_hex[0] = '\0';
+            sigurdos::prefs_set(p);
         }
-        if (mesh_ptr()) mesh_ptr()->setActiveScope(key);
-        return true;
+
+        sigurdos::mesh::setActiveRegion(name);
     }
-    bool setFloodScopeOverride(const uint8_t* key, bool unscoped) override {
-        if (!mesh_ptr()) return false;
-        if (unscoped) {
-            mesh_ptr()->clearActiveScope();
-            return true;
-        }
-        if (key) {
-            mesh_ptr()->setActiveScope(key);
-            return true;
-        }
-        uint8_t default_key[16];
-        if (loadDefaultFloodScopeKey(default_key)) {
-            mesh_ptr()->setActiveScope(default_key);
-        } else {
-            mesh_ptr()->clearActiveScope();
-        }
-        return true;
+    void setFloodScopeOverride(const uint8_t* key, bool unscoped) override {
+        if (!mesh_ptr()) return;
+        if (unscoped) mesh_ptr()->clearActiveScope();
+        else if (key) mesh_ptr()->setActiveScope(key);
+        else mesh_ptr()->clearActiveScope();
     }
 
     // ── Async requests ───────────────────────────────────────
@@ -1147,9 +1123,9 @@ static void bleValidationEmit(bool force)
     ble_validation_last_log_ms = now;
 
     const sigurdos::comms::BleSerialObserverStats s = g_ble_serial.stats();
-    char line[352];
+    char line[336];
     snprintf(line, sizeof(line),
-             "@ble_hw|ms=%lu|begun=%u|en=%u|conn=%u|adv=%u|authok=%lu|authfail=%lu|connect=%lu|disconnect=%lu|mtu=%u|rxw=%lu|rxd=%lu|rxfull=%lu|rxbp=%lu|rx=%lu|tx=%lu|txd=%lu|lrx=%u|ltx=%u",
+             "@ble_hw|ms=%lu|begun=%u|en=%u|conn=%u|adv=%u|authok=%lu|authfail=%lu|authtimeout=%lu|connect=%lu|disconnect=%lu|mtu=%u|rxw=%lu|rxd=%lu|rx=%lu|tx=%lu|txd=%lu|lrx=%u|ltx=%u",
              (unsigned long)now,
              s.begun ? 1u : 0u,
              s.enabled ? 1u : 0u,
@@ -1157,13 +1133,12 @@ static void bleValidationEmit(bool force)
              s.advertising_expected ? 1u : 0u,
              (unsigned long)s.auth_success_count,
              (unsigned long)s.auth_failure_count,
+             (unsigned long)s.auth_timeout_count,
              (unsigned long)s.connect_count,
              (unsigned long)s.disconnect_count,
              (unsigned int)s.last_mtu,
              (unsigned long)s.ble_write_count,
              (unsigned long)s.ble_write_drop_count,
-             (unsigned long)s.rx_queue_full_count,
-             (unsigned long)s.rx_backpressure_disconnect_count,
              (unsigned long)s.rx_frame_count,
              (unsigned long)s.tx_frame_count,
              (unsigned long)s.tx_drop_count,
@@ -1223,7 +1198,7 @@ void sigurdos::mesh::companionAdapterInit()
         bleValidationStartLog();
     }
 #elif defined(SIGURDOS_COMPANION_USB) && SIGURDOS_COMPANION_USB
-    g_usb_serial.begin(sigurdos::diagnostics::companionUsbDataStream());
+    g_usb_serial.begin(Serial);
     if (CompanionBridge* b = companionBridge()) {
         b->begin(&g_usb_serial, &g_companion_host);
         b->setEnabled(true);
@@ -1253,15 +1228,15 @@ bool companionBleAvailable() {
 bool companionBleSetEnabled(bool enabled) {
 #if defined(SIGURDOS_COMPANION_BLE) && SIGURDOS_COMPANION_BLE
     CompanionBridge* b = companionBridge();
-    const bool previous = b && b->isEnabled();
     if (!b || !b->setEnabled(enabled)) return false;
-    if (!sigurdos::prefs_set_ble_enabled(enabled)) {
-        (void)b->setEnabled(previous);
-        return false;
-    }
+#endif
+    // Only persist after successful enablement to avoid state mismatch
+    sigurdos::NodePrefs p = sigurdos::prefs_get();
+    p.ble_enabled = enabled;
+    sigurdos::prefs_set(p);
+#if defined(SIGURDOS_COMPANION_BLE) && SIGURDOS_COMPANION_BLE
     return true;
 #else
-    (void)enabled;
     return false;
 #endif
 }

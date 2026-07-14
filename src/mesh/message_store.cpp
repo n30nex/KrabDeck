@@ -434,6 +434,54 @@ static int loadRecentInternal(const char* conversation, StoredMessage* out,
     return n;
 }
 
+// Load the next companion delivery page in durable store order. Recent chat
+// history is intentionally read newest-first above, but offline sync must
+// start with the oldest unsent incoming record so repeated pages preserve FIFO
+// order. Self-sent records are not part of the companion incoming-message
+// stream and must be filtered here; otherwise an old self record can occupy
+// every refill forever because it is never marked companion_sent.
+static int loadUnsentInternal(StoredMessage* out, int max)
+{
+    if (!out || max <= 0) return 0;
+    uint32_t count = 0;
+    if (!readHeader(&count)) return 0;
+
+#if defined(ESP32_PLATFORM)
+    File file = SPIFFS.open(STORE_PATH, "r");
+    if (!file) return 0;
+    file.seek(detail::MESSAGE_STORE_HEADER_SIZE, SeekSet);
+#else
+    FILE* file = std::fopen(g_native_path, "rb");
+    if (!file) return 0;
+    std::fseek(file, (long)detail::MESSAGE_STORE_HEADER_SIZE, SEEK_SET);
+#endif
+
+    int n = 0;
+    uint8_t record[detail::MESSAGE_STORE_RECORD_SIZE];
+    for (uint32_t i = 0; i < count && n < max; ++i) {
+#if defined(ESP32_PLATFORM)
+        const bool read_ok = file.read(record, sizeof(record)) == sizeof(record);
+#else
+        const bool read_ok =
+            std::fread(record, 1, sizeof(record), file) == sizeof(record);
+#endif
+        if (!read_ok) break;
+        StoredMessage msg{};
+        if (!readRecordRaw(msg, record, sizeof(record)) ||
+            msg.companion_sent || msg.is_self) {
+            continue;
+        }
+        out[n++] = msg;
+    }
+
+#if defined(ESP32_PLATFORM)
+    file.close();
+#else
+    std::fclose(file);
+#endif
+    return n;
+}
+
 // Check whether a message with the same identity already exists in the store.
 // Opens the store file ONCE and streams all records sequentially — O(n) reads,
 // but O(1) file opens.  Previously called readRecordAt() per record, which
@@ -1263,7 +1311,7 @@ bool messageStoreFindRecent(const char* conversation, const char* sender,
 
 int messageStoreLoadUnsent(StoredMessage* out, int max)
 {
-    return loadRecentInternal(nullptr, out, max, true);
+    return loadUnsentInternal(out, max);
 }
 
 int messageStoreCount()

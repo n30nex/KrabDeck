@@ -236,6 +236,10 @@ bool CompanionBridge::addToOfflineQueue(uint32_t store_id, bool persistent,
     if (persistent && store_id == 0) return false;
     if (offlineFrameExists(frame, len)) return false;
     if (_offline_len >= OFFLINE_QUEUE_SIZE) {
+        // Persistent messages remain in the message store and will be picked
+        // up by the next page. Do not evict the oldest queued record and make
+        // the companion backlog jump ahead.
+        if (persistent) return false;
         for (int i = 1; i < _offline_len; i++) _offline[i - 1] = _offline[i];
         _offline_len--;
     }
@@ -327,8 +331,12 @@ bool CompanionBridge::buildMessageFrame(const sigurdos::mesh::StoredMessage& msg
     return true;
 }
 
-void CompanionBridge::seedOfflineQueueFromStore()
+bool CompanionBridge::refillOfflineQueueFromStore(bool notify_waiting)
 {
+    // A page is a snapshot of the oldest unsent records. Mixing another page
+    // into a partially drained one can duplicate frames and reorder delivery.
+    if (_offline_len > 0) return false;
+
     const int n = sigurdos::mesh::messageStoreLoadUnsent(
         _offline_snapshot, OFFLINE_QUEUE_SIZE);
     bool added_any = false;
@@ -349,15 +357,17 @@ void CompanionBridge::seedOfflineQueueFromStore()
     // Do NOT mark any records as sent here. Records are marked individually
     // only when CMD_SYNC_NEXT_MESSAGE successfully writes the frame to the
     // app (see the SYNC_NEXT_MESSAGE handler below).
-    if (added_any && isConnected()) {
+    if (added_any && notify_waiting && isConnected()) {
         uint8_t tickle = PUSH_CODE_MSG_WAITING;
         _serial->writeFrame(&tickle, 1);
     }
+    return added_any;
 }
 
 bool CompanionBridge::enqueueMessage(const sigurdos::mesh::StoredMessage& msg)
 {
-    // Only incoming messages are mirrored to the app (see seedOfflineQueueFromStore).
+    // Only incoming messages are mirrored to the app (see
+    // refillOfflineQueueFromStore).
     if (msg.is_self) return false;
     uint8_t frame[MAX_FRAME_SIZE];
     size_t len = 0;
@@ -372,7 +382,9 @@ bool CompanionBridge::enqueueMessage(const sigurdos::mesh::StoredMessage& msg)
             _serial->writeFrame(&tickle, 1);
         }
     }
-    return added;
+    // A persistent record rejected because the in-memory page is full is still
+    // durably accepted; SYNC_NEXT_MESSAGE will load it on a later page.
+    return added || msg.store_id != 0;
 }
 
 bool CompanionBridge::enqueueChannelData(uint8_t channel_index,
@@ -674,7 +686,7 @@ bool CompanionBridge::handleFrame(const uint8_t* frame, size_t len)
         std::memcpy(&_out_frame[i], si.node_name, nlen);
         i += (int)nlen;
         _serial->writeFrame(_out_frame, i);
-        seedOfflineQueueFromStore();
+        refillOfflineQueueFromStore(true);
         return true;
     }
 
@@ -696,6 +708,12 @@ bool CompanionBridge::handleFrame(const uint8_t* frame, size_t len)
 
     if (cmd == CMD_SYNC_NEXT_MESSAGE) {
         _last_sync_time = _host->currentTime();
+        if (_offline_len == 0) {
+            // APP_START primes only one bounded page. Refill synchronously so
+            // this same request returns the next persisted message instead of
+            // prematurely reporting NO_MORE_MESSAGES at the page boundary.
+            refillOfflineQueueFromStore(false);
+        }
         uint32_t store_id = 0;
         bool persistent = false;
         int out_len = peekOfflineQueue(_out_frame, &store_id, &persistent);

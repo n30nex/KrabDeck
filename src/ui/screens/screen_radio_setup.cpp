@@ -331,8 +331,8 @@ void custom_rf_screen_show()
             s_rf_freq, s_rf_bw, s_rf_sf, s_rf_cr, s_rf_pwr,
             sigurdos::prefs_get().rx_boosted_gain);
 
-        // Reload Radio Setup screen with updated values
-        radio_setup_screen_show();
+        // Return to the routed Radio Setup parent with updated values.
+        go_back();
     }, LV_EVENT_CLICKED, nullptr);
     add_to_group(btn);
 
@@ -467,7 +467,7 @@ void radio_setup_screen_show()
     lv_obj_set_style_text_font(ctl, emoji_wrapped_montserrat_10, 0);
     lv_obj_center(ctl);
     lv_obj_add_event_cb(custom_btn, [](lv_event_t*) {
-        custom_rf_screen_show();
+        navigate_to_custom_radio_setup();
     }, LV_EVENT_CLICKED, nullptr);
     add_to_group(custom_btn);
     ry += 28;

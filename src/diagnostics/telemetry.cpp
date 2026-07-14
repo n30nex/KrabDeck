@@ -83,6 +83,7 @@ static const char* screen_name_str(uint8_t scr) {
         case Screen::RadioSetup:        return "RadioSetup";
         case Screen::Repeaters:         return "Repeaters";
         case Screen::Onboarding:        return "Onboarding";
+        case Screen::ContactDetail:     return "ContactDetail";
         case Screen::SettingsRadio:     return "SettingsRadio";
         case Screen::SettingsGPS:       return "SettingsGPS";
         case Screen::SettingsDisplay:   return "SettingsDisplay";
@@ -92,6 +93,8 @@ static const char* screen_name_str(uint8_t scr) {
         case Screen::NodeStatus:        return "NodeStatus";
         case Screen::WiFiNetworks:      return "WiFiNetworks";
         case Screen::Regions:          return "Regions";
+        case Screen::RepeaterDetail:    return "RepeaterDetail";
+        case Screen::CustomRadioSetup:  return "CustomRadioSetup";
         default:                        return "?";
     }
 }

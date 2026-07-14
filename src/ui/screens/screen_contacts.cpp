@@ -362,7 +362,7 @@ void contacts_screen_show()
             ContactRowData* d = (ContactRowData*)lv_obj_get_user_data(target);
             if (d && d->name) {
                 if (d->type == ADV_TYPE_ROOM) {
-                    repeater_detail_screen_show(d->name);
+                    navigate_to_repeater_detail(d->name);
                 } else {
                     chat_screen_open_dm(d->name);
                 }

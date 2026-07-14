@@ -35,7 +35,10 @@ namespace {
 enum class Screen {
     Home, Chat, Contacts, Channels, Network, Heard,
     Map, Advertise, Settings, Trace, Terminal,
-    Signal, RadioSetup, Repeaters, Onboarding, ContactDetail, COUNT
+    Signal, RadioSetup, Repeaters, Onboarding, ContactDetail,
+    SettingsRadio, SettingsGPS, SettingsDisplay, SettingsSystem,
+    NodeStats, Telemetry, NodeStatus, WiFiNetworks, Bluetooth, Regions,
+    RepeaterDetail, CustomRadioSetup, COUNT
 };
 
 enum class SigurdOSEvent {
@@ -285,8 +288,8 @@ TEST_F(NavigationTest, AllScreenPairsWork) {
 }
 
 // ── Screen count matches expected ───────────────────────
-TEST_F(NavigationTest, ScreenCountIs16) {
-    EXPECT_EQ((int)Screen::COUNT, 16);
+TEST_F(NavigationTest, ScreenCountMatchesTestInventory) {
+    EXPECT_EQ((int)Screen::COUNT, 28);
 }
 
 // ── Screen enum values are contiguous ───────────────────
@@ -294,7 +297,42 @@ TEST_F(NavigationTest, ScreenEnumValuesAreContiguous) {
     EXPECT_EQ((int)Screen::Home, 0);
     EXPECT_EQ((int)Screen::Chat, 1);
     EXPECT_EQ((int)Screen::Signal, 11);
-    EXPECT_EQ((int)Screen::COUNT, 16);
+    EXPECT_EQ((int)Screen::COUNT, 28);
+}
+
+TEST_F(NavigationTest, ContactsRoomDetailBackReturnsToContacts) {
+    navigate_to(Screen::Contacts);
+    navigate_to(Screen::RepeaterDetail);
+    go_back();
+    EXPECT_EQ(current, Screen::Contacts);
+}
+
+TEST_F(NavigationTest, RepeatersDetailBackReturnsToRepeaters) {
+    navigate_to(Screen::Repeaters);
+    navigate_to(Screen::RepeaterDetail);
+    go_back();
+    EXPECT_EQ(current, Screen::Repeaters);
+}
+
+TEST_F(NavigationTest, MapContactDetailBackReturnsToMap) {
+    navigate_to(Screen::Map);
+    navigate_to(Screen::ContactDetail);
+    go_back();
+    EXPECT_EQ(current, Screen::Map);
+}
+
+TEST_F(NavigationTest, RadioSetupBackReturnsToRadioSettings) {
+    navigate_to(Screen::SettingsRadio);
+    navigate_to(Screen::RadioSetup);
+    go_back();
+    EXPECT_EQ(current, Screen::SettingsRadio);
+}
+
+TEST_F(NavigationTest, CustomRadioBackReturnsToRadioSetup) {
+    navigate_to(Screen::RadioSetup);
+    navigate_to(Screen::CustomRadioSetup);
+    go_back();
+    EXPECT_EQ(current, Screen::RadioSetup);
 }
 
 // ── Back-swipe (two-swipe commit) ─────────────────────────

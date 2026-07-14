@@ -73,7 +73,7 @@ void settings_radio_show()
         lv_obj_set_style_bg_color(btn_rf, lv_color_hex(0x4a2020), LV_STATE_DEFAULT);
     }
     lv_obj_add_event_cb(btn_rf, [](lv_event_t*) {
-        radio_setup_screen_show();
+        navigate_to(Screen::RadioSetup);
     }, LV_EVENT_CLICKED, nullptr);
     row++;
 

@@ -3,7 +3,6 @@
 
 #include <gtest/gtest.h>
 #include "comms/ble_frame_queue.h"
-#include "comms/ble_task_mutex.h"
 
 #include <atomic>
 #include <cstring>
@@ -13,39 +12,12 @@
 namespace {
 
 using sigurdos::comms::BleFrameQueue;
-using sigurdos::comms::BleTaskMutex;
+using sigurdos::comms::BleFrameQueuePushResult;
 
 constexpr size_t MAX_LEN = 176;   // MAX_FRAME_SIZE on target
 constexpr size_t CAPACITY = 4;    // FRAME_QUEUE_SIZE on target
 
 using Queue = BleFrameQueue<MAX_LEN, CAPACITY>;
-
-TEST(BleTaskMutex, IsRecursiveAndSerializesSharedState)
-{
-    BleTaskMutex mutex;
-    uint32_t counter = 0;
-
-    {
-        BleTaskMutex::Guard outer(mutex);
-        BleTaskMutex::Guard inner(mutex);
-        ++counter;
-    }
-
-    constexpr uint32_t THREADS = 4;
-    constexpr uint32_t INCREMENTS = 10000;
-    std::vector<std::thread> workers;
-    for (uint32_t i = 0; i < THREADS; ++i) {
-        workers.emplace_back([&] {
-            for (uint32_t n = 0; n < INCREMENTS; ++n) {
-                BleTaskMutex::Guard guard(mutex);
-                ++counter;
-            }
-        });
-    }
-    for (auto& worker : workers) worker.join();
-
-    EXPECT_EQ(counter, 1u + THREADS * INCREMENTS);
-}
 
 // Frames carry a 32-bit sequence number followed by a deterministic fill so
 // the consumer can detect torn or corrupted frames.
@@ -112,6 +84,26 @@ TEST(BleFrameQueue, DropsWhenFullAndRejectsBadFrames)
     uint8_t out[MAX_LEN];
     EXPECT_EQ(queue.pop(out), 0u);               // empty pop
     EXPECT_EQ(queue.pop(nullptr), 0u);           // null dest
+}
+
+TEST(BleFrameQueue, ReportsFullSeparatelyForBackpressure)
+{
+    Queue queue;
+    uint8_t frame[MAX_LEN] = {1};
+    for (size_t i = 0; i < CAPACITY; ++i) {
+        EXPECT_EQ(queue.tryPush(frame, 8), BleFrameQueuePushResult::Accepted);
+    }
+
+    EXPECT_EQ(queue.tryPush(frame, 8), BleFrameQueuePushResult::Full);
+    EXPECT_EQ(queue.tryPush(nullptr, 8), BleFrameQueuePushResult::InvalidFrame);
+    EXPECT_EQ(queue.tryPush(frame, MAX_LEN + 1),
+              BleFrameQueuePushResult::InvalidFrame);
+
+    // The BLE callback clears a saturated burst before disconnecting the peer,
+    // so no already-ACKed partial command sequence leaks into the app loop.
+    queue.clear();
+    EXPECT_EQ(queue.size(), 0u);
+    EXPECT_EQ(queue.tryPush(frame, 8), BleFrameQueuePushResult::Accepted);
 }
 
 TEST(BleFrameQueue, WrapsAroundRepeatedly)

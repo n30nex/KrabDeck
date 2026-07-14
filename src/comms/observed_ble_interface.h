@@ -30,6 +30,9 @@ struct BleSerialObserverStats {
     uint32_t auth_failure_count = 0;
     uint32_t ble_write_count = 0;
     uint32_t ble_write_drop_count = 0;
+    uint32_t rx_queue_full_count = 0;
+    uint32_t rx_invalid_frame_count = 0;
+    uint32_t rx_backpressure_disconnect_count = 0;
     uint32_t rx_frame_count = 0;
     uint32_t tx_frame_count = 0;
     uint32_t tx_drop_count = 0;
@@ -69,6 +72,8 @@ private:
 
     mutable BleTaskMutex _state_mutex;
     BleSerialObserverStats _stats{};
+    BLEServer* _connected_server = nullptr;
+    uint16_t _active_conn_id = 0;
 
     // NET-002 (#813): the base class receive queue is written from the
     // Bluedroid host task (onWrite) and drained from the app loop task

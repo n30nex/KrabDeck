@@ -26,6 +26,11 @@
 
 using sigurdos::ota::otaPinAccepts;
 using sigurdos::ota::otaSessionExpired;
+using sigurdos::ota::otaUpdateBeginSize;
+using sigurdos::ota::OTA_UPDATE_SIZE_UNKNOWN;
+using sigurdos::ota::OtaUploadSessionState;
+using sigurdos::ota::otaUploadAcceptsChunk;
+using sigurdos::ota::otaUploadCanFinish;
 
 // ── No PIN configured (the factory default) is never authenticated ──────────
 TEST(OtaAuth, RejectsWhenNoPinConfigured) {
@@ -71,4 +76,36 @@ TEST(OtaAuth, SessionExpiryIsDeadlineAndWrapSafe) {
     EXPECT_FALSE(otaSessionExpired(100, 100 + 599999));
     EXPECT_TRUE(otaSessionExpired(100, 100 + 600000));
     EXPECT_FALSE(otaSessionExpired(0xFFFFFF00U, 0x00000010U));
+}
+
+TEST(OtaUpload, UnknownMultipartSizeUsesUpdateSentinel) {
+    EXPECT_EQ(otaUpdateBeginSize(0), OTA_UPDATE_SIZE_UNKNOWN);
+    EXPECT_EQ(otaUpdateBeginSize(123456), 123456u);
+}
+
+TEST(OtaUpload, WritesRequireAuthenticationAndSuccessfulBegin) {
+    OtaUploadSessionState state{};
+    EXPECT_FALSE(otaUploadAcceptsChunk(state));
+
+    state.authenticated = true;
+    EXPECT_FALSE(otaUploadAcceptsChunk(state));
+
+    state.started = true;
+    EXPECT_TRUE(otaUploadAcceptsChunk(state));
+
+    state.failed = true;
+    EXPECT_FALSE(otaUploadAcceptsChunk(state));
+}
+
+TEST(OtaUpload, FinishRequiresNonEmptyMatchingByteCount) {
+    OtaUploadSessionState state{true, true, false, false, 0};
+    EXPECT_FALSE(otaUploadCanFinish(state, 0));
+
+    state.received = 4096;
+    EXPECT_FALSE(otaUploadCanFinish(state, 2048));
+    EXPECT_FALSE(otaUploadCanFinish(state, 8192));
+    EXPECT_TRUE(otaUploadCanFinish(state, 4096));
+
+    state.completed = true;
+    EXPECT_FALSE(otaUploadCanFinish(state, 4096));
 }

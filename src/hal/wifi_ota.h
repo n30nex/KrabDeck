@@ -7,6 +7,7 @@
 
 #pragma once
 #include <cstdint>
+#include <cstddef>
 #include <climits>
 
 namespace sigurdos {
@@ -31,6 +32,34 @@ inline bool otaPinAccepts(uint32_t device_pin, const char* entered) {
 static constexpr uint32_t OTA_SESSION_MAX_MS = 10U * 60U * 1000U;
 inline bool otaSessionExpired(uint32_t started_at, uint32_t now) {
     return static_cast<uint32_t>(now - started_at) >= OTA_SESSION_MAX_MS;
+}
+
+// WebServer initializes HTTPUpload::totalSize to zero immediately before the
+// multipart START callback. Arduino Update rejects a literal zero, so unknown
+// multipart sizes must use its documented sentinel instead.
+static constexpr size_t OTA_UPDATE_SIZE_UNKNOWN = 0xFFFFFFFFU;
+inline size_t otaUpdateBeginSize(size_t multipart_total_size) {
+    return multipart_total_size == 0 ? OTA_UPDATE_SIZE_UNKNOWN
+                                     : multipart_total_size;
+}
+
+struct OtaUploadSessionState {
+    bool authenticated = false;
+    bool started = false;
+    bool completed = false;
+    bool failed = false;
+    size_t received = 0;
+};
+
+inline bool otaUploadAcceptsChunk(const OtaUploadSessionState& state) {
+    return state.authenticated && state.started &&
+           !state.completed && !state.failed;
+}
+
+inline bool otaUploadCanFinish(const OtaUploadSessionState& state,
+                               size_t multipart_total_size) {
+    return otaUploadAcceptsChunk(state) && state.received > 0 &&
+           state.received == multipart_total_size;
 }
 
 // Start WiFi AP + web server for OTA upload.

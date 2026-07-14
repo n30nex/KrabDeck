@@ -6,6 +6,7 @@
 #include "hal/tdeck_board.h"
 #include "hal/tdeck_pins.h"
 #include "hal/display.h"
+#include "hal/display_retry_state.h"
 #include "hal/battery.h"
 #include "hal/gps.h"
 #include "hal/sdcard.h"
@@ -62,7 +63,8 @@ void setup()
     // Critical-battery sleep wakes periodically to permit recovery after
     // charging. Re-sleep before display/radio/storage initialization when a
     // timer wake finds that the battery remains below the safe threshold.
-    const bool deep_sleep_reset = esp_reset_reason() == ESP_RST_DEEPSLEEP;
+    const esp_reset_reason_t reset_reason = esp_reset_reason();
+    const bool deep_sleep_reset = reset_reason == ESP_RST_DEEPSLEEP;
     const bool timer_wakeup = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER;
     const uint16_t early_battery_mv = sigurdos_battery_mv();
     if (sigurdos::tdeck_should_resleep_early(
@@ -74,16 +76,19 @@ void setup()
     }
     sigurdos::hal::buzzer_init();
 
-    // Track display init failures across reboots to detect boot loops.
-    // RTC_NOINIT_ATTR persists through software resets (ESP.restart()).
-    static RTC_NOINIT_ATTR uint8_t display_failures = 0;
-    static constexpr uint8_t MAX_DISPLAY_FAILURES = 3;
+    // RTC_NOINIT_ATTR can contain arbitrary bytes after power-on. Trust this
+    // versioned record only after the deliberate software reset issued below.
+    static RTC_NOINIT_ATTR sigurdos::hal::DisplayRetryState display_retry_state;
+    sigurdos::hal::display_retry_begin(
+        display_retry_state, reset_reason == ESP_RST_SW);
 
     if (!sigurdos_display_init()) {
-        display_failures++;
+        const uint8_t display_failures =
+            sigurdos::hal::display_retry_note_failure(display_retry_state);
         Serial.printf("[boot] FATAL: Display init failed (%u/%u attempts)\n",
-                      display_failures, MAX_DISPLAY_FAILURES);
-        if (display_failures >= MAX_DISPLAY_FAILURES) {
+                      display_failures,
+                      sigurdos::hal::MAX_DISPLAY_FAILURES);
+        if (sigurdos::hal::display_retry_should_halt(display_retry_state)) {
             Serial.println("[boot] HALTED: Too many display failures.");
             Serial.println("[boot] USB reflashing remains available; reset to retry.");
             // Mesh, BLE, OTA, and interactive command services have not started.
@@ -93,8 +98,9 @@ void setup()
         Serial.printf("[boot] Restarting in 5s...\n");
         delay(5000);
         ESP.restart();
+        return;
     }
-    display_failures = 0;  // success - reset counter
+    sigurdos::hal::display_retry_clear(display_retry_state);
     boot_log("display core init OK");
 
     sigurdos::ui::init();

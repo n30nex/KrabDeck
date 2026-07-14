@@ -10,6 +10,7 @@
 #include "login_response.h"
 #include "utils/utf8_util.h"
 #include "channel_validation.h"
+#include "channel_slot_policy.h"
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
@@ -1214,13 +1215,21 @@ namespace mesh {
     bool SigurdMeshV2::removeChannel(int idx) {
         int n = getChannelCount();
         if (idx < 0 || idx >= n) return false;
-        ChannelDetails tmp;
-        for (int i = idx; i < n - 1; i++) {
-            if (BaseChatMesh::getChannel(i + 1, tmp)) BaseChatMesh::setChannel(i, tmp);
-        }
         ChannelDetails empty{};
-        BaseChatMesh::setChannel(n - 1, empty);
-        return true;
+        return setChannelSlot(idx, empty);
+    }
+
+    bool SigurdMeshV2::setChannelSlot(int idx, const ChannelDetails& details) {
+        if (idx < 0 || idx >= MAX_GROUP_CHANNELS) return false;
+        return set_contiguous_channel_slot<MAX_GROUP_CHANNELS>(
+            static_cast<size_t>(idx), details,
+            [this](size_t slot, ChannelDetails& out) {
+                return BaseChatMesh::getChannel(static_cast<int>(slot), out);
+            },
+            [this](size_t slot, const ChannelDetails& value) {
+                return BaseChatMesh::setChannel(static_cast<int>(slot), value);
+            },
+            [](const ChannelDetails& value) { return value.name[0] == '\0'; });
     }
 
     int SigurdMeshV2::decode_b64(const char* in, size_t in_len, uint8_t* out, size_t out_cap) {

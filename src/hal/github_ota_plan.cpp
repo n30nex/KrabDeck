@@ -86,6 +86,8 @@ bool skipCompound(const char*& p, char open, char close) {
         p = skipWs(p);
         if (*p == ',') {
             ++p;
+            p = skipWs(p);
+            if (*p == close) return false;
             continue;
         }
         if (*p == close) {
@@ -140,12 +142,11 @@ bool parseReleaseObject(const char*& p, char* tag, size_t tag_size,
     if (!p || *p != '{') return false;
     ++p;
 
-    bool saw_any = false;
     while (*p) {
         p = skipWs(p);
         if (*p == '}') {
             ++p;
-            return saw_any;
+            return true;
         }
 
         char key[32] = "";
@@ -164,10 +165,11 @@ bool parseReleaseObject(const char*& p, char* tag, size_t tag_size,
             return false;
         }
 
-        saw_any = true;
         p = skipWs(p);
         if (*p == ',') {
             ++p;
+            p = skipWs(p);
+            if (*p == '}') return false;
             continue;
         }
         if (*p == '}') {
@@ -182,58 +184,127 @@ bool parseReleaseObject(const char*& p, char* tag, size_t tag_size,
 
 }  // namespace
 
+bool isSupportedReleaseChannel(const char* branch) {
+    return branch && (std::strcmp(branch, "latest") == 0 ||
+                      std::strcmp(branch, "main") == 0 ||
+                      std::strcmp(branch, "dev") == 0);
+}
+
+bool releaseChannelAllowsFallback(const char* branch) {
+    return branch && std::strcmp(branch, "latest") == 0;
+}
+
 bool branchNeedsReleaseApi(const char* branch, bool allow_prerelease) {
-    if (!branch || branch[0] == '\0') return false;
+    if (!isSupportedReleaseChannel(branch)) return false;
     if (std::strcmp(branch, "latest") == 0) return allow_prerelease;  // API needed to filter prereleases
     return true;
 }
 
-bool selectReleaseTagFromJson(const char* json, const char* branch,
-                              bool allow_prerelease,
-                              char* tag_out, size_t tag_max) {
-    if (tag_out && tag_max > 0) tag_out[0] = '\0';
+ApiBodyStatus classifyApiResponseBody(int content_length, size_t bytes_read,
+                                      size_t payload_capacity,
+                                      bool stream_ended) {
+    if (payload_capacity == 0) return ApiBodyStatus::TooLarge;
+    if (content_length >= 0) {
+        if (static_cast<size_t>(content_length) > payload_capacity) {
+            return ApiBodyStatus::TooLarge;
+        }
+        return bytes_read == static_cast<size_t>(content_length)
+            ? ApiBodyStatus::Complete : ApiBodyStatus::Incomplete;
+    }
+    if (bytes_read >= payload_capacity && !stream_ended) {
+        return ApiBodyStatus::TooLarge;
+    }
+    return stream_ended && bytes_read > 0
+        ? ApiBodyStatus::Complete : ApiBodyStatus::Incomplete;
+}
+
+ReleaseSelectionResult selectReleaseTagResultFromJson(
+        const char* json, const char* branch, bool allow_prerelease,
+        char* tag_out, size_t tag_max,
+        char* target_out, size_t target_max) {
+    const auto clear_outputs = [=]() {
+        if (tag_out && tag_max > 0) tag_out[0] = '\0';
+        if (target_out && target_max > 0) target_out[0] = '\0';
+    };
+    clear_outputs();
     if (!json || !branchNeedsReleaseApi(branch, allow_prerelease) || !tag_out || tag_max == 0) {
-        return false;
+        return ReleaseSelectionResult::InvalidJson;
     }
 
     const char* p = skipWs(json);
-    bool array = false;
-    if (*p == '[') {
-        array = true;
-        ++p;
-    }
+    if (!p || *p != '[') return ReleaseSelectionResult::InvalidJson;
+    ++p;
+
+    bool matched = false;
+    char matched_tag[96] = "";
+    char matched_target[32] = "";
 
     while (*p) {
         p = skipWs(p);
-        if (array && *p == ']') return false;
-        if (*p != '{') return false;
+        if (*p == ']') {
+            ++p;
+            p = skipWs(p);
+            if (*p != '\0') {
+                clear_outputs();
+                return ReleaseSelectionResult::InvalidJson;
+            }
+            if (!matched) return ReleaseSelectionResult::NoMatch;
+            copyBounded(tag_out, tag_max, matched_tag, std::strlen(matched_tag));
+            if (target_out && target_max > 0) {
+                copyBounded(target_out, target_max, matched_target,
+                            std::strlen(matched_target));
+            }
+            return ReleaseSelectionResult::Matched;
+        }
+        if (*p != '{') {
+            clear_outputs();
+            return ReleaseSelectionResult::InvalidJson;
+        }
 
         char tag[96] = "";
         char target[32] = "";
         bool prerelease = false;
         if (!parseReleaseObject(p, tag, sizeof(tag), target, sizeof(target),
                                 &prerelease)) {
-            return false;
+            clear_outputs();
+            return ReleaseSelectionResult::InvalidJson;
         }
 
-        if (tag[0] && (std::strcmp(branch, "latest") == 0 || std::strcmp(target, branch) == 0) &&
+        if (!matched && tag[0] &&
+            (std::strcmp(branch, "latest") == 0 || std::strcmp(target, branch) == 0) &&
             (allow_prerelease || !prerelease)) {
-            return copyBounded(tag_out, tag_max, tag, std::strlen(tag));
+            copyBounded(matched_tag, sizeof(matched_tag), tag, std::strlen(tag));
+            copyBounded(matched_target, sizeof(matched_target), target,
+                        std::strlen(target));
+            matched = true;
         }
 
         p = skipWs(p);
-        if (array) {
-            if (*p == ',') {
-                ++p;
-                continue;
+        if (*p == ',') {
+            ++p;
+            p = skipWs(p);
+            if (*p == ']') {
+                clear_outputs();
+                return ReleaseSelectionResult::InvalidJson;
             }
-            if (*p == ']') return false;
-            return false;
+            continue;
         }
-        return false;
+        if (*p != ']') {
+            clear_outputs();
+            return ReleaseSelectionResult::InvalidJson;
+        }
     }
 
-    return false;
+    clear_outputs();
+    return ReleaseSelectionResult::InvalidJson;
+}
+
+bool selectReleaseTagFromJson(const char* json, const char* branch,
+                              bool allow_prerelease,
+                              char* tag_out, size_t tag_max) {
+    return selectReleaseTagResultFromJson(json, branch, allow_prerelease,
+                                          tag_out, tag_max, nullptr, 0) ==
+           ReleaseSelectionResult::Matched;
 }
 
 void buildReleaseDownloadUrl(const char* tag, char* out, size_t out_size) {

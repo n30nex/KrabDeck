@@ -31,6 +31,7 @@
 
 // Include our mesh wrapper header (uses mocks for MeshCore)
 #include "mesh/mesh_wrapper.h"
+#include "mesh/durable_mutation.h"
 
 namespace {
 
@@ -115,6 +116,55 @@ TEST_F(MeshWrapperTest, ApplyRadioParamsAcceptsRxGainFlag) {
     using fn = bool (*)(float, float, int, int, int, bool);
     (void)static_cast<fn>(sigurdos::mesh::applyRadioParams);
     SUCCEED();
+}
+
+TEST_F(MeshWrapperTest, PersistenceApisReportCommitStatus) {
+    using save_fn = bool (*)();
+    using favourite_fn = bool (*)(const char*, bool);
+    (void)static_cast<save_fn>(sigurdos::mesh::saveState);
+    (void)static_cast<save_fn>(sigurdos::mesh::saveChannels);
+    (void)static_cast<save_fn>(sigurdos::mesh::saveContacts);
+    (void)static_cast<favourite_fn>(sigurdos::mesh::setContactFavourite);
+    SUCCEED();
+}
+
+TEST_F(MeshWrapperTest, FailedDurableCommitRollsBackRuntimeMutation) {
+    int visible_value = 10;
+    bool rolled_back = false;
+
+    bool ok = sigurdos::mesh::detail::applyAndCommit(
+        [&]() { visible_value = 20; return true; },
+        []() { return false; },
+        [&]() { visible_value = 10; rolled_back = true; });
+
+    EXPECT_FALSE(ok);
+    EXPECT_TRUE(rolled_back);
+    EXPECT_EQ(visible_value, 10);
+}
+
+TEST_F(MeshWrapperTest, SuccessfulDurableCommitKeepsRuntimeMutation) {
+    int visible_value = 10;
+    bool rolled_back = false;
+
+    bool ok = sigurdos::mesh::detail::applyAndCommit(
+        [&]() { visible_value = 20; return true; },
+        []() { return true; },
+        [&]() { rolled_back = true; });
+
+    EXPECT_TRUE(ok);
+    EXPECT_FALSE(rolled_back);
+    EXPECT_EQ(visible_value, 20);
+}
+
+TEST_F(MeshWrapperTest, IdentityActivationRequiresSuccessfulCommit) {
+    bool activated = false;
+    EXPECT_FALSE(sigurdos::mesh::detail::commitBeforeActivate(
+        []() { return false; }, [&]() { activated = true; }));
+    EXPECT_FALSE(activated);
+
+    EXPECT_TRUE(sigurdos::mesh::detail::commitBeforeActivate(
+        []() { return true; }, [&]() { activated = true; }));
+    EXPECT_TRUE(activated);
 }
 
 // ── Initial unread count is zero ────────────────────────

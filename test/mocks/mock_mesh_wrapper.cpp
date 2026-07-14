@@ -72,6 +72,7 @@ bool getContactByName(const char* name, ContactInfo* out) {
     (void)name; (void)out; return false;
 }
 bool addContactManual(const char*, const char*, uint8_t) { return false; }
+bool setContactFavourite(const char*, bool) { return false; }
 int getChannelCount() { return 0; }
 int exportChannels(char names[][37], int max) { return 0; }
 bool addChannel(const char* name, const char* psk) { return false; }
@@ -87,7 +88,9 @@ int getLastRSSI()   { return mock_rssi; }
 float getLastSNR()  { return mock_snr; }
 
 bool sendAdvert() { return false; }
-void saveState() {}
+bool saveState() { return true; }
+bool saveChannels() { return true; }
+bool saveContacts() { return true; }
 
 bool companionBleAvailable() { return false; }
 bool companionBleSetEnabled(bool enabled) { (void)enabled; return false; }

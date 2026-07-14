@@ -844,13 +844,29 @@ static lv_obj_t* make_chat_list_screen()
     lv_obj_set_style_text_font(back_icon, emoji_wrapped_montserrat_12, 0);
     lv_obj_center(back_icon);
 
-    // Chat title (centered, replaces old channel hashtag snapshot)
+    // Chat title and active flood-scope chip.
     {
         lv_obj_t* ttl = lv_label_create(top);
         lv_label_set_text(ttl, "Chat");
         lv_obj_set_style_text_color(ttl, lv_color_hex(TEXT_SECONDARY), 0);
         lv_obj_set_style_text_font(ttl, emoji_wrapped_montserrat_10, 0);
-        lv_obj_align(ttl, LV_ALIGN_CENTER, 0, 0);
+        lv_obj_align(ttl, LV_ALIGN_LEFT_MID, 32, 0);
+
+        const char* active = sigurdos::mesh::getActiveRegion();
+        char scope_text[40];
+        snprintf(scope_text, sizeof(scope_text), "[%s]",
+                 active && active[0] ? active : "PUBLIC");
+        lv_obj_t* chip = lv_label_create(top);
+        lv_label_set_text(chip, scope_text);
+        lv_label_set_long_mode(chip, LV_LABEL_LONG_DOT);
+        lv_obj_set_width(chip, 112);
+        lv_obj_set_style_text_align(chip, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_color(chip, lv_color_hex(ACCENT_FOREGROUND), 0);
+        lv_obj_set_style_text_font(chip, emoji_wrapped_montserrat_10, 0);
+        lv_obj_set_style_bg_color(chip, lv_color_hex(ACCENT), 0);
+        lv_obj_set_style_bg_opa(chip, LV_OPA_COVER, 0);
+        lv_obj_set_style_radius(chip, 0, 0);
+        lv_obj_align(chip, LV_ALIGN_LEFT_MID, 66, 0);
     }
 
     // Time snapshot

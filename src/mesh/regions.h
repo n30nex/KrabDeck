@@ -48,6 +48,15 @@ bool removePrivateRegionKey(const ::RegionEntry& region);
 /// Returns the RegionEntry or nullptr on failure (full, bad name, etc).
 ::RegionEntry* addRegion(const char* name, const char* parent_name = nullptr);
 
+/// Add a private ($) region and persist its 16-byte transport key in the
+/// region store. Returns nullptr for a non-private name or invalid key.
+::RegionEntry* addPrivateRegion(const char* name, const uint8_t key[16],
+                                const char* parent_name = nullptr);
+
+/// Replace/read the persisted transport key for an existing private region.
+bool setPrivateRegionKey(const char* name, const uint8_t key[16]);
+bool getPrivateRegionKey(const char* name, uint8_t key_out[16]);
+
 /// Remove a region by name. Fails if the region has children.
 bool removeRegion(const char* name);
 

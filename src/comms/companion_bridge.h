@@ -336,7 +336,7 @@ public:
     virtual bool setDefaultFloodScope(const char* name, const uint8_t* key) = 0;
     // setFloodScopeOverride: unscoped=true forces wildcard; else key==nullptr
     // resets to default, non-null sets a transient scope key.
-    virtual void setFloodScopeOverride(const uint8_t* key, bool unscoped) = 0;
+    virtual bool setFloodScopeOverride(const uint8_t* key, bool unscoped) = 0;
 
     // ── Async requests (response arrives later as a PUSH_CODE_*) ──
     virtual CompanionSendResult sendLogin(const uint8_t* pub_key, const char* password) = 0;

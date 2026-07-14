@@ -172,6 +172,18 @@ TEST(RegionsTest, AddRegionRejectsEmptyName) {
     EXPECT_EQ(sigurdos::mesh::addRegion("", nullptr), nullptr);
 }
 
+TEST(RegionsTest, PrivateRegionKeyCanBeAddedAndReloaded) {
+    removeAllRegionEntriesNamed("$interop");
+    uint8_t key[16];
+    for (int i = 0; i < 16; ++i) key[i] = (uint8_t)(0x40 + i);
+    ASSERT_NE(sigurdos::mesh::addPrivateRegion("$interop", key), nullptr);
+
+    uint8_t loaded[16]{};
+    ASSERT_TRUE(sigurdos::mesh::getPrivateRegionKey("$interop", loaded));
+    EXPECT_EQ(memcmp(key, loaded, sizeof(key)), 0);
+    removeAllRegionEntriesNamed("$interop");
+}
+
 TEST(RegionsTest, FindRegionPrefix) {
     removeAllRegionEntriesNamed("#london");
     removeAllRegionEntriesNamed("#losangeles");
@@ -401,6 +413,16 @@ TEST_F(RegionStoreTest, InterruptedReplacementKeepsAValidatedCopy) {
 TEST(RegionsTest, AddRegionSignature) {
     using fn_t = ::RegionEntry* (*)(const char*, const char*);
     (void)static_cast<fn_t>(sigurdos::mesh::addRegion);
+    SUCCEED();
+}
+
+TEST(RegionsTest, PrivateRegionKeySignatures) {
+    using add_fn_t = ::RegionEntry* (*)(const char*, const uint8_t*, const char*);
+    using set_fn_t = bool (*)(const char*, const uint8_t*);
+    using get_fn_t = bool (*)(const char*, uint8_t*);
+    (void)static_cast<add_fn_t>(sigurdos::mesh::addPrivateRegion);
+    (void)static_cast<set_fn_t>(sigurdos::mesh::setPrivateRegionKey);
+    (void)static_cast<get_fn_t>(sigurdos::mesh::getPrivateRegionKey);
     SUCCEED();
 }
 

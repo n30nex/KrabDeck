@@ -279,10 +279,11 @@ public:
     bool     has_connection = false;
     bool     rebooted = false, factory_reset_called = false;
     bool     scope_is_set = false;
-    bool     scope_set_succeeds = true;
     char     last_scope_name[32]{};
-    uint8_t  last_scope_key[16]{};
     bool     scope_unscoped = false, scope_cleared = false;
+    bool     scope_write_result = true, scope_override_result = true;
+    bool     scope_key_present = false;
+    uint8_t  last_scope_key[16]{};
     bool     last_send_ok = true;
     uint32_t last_trace_tag = 0; uint8_t last_trace_path_len = 0;
     int      sign_len_seen = -1;
@@ -350,14 +351,17 @@ public:
         return true;
     }
     bool setDefaultFloodScope(const char* name, const uint8_t* key) override {
-        if (!scope_set_succeeds) return false;
         if (!name || !name[0]) { scope_cleared = true; last_scope_name[0] = '\0'; }
         else std::strncpy(last_scope_name, name, sizeof(last_scope_name) - 1);
+        scope_key_present = key != nullptr;
         if (key) std::memcpy(last_scope_key, key, sizeof(last_scope_key));
-        return true;
+        return scope_write_result;
     }
-    void setFloodScopeOverride(const uint8_t* key, bool unscoped) override {
+    bool setFloodScopeOverride(const uint8_t* key, bool unscoped) override {
         scope_unscoped = unscoped; scope_cleared = (!unscoped && !key);
+        scope_key_present = key != nullptr;
+        if (key) std::memcpy(last_scope_key, key, sizeof(last_scope_key));
+        return scope_override_result;
     }
     sigurdos::comms::CompanionSendResult sendLogin(const uint8_t*, const char*) override {
         return {last_send_ok, true, 0x11223344u, 5000};
@@ -1130,44 +1134,27 @@ TEST_F(CompanionProtocolTest, DefaultFloodScopeGetSet) {
     host.scope_is_set = true;
     ASSERT_TRUE(bridge.handleFrame(get, sizeof(get)));
     EXPECT_EQ(serial.writes[0].size(), (size_t)(1 + 31 + 16));
+    EXPECT_STREQ(reinterpret_cast<const char*>(&serial.writes[0][1]), "#test");
+    for (size_t i = 1 + 31; i < 1 + 31 + 16; ++i) {
+        EXPECT_EQ(serial.writes[0][i], 0x7E);
+    }
 
     serial.writes.clear();
     std::vector<uint8_t> set(1 + 31 + 16, 0);
     set[0] = cc::CMD_SET_DEFAULT_FLOOD_SCOPE;
     std::strcpy((char*)&set[1], "#crew");
+    for (int i = 0; i < 16; ++i) set[1 + 31 + i] = (uint8_t)(0xA0 + i);
     ASSERT_TRUE(bridge.handleFrame(set.data(), set.size()));
     EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_OK);
     EXPECT_STREQ(host.last_scope_name, "#crew");
-
-    serial.writes.clear();
-    std::fill(set.begin(), set.end(), 0);
-    set[0] = cc::CMD_SET_DEFAULT_FLOOD_SCOPE;
-    std::strcpy((char*)&set[1], "$private");
-    std::memset(&set[1 + 31], 0x5A, 16);
-    ASSERT_TRUE(bridge.handleFrame(set.data(), set.size()));
-    EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_OK);
-    EXPECT_STREQ(host.last_scope_name, "$private");
-    EXPECT_EQ(host.last_scope_key[0], 0x5A);
+    ASSERT_TRUE(host.scope_key_present);
+    EXPECT_EQ(std::memcmp(host.last_scope_key, &set[1 + 31], 16), 0);
 
     serial.writes.clear();
     uint8_t clr[1] = { cc::CMD_SET_DEFAULT_FLOOD_SCOPE };  // <1+31+16 → clear
     ASSERT_TRUE(bridge.handleFrame(clr, sizeof(clr)));
     EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_OK);
     EXPECT_TRUE(host.scope_cleared);
-}
-
-TEST_F(CompanionProtocolTest, DefaultFloodScopeRejectsFailedCommit) {
-    host.scope_set_succeeds = false;
-    std::vector<uint8_t> set(1 + 31 + 16, 0);
-    set[0] = cc::CMD_SET_DEFAULT_FLOOD_SCOPE;
-    std::strcpy((char*)&set[1], "$private");
-    ASSERT_TRUE(bridge.handleFrame(set.data(), set.size()));
-    EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_ERR);
-
-    serial.writes.clear();
-    uint8_t clear[1] = { cc::CMD_SET_DEFAULT_FLOOD_SCOPE };
-    ASSERT_TRUE(bridge.handleFrame(clear, sizeof(clear)));
-    EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_ERR);
 }
 
 TEST_F(CompanionProtocolTest, FloodScopeKeyOverride) {
@@ -1178,8 +1165,57 @@ TEST_F(CompanionProtocolTest, FloodScopeKeyOverride) {
 
     serial.writes.clear();
     uint8_t setkey[2 + 16] = { cc::CMD_SET_FLOOD_SCOPE_KEY, 0 };
+    for (int i = 0; i < 16; ++i) setkey[2 + i] = (uint8_t)(0x30 + i);
     ASSERT_TRUE(bridge.handleFrame(setkey, sizeof(setkey)));
     EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_OK);
+    ASSERT_TRUE(host.scope_key_present);
+    EXPECT_EQ(std::memcmp(host.last_scope_key, &setkey[2], 16), 0);
+
+    serial.writes.clear();
+    uint8_t reset[2] = { cc::CMD_SET_FLOOD_SCOPE_KEY, 0 };
+    ASSERT_TRUE(bridge.handleFrame(reset, sizeof(reset)));
+    EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_OK);
+    EXPECT_TRUE(host.scope_cleared);
+    EXPECT_FALSE(host.scope_key_present);
+}
+
+TEST_F(CompanionProtocolTest, FloodScopeCommandsRejectMalformedFrames) {
+    uint8_t short_default[2] = { cc::CMD_SET_DEFAULT_FLOOD_SCOPE, '#' };
+    ASSERT_TRUE(bridge.handleFrame(short_default, sizeof(short_default)));
+    ASSERT_EQ(serial.writes.size(), 1u);
+    EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_ERR);
+    EXPECT_EQ(serial.writes[0][1], cc::ERR_CODE_ILLEGAL_ARG);
+
+    serial.writes.clear();
+    uint8_t short_key[3] = { cc::CMD_SET_FLOOD_SCOPE_KEY, 0, 0x11 };
+    ASSERT_TRUE(bridge.handleFrame(short_key, sizeof(short_key)));
+    ASSERT_EQ(serial.writes.size(), 1u);
+    EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_ERR);
+    EXPECT_EQ(serial.writes[0][1], cc::ERR_CODE_ILLEGAL_ARG);
+
+    serial.writes.clear();
+    uint8_t bad_flag[2] = { cc::CMD_SET_FLOOD_SCOPE_KEY, 2 };
+    ASSERT_TRUE(bridge.handleFrame(bad_flag, sizeof(bad_flag)));
+    ASSERT_EQ(serial.writes.size(), 1u);
+    EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_ERR);
+    EXPECT_EQ(serial.writes[0][1], cc::ERR_CODE_ILLEGAL_ARG);
+}
+
+TEST_F(CompanionProtocolTest, FloodScopePersistenceFailuresAreReported) {
+    host.scope_write_result = false;
+    uint8_t clear_default[] = { cc::CMD_SET_DEFAULT_FLOOD_SCOPE };
+    ASSERT_TRUE(bridge.handleFrame(clear_default, sizeof(clear_default)));
+    ASSERT_EQ(serial.writes.size(), 1u);
+    EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_ERR);
+    EXPECT_EQ(serial.writes[0][1], cc::ERR_CODE_FILE_IO_ERROR);
+
+    serial.writes.clear();
+    host.scope_override_result = false;
+    uint8_t unscoped[] = { cc::CMD_SET_FLOOD_SCOPE_KEY, 1 };
+    ASSERT_TRUE(bridge.handleFrame(unscoped, sizeof(unscoped)));
+    ASSERT_EQ(serial.writes.size(), 1u);
+    EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_ERR);
+    EXPECT_EQ(serial.writes[0][1], cc::ERR_CODE_FILE_IO_ERROR);
 }
 
 TEST_F(CompanionProtocolTest, SignFlow) {

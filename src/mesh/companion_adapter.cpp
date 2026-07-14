@@ -212,6 +212,28 @@ static void companionContactFromInfo(const ::ContactInfo& c, CompanionContact& o
     out.gps_lon = c.gps_lon;
 }
 
+static bool loadDefaultFloodScopeKey(uint8_t key_out[16])
+{
+    if (!key_out) return false;
+    const char* name = sigurdos::mesh::getDefaultScopeName();
+    if (!name || !name[0]) return false;
+
+    const sigurdos::NodePrefs& prefs = sigurdos::prefs_get();
+    if (strlen(prefs.default_scope_key_hex) ==
+        (size_t)sigurdos::mesh::SCOPE_KEY_HEX_LEN) {
+        sigurdos::mesh::scopeKeyHexDecode(prefs.default_scope_key_hex, key_out);
+        return true;
+    }
+
+    RegionEntry* region = sigurdos::mesh::findRegion(name);
+    RegionMap* map = sigurdos::mesh::getRegionMap();
+    if (!region || !map) return false;
+    TransportKey keys[1];
+    if (map->getTransportKeysFor(*region, keys, 1) != 1) return false;
+    memcpy(key_out, keys[0].key, sizeof(keys[0].key));
+    return true;
+}
+
 class WrapperCompanionHost final : public CompanionBridgeHost {
 public:
     uint32_t blePin() const override {
@@ -735,34 +757,60 @@ public:
 
     // ── Flood scope (companion regions) ──────────────────────
     bool getDefaultFloodScope(char* name_out, uint8_t* key_out) const override {
-        const char* active = sigurdos::mesh::getActiveRegion();
-        if (!active || !active[0]) return false;
-
-        RegionEntry* r = sigurdos::mesh::findRegion(active);
-        if (!r) return false;
-
-        RegionMap* map = sigurdos::mesh::getRegionMap();
-        if (!map) return false;
-
-        TransportKey keys[1];
-        int nk = map->getTransportKeysFor(*r, keys, 1);
-        if (nk <= 0) return false;
-
-        if (name_out) { memset(name_out, 0, 31); strncpy(name_out, r->name, 30); }
-        if (key_out) {
-            // Return the installed key, never an unverified preference value.
-            memcpy(key_out, keys[0].key, 16);
-        }
+        const char* name = sigurdos::mesh::getDefaultScopeName();
+        uint8_t key[16];
+        if (!name || !name[0] || !loadDefaultFloodScopeKey(key)) return false;
+        if (name_out) { memset(name_out, 0, 31); strncpy(name_out, name, 30); }
+        if (key_out) memcpy(key_out, key, sizeof(key));
         return true;
     }
     bool setDefaultFloodScope(const char* name, const uint8_t* key) override {
-        return sigurdos::mesh::setActiveRegionWithKey(name, key);
+        if (!name || !name[0]) {
+            if (!sigurdos::mesh::setDefaultScope(nullptr)) return false;
+            sigurdos::NodePrefs prefs = sigurdos::prefs_get();
+            prefs.default_scope_key_hex[0] = '\0';
+            if (!sigurdos::prefs_set(prefs)) return false;
+            return sigurdos::mesh::setActiveRegion("");
+        }
+        if (!key) return false;
+
+        // Ensure the region exists in RegionMap
+        RegionEntry* r = sigurdos::mesh::findRegion(name);
+        if (!r) {
+            r = name[0] == '$'
+                ? sigurdos::mesh::addPrivateRegion(name, key)
+                : sigurdos::mesh::addRegion(name);
+        } else if (name[0] == '$' &&
+                   !sigurdos::mesh::setPrivateRegionKey(name, key)) {
+            return false;
+        }
+        if (!r || !sigurdos::mesh::setDefaultScope(name)) return false;
+
+        sigurdos::NodePrefs prefs = sigurdos::prefs_get();
+        sigurdos::mesh::scopeKeyHexEncode(key, prefs.default_scope_key_hex);
+        if (!sigurdos::prefs_set(prefs) || !sigurdos::mesh::setActiveRegion(name)) {
+            return false;
+        }
+        if (mesh_ptr()) mesh_ptr()->setActiveScope(key);
+        return true;
     }
-    void setFloodScopeOverride(const uint8_t* key, bool unscoped) override {
-        if (!mesh_ptr()) return;
-        if (unscoped) mesh_ptr()->clearActiveScope();
-        else if (key) mesh_ptr()->setActiveScope(key);
-        else mesh_ptr()->clearActiveScope();
+    bool setFloodScopeOverride(const uint8_t* key, bool unscoped) override {
+        if (!mesh_ptr()) return false;
+        if (unscoped) {
+            mesh_ptr()->clearActiveScope();
+            return true;
+        }
+        if (key) {
+            mesh_ptr()->setActiveScope(key);
+            return true;
+        }
+        uint8_t default_key[16];
+        if (loadDefaultFloodScopeKey(default_key)) {
+            mesh_ptr()->setActiveScope(default_key);
+        } else {
+            mesh_ptr()->clearActiveScope();
+        }
+        return true;
     }
 
     // ── Async requests ───────────────────────────────────────

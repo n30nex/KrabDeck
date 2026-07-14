@@ -2,8 +2,8 @@
 // Copyright (C) 2026 Ben
 
 #include <gtest/gtest.h>
-#include "comms/ble_auth_watchdog.h"
 #include "comms/ble_frame_queue.h"
+#include "comms/ble_init_gate.h"
 
 #include <atomic>
 #include <cstring>
@@ -13,50 +13,61 @@
 namespace {
 
 using sigurdos::comms::BleFrameQueue;
-using sigurdos::comms::BleAuthWatchdog;
+using sigurdos::comms::BleInitGate;
 
 constexpr size_t MAX_LEN = 176;   // MAX_FRAME_SIZE on target
 constexpr size_t CAPACITY = 4;    // FRAME_QUEUE_SIZE on target
 
 using Queue = BleFrameQueue<MAX_LEN, CAPACITY>;
 
-TEST(BleAuthWatchdog, ExpiresOnceAtDeadline)
+TEST(BleInitGate, ConfigurationDoesNotInitializeController)
 {
-    BleAuthWatchdog watchdog(100);
-    watchdog.arm(7, 1000);
-    EXPECT_TRUE(watchdog.armed());
+    BleInitGate gate;
+    int init_calls = 0;
+    gate.configure();
 
-    uint16_t conn_id = 0;
-    EXPECT_FALSE(watchdog.takeExpired(1099, conn_id));
-    EXPECT_TRUE(watchdog.takeExpired(1100, conn_id));
-    EXPECT_EQ(conn_id, 7u);
-    EXPECT_FALSE(watchdog.armed());
-    EXPECT_FALSE(watchdog.takeExpired(1200, conn_id));
+    EXPECT_TRUE(gate.configured());
+    EXPECT_FALSE(gate.initialized());
+    EXPECT_EQ(init_calls, 0);
+
+    EXPECT_TRUE(gate.ensureInitialized([&] {
+        ++init_calls;
+        return true;
+    }));
+    EXPECT_TRUE(gate.initialized());
+    EXPECT_EQ(init_calls, 1);
+
+    EXPECT_TRUE(gate.ensureInitialized([&] {
+        ++init_calls;
+        return true;
+    }));
+    EXPECT_EQ(init_calls, 1);
 }
 
-TEST(BleAuthWatchdog, AuthenticationOrDisconnectCancelsDeadline)
+TEST(BleInitGate, RequiresConfigurationAndRetriesFailedInitialization)
 {
-    BleAuthWatchdog watchdog(100);
-    uint16_t conn_id = 0;
+    BleInitGate gate;
+    int init_calls = 0;
+    EXPECT_FALSE(gate.ensureInitialized([&] {
+        ++init_calls;
+        return true;
+    }));
+    EXPECT_EQ(init_calls, 0);
 
-    watchdog.arm(8, 2000);
-    watchdog.cancel();  // authentication completed
-    EXPECT_FALSE(watchdog.takeExpired(2200, conn_id));
+    gate.configure();
+    EXPECT_FALSE(gate.ensureInitialized([&] {
+        ++init_calls;
+        return false;
+    }));
+    EXPECT_FALSE(gate.initialized());
+    EXPECT_EQ(init_calls, 1);
 
-    watchdog.arm(9, 3000);
-    watchdog.cancel();  // peer disconnected before authenticating
-    EXPECT_FALSE(watchdog.takeExpired(3200, conn_id));
-}
-
-TEST(BleAuthWatchdog, HandlesMillisWraparound)
-{
-    BleAuthWatchdog watchdog(20);
-    watchdog.arm(10, UINT32_MAX - 9);  // deadline wraps to 10
-
-    uint16_t conn_id = 0;
-    EXPECT_FALSE(watchdog.takeExpired(9, conn_id));
-    EXPECT_TRUE(watchdog.takeExpired(10, conn_id));
-    EXPECT_EQ(conn_id, 10u);
+    EXPECT_TRUE(gate.ensureInitialized([&] {
+        ++init_calls;
+        return true;
+    }));
+    EXPECT_TRUE(gate.initialized());
+    EXPECT_EQ(init_calls, 2);
 }
 
 // Frames carry a 32-bit sequence number followed by a deterministic fill so

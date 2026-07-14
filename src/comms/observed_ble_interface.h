@@ -5,13 +5,12 @@
 
 #include <cstdint>
 #include <cstddef>
-#include <atomic>
 
 #if defined(ESP32_PLATFORM) && defined(SIGURDOS_COMPANION_BLE) && SIGURDOS_COMPANION_BLE
 
 #include <helpers/esp32/SerialBLEInterface.h>
-#include "ble_auth_watchdog.h"
 #include "ble_frame_queue.h"
+#include "ble_init_gate.h"
 
 namespace sigurdos {
 namespace comms {
@@ -29,7 +28,6 @@ struct BleSerialObserverStats {
     uint32_t mtu_change_count = 0;
     uint32_t auth_success_count = 0;
     uint32_t auth_failure_count = 0;
-    uint32_t auth_timeout_count = 0;
     uint32_t ble_write_count = 0;
     uint32_t ble_write_drop_count = 0;
     uint32_t rx_frame_count = 0;
@@ -43,6 +41,7 @@ struct BleSerialObserverStats {
 
 class ObservedSerialBLEInterface final : public SerialBLEInterface {
 public:
+    void configure(const char* prefix, const char* name, uint32_t pin_code);
     void begin(const char* prefix, char* name, uint32_t pin_code);
     void enable() override;
     void disable() override;
@@ -66,10 +65,13 @@ protected:
 
 private:
     void refreshConnectionState();
+    bool initializeConfigured();
 
     BleSerialObserverStats _stats{};
-    BleAuthWatchdog _auth_watchdog;
-    std::atomic<BLEServer*> _physical_server{nullptr};
+    BleInitGate _init_gate;
+    char _configured_prefix[16]{};
+    char _configured_name[32]{};
+    uint32_t _configured_pin = 0;
 
     // NET-002 (#813): the base class receive queue is written from the
     // Bluedroid host task (onWrite) and drained from the app loop task

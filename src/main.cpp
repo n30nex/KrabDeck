@@ -48,13 +48,17 @@ static void boot_status(const char* status)
     boot_log(status);
 }
 
+#include "esp_log.h"
+static const char* BOOT_TAG = "boot";
+
 void setup()
 {
+    esp_log_write(ESP_LOG_ERROR, BOOT_TAG, "SETUP ENTRY - BEFORE Serial.begin");
     Serial.begin(115200);
     const esp_reset_reason_t reset_reason = esp_reset_reason();
     sigurdos::hal::boot_watchdog_begin(reset_reason);
 #if defined(SIGURDOS_REMOTE_TEST) && SIGURDOS_REMOTE_TEST
-    Serial.println("[boot] HELLO FROM REMOTE_TEST BUILD -v2");
+    esp_log_write(ESP_LOG_ERROR, BOOT_TAG, "HELLO FROM REMOTE_TEST BUILD -v2");
 #endif
     boot_log("serial OK");
 

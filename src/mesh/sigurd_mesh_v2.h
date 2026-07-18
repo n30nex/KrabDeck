@@ -14,6 +14,7 @@
 #include <helpers/TransportKeyStore.h>
 #include <SPIFFS.h>
 #include "mesh_wrapper.h"
+#include "autoadd_policy.h"
 #include "pending_ack_policy.h"
 #include "login_session.h"
 #include "path_codec.h"
@@ -388,6 +389,12 @@ public:
 
     void onContactPathUpdated(const ::ContactInfo& contact) override;
 
+    bool onContactPathRecv(::ContactInfo& contact,
+                           uint8_t* in_path, uint8_t in_path_len,
+                           uint8_t* out_path, uint8_t out_path_len,
+                           uint8_t extra_type, uint8_t* extra,
+                           uint8_t extra_len) override;
+
 
     // ── Path discovery (Phase 4.4) ──────────────
     static constexpr int MAX_DISCOVERY_PENDING = 4;
@@ -402,7 +409,7 @@ public:
 
     // Send a path discovery request — forces flood routing to learn the return path.
     // Returns the request tag (>0) on success, 0 on failure.
-    uint32_t sendPathDiscovery(const char* name);
+    uint32_t sendPathDiscovery(const char* name, uint32_t* est_timeout_out = nullptr);
 
 
     // Check if a pending discovery has completed
@@ -446,7 +453,7 @@ public:
 
 
     bool isAutoAddEnabled() const override {
-        // A-11: the companion manual-add mode must control advert ingestion.
+        // C-08: the companion manual-add mode must control advert ingestion.
         return auto_add_policy::enabled(sigurdos::prefs_get().manual_add_contacts);
     }
     bool shouldAutoAddContactType(uint8_t type) const override;
@@ -618,6 +625,7 @@ public:
 
 
     bool removeContact(int idx);
+    bool removeContactByPubKey(const uint8_t* pub_key);
 
 
     bool resetPathTo(int idx);

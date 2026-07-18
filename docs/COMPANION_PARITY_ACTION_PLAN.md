@@ -1,8 +1,8 @@
 # SigurdOS-TDeck vs MeshCore Companion Nodes — Gap Analysis & Action Plan
 
-**Date:** 2026-07-12  
+**Date:** 2026-07-18
 **Repo:** `hermes-gadget/SigurdOS-tdeck`  
-**Branch audited:** `dev` (post-RC6 fix commits through `7c91dd6`)  
+**Branch audited:** `dev` at `562ba6a`
 **MeshCore submodule:** `516ba4ae` (companion family ~v1.15.0 + patches)  
 **Primary references:** `examples/companion_radio/MyMesh.{h,cpp}`, `src/helpers/BaseChatMesh.*`, `src/comms/companion_bridge.*`, `src/mesh/sigurd_mesh_v2.*`, `docs/MISSING_FEATURES.md`, `docs/COMPANION_SUPPORT.md`, `docs/ROADMAP.md`, `audit.md`
 
@@ -64,7 +64,13 @@ Bridge enum covers **58 command IDs** (1–65 with upstream gaps).
 |-----|----|----------------------|----------------|
 | `CMD_SEND_RAW_PACKET` | 65 | Inject arbitrary parsed packet | Unsupported |
 
-Everything else used for normal app setup / contacts / channels / messaging / offline sync / status / telemetry / trace / signing / config is implemented in the bridge host path.
+`CMD_SEND_BINARY_REQ` (50) and `CMD_SEND_ANON_REQ` (57) are implemented through
+the production mesh adapter and return matching responses through
+`PUSH_CODE_BINARY_RESPONSE`. Everything else used for normal app setup,
+contacts, channels, messaging, offline sync, status, telemetry, trace, signing,
+and configuration is implemented in the bridge host path. One wire-format
+exception remains: the 32-byte-secret form of `CMD_SET_CHANNEL` is rejected;
+the 16-byte-secret form is supported.
 
 ### 2.3 Product identity constraints (do not regress)
 
@@ -82,11 +88,13 @@ From project identity and `MISSING_FEATURES.md`:
 
 ## 3. Gap summary (what is still missing or incomplete)
 
-Gaps fall into **three buckets**:
+Gaps fall into **four buckets**:
 
 1. **Stateful dual-UI reconciliation** (phone app + LVGL UI sharing one identity).
 2. **Field UX parity on-device** (what a phone+companion pair does, but on the T-Deck alone).
 3. **Validation debt** (official app + RF interop + soak not yet release-grade evidence).
+4. **Narrow protocol exceptions** (`CMD_SEND_RAW_PACKET`, the 32-byte-secret
+   `CMD_SET_CHANNEL` form, and no `PUSH_CODE_LOG_RX_DATA` emission).
 
 ```
                     ┌─────────────────────────────┐
@@ -95,7 +103,7 @@ Gaps fall into **three buckets**:
                                    │ BLE/USB companion protocol
                     ┌──────────────▼──────────────┐
                     │ CompanionBridge + Adapter    │  ← raw packet deliberately refused
-                    │ offline queue + V3 frames    │  ← app validation incomplete
+                    │ offline queue + V3 frames    │  ← narrow wire gaps + validation debt
                     └──────────────┬──────────────┘
                                    │
           ┌────────────────────────┼────────────────────────┐
@@ -153,6 +161,26 @@ Gaps fall into **three buckets**:
 
 ---
 
+#### P1-6. Close or document narrow companion wire differences
+
+**Current state:** binary and anonymous peer requests are implemented. The
+remaining protocol differences are the unsupported 32-byte-secret
+`CMD_SET_CHANNEL` form and the absence of `PUSH_CODE_LOG_RX_DATA` emission.
+
+**Actions:**
+
+1. Capture official-app/stock-radio frames to determine whether either
+   difference affects a shipped workflow.
+2. If required, implement the 32-byte channel-secret form with persistence and
+   interop tests.
+3. Define a safe diagnostic source and privacy policy before emitting raw RX
+   logs; otherwise keep `PUSH_CODE_LOG_RX_DATA` documented as intentionally
+   dormant.
+
+**Effort:** S–M · **Native:** golden-frame tests · **HW:** app validation
+
+---
+
 #### P1-7. Regions interop proof (companion flood scope)
 
 **Code status:** implemented. **Field status:** still needs hardware proof.
@@ -189,6 +217,8 @@ Companion nodes don’t require maps; this **exceeds** companion. Keep offline-f
 | Item | Why deferred |
 |------|--------------|
 | `CMD_SEND_RAW_PACKET` | Packet injection risk |
+| 32-byte-secret `CMD_SET_CHANNEL` | No validated app requirement; 16-byte form is supported |
+| `PUSH_CODE_LOG_RX_DATA` emission | Requires a defined diagnostic source and privacy policy |
 | Multipart messages | Product decision |
 | Temp radio auto-revert UI | Product decision |
 | WiFi companion bridge / WebUI | Optional local transport; security policy required first |
@@ -217,8 +247,10 @@ Each phase should land as **multiple small PRs**, each with its own issue. Do no
 | # | Work item | Priority | Effort | Exit criteria |
 |---|-----------|----------|--------|---------------|
 | C1 | Keep `CMD_SEND_RAW_PACKET` unsupported unless lab flag | P3 | S | Explicit policy |
+| C2 | Validate the 32-byte-secret channel form and RX-log PUSH against real clients | P1 | S–M | Implemented if required, otherwise explicitly documented |
 
-**Deliverable:** raw packet injection remains an explicit, documented no.
+**Deliverable:** raw packet injection remains an explicit, documented no; the
+remaining narrow wire differences have evidence-backed dispositions.
 
 ---
 

@@ -12,27 +12,31 @@ This matrix describes the pinned MeshCore protocol at submodule commit
 |---|---|---|
 | App/device query and time | Supported | Includes app start, device query, connection, time, battery/storage, and stats |
 | Contacts and adverts | Supported | Import/export/update/remove/share, advert path/name/location, self advert, and path reset |
-| Channels and text messages | Supported | Channel configuration/data/text, direct text, login, path discovery, and offline message sync |
-| Direct raw data (`CMD_SEND_RAW_DATA`) | Restricted | Accepts explicit 0–63-byte one-byte-hash paths only; flood routing is rejected; received raw payloads use `PUSH_CODE_RAW_DATA`. `CMD_SEND_RAW_PACKET` (arbitrary packet injection) returns `ERR_CODE_UNSUPPORTED_CMD` |
-| Zero-hop control data (`CMD_SEND_CONTROL_DATA`) | Supported | Requires the control high bit and always uses zero-hop routing; received controls use `PUSH_CODE_CONTROL_DATA` |
+| Channels and text messages | Supported with one wire-format exception | Channel configuration/data/text, direct text, login, path discovery, and offline message sync are supported. `CMD_SET_CHANNEL` accepts the 16-byte-secret form; the 32-byte-secret form returns `ERR_CODE_UNSUPPORTED_CMD` |
+| Direct raw data (`CMD_SEND_RAW_DATA`) | Restricted | Accepts explicit 0–63-byte one-byte-hash paths only; the `0xFF` flood sentinel is rejected. Received raw payloads use `PUSH_CODE_RAW_DATA` |
+| Zero-hop control data (`CMD_SEND_CONTROL_DATA`) | Supported | Requires the control high bit and always uses zero-hop routing; invalid non-control payloads return `ERR_CODE_ILLEGAL_ARG`. Received controls use `PUSH_CODE_CONTROL_DATA` |
 | Radio, tuning, flood scope, and custom variables | Supported | Subject to T-Deck radio-region and TX-safety gates |
-| Binary and anonymous peer requests (`CMD_SEND_BINARY_REQ`, `CMD_SEND_ANON_REQ`) | Supported | Request tags are matched to stock async response push frames; anonymous requests may use transient contacts |
+| Binary and anonymous peer requests (`CMD_SEND_BINARY_REQ`, `CMD_SEND_ANON_REQ`) | Supported | Requests are sent through `BaseChatMesh`; matching replies emit `PUSH_CODE_BINARY_RESPONSE`. Anonymous requests may use transient contacts |
 | Status, telemetry, and trace | Supported | Standard request/response and async push flows |
 | Identity import/export and signing | Supported | Factory reset remains guarded by the authenticated protocol contract |
 | `CMD_SEND_RAW_PACKET` | Unsupported | Returns `ERR_CODE_UNSUPPORTED_CMD`; arbitrary packet injection is not exposed |
 
-The restricted raw/control families require separate protocol semantics,
-authorization, packet-bound validation, and interoperability tests before they
-can be enabled safely. The specific `CMD_SEND_RAW_PACKET` command (arbitrary
-packet injection) is explicitly refused as a policy decision; the restricted
-`CMD_SEND_RAW_DATA` form (single-hash-path-only) is available as noted above.
-Clients must handle `ERR_CODE_UNSUPPORTED_CMD` when attempting arbitrary packet
-injection and must not infer full companion-radio parity from the advertised
-BLE service.
+Of the 58 defined command IDs, `CMD_SEND_RAW_PACKET` is the only command that is
+fully refused. This is an explicit policy decision: arbitrary parsed-packet
+injection is not exposed. `CMD_SEND_RAW_DATA` is available only for an explicit
+one-byte-hash path and rejects flood routing; `CMD_SEND_CONTROL_DATA` is
+available only for the zero-hop high-bit control form. Clients must also handle
+`ERR_CODE_UNSUPPORTED_CMD` if they send the unsupported 32-byte-secret variant
+of `CMD_SET_CHANNEL`.
+
+All 17 `PUSH_CODE_*` identifiers are defined. `PUSH_CODE_LOG_RX_DATA` (`0x88`)
+is not currently emitted. `PUSH_CODE_BINARY_RESPONSE` (`0x8C`) is emitted by
+`pushBinaryResponse()` when a matching binary or anonymous request response
+arrives; unmatched or expired tags are discarded.
 
 Release interoperability should cover the official Android and iOS apps plus a
 stock MeshCore companion radio. Core text messaging compatibility is broader
-than the optional command families listed as unsupported above.
+than the deliberately refused raw-packet injection command.
 
 ## Device-authored message visibility
 

@@ -177,7 +177,9 @@ struct SigurdRegion {
 
 ## Companion BLE — Connect to the Official MeshCore App ✅ IMPLEMENTED
 
-> **✅ IMPLEMENTED** — Complete `CompanionBridge` with 58 `CMD_*` codes (numbered up to 65, with gaps), `ObservedSerialBLEInterface` wrapping `SerialBLEInterface`, offline queue with `seedOfflineQueueFromStore()`, dual-consumer hook via `companion_adapter.cpp/h`, SPIFFS message store, Bluetooth UI screen, Settings entry, build envs in `platformio.ini`, and 53 companion protocol + 5 message store native tests. The detailed plan below is preserved as historical reference.
+> **✅ IMPLEMENTED** — Phase 0 persistence and Phases 1–3 of the companion bridge are complete and active in standard firmware builds. The implementation includes the `CompanionBridge`, `ObservedSerialBLEInterface`, non-destructive offline sync backed by the SPIFFS message store, mesh/UI fan-out, Bluetooth UI and settings, and native protocol/store coverage. The detailed plan below is preserved as historical reference.
+>
+> **Remaining upstream differences:** `CMD_SEND_RAW_PACKET` (65) is deliberately refused as a packet-injection policy. The 32-byte-secret form of `CMD_SET_CHANNEL` is also rejected; the stock 16-byte-secret form is supported. `CMD_SEND_BINARY_REQ` (50) and `CMD_SEND_ANON_REQ` (57) are implemented, including matched `PUSH_CODE_BINARY_RESPONSE` delivery. All 17 PUSH identifiers are defined, although `PUSH_CODE_LOG_RX_DATA` is not emitted.
 
 **Goal:** let the T-Deck pair with and serve the **official MeshCore phone app** (Android/iOS) over Bluetooth LE, speaking the same companion frame protocol as a stock companion radio. The phone becomes a full client of the T-Deck's radio — sync contacts, read/send DMs and channel messages, configure the radio — *alongside* the built-in LVGL UI.
 
@@ -261,10 +263,13 @@ BLE host-task callbacks (`onWrite`) must only enqueue into the interface RX queu
 
 ### Phased implementation
 
-- **Phase 0 — foundational persistence (lands first, independent of BLE):** add the SPIFFS message log (R1.1) so chat history survives reboot, and make message arrival/send fan out through the dual-consumer hook into *(persistent log + UI)*. Without this, none of the sync requirements can hold.
-- **Phase 1 — MVP (app connects + basic DMs):** wire `SerialBLEInterface`; handshake (`CMD_DEVICE_QUERY`, `CMD_APP_START`); `CMD_GET_CONTACTS`; `CMD_SYNC_NEXT_MESSAGE` + offline queue **as a non-destructive mirror** of the persistent log (R1.2) + `PUSH_CODE_MSG_WAITING`; `CMD_SEND_TXT_MSG` + `RESP_CODE_SENT` + `PUSH_CODE_SEND_CONFIRMED`, **also appending the sent text to the log + UI** (R2 app→T-Deck); `CMD_GET/SET_DEVICE_TIME`; `CMD_GET_BATT_AND_STORAGE`. → app connects, lists contacts, reads & sends DMs, and the T-Deck keeps its own copy.
-- **Phase 2:** channels (`CMD_GET/SET_CHANNEL`, `CMD_SEND_CHANNEL_TXT_MSG`, channel sync); adverts (`CMD_SEND_SELF_ADVERT`, `SET_ADVERT_NAME/LATLON`, `PUSH_CODE_ADVERT/NEW_ADVERT`); radio params (`CMD_SET_RADIO_PARAMS/TX_POWER/TUNING_PARAMS`); contact CRUD (`add/update/remove/share/export/import`).
-- **Phase 3:** repeater login (`CMD_SEND_LOGIN`, `PUSH_CODE_LOGIN_*`), trace / path discovery (`CMD_SEND_TRACE_PATH`, `CMD_RESET_PATH`), telemetry, message signing (`CMD_SIGN_*`), private-key export/import, factory reset, and the flood-scope commands (`CMD_SET_DEFAULT_FLOOD_SCOPE` etc.) — which tie into the [Regions](#regions--companion-flood-scope--implemented) feature.
+- **✅ Phase 0 — foundational persistence:** SPIFFS message history and dual-consumer fan-out are implemented.
+- **✅ Phase 1 — MVP:** BLE transport, handshake, contacts, non-destructive offline sync, DMs, time, and battery/storage commands are implemented.
+- **✅ Phase 2:** channels, adverts, radio parameters, and contact CRUD are implemented.
+- **✅ Phase 3:** repeater login, trace/path discovery, telemetry, signing, identity import/export, factory reset, binary/anonymous requests, and flood-scope commands are implemented.
+
+The remaining companion work is compatibility validation and the explicitly
+documented exceptions above, not unfinished implementation phases.
 
 ### File-by-file plan
 
@@ -330,4 +335,4 @@ See [`docs/LAUNCHER_ROADMAP.md`](LAUNCHER_ROADMAP.md) and [`docs/KNOWN_ISSUES.md
 
 ---
 
-*Last reviewed: 2026-07-14 against companion firmware v1.15.0 and dev branch. All previously tracked features are ✅ implemented; declined items remain above for reference.*
+*Last reviewed: 2026-07-18 against companion firmware v1.15.0 and dev branch. All previously tracked features are ✅ implemented; declined items and narrow protocol exceptions remain above for reference.*

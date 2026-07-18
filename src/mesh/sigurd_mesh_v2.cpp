@@ -137,7 +137,18 @@ namespace mesh {
 
     int SigurdMeshV2::exportSelfContact(const char* name, uint8_t* out, size_t out_cap) {
         if (!out || out_cap == 0) return 0;
-        ::mesh::Packet* pkt = createSelfAdvert(name ? name : "");
+        const sigurdos::NodePrefs& p = sigurdos::prefs_get();
+        ::mesh::Packet* pkt = nullptr;
+        if (p.advert_loc_policy != 0 && sigurdos_gps_has_fix()) {
+            pkt = createSelfAdvert(name ? name : "", sigurdos_gps_latitude(),
+                                   sigurdos_gps_longitude());
+        } else if (p.advert_loc_policy != 0 && p.advert_location_valid) {
+            pkt = createSelfAdvert(name ? name : "",
+                                   (double)p.advert_lat / 1000000.0,
+                                   (double)p.advert_lon / 1000000.0);
+        } else {
+            pkt = createSelfAdvert(name ? name : "");
+        }
         if (!pkt) return 0;
         pkt->header |= ROUTE_TYPE_FLOOD;
         uint8_t encoded[SIGURDOS_ADVERT_BLOB_MAX_LEN];
@@ -1567,6 +1578,27 @@ namespace mesh {
         uint8_t app_len = builder.encodeTo(app);
         ::mesh::Packet* pkt = createAdvert(self_id, app, app_len);
         sendAdvertImpl(pkt, apply_default_scope);
+    }
+
+    bool SigurdMeshV2::broadcastAdvertScoped(const char* name, uint8_t adv_type) {
+        AdvertDataBuilder builder(adv_type, name);
+        uint8_t app[MAX_ADVERT_DATA_SIZE];
+        uint8_t app_len = builder.encodeTo(app);
+        ::mesh::Packet* pkt = createAdvert(self_id, app, app_len);
+        if (!pkt) return false;
+        sendScopedImpl(pkt, 0);
+        return true;
+    }
+
+    bool SigurdMeshV2::broadcastAdvertScoped(const char* name, double lat, double lon,
+                                             uint8_t adv_type) {
+        AdvertDataBuilder builder(adv_type, name, lat, lon);
+        uint8_t app[MAX_ADVERT_DATA_SIZE];
+        uint8_t app_len = builder.encodeTo(app);
+        ::mesh::Packet* pkt = createAdvert(self_id, app, app_len);
+        if (!pkt) return false;
+        sendScopedImpl(pkt, 0);
+        return true;
     }
 
     float SigurdMeshV2::getPacketSNR() const {

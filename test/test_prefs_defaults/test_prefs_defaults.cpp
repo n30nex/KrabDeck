@@ -49,7 +49,7 @@ TEST(PrefsDefaultsTest, IdentityAndPrivacyDefaultsAreDeterministic) {
 
     EXPECT_STREQ("SigurdOS T-Deck", prefs.node_name);
     EXPECT_EQ('\0', prefs.node_name[sizeof(prefs.node_name) - 1]);
-    EXPECT_FALSE(prefs.share_location);
+    EXPECT_EQ(0, prefs.advert_loc_policy);
     EXPECT_FALSE(prefs.gps_enabled);
     EXPECT_EQ(5, prefs.gps_interval);
     EXPECT_EQ(0u, prefs.device_pin);

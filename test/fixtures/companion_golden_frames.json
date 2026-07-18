@@ -3,7 +3,7 @@
   "source": {
     "path": "lib/meshcore/examples/companion_radio/MyMesh.cpp",
     "sha256": "a363d3fcc8c0529bbc0a58577924d964d5f11b174d729543be69c3a7ab26208d",
-    "submodule_commit": "60ea4a91bf14363e837037a79ce1bff7fa37483f"
+    "submodule_commit": "516ba4aef02adc9a73c568cab968834c60a06ae4"
   },
   "frames": [
     {"name": "app_start", "direction": "host_to_device", "symbol": "CMD_APP_START", "hex": "0100000000000000"},

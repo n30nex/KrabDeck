@@ -164,6 +164,8 @@ bool sendAdvert(bool apply_default_scope = false);
 uint32_t getLastAdvertTime();
 bool     getLastAdvertSuccess();
 bool     getLastAdvertUsedGps();
+// Coordinated checkpoint for preferences, identity, contacts, channels, and
+// any dirty region map state.
 bool saveState();
 bool saveChannels();
 void loadChannels();

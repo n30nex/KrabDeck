@@ -103,6 +103,14 @@ TEST_F(PrefsTest, PathHashModeRoundTripsThroughPrefsSaveAndLoad) {
     EXPECT_EQ(1, loaded.path_hash_mode);
 }
 
+TEST_F(PrefsTest, CorruptPathHashModeClampsToDefault) {
+    EXPECT_EQ(0, sigurdos::detail::normalizePathHashMode(0));
+    EXPECT_EQ(1, sigurdos::detail::normalizePathHashMode(1));
+    EXPECT_EQ(2, sigurdos::detail::normalizePathHashMode(2));
+    EXPECT_EQ(0, sigurdos::detail::normalizePathHashMode(3));
+    EXPECT_EQ(0, sigurdos::detail::normalizePathHashMode(255));
+}
+
 TEST_F(PrefsTest, AirtimeFactorAndMultiAckCountRoundTripThroughPrefs) {
     sigurdos::NodePrefs saved;
     saved.set_defaults();

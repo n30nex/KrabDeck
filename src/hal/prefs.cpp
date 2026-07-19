@@ -139,8 +139,8 @@ bool prefs_load(NodePrefs& p) {
     p.advert_interval_h = nvs.getUShort("adv_dur", 0);
     p.advert_type = nvs.getUChar("adv_type", 1);
     p.theme_id = nvs.getUChar("theme", 0);
-    p.path_hash_mode = nvs.getUChar("phash_mode", 0);
-    if (p.path_hash_mode > 2) p.path_hash_mode = 0;  // clamp (mode 3 reserved)
+    p.path_hash_mode = detail::normalizePathHashMode(
+        nvs.getUChar("phash_mode", 0));
     p.multi_acks = nvs.getUChar("multi_ack", 0);
     p.buzzer_quiet = nvs.getBool("buzz_q", false);
     p.gps_enabled = nvs.getBool("gps_en", false);

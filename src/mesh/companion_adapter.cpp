@@ -32,6 +32,7 @@
 
 #include <Arduino.h>
 #include <SPIFFS.h>
+#include <cstdlib>
 #include <new>
 #include <esp_heap_caps.h>
 #include <esp_random.h>
@@ -48,7 +49,7 @@ using sigurdos::mesh::meshRtcTimeUnique;
 using sigurdos::mesh::meshRadioTxAllowed;
 using sigurdos::mesh::meshQueuePushOutgoing;
 using sigurdos::mesh::meshStoreOutgoingMessage;
-using sigurdos::mesh::meshSaveSelfIdentity;
+using sigurdos::mesh::meshImportSelfIdentity;
 using sigurdos::mesh::formatDmConversation;
 
 // Local shorthand for the wrapper-owned mesh instance (was the file-scope
@@ -230,7 +231,7 @@ public:
         out.advert_type = p.advert_type;
         out.tx_power_dbm = p.tx_power_dbm;
         out.max_tx_power_dbm = 22;
-        if (p.share_location) {
+        if (p.advert_loc_policy) {
             if (sigurdos_gps_has_fix()) {
                 out.lat = (int32_t)(sigurdos_gps_latitude() * 1000000.0f);
                 out.lon = (int32_t)(sigurdos_gps_longitude() * 1000000.0f);
@@ -240,7 +241,7 @@ public:
             }
         }
         out.multi_acks = p.multi_acks;
-        out.advert_loc_policy = p.share_location ? 1 : 0;
+        out.advert_loc_policy = p.advert_loc_policy;
         out.telemetry_modes = p.telemetry_modes;
         out.manual_add_contacts = p.manual_add_contacts;
         out.freq_khz = (uint32_t)(p.freq * 1000.0f);
@@ -420,11 +421,11 @@ public:
         if (!mesh_ptr()) return false;
         const sigurdos::NodePrefs& p = sigurdos::prefs_get();
         ::mesh::Packet* pkt;
-        if (p.share_location && sigurdos_gps_has_fix()) {
+        if (p.advert_loc_policy && sigurdos_gps_has_fix()) {
             pkt = mesh_ptr()->createSelfAdvert(meshOwnName(),
                 (double)sigurdos_gps_latitude(),
                 (double)sigurdos_gps_longitude());
-        } else if (p.share_location && p.advert_location_valid) {
+        } else if (p.advert_loc_policy && p.advert_location_valid) {
             pkt = mesh_ptr()->createSelfAdvert(meshOwnName(),
                 (double)p.advert_lat / 1000000.0,
                 (double)p.advert_lon / 1000000.0);
@@ -450,7 +451,7 @@ public:
         if (lat < -90000000 || lat > 90000000) return false;
         if (lon < -180000000 || lon > 180000000) return false;
         sigurdos::NodePrefs p = sigurdos::prefs_get();
-        p.share_location = true;
+        p.advert_loc_policy = 1;
         p.advert_location_valid = true;
         p.advert_lat = lat;
         p.advert_lon = lon;
@@ -492,11 +493,8 @@ public:
             sigurdos::radio_profile_set_custom(proposed);
         }
 
-        uint32_t repeat_freq_khz = 0;
         if (client_repeat != 0 &&
-            (!sigurdos::radio_profile_repeat_frequency_khz(proposed,
-                                                           &repeat_freq_khz) ||
-             repeat_freq_khz != freq_khz)) {
+            !sigurdos::radio_profile_repeat_frequency_allowed(freq_khz)) {
             return false;
         }
 
@@ -560,26 +558,13 @@ public:
     }
 
     bool importPrivateKey(const uint8_t* key64) override {
-        if (!mesh_ptr() || !key64) return false;
-        if (!::mesh::LocalIdentity::validatePrivateKey(key64)) return false;
-        // Stop keep-alives before replacing the identity or contact table.
-        // Clearing only the UI login entries leaves BaseChatMesh connection
-        // slots alive with secrets derived from the previous identity.
-        mesh_ptr()->invalidateAllLoginSessions();
-        mesh_ptr()->self_id.readFrom(key64, PRV_KEY_SIZE);
-        meshSaveSelfIdentity();
-        // Invalidate ECDH shared secrets derived from the old identity and
-        // reload persisted contacts with the new identity (matches upstream
-        // MyMesh::CMD_IMPORT_PRIVATE_KEY — resetContacts + loadContacts).
-        mesh_ptr()->resetAllContacts();
-        sigurdos::mesh::loadContacts();
-        return true;
+        return meshImportSelfIdentity(key64);
     }
 
     void setOtherParams(const CompanionOtherParams& op) override {
         sigurdos::NodePrefs p = sigurdos::prefs_get();
         if (op.telemetry_present) p.telemetry_modes = op.telemetry_modes;
-        if (op.loc_policy_present) p.share_location = (op.advert_loc_policy != 0);
+        if (op.loc_policy_present) p.advert_loc_policy = op.advert_loc_policy;
         // A-11: this is a retransmission count, not a boolean.
         if (op.multi_acks_present) p.multi_acks = op.multi_acks;
         p.manual_add_contacts = op.manual_add_contacts;
@@ -721,16 +706,7 @@ public:
     }
     size_t allowedRepeatFreqRanges(uint32_t* pairs, size_t max_pairs) const override {
         if (!pairs || max_pairs == 0) return 0;
-
-        uint32_t frequency_khz = 0;
-        if (!sigurdos::radio_profile_repeat_frequency_khz(
-                sigurdos::prefs_get(), &frequency_khz)) {
-            return 0;
-        }
-
-        pairs[0] = frequency_khz;
-        pairs[1] = frequency_khz;
-        return 1;
+        return sigurdos::radio_profile_repeat_frequency_ranges(pairs, max_pairs);
     }
 
     // ── Flood scope (companion regions) ──────────────────────
@@ -930,8 +906,9 @@ public:
     }
     int getCustomVars(char* out, size_t out_cap) const override {
         const sigurdos::NodePrefs& p = sigurdos::prefs_get();
-        int n = snprintf(out, out_cap, "gps:%d,gps_interval:%d",
-                         p.gps_enabled ? 1 : 0, (int)p.gps_interval);
+        int n = snprintf(out, out_cap, "gps:%d,gps_interval:%lu",
+                         p.gps_enabled ? 1 : 0,
+                         (unsigned long)p.gps_interval);
         return (n > 0 && (size_t)n < out_cap) ? n : 0;
     }
     bool setCustomVar(const char* name, const char* value) override {
@@ -942,11 +919,11 @@ public:
             sigurdos::prefs_set(p);
             return true;
         } else if (strcmp(name, "gps_interval") == 0) {
-            int iv = atoi(value);
-            if (iv >= 0 && iv <= 86400) {
-                p.gps_interval = iv < 5 ? 5 : (uint16_t)iv;
-                sigurdos::prefs_set(p);
-                return true;
+            char* end = nullptr;
+            const unsigned long interval = std::strtoul(value, &end, 10);
+            if (value[0] != '\0' && end && *end == '\0' && interval <= 86400UL) {
+                p.gps_interval = (uint32_t)interval;
+                return sigurdos::prefs_set(p);
             }
         }
         return false;
@@ -1204,6 +1181,11 @@ static void bleValidationEmit(bool) {}
 #endif
 
 // ── Adapter lifecycle (called from mesh_wrapper.cpp) ─────────────────
+
+void sigurdos::mesh::companionAdapterIdentityChanged()
+{
+    if (g_companion_bridge_ptr) g_companion_bridge_ptr->onIdentityChanged();
+}
 
 void sigurdos::mesh::companionAdapterInit()
 {

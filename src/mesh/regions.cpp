@@ -321,13 +321,8 @@ const char* getDefaultScopeName() {
     return def ? def->name : nullptr;
 }
 
-bool setDefaultScope(const char* name) {
+static bool setDefaultScopeInMemory(const char* name) {
     if (!g_region_map) return false;
-
-    ::RegionEntry* previous = g_region_map->getDefaultRegion();
-    const bool changed = (!previous && name && name[0]) ||
-        (previous && (!name || !name[0] || strcmp(name, "<null>") == 0 ||
-                      strcmp(previous->name, name) != 0));
 
     if (!name || !name[0] || strcmp(name, "<null>") == 0) {
         g_region_map->setDefaultRegion(nullptr);
@@ -341,8 +336,11 @@ bool setDefaultScope(const char* name) {
         def->flags &= ~REGION_DENY_FLOOD;  // default scope must allow flood
         g_region_map->setDefaultRegion(def);
     }
+    return true;
+}
 
-    (void)changed;
+bool setDefaultScope(const char* name) {
+    if (!setDefaultScopeInMemory(name)) return false;
     return regionsSave();
 }
 
@@ -355,7 +353,16 @@ const char* getActiveRegion() {
 static bool commitActiveRegionPrefs(const char* name, const char* key_hex,
                                     bool replace_key) {
     if (name && strlen(name) >= sizeof(g_active_name)) return false;
-    NodePrefs np = prefs_get();
+    const NodePrefs previous_prefs = prefs_get();
+    NodePrefs np = previous_prefs;
+    char previous_default[sizeof(g_active_name)]{};
+    const char* previous_default_name = getDefaultScopeName();
+    if (previous_default_name) {
+        strncpy(previous_default, previous_default_name,
+                sizeof(previous_default) - 1);
+    }
+    const bool previous_regions_dirty = g_regions_dirty;
+
     if (name && name[0]) {
         strncpy(np.active_region, name, sizeof(np.active_region) - 1);
         np.active_region[sizeof(np.active_region) - 1] = '\0';
@@ -372,6 +379,18 @@ static bool commitActiveRegionPrefs(const char* name, const char* key_hex,
         }
     }
     if (!prefs_set(np)) return false;
+
+    // RegionMap is the canonical reboot-time source. Keep its persisted
+    // default in lockstep with the compatibility preference used at runtime.
+    if (!setDefaultScope(name)) {
+        // Atomic region persistence leaves the previous live file intact on
+        // failure. Restore the in-memory selection and preference snapshot so
+        // callers do not observe a half-applied scope change.
+        setDefaultScopeInMemory(previous_default_name ? previous_default : nullptr);
+        g_regions_dirty = previous_regions_dirty;
+        prefs_set(previous_prefs);
+        return false;
+    }
 
     if (name && name[0]) {
         strncpy(g_active_name, name, sizeof(g_active_name) - 1);

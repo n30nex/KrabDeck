@@ -51,6 +51,62 @@ static bool pathByteLen(uint8_t path_len, size_t* out_len)
     return true;
 }
 
+static size_t commandMinimumLength(uint8_t cmd)
+{
+    switch (cmd) {
+    case CMD_DEVICE_QUERY: return 2;
+    case CMD_APP_START: return 8;
+    case CMD_SEND_TXT_MSG: return 14;
+    case CMD_SEND_CHANNEL_TXT_MSG: return 7;
+    case CMD_SEND_CHANNEL_DATA: return 5;
+    case CMD_SET_DEVICE_TIME: return 5;
+    case CMD_SET_ADVERT_NAME: return 2;
+    case CMD_SET_ADVERT_LATLON: return 9;
+    case CMD_SET_RADIO_PARAMS: return 11;
+    case CMD_SET_RADIO_TX_POWER: return 2;
+    case CMD_SET_TUNING_PARAMS: return 9;
+    case CMD_GET_CHANNEL: return 2;
+    case CMD_SET_CHANNEL: return 2 + 32 + 16;
+    case CMD_SET_DEVICE_PIN: return 5;
+    case CMD_IMPORT_PRIVATE_KEY: return 65;
+    case CMD_SET_OTHER_PARAMS: return 2;
+    case CMD_SET_PATH_HASH_MODE: return 3;
+    case CMD_SET_AUTOADD_CONFIG: return 2;
+    case CMD_GET_CONTACT_BY_KEY:
+    case CMD_RESET_PATH:
+    case CMD_REMOVE_CONTACT:
+    case CMD_SHARE_CONTACT:
+    case CMD_HAS_CONNECTION:
+    case CMD_LOGOUT:
+        return 1 + SIGURDOS_COMPANION_PUB_KEY_SIZE;
+    case CMD_ADD_UPDATE_CONTACT:
+        return 1 + SIGURDOS_COMPANION_PUB_KEY_SIZE + 2 + 1 +
+               SIGURDOS_COMPANION_PATH_SIZE + 32 + 4;
+    case CMD_IMPORT_CONTACT: return 2 + 32 + 64 + 1;
+    case CMD_REBOOT: return 7;
+    case CMD_FACTORY_RESET: return 6;
+    case CMD_GET_STATS: return 2;
+    case CMD_SET_CUSTOM_VAR: return 4;
+    case CMD_GET_ADVERT_PATH:
+    case CMD_SEND_PATH_DISCOVERY_REQ:
+        return 2 + SIGURDOS_COMPANION_PUB_KEY_SIZE;
+    case CMD_SET_FLOOD_SCOPE_KEY: return 2;
+    case CMD_SIGN_DATA: return 2;
+    case CMD_SEND_LOGIN:
+    case CMD_SEND_STATUS_REQ:
+        return 1 + SIGURDOS_COMPANION_PUB_KEY_SIZE;
+    case CMD_SEND_TELEMETRY_REQ: return 4;
+    case CMD_SEND_BINARY_REQ:
+    case CMD_SEND_ANON_REQ:
+        return 2 + SIGURDOS_COMPANION_PUB_KEY_SIZE;
+    case CMD_SEND_TRACE_PATH: return 11;
+    case CMD_SEND_RAW_DATA: return 6;
+    case CMD_SEND_CONTROL_DATA: return 2;
+    default:
+        return 0;
+    }
+}
+
 } // namespace
 
 void CompanionBridge::begin(BaseSerialInterface* serial, CompanionBridgeHost* host)
@@ -236,11 +292,20 @@ bool CompanionBridge::addToOfflineQueue(uint32_t store_id, bool persistent,
     if (persistent && store_id == 0) return false;
     if (offlineFrameExists(frame, len)) return false;
     if (_offline_len >= OFFLINE_QUEUE_SIZE) {
-        // Persistent messages remain in the message store and will be picked
-        // up by the next page. Do not evict the oldest queued record and make
-        // the companion backlog jump ahead.
+        // Durable text retains strict oldest-first order. A volatile channel
+        // frame may replace only an older volatile frame.
         if (persistent) return false;
-        for (int i = 1; i < _offline_len; i++) _offline[i - 1] = _offline[i];
+        int volatile_index = -1;
+        for (int i = 0; i < _offline_len; ++i) {
+            if (!_offline[i].persistent) {
+                volatile_index = i;
+                break;
+            }
+        }
+        if (volatile_index < 0) return false;
+        for (int i = volatile_index + 1; i < _offline_len; ++i) {
+            _offline[i - 1] = _offline[i];
+        }
         _offline_len--;
     }
     _offline[_offline_len].store_id = store_id;
@@ -687,6 +752,11 @@ bool CompanionBridge::handleFrame(const uint8_t* frame, size_t len)
     _cmd_frame[len] = 0;
 
     const uint8_t cmd = _cmd_frame[0];
+    const size_t minimum_length = commandMinimumLength(cmd);
+    if (minimum_length != 0 && len < minimum_length) {
+        writeErrFrame(ERR_CODE_ILLEGAL_ARG);
+        return true;
+    }
     if (cmd == CMD_DEVICE_QUERY && len >= 2) {
         _app_target_ver = _cmd_frame[1];
         int i = 0;
@@ -775,10 +845,10 @@ bool CompanionBridge::handleFrame(const uint8_t* frame, size_t len)
             // Dequeue only after the transport accepts the complete frame.
             size_t written = _serial->writeFrame(_out_frame, out_len);
             if (written == (size_t)out_len) {
-                if (persistent) {
-                    sigurdos::mesh::messageStoreMarkCompanionSent(store_id);
+                if (!persistent ||
+                    sigurdos::mesh::messageStoreMarkCompanionSent(store_id)) {
+                    removeFirstOfflineFrame();
                 }
-                removeFirstOfflineFrame();
             }
         } else {
             writeNoMoreMessages();
@@ -883,7 +953,7 @@ bool CompanionBridge::handleFrame(const uint8_t* frame, size_t len)
     if (cmd == CMD_SET_DEVICE_TIME && len >= 5) {
         uint32_t secs = 0;
         std::memcpy(&secs, &_cmd_frame[1], 4);
-        if (_host->setCurrentTime(secs)) writeOKFrame();
+        if (secs >= _host->currentTime() && _host->setCurrentTime(secs)) writeOKFrame();
         else writeErrFrame(ERR_CODE_ILLEGAL_ARG);
         return true;
     }
@@ -1592,7 +1662,12 @@ bool CompanionBridge::handleFrame(const uint8_t* frame, size_t len)
         writeErrFrame(ERR_CODE_UNSUPPORTED_CMD); return true;
     }
 
-    writeErrFrame(ERR_CODE_UNSUPPORTED_CMD);
+    // Reaching the fallback with a command that has a defined frame shape
+    // means its length passed preflight but another required field was
+    // malformed (for example, a non-zero reserved byte).
+    writeErrFrame(commandMinimumLength(cmd) != 0
+        ? ERR_CODE_ILLEGAL_ARG
+        : ERR_CODE_UNSUPPORTED_CMD);
     return true;
 }
 

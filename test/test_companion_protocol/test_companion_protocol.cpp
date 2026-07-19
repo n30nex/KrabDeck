@@ -1767,7 +1767,7 @@ TEST_F(CompanionProtocolTest, PathDiscoveryCommandRejectsNonzeroReservedByte) {
     EXPECT_FALSE(host.path_discovery_called);
     ASSERT_EQ(serial.writes.size(), 1U);
     EXPECT_EQ(serial.writes[0][0], cc::RESP_CODE_ERR);
-    EXPECT_EQ(serial.writes[0][1], cc::ERR_CODE_UNSUPPORTED_CMD);
+    EXPECT_EQ(serial.writes[0][1], cc::ERR_CODE_ILLEGAL_ARG);
 }
 
 TEST_F(CompanionProtocolTest, CustomVarsUseOfficialNameValueWireFormat) {

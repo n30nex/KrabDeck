@@ -313,8 +313,26 @@ void sigurdos::mesh::meshRadioDriverStats(sigurdos::mesh::MeshRadioDriverStats& 
     out.packets_recv_errors = radio_driver ? radio_driver->getPacketsRecvErrors() : 0;
 }
 
-void sigurdos::mesh::meshSaveSelfIdentity() {
-    if (g_mesh) saveIdentity(g_mesh->self_id);
+bool sigurdos::mesh::meshImportSelfIdentity(const uint8_t* private_key) {
+    if (!g_mesh || !private_key ||
+        !::mesh::LocalIdentity::validatePrivateKey(private_key)) {
+        return false;
+    }
+
+    ::mesh::LocalIdentity candidate;
+    candidate.readFrom(private_key, PRV_KEY_SIZE);
+
+    // Commit the candidate before changing any live identity-derived state.
+    // If storage fails, sessions, contacts, and the running identity remain
+    // exactly as they were.
+    if (!saveIdentity(candidate)) return false;
+
+    g_mesh->invalidateAllLoginSessions();
+    g_mesh->self_id = candidate;
+    g_mesh->resetAllContacts();
+    loadContacts();
+    companionAdapterIdentityChanged();
+    return true;
 }
 
 uint32_t sigurdos::mesh::meshStoreOutgoingMessage(const char* conversation, const char* text,
@@ -2171,13 +2189,7 @@ bool importIdentity(const char* hex_privkey) {
     uint8_t buf[PRV_KEY_SIZE];
     int n = SigurdMeshV2::hexToBytes(hex_privkey, buf, sizeof(buf));
     if (n != PRV_KEY_SIZE) return false;
-    // Validate the private key using MeshCore's validation (ECDH check)
-    if (!::mesh::LocalIdentity::validatePrivateKey(buf)) return false;
-    // Re-key the node — readFrom with PRV_KEY_SIZE will derive pub_key from prv_key
-    g_mesh->self_id.readFrom(buf, PRV_KEY_SIZE);
-    // Persist the new identity to SPIFFS
-    saveIdentity(g_mesh->self_id);
-    return true;
+    return meshImportSelfIdentity(buf);
 }
 
 // ── URI import helpers ────────────────────────

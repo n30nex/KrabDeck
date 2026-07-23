@@ -50,6 +50,16 @@ bool prefs_set_ble_enabled(bool enabled) {
     return true;
 }
 
+bool clearSavedNetworkCredentials() {
+    detail::clearSavedNetworkCredentialFields(g_prefs);
+    return true;
+}
+
+bool saveRepeaterPassword(const char*, const char*) { return true; }
+bool loadRepeaterPassword(const char*, char*, size_t) { return false; }
+bool removeRepeaterPassword(const char*) { return true; }
+bool clearRepeaterPasswords() { return true; }
+
 int loadChatScopePreferences(ChatScopePreference*, int) { return 0; }
 bool saveChatScopePreference(const char*, const char*, const uint8_t[16]) { return true; }
 bool removeChatScopePreference(const char*) { return true; }

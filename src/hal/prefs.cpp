@@ -273,6 +273,15 @@ bool prefs_set_ble_enabled(bool enabled) {
 #endif
 }
 
+bool clearSavedNetworkCredentials() {
+    NodePrefs candidate = prefs_get();
+    detail::clearSavedNetworkCredentialFields(candidate);
+    if (!prefs_set(candidate)) return false;
+    return clearRepeaterPasswords();
+}
+
+// ── Repeater password storage ─────────────────────────────────────────
+
 // ── Named chat routing scopes ──────────────────────────────────────────
 static constexpr const char* CHAT_SCOPE_NS = "chat_scopes";
 static constexpr int MAX_CHAT_SCOPES = 32;
@@ -502,6 +511,14 @@ bool removeRepeaterPassword(const char* name) {
     }
     nvs.end();
     return false;
+}
+
+bool clearRepeaterPasswords() {
+    Preferences nvs;
+    if (!nvs.begin(PW_NS, false)) return false;
+    const bool cleared = nvs.clear();
+    nvs.end();
+    return cleared;
 }
 
 } // namespace sigurdos

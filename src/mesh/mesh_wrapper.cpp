@@ -2137,7 +2137,7 @@ void shutdown()
         });
 }
 
-void factoryReset()
+bool factoryReset()
 {
     // Save identity in case we need it for rollback, then wipe everything
     if (g_mesh) saveIdentity(g_mesh->self_id);
@@ -2180,6 +2180,7 @@ void factoryReset()
     // Reboot — on next boot, init() will find no prefs and no identity,
     // so it will use defaults and generate a fresh identity
     ESP.restart();
+    return true;  // unreachable but satisfies bool return type
 }
 
 int getPacketLogCount() { return pkt_log_count; }

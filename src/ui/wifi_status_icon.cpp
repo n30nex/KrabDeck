@@ -2,6 +2,7 @@
 
 #include "wifi_status_icon.h"
 
+#include "screens.h"
 #include "theme.h"
 #include "../hal/wifi_ota.h"
 

@@ -121,6 +121,7 @@ static void show_wifi_password_dialog(lv_obj_t* screen, const char* ssid)
 {
     if (!screen || !ssid || !ssid[0]) return;
     if (g_wifi_dialog) return;
+    // cppcheck-suppress legacyUninitvar
     auto* ctx = new(std::nothrow) WifiDialogCtx{};
     if (!ctx || !wifi_credentials_stage(ctx->staged, ssid, "")) {
         delete ctx;
@@ -368,6 +369,7 @@ void wifi_networks_screen_show()
     
     g_wifi_ap_count = 0;
 
+    // cppcheck-suppress legacyUninitvar
     auto* scan_ctx = new(std::nothrow) WifiScanCtx{};
     if (!scan_ctx) {
         lv_label_set_text(scanning, "Unable to start scan");

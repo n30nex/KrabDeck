@@ -87,7 +87,7 @@ class PlatformIODebugConfigTests(unittest.TestCase):
                 self.assertIn("-UNDEBUG", flags)
                 self.assertNotIn("NDEBUG", macros)
                 self.assertEqual(macros.count("CORE_DEBUG_LEVEL"), 1)
-                expected_level = 0 if environment in SILENT_DEBUG_ENVIRONMENTS else 5
+                expected_level = 0 if environment in SILENT_DEBUG_ENVIRONMENTS else 2
                 self.assertIn(f"-DCORE_DEBUG_LEVEL={expected_level}", flags)
 
     def test_controlled_radio_macros_have_one_effective_definition(self) -> None:

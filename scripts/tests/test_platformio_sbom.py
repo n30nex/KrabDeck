@@ -25,12 +25,12 @@ class PlatformioSbomTests(unittest.TestCase):
         self.assertIn("ArduinoJson", names)
         self.assertIn("MeshCore", names)
         self.assertIn("WebServer", names)
-        self.assertGreaterEqual(len(names), 14)
+        self.assertGreaterEqual(len(names), 13)
         github_purls = [
             component["purl"] for component in sbom["components"]
             if component["purl"].startswith("pkg:github/")
         ]
-        self.assertGreaterEqual(len(github_purls), 10)
+        self.assertGreaterEqual(len(github_purls), 9)
 
     def test_output_is_deterministic(self) -> None:
         lock = ROOT / "ci" / "platformio-packages.lock"

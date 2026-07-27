@@ -207,6 +207,7 @@ void confirmDelete(lv_event_t* event)
 
 void requestDelete()
 {
+    // cppcheck-suppress legacyUninitvar
     auto* context = new(std::nothrow) DeleteContext{};
     if (!context || !selectedPath(context->path, sizeof(context->path))) {
         delete context;

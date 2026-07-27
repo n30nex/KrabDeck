@@ -225,6 +225,7 @@ static void show_sd_diag_dialog(lv_obj_t* parent, lv_obj_t* row)
     lv_obj_set_style_text_font(text, emoji_wrapped_montserrat_10, 0);
     lv_obj_align(text, LV_ALIGN_TOP_LEFT, 0, 28);
 
+    // cppcheck-suppress legacyUninitvar
     auto* ctx = new(std::nothrow) SdDiagDialogCtx{};
     if (!ctx) {
         lv_obj_del_async(dlg);

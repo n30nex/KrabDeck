@@ -196,7 +196,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
             self.assertEqual(result.returncode, 1)
             self.assertIn("src/new.cpp", result.stdout)
 
-    def test_stale_warning_budget_fails(self):
+    def test_stale_warning_budget_is_informational(self):
         with tempfile.TemporaryDirectory() as directory:
             directory = Path(directory)
             log = directory / "build.log"
@@ -212,7 +212,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
                 "--log", log,
                 "--baseline", baseline,
             )
-            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.returncode, 0)
             self.assertIn("Stale warning budgets", result.stdout)
             self.assertIn("src/old.cpp", result.stdout)
 

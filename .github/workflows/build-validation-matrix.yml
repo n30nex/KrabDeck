@@ -51,6 +51,8 @@ jobs:
           - env: SigurdOS_TDeck_companion_usb
           - env: SigurdOS_TDeck_gps_validation
           - env: SigurdOS_TDeck_gps_validation_wifi
+          # ESP32-only compile/link probe
+          - env: SigurdOS_TDeck_esp32_components
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

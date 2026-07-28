@@ -28,7 +28,8 @@ If a device PIN is configured (`NodePrefs::device_pin != 0`) and the PIN grace p
 |------|---------|
 | `src/ui/screens/screen_settings.cpp` | The category hub — `settings_screen_show()`, PIN gate, category rows |
 | `src/ui/screens/screen_settings_radio.cpp` | Radio / Mesh sub-screen — RF summary row plus mesh behavior settings |
-| `src/ui/screens/screen_settings_gps.cpp` | GPS / Location sub-screen — fix status, GPS enable, poll interval, location sharing |
+| `src/ui/screens/screen_settings_gps.cpp` | GPS / Location sub-screen — fix status, GPS enable, poll interval, location sharing, track log recording |
+| `src/ui/screens/screen_file_browser.cpp` | SD Card File Browser — nested navigation, file preview, copy, delete |
 | `src/ui/screens/screen_settings_display.cpp` | Display / UI sub-screen — keyboard/display brightness, auto-off, chat history cap, theme |
 | `src/ui/screens/screen_settings_system.cpp` | System sub-screen — name, SD, date/time, wizard, PIN, WiFi credentials, OTA, power controls, version |
 | `src/ui/screens/screen_radio_setup.cpp` | Radio Setup screen — frequency presets, SF/BW/CR/TX power, multi-ACK toggle, Custom RF |
@@ -99,7 +100,23 @@ When `NodePrefs::configured == false`, the RF summary row shows `Radio: NOT CONF
 | `GPS: Fix acquired / No fix` | Read-only status from `sigurdos_gps_has_fix()` |
 | `GPS: ON/OFF` | Enables/disables the GPS module (`NodePrefs::gps_enabled`) |
 | `GPS interval` | Published position-update interval; UART acquisition remains continuous while initialized |
-| `Sync time from GPS` | Temporarily requests foreground GPS cadence (200 ms) for up to 60 seconds. A valid dated fix updates the system RTC and MeshCore time. Does not enable background GPS. |
+### Track Log Recording
+
+When a GPS fix is available, the device can record a breadcrumb track log
+rendered as a path overlay on the Map screen (see [MAP_SCREEN.md](MAP_SCREEN.md)):
+
+| Row | Action / persistence |
+|-----|----------------------|
+| `Track log: ON/OFF` | Enables/disables GPS breadcrumb recording (`NodePrefs::track_log_enabled`) |
+| `Track interval: <N>s` | Recording interval in seconds (1–3600, default 15) |
+| `Clear on start: ON/OFF` | Whether to clear the previous track when recording starts |
+| `Waypoints: <N>` | Read-only count of recorded points (up to 2048) |
+| `Distance: <N>m` | Cumulative haversine distance of the recorded track |
+| `Duration: <N>s` | Elapsed time between first and last waypoint |
+
+When track logging is enabled, GPS demand uses the minimum of the track
+interval and the configured GPS position interval — whichever is shorter —
+to ensure the track log receives timely fixes.
 | `Share location: ON/OFF` | Include coordinates in adverts (`NodePrefs::advert_loc_policy`) |
 
 ---
@@ -143,7 +160,7 @@ Same +/- pattern. Steps by 16, clamped to `[CHAT_MSGS_MIN_CAP, CHAT_MSGS_MAX]` =
 | Row | Action / persistence |
 |-----|----------------------|
 | `Name: <node_name>` | Read-only (set via onboarding) |
-| `SD Card: Mounted / Not mounted` | Read-only status from `sigurdos_sdcard_mounted()` |
+| `SD Card: Mounted / Not mounted` | Read-only status from `sigurdos_sdcard_mounted()`; tap to open **File Browser** |
 | `Date: YYYY-MM-DD` / `Time: HH:MM` | Open the date/time dialog (below) |
 | `Time source: <source>, <age>` | Shows Manual, Companion, GPS, or Unknown; tap to refresh the age |
 | `Run Setup Wizard` | `navigate_to(Screen::Onboarding)` |

@@ -466,6 +466,69 @@ Values are adaptive via `src/ui/responsive.h`:
 
 ---
 
+## Message Search / Filter (PR #1437)
+
+The Chat screen includes a **global message search** that indexes the entire
+durable message store and returns real-time filtered results across all
+conversations.
+
+### Source Files
+
+| File | Purpose |
+|------|---------|
+| `src/ui/screens/screen_message_search.cpp` | Search screen — input bar, result list, navigation |
+| `src/ui/message_search.h` | Search model — PSRAM indexing, substring matching, snippet extraction |
+| `src/mesh/message_store.h` | Durable message store — source of truth for search index |
+
+### Entry Point
+
+The search screen is reached from the **Chat screen's channel list** via a
+search action button in the top bar. It opens as a full-screen view
+(`Screen::MessageSearch`) overlaid on the Chat screen.
+
+### Architecture
+
+```
+Message Search Screen
+├── Input bar — real-time filter textarea (auto-focused on entry)
+├── Result list — up to 40 matching rows, each showing:
+│   ├── Conversation name (e.g. "#general", "DM: Alice")
+│   ├── Sender name
+│   ├── Snippet — 10 bytes of context + matched text, highlighted
+│   └── Timestamp
+└── Status footer — "N results" or "No matches"
+```
+
+### Indexing Strategy
+
+- On screen entry, the entire `message_store` is loaded into a PSRAM scratch
+  buffer (up to 512 records, `MESSAGE_STORE_MAX_RECORDS`)
+- If PSRAM is exhausted, the fallback uses internal DRAM
+- Search is a **linear scan** with case-insensitive substring matching against
+  the message text field
+- Results are capped at 40 rows (`MS_MAX_RESULTS`) to prevent unbounded LVGL
+  widget creation
+- The scratch buffer is freed when the screen is deleted
+
+### Interaction
+
+| Action | Result |
+|--------|--------|
+| Type in input bar | Real-time filtering as text changes |
+| Tap a result row | Navigates to the Chat screen and opens the conversation containing that message |
+| Back button | Returns to the Chat screen channel list |
+
+### Display Format
+
+Each result row shows:
+- **Conversation label** in accent cyan (from `g_ms_result_conv[]`)
+- **Sender name** in white (`TEXT_PRIMARY`)
+- **Snippet** in secondary text (`TEXT_SECONDARY`) with the first 10 context
+  bytes before the match substring
+- The matched substring within the snippet is highlighted in accent cyan
+
+---
+
 ## Public API Reference
 
 ### `chat_screen_show()`

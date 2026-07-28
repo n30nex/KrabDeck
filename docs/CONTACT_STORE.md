@@ -296,8 +296,34 @@ Helper functions (`appendInt`, `appendRecord`, `appendVersionedHeader`, `writeBy
 
 ---
 
+## IX. Stable Public-Key Contact Identification (PR #1443)
+
+Since PR #1443, SigurdOS identifies contacts by their canonical 32-byte Ed25519
+public key rather than ambiguous display names. Key behaviours:
+
+- **Lookup by public key**: `searchPeersByHash()` matches the first 8 bytes of
+  the contact's public-key hash. A display-name match is never accepted for
+  cryptographic operations — only the stable public-key identity gates DM
+  encryption and routing.
+- **Duplicate display names are permitted**: Two contacts may share the same name
+  as long as their public keys differ. The UI disambiguates them by showing a
+  short public-key prefix suffix when a collision is detected.
+- **Canonical ID format**: The public-key hex prefix (8 characters) is the
+  stable, wire-safe identifier. Companion commands, terminal commands, and URI
+  exports all use this format.
+- **Contact resolution order**: DM send operations resolve a bare name by first
+  searching for an exact public-key prefix match, then falling back to a display
+  name match (with collision rejection). Callers that already hold a
+  `ContactInfo*` should use the direct `ContactInfo` overload to avoid
+  ambiguity entirely.
+
+This change makes contact identities stable across node renames — a node that
+changes its display name retains the same cryptographic identity and existing
+DM sessions remain valid.
+
 ## References
 
 - PR #598 — `contact_store` module extraction from `mesh_wrapper`.
 - PR #603 — Versioned binary file format with magic, version byte, legacy detection, and downgrade safety.
+- PR #1443 — Stable public-key contact identification, duplicate-name support, canonical ID format.
 - [`MESH_NETWORKING.md`](MESH_NETWORKING.md) — Broader mesh layer architecture, including contact discovery and the contact list LRU.

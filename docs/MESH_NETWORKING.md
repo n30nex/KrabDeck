@@ -357,6 +357,22 @@ Contacts now live in BaseChatMesh's contact table (capacity `-D MAX_CONTACTS=350
 3. **Eviction** — `shouldOverwriteWhenFull()` returns true, so a full table overwrites the oldest entry; `onContactsFull()` additionally pushes a companion notification.
 4. **Persistence** — contacts are saved through the versioned contact store (`src/mesh/contact_store.cpp`, magic header + bounds checks).
 
+### Stable Public-Key Contact Identification (PR #1443)
+
+Since PR #1443, **contacts are identified by their canonical 32-byte Ed25519
+public key** rather than by display name. Key behaviours:
+
+| Behaviour | Detail |
+|-----------|--------|
+| **Lookup** | `searchPeersByHash()` matches the first 8 bytes of the public-key hash. Display-name matching is never used for cryptographic operations. |
+| **Duplicate names** | Two contacts may share the same display name if their public keys differ. The UI appends a short key prefix suffix when ambiguity is detected. |
+| **Canonical ID** | The 8-character public-key hex prefix is the stable wire-safe identifier used in companion commands, terminal commands, and URI exports. |
+| **Resolution order** | DM sends resolve a bare name by exact public-key prefix match first, then display name match (rejected on collision). Direct `ContactInfo*` overloads avoid ambiguity. |
+
+This makes contact identity stable across node renames — a node that changes
+its display name retains the same cryptographic identity, and existing DM
+sessions remain valid.
+
 Each BaseChatMesh `ContactInfo` plus SigurdOS wrapper metadata stores:
 
 | Field | Size | Description |

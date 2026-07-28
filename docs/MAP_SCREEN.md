@@ -610,6 +610,82 @@ The map system has **28 dedicated tests** in `test/test_map/test_map.cpp` — 14
 
 ---
 
+## GPS Track Log & Breadcrumb Overlay (PR #1442)
+
+The map screen now renders **GPS breadcrumb track logs** as a visual overlay
+when GPS track logging is enabled. This lets users see their movement path
+directly on the map in real time.
+
+### Architecture
+
+| File | Purpose |
+|------|---------|
+| `src/app/gps_track_log.h` | Track log data structures, haversine distance, point encoding |
+| `src/app/gps_track_log.cpp` | Recording engine — interval timer, point insertion, trim, stats |
+| `src/hal/prefs.h` | 5 new GPS track pref keys (enable, interval, clear-on-start) |
+| `src/ui/screens/screen_settings_gps.cpp` | GPS track log settings UI |
+
+### Track Log Data Model
+
+```cpp
+static constexpr size_t GPS_TRACK_MAX_POINTS = 2048;    // full log
+static constexpr size_t GPS_TRACK_MAP_POINTS = 256;       // decimated map overlay
+
+struct GpsTrackPoint {
+    int32_t latitude_e7;    // latitude × 10^7 (e.g. 515074000 = 51.5074°N)
+    int32_t longitude_e7;   // longitude × 10^7
+    uint32_t timestamp;     // Unix epoch seconds
+};
+```
+
+Points are stored at 7-decimal-place precision using `int32_t` (4 bytes each),
+with a configurable recording interval (default 15 seconds, range 1–3600s).
+
+### Map Breadcrumb Rendering
+
+When GPS track log is enabled and the map screen is visible:
+
+- `sigurdos_map_render_breadcrumbs()` is called after the tile grid is drawn
+- Up to 256 points (decimated from the full 2048-point log) are rendered
+- Each point is projected from lat/lon to screen pixel coordinates using the
+  current Web Mercator viewport
+- Consecutive points are connected with thin lines in accent cyan (`#00BFFF`)
+- The most recent point is drawn as a small filled circle for emphasis
+- Breadcrumbs auto-update on map pan/zoom — they are re-projected each render
+
+### Track Log Recording Controls
+
+Accessible from **Settings → GPS / Location**:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Track Log Enable | Off | Start/stop GPS breadcrumb recording |
+| Recording Interval | 15s | How often a new point is recorded (1–3600s) |
+| Clear on Start | On | Whether to clear the previous track when recording starts |
+
+### Waypoint Stats
+
+The GPS settings screen shows live statistics when a track is active:
+
+| Stat | Description |
+|------|-------------|
+| Waypoints | Total points in the current track log (up to 2048) |
+| Distance | Haversine-calculated cumulative distance in meters |
+| Duration | Elapsed time between first and last recorded point |
+| Started | Timestamp of the first waypoint |
+
+Stats are computed by `gpsTrackStats()` using the haversine formula in
+`gpsTrackDistanceMeters()` from `src/app/gps_track_log.h`.
+
+### GPS Demand Integration
+
+GPS power demand is the minimum of the configured GPS position interval and
+the track log recording interval — whichever is more frequent drives the GPS
+acquisition cadence. When track logging is disabled, GPS demand is determined
+by the GPS interval alone via `gpsTrackGpsDemandInterval()`.
+
+---
+
 ## Related Documents
 
 | Document | Description |

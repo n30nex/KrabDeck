@@ -75,6 +75,25 @@ peer-aware and global exponential advertising backoff, bounded at five minutes.
 A successful authentication or explicitly opening a new pairing window clears
 the counters, preventing a remote permanent lockout.
 
+### Factory Reset BLE Bond Revocation (PR #1415)
+
+Factory reset now actively revokes BLE bonds from previously-paired phones:
+
+1. All bonded peers are enumerated via `esp_ble_get_bond_dev_list()` and
+   removed from the ESP BLE security database with
+   `esp_ble_remove_bond_device()`.
+2. A bond-reset marker is persisted to NVS, signalling that BLE should remain
+   disabled until the purge completes.
+3. BLE advertising is withheld after reset until the bond database is
+   confirmed empty via repeated enumeration.
+4. The operation is crash-safe: if power is lost mid-purge, the next boot
+   detects the incomplete marker, resumes bond revocation, and only enables
+   BLE when the security database is empty.
+
+After a factory reset, previously bonded phones cannot reconnect as
+administrators without pairing again — this is enforced at the ESP-IDF bond
+layer, not just at the application level.
+
 BLE bonds authorize an administrative companion. USB companion mode instead
 trusts physical access to the cable and host; the four-digit device PIN does
 not authenticate that protocol. Factory reset and identity commands inherit

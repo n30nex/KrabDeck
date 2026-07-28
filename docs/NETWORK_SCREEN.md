@@ -219,14 +219,125 @@ identity/contact flow, not Ping Nearby.
 
 ---
 
+## WiFi Radio Ownership Arbitration (PR #1414)
+
+SigurdOS now uses a `wifi_coordinator` module (`src/hal/wifi_coordinator.h`) to
+manage concurrent WiFi radio access. The WiFi radio can only serve one owner at
+a time; the coordinator prevents one screen from disconnecting WiFi while
+another operation (e.g. an OTA update) is in progress.
+
+### Owner Types
+
+| Owner | Description |
+|-------|-------------|
+| `None` | WiFi radio is idle |
+| `Sta` | Station mode — connected to an access point (persistent lease) |
+| `Scan` | WiFi Networks screen performing a site survey |
+| `ApOta` | AP-mode OTA update (`SigurdOS-OTA` AP) |
+| `GitHubOta` | GitHub OTA download |
+
+### Arbitration Rules
+
+- A `Sta` lease may be temporarily suspended by a `Scan` or OTA lease; all
+  other pairings conflict.
+- The coordinator uses a 2-frame depth stack. When a scan/OTA operation
+  releases, the original STA lease is restored.
+- The WiFi Networks screen must call `wifi::acquire(Owner::Scan, ...)` before
+  starting a site survey, and `wifi::release(Owner::Scan)` when done — this
+  ensures an OTA in progress is not interrupted by a UI scan.
+
+### Async Cancellable Site Survey (PR #1435)
+
+The WiFi Networks screen no longer performs a blocking scan. Instead:
+
+- The scan is launched asynchronously via the coordinator
+- The screen polls scan completion with a cancellable timer
+- If the user navigates away, the pending scan is cancelled and WiFi ownership
+  is released
+- This eliminates the multi-second UI freeze that occurred on the old blocking
+  scan path
+
 ## Related Screens
 
-| Screen | Relationship |
-|--------|-------------|
-| **Signal** ([SIGNAL_SCREEN](SIGNAL_SCREEN.md)) | Radio stats (RSSI, SNR, noise) — same radio hardware |
-| **Contacts** (`contacts_screen_show`) | Full contact list (alphabetical, all ages) — tapped to DM |
-| **Packets** (`heard_screen_show`) | Raw packet log with per-packet RSSI/SNR — useful alongside ping diagnostics |
-| **Advertise** (`advertise_screen_show`) | Manual advert broadcast to announce presence on the mesh |
+|| Screen | Relationship |
+||--------|-------------|
+|| **Signal** ([SIGNAL_SCREEN](SIGNAL_SCREEN.md)) | Radio stats (RSSI, SNR, noise) — same radio hardware |
+|| **Contacts** (`contacts_screen_show`) | Full contact list (alphabetical, all ages) — tapped to DM |
+|| **Packets** (`heard_screen_show`) | Raw packet log with per-packet RSSI/SNR — useful alongside ping diagnostics |
+|| **Advertise** (`advertise_screen_show`) | Manual advert broadcast to announce presence on the mesh |
+|| **WiFi Networks** (`screen_wifi_networks.cpp`) | WiFi scan and connect — uses the coordinator for radio arbitration |
+
+---
+
+## Mesh Health Dashboard (PR #1438)
+
+The **Mesh Health Dashboard** (`Screen::MeshDashboard`) provides a real-time
+overview of mesh network health with per-second metric refresh.
+
+### Source Files
+
+| File | Purpose |
+|------|---------|
+| `src/ui/screens/screen_mesh_dashboard.cpp` | Dashboard screen — LVGL cards, bars, 1s timer |
+| `src/ui/mesh_dashboard_metrics.h` | Pure metric-aggregation functions — testable without display or radio |
+
+### Layout
+
+```
+┌──────────────────────────────────┐
+│ ←  Mesh Health              14:32│  top bar
+├──────────────────────────────────┤
+│ ┌────────────┐ ┌────────────┐   │
+│ │  Nodes: 12  │ │ Throughput:│   │  metric cards (2×2 grid)
+│ │   Active    │ │  3.2 pkt/s │   │
+│ └────────────┘ └────────────┘   │
+│ ┌────────────┐ ┌────────────┐   │
+│ │RSSI:-72dBm │ │SNR: +8.2dB │   │
+│ │   Good     │ │   Good     │   │
+│ └────────────┘ └────────────┘   │
+├──────────────────────────────────┤
+│ TX Duty ──── [████░░░░] 23%     │  progress bars
+│ CPU Util ─── [███░░░░░] 31%     │
+│ Nearby Bat ─ [████████] 87%     │
+├──────────────────────────────────┤
+│ SigurdOS T-Deck   ▂▄▆█       72%  │  bottom bar
+└──────────────────────────────────┘
+```
+
+### Metrics Displayed
+
+| Metric | Source | Description |
+|--------|--------|-------------|
+| **Nodes** | Contact list count | Number of known contacts with `rssi != 0` |
+| **Throughput** | Recent packet rate | Packets/sec averaged over the observation window |
+| **Avg RSSI** | Contact list `rssi` values | Mean RSSI of all heard contacts (dBm) |
+| **Avg SNR** | Contact list `snr` values | Mean SNR of all heard contacts (dB) |
+| **TX Duty** | MeshCore duty-cycle budget | Percentage of the configured duty cycle consumed |
+| **CPU Util** | Message store / queue | Utilization proxy based on activity indicators |
+| **Nearby Battery** | Contact telemetry | Average battery % of nearby nodes (when available) |
+
+### Health Status Colours
+
+Each metric is colour-coded by health status defined in `DashboardHealth`:
+
+| Status | Colour | Criteria (RSSI example) |
+|--------|--------|------------------------|
+| `Good` | `ACCENT_GREEN` | RSSI > -85 dBm |
+| `Fair` | `ACCENT_ORANGE` | -105 dBm ≤ RSSI ≤ -85 dBm |
+| `Poor` | `ACCENT_RED` | RSSI < -105 dBm |
+
+### Refresh
+
+The dashboard refreshes every **1 second** (`DASHBOARD_REFRESH_MS = 1000`) via
+an LVGL timer. The timer is started when the screen is shown and cancelled when
+navigating away. All aggregation functions in `mesh_dashboard_metrics.h` are
+pure C++ (no LVGL, no Arduino, no mesh wrapper dependencies) — they can be
+unit-tested on the host without hardware.
+
+### Entry Point
+
+The dashboard is reached from the home screen via a dedicated tile, or from the
+Network/Finder screen via a status button.
 
 ---
 

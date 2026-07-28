@@ -30,11 +30,29 @@ time with `SIGURDOS_ENABLE_PRIVATE_KEY_IMPORT=0` and
 `SIGURDOS_ENABLE_PRIVATE_KEY_EXPORT=0`. A build that exposes export must treat
 the connected BLE peer or USB host as trusted with the node's identity.
 
+## Factory Reset — BLE Bond Revocation (PR #1415)
+
 Factory reset is destructive, clears persisted application state and companion
 credentials, and returns the device to onboarding. The local UI confirms the
 operation. Over BLE it relies on the bonded-administrator boundary; over USB it
-relies only on physical/trusted-host access. After a reset, previously bonded
-phones must not regain an administrative session without pairing again.
+relies only on physical/trusted-host access.
+
+As of PR #1415, factory reset now **actively revokes BLE bonds** from
+previously-paired phones using the ESP-IDF bond-storage APIs:
+
+1. All bonded peers are enumerated and removed from the ESP BLE security
+   database (`esp_ble_remove_bond_device()`).
+2. The bond-reset marker is written to NVS signalling BLE should remain
+   disabled until the purge completes.
+3. BLE advertising is withheld after reset until the bond database is
+   confirmed empty.
+4. The operation is crash-safe: if power is lost mid-purge, the next boot
+   detects the incomplete marker, resumes bond revocation, and only enables
+   BLE when the security database is empty.
+
+After a reset, previously bonded phones cannot regain an administrative
+session without pairing again — this is now enforced at the ESP-IDF bond
+layer, not just at the application level.
 
 ## Stored secrets and physical access
 

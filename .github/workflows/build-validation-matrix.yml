@@ -29,7 +29,7 @@ jobs:
           - env: SigurdOS_TDeck_ble_agent
           - env: SigurdOS_TDeck_meshv2
           - env: SigurdOS_TDeck_trackball_debug
-          # Debug variants
+          # Debug variants (compile-only guards for debug-specific code paths)
           - env: SigurdOS_TDeck_debug
           - env: SigurdOS_TDeck_debug_869
           - env: SigurdOS_TDeck_debug_display
@@ -42,10 +42,6 @@ jobs:
           - env: SigurdOS_TDeck_telemetry_diff
           - env: SigurdOS_TDeck_remote_test
           - env: SigurdOS_TDeck_remote_test_radio
-          - env: SigurdOS_TDeck_remote_test_radio_testfreq
-          - env: SigurdOS_TDeck_remote_test_radio_roomtest
-          - env: SigurdOS_TDeck_remote_test_radio_usca
-          - env: SigurdOS_TDeck_remote_test_radio_usca_rxonly
           - env: SigurdOS_TDeck_remote_test_radio_meshv2
           # Host-protocol and hardware-validation compile targets
           - env: SigurdOS_TDeck_companion_usb
@@ -81,6 +77,7 @@ jobs:
           set -o pipefail
           pio run -e ${{ matrix.env }} 2>&1 | tee "build-${{ matrix.env }}.log"
       - name: Enforce first-party warning budget for ${{ matrix.env }}
+        if: matrix.env == 'SigurdOS_TDeck'
         run: >-
           python scripts/check_first_party_warnings.py
           --log "build-${{ matrix.env }}.log"

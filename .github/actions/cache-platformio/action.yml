@@ -16,6 +16,6 @@ runs:
           ~/.platformio/.cache
           ~/.platformio/packages
           ~/.platformio/platforms
-        key: pio-${{ runner.os }}-${{ runner.arch }}-${{ inputs.dependency-hash }}
+        key: pio-v2-${{ runner.os }}-${{ runner.arch }}-${{ inputs.dependency-hash }}
         restore-keys: |
-          pio-${{ runner.os }}-${{ runner.arch }}-
+          pio-v2-${{ runner.os }}-${{ runner.arch }}-

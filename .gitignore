@@ -39,3 +39,10 @@ platformio.local.ini
 scripts/official-meshcore-client-test/node_modules/
 scripts/font-tools/node_modules/
 .tokensave/
+
+# KrabOS fixture secrets and private evidence
+.venv/
+.krabos-private/
+private-evidence/
+*.flash-backup.bin
+*.private-receipt.json

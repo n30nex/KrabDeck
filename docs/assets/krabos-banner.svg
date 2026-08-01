@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">KrabOS</title>
+  <desc id="desc">A coral geometric crab beside the words KrabOS and Canada-first MeshCore for T-Deck Plus.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b111d"/>
+      <stop offset="1" stop-color="#1a2740"/>
+    </linearGradient>
+    <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff8a7d"/>
+      <stop offset="1" stop-color="#ff5f52"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="360" rx="36" fill="url(#bg)"/>
+  <g transform="translate(88 47)" fill="none" stroke="#ff6f61" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+    <path fill="url(#shell)" d="M78 130c0-48 38-84 91-84s91 36 91 84v49c0 34-32 62-91 62s-91-28-91-62z"/>
+    <path d="M97 91 62 59 27 73l32 24-35 20M241 91l35-32 35 14-32 24 35 20"/>
+    <path d="m91 181-52 19-23 42M247 181l52 19 23 42M111 219l-33 40M227 219l33 40"/>
+    <path d="M126 50V21M212 50V21"/>
+  </g>
+  <g fill="#0b111d">
+    <circle cx="214" cy="145" r="12"/>
+    <circle cx="296" cy="145" r="12"/>
+  </g>
+  <text x="420" y="174" fill="#f6f7fb" font-family="Segoe UI,Arial,sans-serif" font-size="112" font-weight="800" letter-spacing="-4">Krab<tspan fill="#ff6f61">OS</tspan></text>
+  <text x="426" y="233" fill="#aeb8ca" font-family="Segoe UI,Arial,sans-serif" font-size="30" font-weight="600" letter-spacing="3">CANADA-FIRST MESHCORE</text>
+  <text x="426" y="282" fill="#71809a" font-family="Segoe UI,Arial,sans-serif" font-size="24">Touch · keyboard · GPS · offline maps · T-Deck Plus</text>
+</svg>

@@ -4,6 +4,13 @@ name: Pull Request CI
   pull_request:
     branches:
       - dev
+      - main
+    paths-ignore:
+      - '.github/workflows/**'
+      - 'scripts/tests/test_krabos_release_workflow.py'
+      - 'scripts/tests/test_meshcore_pin.py'
+      - 'scripts/tests/test_security_workflow.py'
+      - 'scripts/tests/test_validation_matrix.py'
   workflow_dispatch:
 
 permissions:
@@ -16,7 +23,10 @@ concurrency:
 jobs:
   test:
     name: Native tests
-    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, ARM64, krabdeck-pi5]
 
     steps:
       - name: Check out repository
@@ -54,7 +64,10 @@ jobs:
 
   build:
     name: Firmware build
-    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, ARM64, krabdeck-pi5]
 
     steps:
       - name: Check out repository
@@ -82,6 +95,30 @@ jobs:
         run: |
           set -o pipefail
           pio run -e SigurdOS_TDeck 2>&1 | tee build.log
+
+      - name: Build KrabOS production firmware
+        run: |
+          if grep -Fqx '[env:KrabOS_TDeckPlus]' platformio.ini; then
+            pio run -e KrabOS_TDeckPlus
+          else
+            echo 'KrabOS_TDeckPlus is not present yet; workflow-only bootstrap skips it.'
+          fi
+
+      - name: Build KrabOS RF-off recovery firmware
+        run: |
+          if grep -Fqx '[env:KrabOS_TDeckPlus_recovery]' platformio.ini; then
+            pio run -e KrabOS_TDeckPlus_recovery
+          else
+            echo 'KrabOS_TDeckPlus_recovery is not present yet; workflow-only bootstrap skips it.'
+          fi
+
+      - name: Build KrabOS RF-off debug firmware
+        run: |
+          if grep -Fqx '[env:KrabOS_TDeckPlus_debug]' platformio.ini; then
+            pio run -e KrabOS_TDeckPlus_debug
+          else
+            echo 'KrabOS_TDeckPlus_debug is not present yet; workflow-only bootstrap skips it.'
+          fi
 
       - name: Enforce first-party warning budget
         run: >-
@@ -179,7 +216,10 @@ jobs:
 
   sanitize:
     name: Native ASan + UBSan + LSan
-    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, ARM64, krabdeck-pi5]
 
     steps:
       - name: Check out repository
@@ -212,7 +252,10 @@ jobs:
 
   coverage:
     name: Native production coverage
-    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, ARM64, krabdeck-pi5]
 
     steps:
       - name: Check out repository
@@ -275,7 +318,10 @@ jobs:
 
   lint:
     name: Static analysis + logging policy
-    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, ARM64, krabdeck-pi5]
 
     steps:
       - name: Check out repository

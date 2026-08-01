@@ -5,6 +5,12 @@ name: Build Validation Matrix
     branches:
       - dev
       - main
+    paths-ignore:
+      - '.github/workflows/**'
+      - 'scripts/tests/test_krabos_release_workflow.py'
+      - 'scripts/tests/test_meshcore_pin.py'
+      - 'scripts/tests/test_security_workflow.py'
+      - 'scripts/tests/test_validation_matrix.py'
   push:
     branches:
       - dev

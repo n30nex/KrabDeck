@@ -190,6 +190,24 @@ class KrabosReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("KrabOS_*)", matrix)
         self.assertIn("Required PlatformIO environment is missing", matrix)
 
+    def test_workflow_only_prs_do_not_queue_firmware_builds(self) -> None:
+        ignored = {
+            ".github/workflows/**",
+            "scripts/tests/test_krabos_release_workflow.py",
+            "scripts/tests/test_meshcore_pin.py",
+            "scripts/tests/test_security_workflow.py",
+            "scripts/tests/test_validation_matrix.py",
+        }
+        for name in ("pr-ci.yml", "build-validation-matrix.yml", "security.yml"):
+            workflow = yaml.safe_load(
+                (WORKFLOWS / name).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                set(workflow["on"]["pull_request"]["paths-ignore"]),
+                ignored,
+                f"{name} must skip the dedicated workflow-only PR",
+            )
+
     def test_every_platformio_build_or_test_runs_only_on_pi5(self) -> None:
         pi5_runner = ["self-hosted", "Linux", "ARM64", "krabdeck-pi5"]
         command = re.compile(r"\bpio\s+(?:run|test|check)\b")

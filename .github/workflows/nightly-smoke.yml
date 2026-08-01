@@ -22,10 +22,12 @@ jobs:
       - name: Check MeshCore lock and remote pin
         run: python3 scripts/check_meshcore_pin.py --check-remote
 
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: '3.12.11'
+      - name: Create isolated system-Python environment
+        shell: bash
+        run: |
+          python3 -m venv "$RUNNER_TEMP/platformio-venv"
+          echo "$RUNNER_TEMP/platformio-venv/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/platformio-venv/bin/python" --version
 
       - name: Restore PlatformIO packages
         uses: ./.github/actions/cache-platformio

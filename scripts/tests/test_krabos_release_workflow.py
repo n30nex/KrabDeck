@@ -228,6 +228,30 @@ class KrabosReleaseWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(nightly["jobs"]["smoke"]["runs-on"], pi5_runner)
 
+    def test_pi5_jobs_use_the_runner_python_in_an_isolated_environment(self) -> None:
+        pi5_runner = ["self-hosted", "Linux", "ARM64", "krabdeck-pi5"]
+        for path in WORKFLOWS.glob("*.yml"):
+            workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+            for job_name, job in workflow.get("jobs", {}).items():
+                if job.get("runs-on") != pi5_runner:
+                    continue
+                steps = job.get("steps", [])
+                external_actions = "\n".join(
+                    str(step.get("uses", "")) for step in steps
+                )
+                commands = "\n".join(str(step.get("run", "")) for step in steps)
+                self.assertNotIn(
+                    "actions/setup-python@",
+                    external_actions,
+                    f"{path.name}:{job_name} cannot install a hosted-image "
+                    "Python build on Debian ARM64",
+                )
+                self.assertIn(
+                    'python3 -m venv "$RUNNER_TEMP/',
+                    commands,
+                    f"{path.name}:{job_name} must isolate the runner Python",
+                )
+
     def test_untrusted_forks_cannot_reach_self_hosted_pr_jobs(self) -> None:
         for name in ("pr-ci.yml", "build-validation-matrix.yml", "security.yml"):
             workflow = yaml.safe_load(

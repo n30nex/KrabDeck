@@ -4,7 +4,6 @@
 
 **Do not modify this file or `AGENTS.md` in any PR.** They are AI agent context. Only the repo owner changes them. Any PR that touches `CLAUDE.md` or `AGENTS.md` will be rejected without review.
 
-
 **This file is a mirror of `AGENTS.md`.** Both files contain identical content. Claude Code reads `CLAUDE.md` by default; other agents should read `AGENTS.md`.
 
 ---
@@ -22,11 +21,14 @@ These are the reference documents you should load before starting work. Which on
 | **`docs/KNOWN_ISSUES.md`** | Before feature work | What's broken or unfinished — don't duplicate effort |
 | **`docs/CONTACT_STORE.md`** | When working on contact management | Contact store API, persistence, and data model |
 | **`docs/LAUNCHER.md`** | When working on Launcher compatibility | Launcher detection, OTA gating, partition layout |
+| **`docs/LauncherCompatibility.md`** | When working on Launcher compatibility | Detailed pin/partition comparison vs bmorcelli/Launcher, install matrix |
+| **`docs/LAUNCHER_ROADMAP.md`** | When working on Launcher compatibility | Launcher maintenance record — C1–C7/O3 implemented status, external blockers |
 | **`docs/LOGGING.md`** | Before debugging serial output | Logging subsystem API, verbosity levels, and configuration |
 | **`docs/MISSING_FEATURES.md`** | Before implementing new features | Catalog of MeshCore protocol features not yet implemented, with source references and effort estimates |
 | **`firmware/README.md`** | Releasing or CI work | Release artifact structure, web flasher manifest format |
 | **`test/README.md`** | Writing new tests | Test framework, mock structure, naming conventions |
 | **`docs/HARDWARE.md`** | When working on hardware/drivers | Full hardware reference: pinout, boot sequence, peripheral details |
+| **`docs/HARDWARE_TESTING.md`** | Before flashing any device | **Authoritative on-device testing protocol** (six phases, gateway flow, screenshots, soak) |
 | **`docs/CHAT_SCREEN.md`** | When working on chat UI | Chat screen architecture, data model, input routing, persistence |
 | **`docs/FEATURES_OVERVIEW.md`** | Getting oriented on features | Top-level index of all features with source cross-references |
 | **`docs/HOME_SCREEN.md`** | When working on home screen | Home screen layout, tile grid, icon mapping |
@@ -38,7 +40,10 @@ These are the reference documents you should load before starting work. Which on
 | **`docs/SIGNAL_SCREEN.md`** | When working on signal display | Live RSSI/SNR sparkline, radio parameter display |
 | **`docs/SETTINGS_SCREEN.md`** | When working on settings | Settings screen hierarchy, sub-screen routing |
 | **`docs/COMPANION_SUPPORT.md`** | When working on BLE companion | Companion command support matrix, protocol coverage |
+| **`docs/COMPANION_BLE_TEST_ENV.md`** | When testing companion BLE protocol | Automated companion-protocol test environment (validates against the official MeshCore app protocol without a phone) |
 | **`docs/MESH_NETWORKING.md`** | When working on mesh protocol internals | MeshCore integration, addressing, routing details |
+| **`docs/SECURITY_MODEL.md`** | When working on security-sensitive code | Trust boundaries, transport protections, known limitations |
+| **`docs/PRODUCTION_ROOT_OF_TRUST.md`** | When working on security/root-of-trust | eFuse posture — SigurdOS intentionally provides no eFuse provisioning path (tracks #1210) |
 | **`docs/RELEASE_EVIDENCE.md`** | Before cutting a release | Release PR requirements, CI evidence checks, golden frames |
 
 **Critical rules — follow all:**
@@ -57,9 +62,11 @@ Three repos form the SigurdOS ecosystem:
 
 | Repo | What | Stack |
 |------|------|-------|
-| `hermes-gadget/SigurdOS` | MeshCore fork (core library) | C++/PlatformIO, ESP32 |
+| `meshcore-dev/MeshCore` | MeshCore core library (upstream) — used via the `lib/meshcore/` submodule, pinned and CI-verified by `scripts/check_meshcore_pin.py` | C++/PlatformIO, ESP32 |
 | **`hermes-gadget/SigurdOS-tdeck`** ← **you are here** | T-Deck LVGL firmware | C++/PlatformIO, LVGL v9, LovyanGFX |
-| `hermes-gadget/SigurdOS-client` | Flutter mobile app | Dart/Flutter, BLE/USB/TCP |
+| `hermes-gadget/SigurdOS-client` | Flutter mobile app — **deprecated** (2026-07-31), kept for reference | Dart/Flutter, BLE/USB/TCP |
+
+The `lib/meshcore/` submodule URL in `.gitmodules` resolves through the hermes-gadget mirror `hermes-gadget/MeshCore-Unified-Open` (declared branch `sigurdos-tdeck`) so CI can verify the pinned revision against a hermes-gadget-owned remote. **`MeshCore-Unified-Open` is itself a separate project** (unified companion firmware with runtime transport selection) — it is NOT the SigurdOS-tdeck MeshCore library.
 
 ---
 
@@ -82,7 +89,7 @@ pio run -e SigurdOS_TDeck
 pio test -e native_test --list-tests
 ```
 
-MeshCore is at `lib/meshcore/` — a git submodule. `git submodule update --init` if you cloned without `--recurse-submodules`.
+MeshCore is at `lib/meshcore/` — a git submodule tracking the **MeshCore core library** (upstream `meshcore-dev/MeshCore`). The `.gitmodules` URL resolves through the hermes-gadget mirror `hermes-gadget/MeshCore-Unified-Open` (declared branch `sigurdos-tdeck`) so CI can verify the pinned revision against a hermes-gadget-owned remote. `git submodule update --init` if you cloned without `--recurse-submodules`. **The submodule is pinned**: CI runs `scripts/check_meshcore_pin.py`, which fails if the gitlink, the `ci/platformio-packages.lock` entry, and the `.gitmodules` remote diverge. Never push submodule changes upstream. (`MeshCore-Unified-Open` is a separate project — unified companion firmware with runtime transport selection — not the SigurdOS-tdeck core library.)
 
 ---
 
@@ -90,37 +97,48 @@ MeshCore is at `lib/meshcore/` — a git submodule. `git submodule update --init
 
 ```
 src/
-├── main.cpp               # Boot: board→display→SPIFFS→splash→mesh→UI (deferred input init)
+├── main.cpp               # Boot: watchdog→board→battery→display→splash→storage→prefs→input→GPS→SD→mesh→UI→map→WiFi
 ├── lv_conf.h              # LVGL v9 config (16-bit, partial render)
 ├── hal/
 │   ├── tdeck_pins.h       # Full T-Deck pinout + SPI/I2C aliases + SIGURDOS_VERSION
 │   ├── tdeck_board.h      # MainBoard impl (sleep, battery, power)
+│   ├── tdeck_sleep_orchestrator.h  # Checked deep-sleep preparation/retry coordinator
+│   ├── boot_watchdog.cpp/h  # Boot-stage watchdog (stage progress + runtime heartbeat)
 │   ├── display.cpp/h      # LovyanGFX ST7789 + LVGL + touch/keyboard callbacks
+│   ├── display_retry_state.h  # RTC-persisted display init retry state (boot-loop protection)
 │   ├── display_buffer_policy.h  # Display buffer configuration policy
+│   ├── display_allocation_policy.h / display_deadline.h  # Display memory/timing policies
 │   ├── battery.cpp/h      # ADC mV→%
 │   ├── touch.cpp/h        # GT911 capacitive touch (I2C, 400 kHz)
 │   ├── keyboard.cpp/h     # I2C keyboard (ESP32-C3 MCU at 0x55)
 │   ├── keyboard_layouts.cpp/h  # Keyboard layout selection (QWERTY/AZERTY/etc.)
 │   ├── trackball.cpp/h    # 5-direction trackball (debounce, event queue)
 │   ├── prefs.cpp/h        # NodePrefs persisted in NVS (freq, SF, power, etc.)
+│   ├── prefs_write_policy.h  # NVS write cadence/durability policy
 │   ├── gps.cpp/h          # GPS NMEA parser
 │   ├── gps_demand.h       # GPS power/demand control
 │   ├── sdcard.cpp/h       # SD card init, status, path helpers
+│   ├── sdcard_replace.h   # SD card replacement/hot-swap handling
 │   ├── spi_shared.cpp/h   # Shared SPI bus init (display + LoRa + SD)
 │   ├── i2c_bus.cpp/h      # I2C bus abstraction (keyboard + touch on shared bus)
 │   ├── buzzer.cpp/h       # GPIO buzzer (pin 46)
 │   ├── wifi_ota.cpp/h     # WiFi + OTA update
 │   ├── github_ota.cpp/h   # OTA from GitHub releases
 │   ├── github_ota_plan.cpp/h  # OTA plan/rollback logic
+│   ├── ota_boot_health.cpp/h  # OTA boot-health tracking + rollback on boot failure
+│   ├── ota_write_policy.h / ota_runtime_policy.h / ota_security_epoch.h / ota_allocation_policy.h  # OTA safety policies
+│   ├── wifi_coordinator.cpp/h  # WiFi STA/AP coordination
 │   ├── launcher_env.cpp/h # Launcher compatibility detection
 │   ├── radio_profiles.cpp/h  # Radio frequency/profile presets
 │   ├── storage.cpp/h      # Storage abstraction (SPIFFS wrapper, atomic writes)
 │   ├── atomic_file.cpp/h  # Atomic file I/O operations (rename-based)
+│   ├── factory_reset_policy.h  # Factory-reset gating/behavior
 │   └── lv_pool.cpp        # LVGL object pool allocator
 ├── mesh/
 │   ├── sigurd_mesh_v2.cpp/h  # SigurdMeshV2 — BaseChatMesh subclass (routing, channels, messages)
 │   ├── mesh_wrapper.cpp/h # Public API for the UI layer (sigurdos::mesh::*)
 │   ├── mesh_wrapper_internal.h  # Internal mesh wrapper API (not for UI)
+│   ├── mesh_init_lifecycle.h  # Mesh init/shutdown lifecycle state machine
 │   ├── companion_adapter.cpp/h  # Companion BLE bridge adapter (separately compiled, included from mesh_wrapper.cpp)
 │   ├── companion_message_policy.h  # Companion message filtering policy
 │   ├── persistence_store.cpp/h  # On-disk state persistence (contacts, channels via SPIFFS)
@@ -128,7 +146,18 @@ src/
 │   ├── message_store.cpp/h     # Per-channel message storage + unread tracking
 │   ├── channel_validation.cpp/h # Channel name/PSK input validation
 │   ├── regions.cpp/h       # Flood-scope region management
+│   ├── region_policy.cpp/h # Region sync/activation policy
 │   ├── time_state.cpp/h    # Network time synchronisation
+│   ├── node_discovery.h    # Nearby-node discovery (finder, Ping Nearby)
+│   ├── path_discovery.h    # Flood path discovery (trace)
+│   ├── telemetry_lpp_parser.cpp/h  # LPP telemetry payload parsing
+│   ├── strict_base64.h     # Strict base64 decode (PSK/URI import)
+│   ├── contact_uri.h / channel_uri.h  # meshcore:// URI import helpers
+│   ├── request_correlation.h  # Request/response correlation (status, telemetry)
+│   ├── state_checkpoint.h  # Durable state checkpointing
+│   ├── status_response.h / login_response.h  # Repeater response types
+│   ├── companion_ble_pin.h # Companion BLE pairing PIN
+│   ├── esp32_hardware_rng.h  # Hardware RNG access
 │   ├── advert_blob.h       # Advertise blob data structure
 │   ├── cmd_response_queue.h    # Command response queue
 │   ├── control_parser.h    # Control command parser
@@ -136,41 +165,67 @@ src/
 │   ├── login_session.h     # Login session management (room servers)
 │   ├── pending_ack_policy.h    # Pending ACK management/tracking policy
 │   ├── scope_key_hex.h     # Scope key hex encoding helpers
-│   └── public_channel.h    # Public channel PSK constant
+│   ├── region_name.h       # Region name validation helpers
+│   ├── contact_revision.h  # Contact revision tracking (clock high-water mark)
+│   ├── advert_blob_store.h # Advertise blob persistence (write context)
+│   ├── durable_mutation.h  # Apply → durable commit → rollback helper (write-failure testable)
+│   ├── response_copy.h     # Response buffer copy helpers
+│   ├── path_codec.h        # Flood path encode/decode
+│   ├── public_channel.h    # Public channel PSK constant
+│   └── *policy.h           # Safety/capacity policies (autoadd/auto_add, capacity, incoming_message,
+│                           #   mesh_safety, radio_config, radio_timing, airtime, scope_activation,
+│                           #   anonymous_message, client_repeat, channel_slot, ping_result,
+│                           #   telemetry_response, pending_operation, flood_scope_state, ...)
 ├── ui/
 │   ├── theme.h            # Colors, pixel helpers (apply_pixel_*), runtime theme system
 │   ├── theme.cpp          # Theme apply from NVS + refresh all screens
 │   ├── responsive.h       # Display-size-agnostic layout helpers
 │   ├── home_screen.cpp/h  # 4x3 icon grid, top/bottom bars
+│   ├── home_routes.cpp/h  # Home tile → screen route table
 │   ├── chat_screen.cpp/h  # Channels, DM, message bubbles
 │   ├── chat_history_store.cpp/h  # Persistent chat history storage (per-channel caches)
 │   ├── chat_message_buffer.cpp/h  # Chat message buffer for UI rendering
+│   ├── chat_conversation_view.h  # Conversation view layout/state
+│   ├── chat_unread_store.h  # Per-channel unread tracking
 │   ├── chat_store_migration.h  # Migration helpers for chat store format changes
 │   ├── screens.h          # Screen entry points (sigurdos::ui::*_screen_show)
 │   ├── screens.cpp        # Screen create/show/dispatch implementations
-│   ├── screens_common.cpp/h  # make_screen_full(), show_screen(), PIN gate, shared helpers
+│   ├── screen_loader.cpp  # show_screen() — LV_SCR_LOAD_ANIM_NONE + manual root deletion
+│   ├── screens_common.cpp/h  # make_screen_full(), PIN gate, shared helpers
 │   ├── screen_lifetime.cpp/h  # Screen lifecycle management (create/delete tracking)
+│   ├── generation_owner.h # Screen generation ownership (stale-callback guards)
 │   ├── channel_menu.cpp/h # Long-press channel menu (rename, delete, info)
 │   ├── contact_paging.h   # Paginated contact list helpers
 │   ├── contact_list_power.h  # Contact list power management
 │   ├── onboarding_screen.cpp/h  # First-boot setup wizard
-│   ├── navigation.cpp/h   # Screen routing with slide transitions + back-swipe
+│   ├── navigation.cpp/h   # Screen routing, PIN-gated routes, 16-entry history, back-swipe
 │   ├── notifications.cpp/h  # Notification subsystem (four-entry queue, banner)
 │   ├── notification_model.h  # Notification data model
 │   ├── list_window.h      # Virtual list window helper for LVGL
 │   ├── lv_timer_owner.h   # LVGL timer ownership/cleanup wrapper
 │   ├── message_detail.h   # Message detail view helpers
+│   ├── message_search.h   # Message search state/helpers
+│   ├── mesh_dashboard_metrics.h  # Mesh dashboard metric model
+│   ├── file_browser_model.h  # SD file browser data model
 │   ├── repeater_transcript.h  # Repeater transcript data
 │   ├── bluetooth_help.h   # Bluetooth help text definitions
 │   ├── display_settings_helpers.h  # Display settings helper constants
+│   ├── wifi_status_icon.cpp/h  # Bottom-bar WiFi RSSI icon
+│   ├── terminal_line_cap.h  # Terminal 64-line cap policy
+│   ├── *policy.h           # UI safety/capacity policies (pin_gate, system_action, repeater_command,
+│                           #   identity_command_guard, wifi_credentials, trace_poll, finder_contact,
+│                           #   terminal_var)
 │   ├── ui.cpp/h           # Splash→Home transition
 │   └── screens/           # Individual screen implementations
 │       ├── screen_advertise.cpp
 │       ├── screen_bluetooth.cpp
 │       ├── screen_channels.cpp
 │       ├── screen_contacts.cpp
+│       ├── screen_file_browser.cpp
 │       ├── screen_finder.cpp
 │       ├── screen_map.cpp
+│       ├── screen_mesh_dashboard.cpp
+│       ├── screen_message_search.cpp
 │       ├── screen_node_stats.cpp
 │       ├── screen_node_status.cpp
 │       ├── screen_packets.cpp
@@ -191,70 +246,82 @@ src/
 │   ├── map_renderer.cpp/h # Offline map (PNG tiles via lodepng, PSRAM cache)
 │   ├── lodepng_alloc.cpp  # lodepng allocator → PSRAM with DRAM fallback
 │   ├── qr_show.cpp/h      # QR code display for identity/channel sharing
-│   └── tile_cache.cpp/h   # Map tile LRU disk cache
+│   ├── tile_cache.cpp/h   # Map tile LRU disk cache
+│   ├── gps_track_log.cpp/h  # GPS track recording (points to SD)
+│   └── gps_clock_handoff.h  # GPS time → mesh clock synchronisation
 ├── comms/
 │   ├── companion_bridge.cpp/h     # BLE companion protocol bridge (phone app)
 │   ├── observed_ble_interface.cpp/h  # BLE transport for companion protocol
-│   └── ble_frame_queue.h          # BLE frame queue for outbound data
+│   ├── ble_frame_queue.h          # BLE frame queue for outbound data
+│   ├── ble_init_gate.h / ble_bond_rotation.h / ble_auth_throttle.h / ble_auth_watchdog.h / ble_task_mutex.h  # BLE safety/security policies
+│   └── secure_wipe.h     # Secure erase of sensitive BLE state
 ├── diagnostics/
 │   ├── debug.cpp/h        # Debug dumps (SIGURDOS_DEBUG=1 build)
 │   ├── debug_cfg.h        # Debug feature flags (fine-grained control)
+│   ├── debug_text_policy.h  # Debug text emission policy
 │   ├── build_info.cpp/h   # Compile-time build metadata (version, date, env)
 │   ├── log.h              # Lightweight serial logging macros (see docs/LOGGING.md)
+│   ├── diagnostic_io.cpp/h  # Central diagnostic output drain
+│   ├── companion_usb_console.h  # USB console (companion_usb builds)
 │   ├── telemetry.cpp/h    # Telemetry dispatch — fan-out to collectors, crash ring, HB ring
 │   ├── telemetry_collectors.cpp/h  # Per-subsystem telemetry collection
 │   ├── telemetry_crash.cpp/h      # Crash ring buffer (pre-mortem data)
 │   ├── telemetry_hb_ring.cpp/h    # Heartbeat ring buffer
 │   ├── telemetry_input.cpp/h      # Input event telemetry (trackball, keyboard, touch)
+│   ├── telemetry_drift.h  # Telemetry clock-drift tracking
+│   ├── telemetry_policy.h # Telemetry screen mapping/sampling policy (widget-tree counts)
+│   ├── reset_policy.h     # Reset-reason policy (which reasons retain crash evidence)
 │   └── telemetry_protocol.cpp/h   # Telemetry binary protocol (serial framing)
 ├── fonts/
 │   ├── emoji_font_setup.cpp # Emoji font fallback for LVGL
 │   ├── emoji_data.cpp/h     # Emoji codepoint→glyph mapping
-│   ├── emoji_font.h         # Emoji font data declarations
-│   ├── latin_ext_font.h     # Latin Extended font data
-│   ├── keyboard_layout_font.h  # Keyboard layout indicator font data
-│   └── emoji_images/        # Rendered emoji bitmaps
-│       ├── emoji_picker_images.h
-│       └── emoji_picker_index.h
+│   ├── emoji_font.c/h       # Emoji glyph bitmap data + declarations
+│   ├── latin_ext_font.c/h   # Latin Extended font data
+│   └── keyboard_layout_font.c/h  # Keyboard layout indicator font data
 ├── validation/
 │   ├── gps_validation.cpp          # GPS NMEA validation + coordinate tests
-│   └── gps_validation_wifi.cpp/h   # GPS + WiFi co-location validation
+│   ├── gps_validation_wifi.cpp/h   # GPS + WiFi co-location validation
+│   ├── gps_validation_status.h / gps_validation_storage.h  # Validation state/storage
+│   └── esp32_component_compile.cpp  # ESP32-component compile check (SigurdOS_TDeck_esp32_components)
 ├── test/
-│   └── test_controller.cpp/h  # Remote test controller (serial command interface)
+│   ├── test_controller.cpp/h  # Remote test controller (serial command interface)
+│   └── test_controller_command.h  # Test controller command table
 └── utils/
-    └── utf8_util.h        # UTF-8 byte-length and truncation-safe helpers
+    ├── utf8_util.h        # UTF-8 byte-length and truncation-safe helpers
+    └── fixed_queue.h      # Fixed-capacity queue helper
 
 lib/    (repo root — NOT under src/)
-├── meshcore/              # Git submodule → MeshCore (MeshCore firmware library)
+├── meshcore/              # Git submodule → MeshCore core library (upstream meshcore-dev/MeshCore, pinned via check_meshcore_pin.py)
 ├── lodepng/               # PNG decode library (zlib license, PSRAM allocators)
 ├── base64/                # Base64 encode/decode library
-└── qrcode/                # QR code generation library
+├── qrcode/                # QR code generation library
+└── WebServer/             # Security-patched Arduino-ESP32 WebServer overlay (multipart-boundary limit + header CR/LF sanitization, verified by scripts/check_security_patches.py)
 ```
 
 ---
 
 ## Boot Sequence
 
-The boot order (PR #625) is documented in detail in [`docs/HARDWARE.md`](docs/HARDWARE.md#appendix-a--boot-sequence). Key changes:
-
-1. **Display init** before SPIFFS — LovyanGFX + LVGL start early so the splash screen is visible during storage mounts
-2. **Splash status label** — `boot_status()` shows live progress (e.g., "Mounting storage...", "Starting radio...")
-3. **Deferred input init** — touch, keyboard, and trackball initialised after preferences are loaded, not during display init
+The boot order is documented in detail in [`docs/HARDWARE.md`](docs/HARDWARE.md#appendix-a--boot-sequence). Every stage reports progress to the boot watchdog (`boot_watchdog_progress(BootStage::...)`) and the splash screen shows live status via `boot_status()`.
 
 ```text
- 1. Serial.begin(115200)
+ 1. Serial.begin(115200) + boot watchdog begin (reset reason captured)
  2. TDeckBoard::begin()           (peripherals, I2C)
- 3. Battery + buzzer init
- 4. Display init                  ← moved before SPIFFS
- 5. Splash screen (live status)
- 6. SPIFFS mount (or LittleFS via storage abstraction)
- 7. Load NodePrefs, apply theme
- 8. Deferred input init           ← touch/keyboard/trackball
- 9. SD card init
-10. GPS init
-11. Mesh init (identity, radio)
-12. UI state restore (chats)
-13. Map init
+ 3. Battery init + critical-battery early re-sleep check (timer-wake guard)
+ 4. Buzzer init
+ 5. Display init                  ← RTC display-retry state; OTA rollback + halt on repeated failure
+ 6. Splash screen (live boot_status)
+ 7. SPIFFS mount (or LittleFS via storage abstraction)
+ 8. Load NodePrefs, apply theme/brightness
+ 9. Deferred input init           ← touch/keyboard/trackball (degraded warning on partial failure)
+10. GPS init                      (only if gps_enabled or gps_track_enabled)
+11. SD card init                  ← before radio (SD handshake resets SPI2)
+12. Mesh init (identity, radio)   (radio skipped in non-radio remote-test builds)
+13. UI state restore (chats)
+14. Map init
+15. WiFi STA auto-connect         (if credentials saved)
+16. Telemetry init                (telemetry builds)
+17. OTA boot health markCoreReady + watchdog runtime heartbeat
 ```
 
 ---
@@ -309,7 +376,7 @@ All screens MUST call `apply_dark_bg()` and use helpers from `theme.h`. Do not h
 Each screen has:
 1. **Top bar** — BG_SECONDARY, 22px high, ← back button, channel hashtag snapshot, 24h time, signal dots
 2. **Content area** — between top bar and bottom bar
-3. **Bottom bar** — BG_SECONDARY, 20px high, device name/signal/battery
+3. **Bottom bar** — BG_SECONDARY, 20px high, device name/signal/battery/WiFi RSSI
 
 The `make_screen_full(title)` helper in `screens_common.cpp` creates all of this. Use it.
 
@@ -317,11 +384,15 @@ The `make_screen_full(title)` helper in `screens_common.cpp` creates all of this
 
 Navigation lives in `ui/navigation.h` — the `Screen` enum and all routing functions are there.
 
-- `navigate_to(Screen)` — switches screens with slide animation, tracks previous
-- `go_back()` — returns to previous screen (nav stack, 8-entry circular buffer)
-- `show_screen(scr)` — loads a screen created with `lv_obj_create(nullptr)`
+- `navigate_to(Screen)` — switches screens through the route table. Loads are **instant** (`LV_SCR_LOAD_ANIM_NONE` — no slide animation) and PIN-gated routes are authorized before dispatch
+- `go_back()` — returns to previous screen (nav stack, 16-entry circular buffer)
+- `show_screen(scr)` — loads a screen created with `lv_obj_create(nullptr)`; uses `auto_del=false` + manual deletion of the outgoing root (see `screen_loader.cpp`)
 - `can_go_back()` — returns true if there's a previous screen to return to
 - `current_screen()` — returns the Screen enum value currently displayed
+- `is_pin_protected_route(screen)` — routes exposing config/credentials/destructive actions require PIN unlock
+- `navigate_to_forced(screen)` — first-boot Onboarding becomes the navigation root; all other destinations rejected until restart
+- `navigation_pin_unlocked(target)` / `navigation_pin_cancelled()` — PIN screen hooks that resume the denied operation after unlock
+- `refresh_current_screen()` / `refresh_current_screen_if(expected)` — re-dispatch the current screen (e.g. after theme change) without touching history
 - `handle_back_swipe(event)` — universal two-swipe back gesture
 
 ### Icons
@@ -358,8 +429,8 @@ The home screen tiles use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 | 8 | Map (touch pan, auto-center) | `screens/screen_map.cpp` | ✅ |
 | 9 | Advertise (broadcast presence) | `screens/screen_advertise.cpp` | ✅ |
 | 10 | Settings (top-level) | `screens/screen_settings.cpp` | ✅ |
-| 11 | Trace (path discovery per contact) | `screens/screen_trace.cpp` | ⚠️ see docs/KNOWN_ISSUES.md |
-| 12 | Terminal (colored log + commands, 64-line cap) | `screens/screen_terminal.cpp` | ⚠️ see docs/KNOWN_ISSUES.md |
+| 11 | Trace (path discovery per contact) | `screens/screen_trace.cpp` | ✅ |
+| 12 | Terminal (colored log + commands, 64-line cap) | `screens/screen_terminal.cpp` | ✅ |
 | 13 | Signal (live RSSI, SNR, radio params) | `screens/screen_signal.cpp` | ✅ |
 | 14 | Radio Setup (freq, SF, BW, CR, power) | `screens/screen_radio_setup.cpp` | ✅ |
 | 15 | Onboarding (wizard) | `onboarding_screen.cpp` | ✅ |
@@ -374,12 +445,17 @@ The home screen tiles use `LV_SYMBOL_*` (FontAwesome bundle built into LVGL v9):
 | 24 | WiFi Networks (scan + connect) | `screens/screen_wifi_networks.cpp` | ✅ |
 | 25 | Bluetooth (companion BLE) | `screens/screen_bluetooth.cpp` | ✅ |
 | 26 | Regions (flood scope) | `screens/screen_regions.cpp` | ✅ |
+| 27 | Repeater Detail (tap repeater → info/login) | `screens/screen_repeaters.cpp` | ✅ |
+| 28 | Custom RF (advanced radio params) | `screens/screen_radio_setup.cpp` | ✅ |
+| 29 | Message Search (filter history across all chats) | `screens/screen_message_search.cpp` | ✅ |
+| 30 | Mesh Dashboard (network metric cards) | `screens/screen_mesh_dashboard.cpp` | ✅ |
+| 31 | File Browser (SD card files) | `screens/screen_file_browser.cpp` | ✅ |
 
 ---
 
 ## Mesh Integration
 
-MeshCore is a submodule at `lib/meshcore/`. The mesh subclass is `SigurdMeshV2` in `sigurd_mesh_v2.h` — it extends `BaseChatMesh` (not the old raw `::mesh::Mesh`). The UI never touches MeshCore or SigurdMeshV2 directly — all calls go through `sigurdos::mesh::*` in `mesh_wrapper.h`.
+MeshCore is a git submodule at `lib/meshcore/` — the MeshCore core library (upstream `meshcore-dev/MeshCore`; the git URL resolves via the hermes-gadget mirror fork for CI pin verification; pinned by `scripts/check_meshcore_pin.py`). The mesh subclass is `SigurdMeshV2` in `sigurd_mesh_v2.h` — it extends `BaseChatMesh` (not the old raw `::mesh::Mesh`). The UI never touches MeshCore or SigurdMeshV2 directly — all calls go through `sigurdos::mesh::*` in `mesh_wrapper.h`.
 
 **Key mesh wrapper API (see `src/mesh/mesh_wrapper.h` for the complete 500+ line API):**
 
@@ -446,12 +522,12 @@ sigurdos::mesh::saveState()                // Persist contacts + channels
 sigurdos::mesh::saveContacts() / loadContacts()
 sigurdos::mesh::saveContactsIfDue(now)     // Periodic auto-save
 sigurdos::mesh::reloadContactsAfterIdentityChange()
-sigurdos::mesh::shutdown()                 // Graceful shutdown
+sigurdos::mesh::shutdown()                 // Graceful shutdown (coordinator)
 sigurdos::mesh::factoryReset()             // Wipe all persisted state
 
 // ── Time ─────────────────────────────────────
 sigurdos::mesh::getCurrentTime()
-sigurdos::mesh::setSystemTime(epoch)
+sigurdos::mesh::setSystemTime(epoch, TimeSource::GPS)  // source-tagged (GPS/Manual)
 sigurdos::mesh::getCurrentLocalDateTime(y, m, d, h, min)
 sigurdos::mesh::makeEpoch(y, month, d, h, min)
 
@@ -492,7 +568,7 @@ sigurdos::mesh::sendGroupDataToChannel(idx, type, data, len)
 sigurdos::mesh::getGroupDataRecvCount/Entry() / clearGroupDataRecv()
 ```
 
-**Messages arrive** via `chat_screen_add_msg(channel, sender, text, is_self)`. The chat screen maintains per-channel message caches (8 messages each, 16 channels max) backed by `chat_history_store` for persistence.
+**Messages arrive** via `chat_screen_add_msg(channel, sender, text, is_self)` (and `chat_screen_add_msg_at(...)`). The chat screen maintains per-channel message caches (8 messages each, 16 channels max) backed by `chat_history_store` for persistence.
 
 **Channel protocol:**
 - **PSK channels:** "Public" uses PSK `izOH6cXN6mrJ5e26oRXNcg==`. Any node with the matching PSK derives the same channel hash.
@@ -504,15 +580,16 @@ sigurdos::mesh::getGroupDataRecvCount/Entry() / clearGroupDataRecv()
 ## Testing
 
 ```bash
-pio test -e native_test -v       # All tests (no hardware, 77 test modules)
+pio test -e native_test -v       # All tests (no hardware, 111 test modules)
 pio test -e native_test -f test_touch -v     # One module
 ```
 
 **Critical rules:**
 - Tests use `test/test_<name>/` dirs with `main.cpp` entry points. Wrong naming = not discovered.
-- Hardware is mocked in `test/mocks/` (Arduino.h, lvgl.h, RadioLib.h, LovyanGFX.hpp, Wire.h, MeshCore.h, esp_heap_caps.h, esp_partition.h, Stream.h, SPIFFS.h, mesh_helpers.h, mock_arduino.cpp, mock_esp_partition.cpp, mock_fonts.cpp, mock_mesh_wrapper.cpp, mock_prefs.cpp, mock_spiffs.cpp)
+- Hardware is mocked in `test/mocks/` (Arduino.h, lvgl.h, RadioLib.h, LovyanGFX.hpp, Wire.h, MeshCore.h, esp_heap_caps.h, esp_partition.h, esp_random.h, SHA256.h, Stream.h, SPIFFS.h, mesh_helpers.h, mock_arduino.cpp, mock_esp_partition.cpp, mock_fonts.cpp, mock_mesh_state.h, mock_mesh_wrapper.cpp, mock_prefs.cpp, mock_spiffs.cpp, mock_state.h, native_build_main.cpp, unique_temp_dir.h)
 - `mock_prefs.cpp` provides byte-level NVS prefs stubs when HAL modules depend on prefs.
 - `mock_spiffs.cpp` provides SPIFFS persistence stubs for storage-dependent tests.
+- Extra native envs: `native_sanitize` (ASan), `native_mesh_integration` (pinned MeshCore dispatcher with host radio fakes), `native_tdeck_sleep` (sleep orchestrator), `native_coverage`.
 - Always run tests before pushing. A PR with failing tests is rejected.
 
 **New code = new tests.** Minimum:
@@ -557,10 +634,15 @@ pio run -e SigurdOS_TDeck_remote_test_radio
 pio run -e SigurdOS_TDeck_remote_test_radio_testfreq
 pio run -e SigurdOS_TDeck_remote_test_radio_roomtest
 pio run -e SigurdOS_TDeck_remote_test_radio_meshv2
+pio run -e SigurdOS_TDeck_remote_test_radio_usca
+pio run -e SigurdOS_TDeck_remote_test_radio_usca_rxonly
 
 # GPS validation builds
 pio run -e SigurdOS_TDeck_gps_validation
 pio run -e SigurdOS_TDeck_gps_validation_wifi
+
+# ESP32 component compile check
+pio run -e SigurdOS_TDeck_esp32_components
 
 # Companion USB mode
 pio run -e SigurdOS_TDeck_companion_usb
@@ -603,15 +685,14 @@ s.close()
 "'
 ```
 
-The debug build (`SigurdOS_TDeck_debug`) enables:
-- Step-by-step boot logging (`[boot] step N: ...`)
+Compact boot milestones (`[boot] +<ms> <stage>`) are always emitted, even in release builds. The debug build (`SigurdOS_TDeck_debug`) additionally enables:
 - Periodic heap/PSRAM/battery stats (`[stat]`)
 - Display flush tracking (`[flush] #N`)
 - Trackball pin states (`[pins]`)
 - On-demand debug dump via `sigurdos_debug_dump()`
 - Map tile discovery logging
 
-The release build (`SigurdOS_TDeck`) suppresses all of these via `NDEBUG` and the absence of `SIGURDOS_DEBUG=1`. Only critical errors and warnings print in release mode.
+The release build (`SigurdOS_TDeck`) suppresses these via `NDEBUG` and the absence of `SIGURDOS_DEBUG=1`. Only critical errors, warnings, and boot milestones print in release mode.
 
 ### Remote Test Controller
 
@@ -642,7 +723,7 @@ Once connected, the T-Deck shows a test controller banner. Type commands directl
 | Command | Example | Description |
 |---------|---------|-------------|
 | `help` | `help` | Show command list |
-| `nav chat` | `nav chat` | Navigate to screen (home/chat/contacts/channels/network/heard/map/settings/terminal/radio/trace/signal/advertise) |
+| `nav chat` | `nav chat` | Navigate to screen (home/chat/contacts/channels/network/heard/map/settings/terminal/radio/trace/signal/advertise/repeaters/bluetooth/onboarding/regions/nodestats/nodestatus/telemetry/wifinetworks/s-display/s-radio/s-gps/system/contactdetail) |
 | `back` | `back` | Go back in nav stack |
 | `tb up` | `tb click` | Simulate trackball (up/down/left/right/click, or u/d/l/r/c) |
 | `type hello` | `type Hello World` | Type text — queued and injected one char per loop cycle |
@@ -653,10 +734,11 @@ Once connected, the T-Deck shows a test controller banner. Type commands directl
 | `debug <1\|2\|3>` | `debug 1` | Set debug verbosity (1=quiet, 2=normal, 3=verbose) |
 
 Safety guarantees:
-- No LoRa radio initialised — `sigurdos::mesh::init()` is never called
-- All `sendMessage`, `sendChannelMessage`, `sendAdvert` return false (g_mesh is null)
-- Radio accessors (`getLastRSSI`, `getLastSNR`, `getNoiseFloor`) return dummy values
-- No SPI transactions ever reach the SX1262 hardware
+- In the plain `SigurdOS_TDeck_remote_test` build no LoRa radio is initialised — `mesh::init()` is still called (it initialises the shared SPI bus so the SD card works), but the radio itself is never started
+- Radio-enabled variants (`SigurdOS_TDeck_remote_test_radio*`) set `SIGURDOS_REMOTE_TEST_RADIO=1`, which initialises the real SX1262 and enables the mesh
+- All `sendMessage`, `sendChannelMessage`, `sendAdvert` return false (g_mesh is null) in the no-radio builds
+- Radio accessors (`getLastRSSI`, `getLastSNR`, `getNoiseFloor`) return dummy values in the no-radio builds
+- No SPI transactions ever reach the SX1262 hardware in the no-radio builds
 
 **⚠️ LIMITATION: Cannot test physical input hardware.** Remote test mode simulates trackball, keyboard, and touch programmatically — events are injected directly into the input queues. This means it **cannot** validate:
 - GPIO debounce timing, edge detection, or signal quality
@@ -689,10 +771,10 @@ Dev-only branch model:
 - Tags: `beta-0.1.XX` (zero-padded for correct sort: `beta-0.1.09` not `beta-0.1.9`)
 
 **Release flow (maintainer only):**
-1. Update `SIGURDOS_VERSION` in `tdeck_pins.h` (current: `beta-0.1.44-RC6`)
-2. `pio run -e SigurdOS_TDeck`
-3. `cp .pio/build/SigurdOS_TDeck/firmware-merged.bin firmware/firmware-merged.bin`
-4. Commit, tag, push, `gh release create`
+1. Update `SIGURDOS_VERSION` in `tdeck_pins.h` (current: `beta-0.1.46-RC8`) — CI fails if the release tag doesn't match it
+2. `pio run -e SigurdOS_TDeck` (and `SigurdOS_TDeck_debug` for `firmware-debug.bin`)
+3. Commit, tag, push — `build-release.yml` builds the artifact set (`firmware-merged.bin`, `SigurdOS-tdeck-launcher.bin`, `firmware.bin`, `firmware-debug.bin`, `manifest.json`, `build-metadata.json`) and creates the GitHub release
+4. Evidence requirements from `docs/RELEASE_EVIDENCE.md` are enforced by `scripts/verify_release_evidence.py`; pre-built binaries are published only as immutable release assets (see `firmware/README.md`)
 
 ---
 
@@ -777,7 +859,7 @@ Before submitting a PR (or before merging someone else's), use this checklist to
 
 #### Concurrency / Timing
 - [ ] `lv_obj_del` in event handler — should be `lv_obj_del_async()`
-- [ ] Auto-delete screens — `lv_scr_load_anim(..., true)` deletes all children; `LV_EVENT_DELETE` needed to null globals
+- [ ] Screen loads — all loads use `auto_del=false` + manual deletion (see `screen_loader.cpp`); register `LV_EVENT_DELETE` to null globals
 - [ ] LVGL tick starvation — any blocking operations that delay `lv_timer_handler()`?
 - [ ] `ESP.restart()` without flash write delay — SPIFFS/NVS write may not have completed
 
@@ -835,11 +917,11 @@ Before submitting a PR (or before merging someone else's), use this checklist to
 | Rule | Detail |
 |------|--------|
 || **Branch from `dev`** | There is no `main` branch — releases are tagged on `dev`. PRs target `dev`. |
-| **Pull regularly** | Before starting work: `git checkout dev && git pull origin dev` |
-| **Rebase your feature branch** | Before opening a PR: `git rebase dev` to avoid stale-commit noise |
-| **Run the full test suite** | `pio test -e native_test` must pass all tests before pushing |
-| **Read `docs/KNOWN_ISSUES.md`** | Before starting feature work to avoid duplicating effort |
-| **Follow screen conventions** | New screens need `apply_dark_bg()`, `make_screen_full()`, and consistent pixel helpers |
+|| **Pull regularly** | Before starting work: `git checkout dev && git pull origin dev` |
+|| **Rebase your feature branch** | Before opening a PR: `git rebase dev` to avoid stale-commit noise |
+|| **Run the full test suite** | `pio test -e native_test` must pass all tests before pushing |
+|| **Read `docs/KNOWN_ISSUES.md`** | Before starting feature work to avoid duplicating effort |
+|| **Follow screen conventions** | New screens need `apply_dark_bg()`, `make_screen_full()`, and consistent pixel helpers |
 
 ---
 
@@ -853,7 +935,7 @@ Before submitting a PR (or before merging someone else's), use this checklist to
 | Touch coords | After rotation(1): SWAP_XY=true, MIRROR_X=false, MIRROR_Y=true |
 | Keyboard | `Wire.read()` returns `int`, store in `int` not `char` — 0xFF vs -1 collision |
 | strncpy | Does NOT null-terminate if source >= n. Always `dest[n-1] = '\0'` |
-| Auto-delete | `lv_scr_load_anim(..., true)` deletes old screen + all children. Register `LV_EVENT_DELETE` to null globals |
+| Screen loads | `show_screen()` uses `auto_del=false` for ALL loads + manual `lv_obj_delete` of the outgoing root (`screen_loader.cpp`). Mixing auto_del true/false deadlocks LVGL's screen-load state machine |
 | `lv_obj_del` in handler | Use `lv_obj_del_async()` — event loop may dereference freed object |
 | Stack in user_data | `lv_obj_add_event_cb(btn, handler, LV_EVENT_CLICKED, (void*)&local_array[i])` — garbage on click. Use `static` arrays |
 | Radio init | `P_LORA_*` prefix, `Module*` constructor, SX126X_DIO3_TCXO_VOLTAGE=1.8f and other defines from variant |
@@ -864,10 +946,15 @@ Before submitting a PR (or before merging someone else's), use this checklist to
 | Radio first boot | Init radio with compile-time defaults for receive. Gate TRANSMIT behind `configured == true` |
 | Wire.endTransmission | Always check return value — NACK on keyboard init means keyboard MCU is dead |
 | saveState | Call every ~5 min from UI loop. Crashes lose new contacts if not saved |
-|| GPS NMEA | NMEA checksum validation implemented in `gps.cpp:288-318` — corrupted sentences are discarded |
-|| Terminal labels | 64-line cap implemented in `screen_terminal.cpp` — labels recycle, not leak |
-|| Emoji truncation | Byte-level msg truncation can split 4-byte emoji — mitigated by `utf8_util.h` truncation helpers and emoji integrity tests |
-|| SPI bus sharing | Display, LoRa, and SD card all share SPI2_HOST with separate CS lines. No SPI3 involved — all devices use SPI2_HOST/FSPI |
+| GPS NMEA | NMEA checksum validation implemented in `gps.cpp:288-318` — corrupted sentences are discarded |
+| Terminal labels | 64-line cap implemented in `screen_terminal.cpp` — labels recycle, not leak |
+| Emoji truncation | Byte-level msg truncation can split 4-byte emoji — mitigated by `utf8_util.h` truncation helpers and emoji integrity tests |
+| SPI bus sharing | Display, LoRa, and SD card all share SPI2_HOST with separate CS lines. No SPI3 involved — all devices use SPI2_HOST/FSPI |
+| MeshCore pin | Submodule is pinned: `scripts/check_meshcore_pin.py` (CI) fails when gitlink, `ci/platformio-packages.lock`, or `.gitmodules` diverge. Never push submodule changes upstream |
+| Boot watchdog | Every boot stage must call `boot_watchdog_progress(BootStage::...)`; runtime heartbeat runs in `loop()`. A stalled stage triggers recovery |
+| Display boot-loop protection | Display init failures persist in RTC_NOINIT (`display_retry_state.h`); repeated failures roll back pending OTA and halt after `MAX_DISPLAY_FAILURES` |
+| SD before radio | Init SD before the SX1262 — the SD handshake resets SPI2 and can invalidate RadioLib state |
+| Remote-test mesh init | `mesh::init()` IS called in remote-test builds (shared SPI init); the radio stays disabled unless `SIGURDOS_REMOTE_TEST_RADIO` is set |
 | Debug shadow mode | `SIGURDOS_TRACKBALL_DEBUG_SHADOW` drops trackball events instead of logging+forwarding |
 | Debug.h header guards | Declaration in `debug.h` is unconditional, but `debug.cpp` wraps all implementation in `#if defined(SIGURDOS_DEBUG)` — latent linker risk |
 | SIGURDOS_DEBUG scoping | `SIGURDOS_DEBUG` no longer forces radio parameters. Use `SIGURDOS_DEBUG_FORCE_RADIO_PARAMS` separately to override radio config at boot. |

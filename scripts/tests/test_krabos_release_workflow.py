@@ -251,6 +251,16 @@ class KrabosReleaseWorkflowTests(unittest.TestCase):
                     commands,
                     f"{path.name}:{job_name} must isolate the runner Python",
                 )
+                self.assertIn(
+                    "assert sys.version_info[:2] == (3, 13)",
+                    commands,
+                    f"{path.name}:{job_name} must match the Pi lock runtime",
+                )
+                self.assertRegex(
+                    commands,
+                    r"ci/requirements-(?:platformio|coverage)-pi\.txt",
+                    f"{path.name}:{job_name} must install the ARM64 lock",
+                )
 
     def test_untrusted_forks_cannot_reach_self_hosted_pr_jobs(self) -> None:
         for name in ("pr-ci.yml", "build-validation-matrix.yml", "security.yml"):

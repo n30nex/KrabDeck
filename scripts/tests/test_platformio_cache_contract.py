@@ -8,15 +8,25 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
 HELPER_ACTION = "./.github/actions/cache-platformio"
-HASH_INPUTS = (
+HOSTED_HASH_INPUTS = (
     "platformio.ini",
     "lib/meshcore/library.json",
     "ci/requirements-platformio.in",
     "ci/requirements-platformio.txt",
     "ci/platformio-packages.lock",
 )
+PI_HASH_INPUTS = (
+    "platformio.ini",
+    "lib/meshcore/library.json",
+    "ci/requirements-platformio-pi.in",
+    "ci/requirements-platformio-pi.txt",
+    "ci/platformio-packages.lock",
+)
+PI5_RUNNER = ["self-hosted", "Linux", "ARM64", "krabdeck-pi5"]
 LOCKED_REQUIREMENTS = {
+    "ci/requirements-coverage-pi.txt",
     "ci/requirements-coverage.txt",
+    "ci/requirements-platformio-pi.txt",
     "ci/requirements-platformio.txt",
 }
 EXTERNAL_ACTION_REF = re.compile(r"uses:\s+(?!\./)[^@\s]+@([^\s]+)")
@@ -57,7 +67,12 @@ class PlatformioCacheContractTest(unittest.TestCase):
                 dependency_hash = helpers[0].get("with", {}).get(
                     "dependency-hash", ""
                 )
-                for dependency_input in HASH_INPUTS:
+                expected_inputs = (
+                    PI_HASH_INPUTS
+                    if job.get("runs-on") == PI5_RUNNER
+                    else HOSTED_HASH_INPUTS
+                )
+                for dependency_input in expected_inputs:
                     self.assertIn(dependency_input, dependency_hash, label)
 
     def test_hash_locked_installs_do_not_append_unlocked_packages(self):
@@ -82,8 +97,22 @@ class PlatformioCacheContractTest(unittest.TestCase):
         steps = workflow["jobs"]["coverage"]["steps"]
         helper = next(step for step in steps if step.get("uses") == HELPER_ACTION)
         dependency_hash = helper["with"]["dependency-hash"]
-        self.assertIn("ci/requirements-coverage.in", dependency_hash)
-        self.assertIn("ci/requirements-coverage.txt", dependency_hash)
+        self.assertIn("ci/requirements-coverage-pi.in", dependency_hash)
+        self.assertIn("ci/requirements-coverage-pi.txt", dependency_hash)
+
+    def test_pi_locks_are_targeted_and_constrained_to_reviewed_versions(self):
+        for stem in ("platformio", "coverage"):
+            source = (ROOT / "ci" / f"requirements-{stem}-pi.in").read_text(
+                encoding="utf-8"
+            )
+            lock = (ROOT / "ci" / f"requirements-{stem}-pi.txt").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn(f"-c requirements-{stem}.txt", source)
+            self.assertIn("--python-version 3.13", source)
+            self.assertIn("--python-platform aarch64-unknown-linux-gnu", source)
+            self.assertIn("--python-version 3.13", lock.splitlines()[1])
+            self.assertIn("--python-platform aarch64-unknown-linux-gnu", lock.splitlines()[1])
 
     def test_dependency_refresh_uses_only_a_pre_update_bootstrap_cache(self):
         path = WORKFLOWS / PRE_UPDATE_CACHE_WORKFLOW
@@ -98,7 +127,7 @@ class PlatformioCacheContractTest(unittest.TestCase):
         self.assertEqual(len(helpers), 1)
         cache = helpers[0]["with"]
         dependency_hash = cache.get("dependency-hash", "")
-        for dependency_input in HASH_INPUTS:
+        for dependency_input in HOSTED_HASH_INPUTS:
             self.assertIn(dependency_input, dependency_hash)
         helper_yaml = (
             ROOT / ".github/actions/cache-platformio/action.yml"

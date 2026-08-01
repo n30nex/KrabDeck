@@ -16,19 +16,22 @@ class SecurityWorkflowTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.workflow = (
             ROOT / ".github" / "workflows" / "security.yml"
-        ).read_text()
+        ).read_text(encoding="utf-8")
 
-    def test_dependency_checks_run_on_dev_prs_pushes_and_a_schedule(self) -> None:
+    def test_dependency_checks_run_on_main_prs_pushes_and_a_schedule(self) -> None:
         self.assertIn("push:", self.workflow)
         self.assertIn("pull_request:", self.workflow)
         self.assertIn("schedule:", self.workflow)
+        self.assertGreaterEqual(self.workflow.count("      - main"), 2)
         self.assertIn("npm audit --omit=dev --audit-level=high", self.workflow)
         self.assertIn("pio pkg list -e SigurdOS_TDeck", self.workflow)
+        self.assertIn("pio pkg list -e KrabOS_TDeckPlus", self.workflow)
         self.assertIn("osv-scanner\" scan source", self.workflow)
         self.assertIn("--lockfile \"${{ runner.temp }}/platformio-sbom.cdx.json\"", self.workflow)
         self.assertIn("--config ci/osv-scanner.toml", self.workflow)
         self.assertIn('osv-results.json\" lib', self.workflow)
         self.assertIn("pio run -e SigurdOS_TDeck", self.workflow)
+        self.assertIn("pio run -e KrabOS_TDeckPlus", self.workflow)
 
     def test_dependency_inventories_are_required_artifacts(self) -> None:
         self.assertIn("npm sbom --sbom-format cyclonedx", self.workflow)
@@ -41,7 +44,7 @@ class SecurityWorkflowTests(unittest.TestCase):
         self.assertIn("./.github/actions/cache-platformio", self.workflow)
         self.assertIn("pio pkg install --force", self.workflow)
         self.assertIn("scripts/check_security_patches.py", self.workflow)
-        patch_script = (ROOT / "scripts" / "check_security_patches.py").read_text()
+        patch_script = (ROOT / "scripts" / "check_security_patches.py").read_text(encoding="utf-8")
         self.assertNotIn("write_text", patch_script)
         self.assertNotIn("replace(before", patch_script)
 
@@ -50,7 +53,7 @@ class SecurityWorkflowTests(unittest.TestCase):
         self.assertIn("cmp src/fonts/emoji_font.c", self.workflow)
         self.assertIn("cmp src/fonts/latin_ext_font.c", self.workflow)
         for script_name in ("generate_emoji_font.sh", "generate_latin_ext_font.sh"):
-            script = (ROOT / "scripts" / script_name).read_text()
+            script = (ROOT / "scripts" / script_name).read_text(encoding="utf-8")
             self.assertIn("raw.githubusercontent.com", script)
             self.assertIn("FONT_SHA256=", script)
             self.assertIn("curl --fail --location", script)

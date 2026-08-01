@@ -18,14 +18,14 @@ class MeshCorePinTests(unittest.TestCase):
     def test_every_recursive_ci_workflow_checks_the_pin(self):
         workflows = ROOT / ".github" / "workflows"
         for path in workflows.glob("*.yml"):
-            text = path.read_text()
+            text = path.read_text(encoding="utf-8")
             if "submodules: recursive" in text:
                 with self.subTest(workflow=path.name):
                     self.assertIn("scripts/check_meshcore_pin.py", text)
 
     def test_platform_framework_and_esptool_are_exactly_constrained(self):
-        config = (ROOT / "platformio.ini").read_text()
-        lock = (ROOT / "ci" / "platformio-packages.lock").read_text()
+        config = (ROOT / "platformio.ini").read_text(encoding="utf-8")
+        lock = (ROOT / "ci" / "platformio-packages.lock").read_text(encoding="utf-8")
         exact = (
             "platformio/framework-arduinoespressif32@3.20017.241212+sha.dcc1105b",
             "platformio/tool-esptoolpy@2.41100.0",
@@ -55,7 +55,7 @@ class MeshCorePinTests(unittest.TestCase):
             with self.subTest(workflow=name):
                 self.assertIn(
                     "scripts/platformio_lock.py --check",
-                    (ROOT / ".github" / "workflows" / name).read_text(),
+                    (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8"),
                 )
 
     def test_lock_requires_exact_gitlink_line(self):

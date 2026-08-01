@@ -1,0 +1,708 @@
+name: KrabOS exact-device Pi 5 release
+
+"on":
+  workflow_dispatch:
+    inputs:
+      release_channel:
+        description: Validate only, publish an edge candidate, or publish protected v1.0.0
+        required: true
+        default: validation
+        type: choice
+        options:
+          - validation
+          - edge
+          - stable-v1.0.0
+      candidate_sha:
+        description: Full 40-character trusted branch SHA to build and test
+        required: true
+        type: string
+      candidate_branch:
+        description: Exact same-repository branch whose head must equal candidate_sha
+        required: true
+        default: release/krabos-1.0-candidate
+        type: string
+
+permissions:
+  contents: read
+
+# This is intentionally shared by every run that can touch the dedicated
+# KrabDeck runner. The release script also takes the host-wide hardware lock.
+concurrency:
+  group: meshcore-hardware-krabdeck-pi5
+  cancel-in-progress: false
+
+jobs:
+  pi5:
+    name: Build and exact-device hardware gate
+    if: >-
+      github.repository == 'n30nex/KrabDeck' &&
+      github.event_name == 'workflow_dispatch' &&
+      (inputs.release_channel == 'validation' || github.ref == 'refs/heads/main')
+    runs-on: [self-hosted, Linux, ARM64, krabdeck-pi5]
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      candidate_branch: ${{ steps.request.outputs.candidate_branch }}
+      candidate_sha: ${{ steps.request.outputs.candidate_sha }}
+      release_channel: ${{ steps.request.outputs.release_channel }}
+      release_eligible: ${{ steps.public_gate.outputs.release_eligible }}
+      release_prerelease: ${{ steps.release_meta.outputs.release_prerelease }}
+      release_tag: ${{ steps.release_meta.outputs.release_tag }}
+
+    steps:
+      - name: Admit exact trusted candidate request
+        id: request
+        shell: bash
+        env:
+          REQUESTED_BRANCH: ${{ inputs.candidate_branch }}
+          REQUESTED_CHANNEL: ${{ inputs.release_channel }}
+          REQUESTED_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          channel="$REQUESTED_CHANNEL"
+          candidate_branch="$REQUESTED_BRANCH"
+          candidate_sha="${REQUESTED_SHA,,}"
+          [[ "$candidate_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$candidate_branch" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$ ]]
+          [[ "$candidate_branch" != *".."* ]]
+          [[ "$candidate_branch" != */ ]]
+          test "$candidate_branch" = "$GITHUB_REF_NAME"
+          test "$candidate_sha" = "$GITHUB_SHA"
+
+          case "$channel" in
+            validation)
+              release_mode="false"
+              ;;
+            edge|stable-v1.0.0)
+              release_mode="true"
+              test "$candidate_branch" = "main"
+              test "$candidate_sha" = "$GITHUB_SHA"
+              ;;
+            *)
+              echo "Unsupported release channel: $channel" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "KRABOS_CANDIDATE_SHA=$candidate_sha" >> "$GITHUB_ENV"
+          echo "candidate_branch=$candidate_branch" >> "$GITHUB_OUTPUT"
+          echo "candidate_sha=$candidate_sha" >> "$GITHUB_OUTPUT"
+          echo "release_channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "release_mode=$release_mode" >> "$GITHUB_OUTPUT"
+
+      - name: Check out exact candidate
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ steps.request.outputs.candidate_sha }}
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Verify exact trusted source state
+        shell: bash
+        env:
+          CANDIDATE_BRANCH: ${{ steps.request.outputs.candidate_branch }}
+          CANDIDATE_SHA: ${{ steps.request.outputs.candidate_sha }}
+          RELEASE_MODE: ${{ steps.request.outputs.release_mode }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          remote_sha="$(git ls-remote origin "refs/heads/${CANDIDATE_BRANCH}" | awk '{print $1}')"
+          test "$remote_sha" = "$CANDIDATE_SHA"
+          git fetch --no-tags origin \
+            +refs/heads/main:refs/remotes/origin/main
+          git diff --quiet refs/remotes/origin/main -- \
+            .github/workflows/krabos-edge.yml \
+            .github/actions/cache-platformio
+          if [[ "$RELEASE_MODE" == "true" ]]; then
+            test "$CANDIDATE_BRANCH" = "main"
+            test "$CANDIDATE_SHA" = "$GITHUB_SHA"
+          fi
+          test -z "$(git status --short)"
+          test "$(uname -m)" = "aarch64"
+
+      - name: Bind release identity before any build
+        id: release_meta
+        if: steps.request.outputs.release_mode == 'true'
+        shell: bash
+        env:
+          REQUESTED_CHANNEL: ${{ steps.request.outputs.release_channel }}
+        run: |
+          set -euo pipefail
+          channel="$REQUESTED_CHANNEL"
+
+          case "$channel" in
+            edge)
+              tag="edge-$(date -u +%Y-%m-%d)-${GITHUB_SHA:0:12}"
+              prerelease="true"
+              ;;
+            stable-v1.0.0)
+              test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+              tag="v1.0.0"
+              prerelease="false"
+              ;;
+            *)
+              echo "Unsupported release channel: $channel" >&2
+              exit 1
+              ;;
+          esac
+
+          [[ "$tag" =~ ^(v1\.0\.0|edge-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{12})$ ]]
+          git fetch --force --tags origin
+          if git show-ref --verify --quiet "refs/tags/$tag"; then
+            existing_sha="$(git rev-list -n 1 "$tag")"
+            if [[ "$existing_sha" != "$GITHUB_SHA" ]]; then
+              echo "Immutable tag $tag already points to $existing_sha" >&2
+              exit 1
+            fi
+          fi
+
+          echo "KRABOS_RELEASE_VERSION=$tag" >> "$GITHUB_ENV"
+          echo "release_prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Create isolated artifact directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact_dir="$RUNNER_TEMP/krabos-artifacts"
+          if [[ -e "$artifact_dir" ]]; then
+            echo "Refusing a non-empty or stale artifact path: $artifact_dir" >&2
+            exit 1
+          fi
+          mkdir -m 700 "$artifact_dir"
+
+          echo "KRABOS_ARTIFACTS=$artifact_dir" >> "$GITHUB_ENV"
+
+      - name: Create isolated Python environment
+        shell: bash
+        run: python3 -m venv "$RUNNER_TEMP/krabos-venv"
+
+      - name: Restore PlatformIO packages
+        uses: ./.github/actions/cache-platformio
+        with:
+          dependency-hash: ${{ hashFiles('platformio.ini', 'lib/meshcore/library.json', 'ci/requirements-platformio.in', 'ci/requirements-platformio.txt', 'ci/platformio-packages.lock') }}
+
+      - name: Install pinned PlatformIO
+        shell: bash
+        run: >-
+          "$RUNNER_TEMP/krabos-venv/bin/python" -m pip install
+          --require-hashes -r ci/requirements-platformio.txt
+
+      - name: Enforce stable source evidence and open-priority gate
+        if: steps.request.outputs.release_channel == 'stable-v1.0.0'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release_meta.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          PY="$RUNNER_TEMP/krabos-venv/bin/python"
+          evidence="release-evidence/${RELEASE_TAG}.json"
+          test -f "$evidence"
+          "$PY" scripts/verify_release_evidence.py \
+            --evidence "$evidence" \
+            --tag "$RELEASE_TAG"
+
+          issues="$RUNNER_TEMP/open-issues.json"
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/issues?state=open&per_page=100" > "$issues"
+          ISSUES_PATH="$issues" "$PY" - <<'PY'
+          import json
+          import os
+          import re
+
+          with open(os.environ["ISSUES_PATH"], encoding="utf-8") as source:
+              pages = json.load(source)
+          issues = [issue for page in pages for issue in page]
+          priority = re.compile(r"(^|[^a-z0-9])p[01]([^a-z0-9]|$)", re.IGNORECASE)
+          blocked = []
+          for issue in issues:
+              if "pull_request" in issue:
+                  continue
+              searchable = " ".join(
+                  [str(issue.get("title", ""))]
+                  + [str(label.get("name", "")) for label in issue.get("labels", [])]
+              )
+              if priority.search(searchable):
+                  blocked.append(f"#{issue['number']} {issue['title']}")
+          if blocked:
+              raise SystemExit("open P0/P1 release blockers: " + "; ".join(blocked))
+          PY
+
+      - name: Run exact-device safety tests
+        shell: bash
+        run: >-
+          "$RUNNER_TEMP/krabos-venv/bin/python" -m unittest discover
+          -s scripts/krabos/tests -p 'test_*.py' -v
+
+      - name: Verify dependency graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$RUNNER_TEMP/krabos-venv/bin:$PATH"
+          "$RUNNER_TEMP/krabos-venv/bin/python" scripts/check_meshcore_pin.py --check-remote
+          pio pkg install -e KrabOS_TDeckPlus
+          pio pkg install -e KrabOS_TDeckPlus_recovery
+          pio pkg install -e KrabOS_TDeckPlus_debug
+          "$RUNNER_TEMP/krabos-venv/bin/python" scripts/platformio_lock.py --check
+
+      - name: Run repository and native test gates
+        shell: bash
+        env:
+          ASAN_OPTIONS: detect_leaks=1:strict_string_checks=1:halt_on_error=1
+          LSAN_OPTIONS: exitcode=23:print_suppressions=0
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          set -euo pipefail
+          export PATH="$RUNNER_TEMP/krabos-venv/bin:$PATH"
+          "$RUNNER_TEMP/krabos-venv/bin/python" scripts/check_roadmap.py
+          "$RUNNER_TEMP/krabos-venv/bin/python" -m unittest discover \
+            -s scripts/tests -p 'test_*.py' -v
+          nice -n 10 pio test -e native_test -v
+          nice -n 10 pio test -e native_sanitize -v
+          test -z "$(git status --short)"
+
+      - name: Build and stage exact production, recovery, and debug images
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$RUNNER_TEMP/krabos-venv/bin:$PATH"
+
+          nice -n 10 pio run -j 2 -e KrabOS_TDeckPlus
+          cp .pio/build/KrabOS_TDeckPlus/firmware.bin "$KRABOS_ARTIFACTS/firmware.bin"
+          cp .pio/build/KrabOS_TDeckPlus/firmware-merged.bin "$KRABOS_ARTIFACTS/firmware-merged.bin"
+          cp .pio/build/KrabOS_TDeckPlus/firmware.elf "$KRABOS_ARTIFACTS/firmware.elf"
+          cp .pio/build/KrabOS_TDeckPlus/KrabOS-tdeck-plus-launcher.bin "$KRABOS_ARTIFACTS/KrabOS-tdeck-plus-launcher.bin"
+          cp .pio/build/KrabOS_TDeckPlus/firmware-merged.bin "$KRABOS_ARTIFACTS/krabos-candidate.bin"
+          cp webflasher/manifest.json "$KRABOS_ARTIFACTS/manifest.json"
+          cp webflasher/build-metadata.json "$KRABOS_ARTIFACTS/build-metadata.json"
+          cp webflasher/krabos-tdeck-plus-bootloader.bin "$KRABOS_ARTIFACTS/krabos-tdeck-plus-bootloader.bin"
+          cp webflasher/krabos-tdeck-plus-partitions.bin "$KRABOS_ARTIFACTS/krabos-tdeck-plus-partitions.bin"
+          cp webflasher/krabos-tdeck-plus-boot_app0.bin "$KRABOS_ARTIFACTS/krabos-tdeck-plus-boot_app0.bin"
+          cp webflasher/krabos-tdeck-plus-firmware.bin "$KRABOS_ARTIFACTS/krabos-tdeck-plus-firmware.bin"
+          cp webflasher/krabos-tdeck-plus-full.bin "$KRABOS_ARTIFACTS/krabos-tdeck-plus-full.bin"
+          cp webflasher/krabos-tdeck-plus-launcher.bin "$KRABOS_ARTIFACTS/krabos-tdeck-plus-launcher.bin"
+
+          nice -n 10 pio run -j 2 -e KrabOS_TDeckPlus_recovery
+          cp .pio/build/KrabOS_TDeckPlus_recovery/firmware-merged.bin "$KRABOS_ARTIFACTS/krabos-recovery-rf-off.bin"
+          cp .pio/build/KrabOS_TDeckPlus_recovery/firmware.elf "$KRABOS_ARTIFACTS/krabos-recovery-rf-off.elf"
+
+          nice -n 10 pio run -j 2 -e KrabOS_TDeckPlus_debug
+          cp .pio/build/KrabOS_TDeckPlus_debug/firmware-merged.bin "$KRABOS_ARTIFACTS/firmware-debug.bin"
+          cp .pio/build/KrabOS_TDeckPlus_debug/firmware.elf "$KRABOS_ARTIFACTS/krabos-debug-rf-off.elf"
+
+          "$RUNNER_TEMP/krabos-venv/bin/python" scripts/generate_platformio_sbom.py \
+            --output "$KRABOS_ARTIFACTS/firmware-sbom.cdx.json"
+          source_epoch="$(git show -s --format=%ct "$KRABOS_CANDIDATE_SHA")"
+          tar --sort=name --mtime="@$source_epoch" --owner=0 --group=0 \
+            --numeric-owner -cf - \
+            LICENSE NOTICE.md \
+            lib/meshcore/license.txt \
+            lib/meshcore/lib/ed25519/license.txt \
+            lib/meshcore/arch/esp32/AsyncElegantOTA/LICENSE \
+            lib/meshcore/arch/stm32/Adafruit_LittleFS_stm32/src/littlefs/LICENSE.md \
+            | gzip -n > "$KRABOS_ARTIFACTS/krabos-licenses.tar.gz"
+
+      - name: Stamp exact release identity
+        if: steps.request.outputs.release_mode == 'true'
+        shell: bash
+        run: >-
+          "$RUNNER_TEMP/krabos-venv/bin/python"
+          scripts/krabos/bundle_release.py stamp
+          --artifacts "$KRABOS_ARTIFACTS"
+          --commit "$KRABOS_CANDIDATE_SHA"
+          --version "$KRABOS_RELEASE_VERSION"
+
+      - name: Validate exact candidate artifact contract
+        shell: bash
+        env:
+          RELEASE_MODE: ${{ steps.request.outputs.release_mode }}
+        run: |
+          set -euo pipefail
+          args=(
+            --artifacts-dir "$KRABOS_ARTIFACTS"
+            --expected-commit "$KRABOS_CANDIDATE_SHA"
+          )
+          if [[ "$RELEASE_MODE" == "true" ]]; then
+            args+=(--expected-version "$KRABOS_RELEASE_VERSION")
+          fi
+          "$RUNNER_TEMP/krabos-venv/bin/python" \
+            scripts/validate_release_artifacts.py "${args[@]}"
+
+      - name: Bind stable evidence to produced public bytes
+        if: steps.request.outputs.release_channel == 'stable-v1.0.0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PY="$RUNNER_TEMP/krabos-venv/bin/python"
+          evidence="release-evidence/${KRABOS_RELEASE_VERSION}.json"
+          "$PY" scripts/verify_release_evidence.py \
+            --evidence "$evidence" \
+            --commit "$KRABOS_CANDIDATE_SHA" \
+            --tag "$KRABOS_RELEASE_VERSION" \
+            --artifacts-dir "$KRABOS_ARTIFACTS" \
+            --write-attestation "$KRABOS_ARTIFACTS/release-evidence.json"
+          "$PY" scripts/verify_release_evidence.py \
+            --attestation "$KRABOS_ARTIFACTS/release-evidence.json" \
+            --commit "$KRABOS_CANDIDATE_SHA" \
+            --tag "$KRABOS_RELEASE_VERSION" \
+            --artifacts-dir "$KRABOS_ARTIFACTS"
+
+      - name: Bind exact build bytes into flash manifests
+        if: >-
+          steps.request.outputs.release_mode == 'true' &&
+          github.ref == 'refs/heads/main' &&
+          steps.request.outputs.candidate_branch == 'main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          PY="$RUNNER_TEMP/krabos-venv/bin/python"
+          "$PY" scripts/krabos/exact_device_release.py make-manifest \
+            --image "$KRABOS_ARTIFACTS/krabos-candidate.bin" \
+            --output "$KRABOS_ARTIFACTS/candidate-flash-manifest.json" \
+            --commit "$KRABOS_CANDIDATE_SHA" \
+            --role candidate
+          "$PY" scripts/krabos/exact_device_release.py make-manifest \
+            --image "$KRABOS_ARTIFACTS/krabos-recovery-rf-off.bin" \
+            --output "$KRABOS_ARTIFACTS/recovery-flash-manifest.json" \
+            --commit "$KRABOS_CANDIDATE_SHA" \
+            --role recovery
+
+      - name: Run autonomous exact-device flash and recovery gate
+        id: hardware
+        if: >-
+          steps.request.outputs.release_mode == 'true' &&
+          github.ref == 'refs/heads/main' &&
+          steps.request.outputs.candidate_branch == 'main'
+        continue-on-error: true
+        shell: bash
+        run: >-
+          "$RUNNER_TEMP/krabos-venv/bin/python"
+          scripts/krabos/exact_device_release.py release
+          --manifest "$KRABOS_ARTIFACTS/candidate-flash-manifest.json"
+          --recovery-manifest "$KRABOS_ARTIFACTS/recovery-flash-manifest.json"
+          --state-directory "$HOME/.local/state/krabos/releases"
+          --public-receipt "$KRABOS_ARTIFACTS/krabos-public-receipt.json"
+          --smoke-evidence "$RUNNER_TEMP/krabos-smoke-evidence.json"
+          --esptool-python "$RUNNER_TEMP/krabos-venv/bin/python"
+
+      - name: Validate canonical redacted publication receipt
+        id: public_gate
+        if: always() && steps.request.outputs.release_mode == 'true'
+        shell: bash
+        env:
+          HARDWARE_OUTCOME: ${{ steps.hardware.outcome }}
+        run: |
+          set +e
+          echo "release_eligible=false" >> "$GITHUB_OUTPUT"
+          if [[ "$HARDWARE_OUTCOME" == "success" ]]; then
+            "$RUNNER_TEMP/krabos-venv/bin/python" \
+              scripts/krabos/exact_device_release.py check-public \
+              --receipt "$KRABOS_ARTIFACTS/krabos-public-receipt.json" \
+              --github-output "$GITHUB_OUTPUT"
+          fi
+          exit 0
+
+      - name: Seal exact public release bundle
+        if: >-
+          steps.request.outputs.release_mode == 'true' &&
+          steps.hardware.outcome == 'success' &&
+          steps.public_gate.outputs.release_eligible == 'true'
+        shell: bash
+        run: >-
+          "$RUNNER_TEMP/krabos-venv/bin/python"
+          scripts/krabos/bundle_release.py seal
+          --artifacts "$KRABOS_ARTIFACTS"
+          --commit "$KRABOS_CANDIDATE_SHA"
+          --version "$KRABOS_RELEASE_VERSION"
+
+      - name: Upload redacted gate evidence
+        if: always() && steps.request.outputs.release_mode == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: krabos-gate-${{ steps.request.outputs.candidate_sha }}
+          path: |
+            ${{ runner.temp }}/krabos-artifacts/candidate-flash-manifest.json
+            ${{ runner.temp }}/krabos-artifacts/recovery-flash-manifest.json
+            ${{ runner.temp }}/krabos-artifacts/krabos-public-receipt.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload exact tested release bundle
+        if: >-
+          steps.request.outputs.release_mode == 'true' &&
+          steps.hardware.outcome == 'success' &&
+          steps.public_gate.outputs.release_eligible == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: krabos-${{ steps.request.outputs.candidate_sha }}
+          path: ${{ runner.temp }}/krabos-artifacts/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload validation-only build artifacts
+        if: steps.request.outputs.release_mode == 'false'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: krabos-validation-${{ steps.request.outputs.candidate_sha }}
+          path: ${{ runner.temp }}/krabos-artifacts/*
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Fail closed when exact hardware evidence is incomplete
+        if: >-
+          steps.request.outputs.release_mode == 'true' &&
+          (steps.hardware.outcome != 'success' ||
+           steps.public_gate.outputs.release_eligible != 'true')
+        shell: bash
+        run: |
+          echo "KrabOS release blocked: exact-candidate hardware or recovery evidence is incomplete."
+          exit 1
+
+  stable_approval:
+    name: Approve protected v1.0.0 publication
+    needs: pi5
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      needs.pi5.outputs.candidate_branch == 'main' &&
+      needs.pi5.outputs.release_channel == 'stable-v1.0.0'
+    runs-on: ubuntu-latest
+    environment:
+      name: krabos-v1-production
+    permissions:
+      contents: read
+    steps:
+      - name: Verify protected environment release binding
+        env:
+          APPROVED_VERSION: ${{ vars.KRABOS_STABLE_RELEASE_VERSION }}
+          EXPECTED_VERSION: ${{ needs.pi5.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          test "$EXPECTED_VERSION" = "v1.0.0"
+          test "$APPROVED_VERSION" = "$EXPECTED_VERSION"
+
+  publish:
+    name: Publish exact tested candidate
+    needs: [pi5, stable_approval]
+    if: >-
+      always() &&
+      needs.pi5.result == 'success' &&
+      needs.pi5.outputs.release_eligible == 'true' &&
+      github.ref == 'refs/heads/main' &&
+      needs.pi5.outputs.candidate_branch == 'main' &&
+      (needs.pi5.outputs.release_channel == 'edge' ||
+       needs.stable_approval.result == 'success')
+    runs-on: ubuntu-latest
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Check out exact release source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Download exact tested artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: krabos-${{ github.sha }}
+          path: release
+
+      - name: Verify deterministic unsigned bundle
+        shell: bash
+        run: >-
+          python3 scripts/krabos/bundle_release.py verify
+          --artifacts release
+          --commit "${{ github.sha }}"
+          --version "${{ needs.pi5.outputs.release_tag }}"
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Inspect existing immutable publication
+        id: publication
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PRERELEASE: ${{ needs.pi5.outputs.release_prerelease }}
+          RELEASE_TAG: ${{ needs.pi5.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          echo "already_complete=false" >> "$GITHUB_OUTPUT"
+
+          if tag_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" 2>/dev/null)"; then
+            tag_type="$(jq -r '.object.type' <<<"$tag_json")"
+            tag_sha="$(jq -r '.object.sha' <<<"$tag_json")"
+            test "$tag_type" = "commit"
+            test "$tag_sha" = "$GITHUB_SHA"
+          fi
+
+          release_json="$RUNNER_TEMP/existing-release.json"
+          if ! gh release view "$RELEASE_TAG" \
+            --json isDraft,isPrerelease,targetCommitish > "$release_json" 2>/dev/null; then
+            exit 0
+          fi
+          RELEASE_JSON="$release_json" python3 - <<'PY'
+          import json
+          import os
+
+          with open(os.environ["RELEASE_JSON"], encoding="utf-8") as source:
+              release = json.load(source)
+          expected_prerelease = os.environ["RELEASE_PRERELEASE"] == "true"
+          if release.get("isDraft") is not False:
+              raise SystemExit("existing release is unexpectedly a draft")
+          if release.get("isPrerelease") is not expected_prerelease:
+              raise SystemExit("existing release channel does not match this run")
+          if release.get("targetCommitish") != os.environ["GITHUB_SHA"]:
+              raise SystemExit("existing release targets a different commit")
+          PY
+
+          existing_dir="$(mktemp -d "$RUNNER_TEMP/krabos-existing.XXXXXX")"
+          if gh release download "$RELEASE_TAG" --dir "$existing_dir" && \
+             python3 scripts/krabos/bundle_release.py verify \
+               --artifacts "$existing_dir" \
+               --commit "$GITHUB_SHA" \
+               --version "$RELEASE_TAG" && \
+             cosign verify-blob \
+               --bundle "$existing_dir/SHA256SUMS.sigstore.json" \
+               --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/krabos-edge.yml@refs/heads/main" \
+               --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+               "$existing_dir/SHA256SUMS.txt"; then
+            for artifact in "$existing_dir"/*; do
+              gh attestation verify "$artifact" \
+                --repo "$GITHUB_REPOSITORY" \
+                --signer-workflow "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/.github/workflows/krabos-edge.yml" \
+                --source-ref refs/heads/main \
+                --source-digest "$GITHUB_SHA" \
+                --deny-self-hosted-runners > /dev/null
+            done
+            echo "already_complete=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sign exact bundle checksums with GitHub OIDC
+        if: steps.publication.outputs.already_complete != 'true'
+        shell: bash
+        run: >-
+          cosign sign-blob --yes
+          --bundle release/SHA256SUMS.sigstore.json
+          release/SHA256SUMS.txt
+
+      - name: Attest exact release bundle provenance
+        if: steps.publication.outputs.already_complete != 'true'
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: release/*
+
+      - name: Reserve or validate immutable release tag
+        if: steps.publication.outputs.already_complete != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.pi5.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if tag_json="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" 2>/dev/null)"; then
+            test "$(jq -r '.object.type' <<<"$tag_json")" = "commit"
+            test "$(jq -r '.object.sha' <<<"$tag_json")" = "$GITHUB_SHA"
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f "ref=refs/tags/${RELEASE_TAG}" \
+              -f "sha=${GITHUB_SHA}"
+          fi
+
+      - name: Create or validate GitHub release
+        if: steps.publication.outputs.already_complete != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_CHANNEL: ${{ needs.pi5.outputs.release_channel }}
+          RELEASE_PRERELEASE: ${{ needs.pi5.outputs.release_prerelease }}
+          RELEASE_TAG: ${{ needs.pi5.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --json targetCommitish > /dev/null 2>&1; then
+            actual="$(gh release view "$RELEASE_TAG" --json targetCommitish --jq '.targetCommitish')"
+            test "$actual" = "$GITHUB_SHA"
+          else
+            args=(release create "$RELEASE_TAG" --verify-tag --target "$GITHUB_SHA")
+            args+=(--title "KrabOS ${RELEASE_TAG}")
+            args+=(--notes "Exact-SHA KrabOS ${RELEASE_CHANNEL} release for LilyGo T-Deck Plus. Hardware, recovery, and release evidence are included as immutable assets.")
+            if [[ "$RELEASE_PRERELEASE" == "true" ]]; then
+              args+=(--prerelease)
+            fi
+            gh "${args[@]}"
+          fi
+
+      - name: Upload release assets without overwriting existing bytes
+        if: steps.publication.outputs.already_complete != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.pi5.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          existing_names="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')"
+          for artifact in release/*; do
+            name="$(basename "$artifact")"
+            if grep -Fqx "$name" <<<"$existing_names"; then
+              existing_dir="$(mktemp -d "$RUNNER_TEMP/krabos-asset.XXXXXX")"
+              gh release download "$RELEASE_TAG" --pattern "$name" --dir "$existing_dir"
+              if ! cmp --silent "$artifact" "$existing_dir/$name"; then
+                echo "Existing immutable release asset differs: $name" >&2
+                exit 1
+              fi
+            else
+              gh release upload "$RELEASE_TAG" "$artifact"
+            fi
+          done
+
+      - name: Verify published release, signature, and attestations
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_PRERELEASE: ${{ needs.pi5.outputs.release_prerelease }}
+          RELEASE_TAG: ${{ needs.pi5.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          published_dir="$(mktemp -d "$RUNNER_TEMP/krabos-published.XXXXXX")"
+          gh release download "$RELEASE_TAG" --dir "$published_dir"
+          python3 scripts/krabos/bundle_release.py verify \
+            --artifacts "$published_dir" \
+            --commit "$GITHUB_SHA" \
+            --version "$RELEASE_TAG"
+          cosign verify-blob \
+            --bundle "$published_dir/SHA256SUMS.sigstore.json" \
+            --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/krabos-edge.yml@refs/heads/main" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$published_dir/SHA256SUMS.txt"
+          for artifact in "$published_dir"/*; do
+            gh attestation verify "$artifact" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/.github/workflows/krabos-edge.yml" \
+              --source-ref refs/heads/main \
+              --source-digest "$GITHUB_SHA" \
+              --deny-self-hosted-runners > /dev/null
+          done
+
+          release_json="$RUNNER_TEMP/published-release.json"
+          gh release view "$RELEASE_TAG" \
+            --json isDraft,isPrerelease,targetCommitish > "$release_json"
+          RELEASE_JSON="$release_json" python3 - <<'PY'
+          import json
+          import os
+
+          with open(os.environ["RELEASE_JSON"], encoding="utf-8") as source:
+              release = json.load(source)
+          expected_prerelease = os.environ["RELEASE_PRERELEASE"] == "true"
+          if release != {
+              "isDraft": False,
+              "isPrerelease": expected_prerelease,
+              "targetCommitish": os.environ["GITHUB_SHA"],
+          }:
+              raise SystemExit("published GitHub release metadata is not exact")
+          PY

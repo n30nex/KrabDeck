@@ -1,8 +1,12 @@
-name: Build & Release
+name: Legacy SigurdOS Build & Release
 
 "on":
   push:
-    tags: ['*']
+    # KrabOS edge and v1 tags are owned exclusively by krabos-edge.yml.
+    tags:
+      - '*'
+      - '!edge-*'
+      - '!v1.0.0'
   workflow_dispatch:
 
 jobs:
@@ -12,7 +16,7 @@ jobs:
 
   test:
     name: Native tests
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, ARM64, krabdeck-pi5]
 
     steps:
       - name: Checkout
@@ -57,7 +61,7 @@ jobs:
 
   build:
     name: Build firmware
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, ARM64, krabdeck-pi5]
     needs: [test, full-matrix]
     permissions:
       attestations: write

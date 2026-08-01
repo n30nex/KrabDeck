@@ -4,9 +4,11 @@ name: Build Validation Matrix
   pull_request:
     branches:
       - dev
+      - main
   push:
     branches:
       - dev
+      - main
   schedule:
     - cron: '0 4 * * 1'
   workflow_dispatch:
@@ -18,11 +20,18 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.env }}
-    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, ARM64, krabdeck-pi5]
     strategy:
       fail-fast: false
       matrix:
         include:
+          # KrabOS release, RF-off recovery, and RF-off diagnostics
+          - env: KrabOS_TDeckPlus
+          - env: KrabOS_TDeckPlus_recovery
+          - env: KrabOS_TDeckPlus_debug
           # Canonical and feature variants
           - env: SigurdOS_TDeck
           - env: SigurdOS_TDeck_ble_validation
@@ -67,6 +76,7 @@ jobs:
       - name: Install PlatformIO
         run: python -m pip install --require-hashes -r ci/requirements-platformio.txt
       - name: Build ${{ matrix.env }}
+        id: firmware_build
         env:
           # Compile-only placeholders: no network or device interaction occurs in CI.
           SIGURDOS_GPS_VALIDATION_WIFI_SSID: ci-compile-only
@@ -75,18 +85,37 @@ jobs:
           SIGURDOS_GPS_VALIDATION_WIFI_TOKEN: ci-compile-token-0123456789abcdef
         run: |
           set -o pipefail
+          if ! grep -Fqx '[env:${{ matrix.env }}]' platformio.ini; then
+            case '${{ matrix.env }}' in
+              KrabOS_*)
+                echo 'skipped=true' >> "$GITHUB_OUTPUT"
+                echo '${{ matrix.env }} is not present yet; workflow-only bootstrap skips it.'
+                exit 0
+                ;;
+              *)
+                echo 'Required PlatformIO environment is missing: ${{ matrix.env }}' >&2
+                exit 1
+                ;;
+            esac
+          fi
+          echo 'skipped=false' >> "$GITHUB_OUTPUT"
           pio run -e ${{ matrix.env }} 2>&1 | tee "build-${{ matrix.env }}.log"
       - name: Enforce first-party warning budget for ${{ matrix.env }}
-        if: matrix.env == 'SigurdOS_TDeck'
+        if: >-
+          steps.firmware_build.outputs.skipped != 'true' &&
+          (matrix.env == 'SigurdOS_TDeck' || matrix.env == 'KrabOS_TDeckPlus')
         run: >-
           python scripts/check_first_party_warnings.py
           --log "build-${{ matrix.env }}.log"
           --baseline ci/first_party_warnings.json
           --summary "$GITHUB_STEP_SUMMARY"
       - name: Verify resolved PlatformIO graph
-        if: matrix.env == 'SigurdOS_TDeck'
+        if: >-
+          steps.firmware_build.outputs.skipped != 'true' &&
+          (matrix.env == 'SigurdOS_TDeck' || matrix.env == 'KrabOS_TDeckPlus')
         run: python scripts/platformio_lock.py --check
       - name: Upload firmware artifacts for ${{ matrix.env }}
+        if: steps.firmware_build.outputs.skipped != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: firmware-${{ matrix.env }}

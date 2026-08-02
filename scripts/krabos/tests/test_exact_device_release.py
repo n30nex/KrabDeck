@@ -122,6 +122,14 @@ def eligible_receipt(
         },
         "gates": {name: True for name in release.REQUIRED_RELEASE_GATES},
         "recovery": {"used": True, "ok": True},
+        "external_evidence": {
+            "requirement_id": release.RF_OBSERVER_REQUIREMENT,
+            "evidence_class": "independent-observer",
+            "source_evidence_sha256": "f" * 64,
+            "evidence_bundle_sha256": "e" * 64,
+            "production_image_sha256": candidate.segments[0].sha256,
+            "recovery_image_sha256": recovery.segments[0].sha256,
+        },
     }
 
 
@@ -805,7 +813,7 @@ class ReceiptTests(unittest.TestCase):
                     output, commit, manifest_sha256, challenge
                 )
 
-    def test_canonical_claim_is_rejected_without_independent_rf_observer(self) -> None:
+    def test_canonical_claim_requires_the_admitted_external_evidence_digest(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             candidate = release.load_manifest(
@@ -823,9 +831,81 @@ class ReceiptTests(unittest.TestCase):
                     "recovery": release.manifest_public_artifacts(recovery),
                 },
             )
-            with self.assertRaisesRegex(release.SafetyError, "independent RF observer"):
+            with self.assertRaisesRegex(release.SafetyError, "evidence digest"):
                 release.validate_public_release_receipt(receipt)
             self.assertFalse(release.public_receipt_release_eligible(receipt))
+            release.validate_public_release_receipt(
+                receipt,
+                expected_source_evidence_sha256="f" * 64,
+                expected_evidence_bundle_sha256="e" * 64,
+            )
+            self.assertTrue(
+                release.public_receipt_release_eligible(
+                    receipt,
+                    expected_source_evidence_sha256="f" * 64,
+                    expected_evidence_bundle_sha256="e" * 64,
+                )
+            )
+            with self.assertRaisesRegex(release.SafetyError, "admitted evidence"):
+                release.validate_public_release_receipt(
+                    receipt,
+                    expected_source_evidence_sha256="0" * 64,
+                    expected_evidence_bundle_sha256="e" * 64,
+                )
+            with self.assertRaisesRegex(release.SafetyError, "evidence bundle"):
+                release.validate_public_release_receipt(
+                    receipt,
+                    expected_source_evidence_sha256="f" * 64,
+                    expected_evidence_bundle_sha256="0" * 64,
+                )
+            stale = json.loads(json.dumps(receipt))
+            stale["external_evidence"]["recovery_image_sha256"] = "0" * 64
+            with self.assertRaisesRegex(release.SafetyError, "stale image"):
+                release.validate_public_release_receipt(
+                    stale,
+                    expected_source_evidence_sha256="f" * 64,
+                    expected_evidence_bundle_sha256="e" * 64,
+                )
+
+    def test_observer_admission_hashes_the_supporting_bundle_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            candidate = release.load_manifest(
+                write_manifest(root, "candidate", "candidate.bin"), "candidate"
+            )
+            recovery = release.load_manifest(
+                write_manifest(root, "recovery", "recovery.bin"), "recovery"
+            )
+            bundle_path = root / "observer.json"
+            bundle_path.write_bytes(b"different bytes")
+            source = release.evidence_source_reference(
+                "n30nex/KrabDeck",
+                123,
+                456,
+                "sha256:" + "d" * 64,
+                candidate.commit,
+            )
+            with (
+                mock.patch.object(release, "verify_github_source_metadata"),
+                mock.patch.object(
+                    release,
+                    "verify_attested_requirement",
+                    return_value=(
+                        {"evidence_bundle_sha256": "e" * 64},
+                        "f" * 64,
+                    ),
+                ),
+            ):
+                with self.assertRaisesRegex(release.SafetyError, "observer evidence"):
+                    release.validate_independent_rf_evidence(
+                        root / "release-evidence.json",
+                        bundle_path,
+                        source,
+                        root / "artifact-metadata.json",
+                        root / "run-metadata.json",
+                        candidate,
+                        recovery,
+                    )
 
     def test_missing_extra_or_false_gate_fails_closed(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -899,6 +979,8 @@ class ReceiptTests(unittest.TestCase):
                         "candidate": release.manifest_public_artifacts(candidate),
                         "recovery": release.manifest_public_artifacts(recovery),
                     },
+                    expected_source_evidence_sha256="f" * 64,
+                    expected_evidence_bundle_sha256="e" * 64,
                 )
 
 
@@ -1139,6 +1221,123 @@ class OrchestratorTests(unittest.TestCase):
                     self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
                 restoration = next((root / "state").glob("*/state-restoration.json"))
                 self.assertEqual(stat.S_IMODE(restoration.stat().st_mode), 0o600)
+
+    def test_independent_exact_hash_evidence_owns_only_rf_gates(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            candidate_path = write_manifest(root, "candidate", "candidate.bin")
+            recovery_path = write_manifest(root, "recovery", "recovery.bin")
+            public = root / "public.json"
+            tool = FakeEspTool()
+            bundle_path = root / "observer-bundle.json"
+            bundle_path.write_bytes(b"sanitized independent observer evidence")
+            bundle_digest = digest(bundle_path)
+            source = release.evidence_source_reference(
+                "n30nex/KrabDeck",
+                123,
+                456,
+                "sha256:" + "d" * 64,
+                "a" * 40,
+            )
+            with (
+                mock.patch.object(
+                    release,
+                    "verify_attested_requirement",
+                    return_value=(
+                        {
+                            "id": release.RF_OBSERVER_REQUIREMENT,
+                            "evidence_class": "independent-observer",
+                            "evidence_bundle_sha256": bundle_digest,
+                        },
+                        "f" * 64,
+                    ),
+                ) as verify_observer,
+                mock.patch.object(
+                    release, "verify_github_source_metadata"
+                ) as verify_source,
+            ):
+                eligible = release.execute_release(
+                    candidate_path,
+                    recovery_path,
+                    root / "state",
+                    public,
+                    root / "smoke.json",
+                    "/venv/bin/python",
+                    observer_evidence_path=root / "release-evidence.json",
+                    observer_bundle_path=bundle_path,
+                    observer_source_reference=source,
+                    observer_artifact_metadata_path=root / "artifact-metadata.json",
+                    observer_run_metadata_path=root / "run-metadata.json",
+                    runner=RecordingRunner(),
+                    lock_factory=contextlib.nullcontext,
+                    guard_factory=lambda _: FakeGuard(),
+                    esptool_factory=lambda _runner, _python: tool,
+                    hooks_factory=lambda _runner, _python: FakeHooks(),
+                )
+            receipt = json.loads(public.read_text(encoding="utf-8"))
+            private_path = next((root / "state").glob("*/receipt.json"))
+            private = json.loads(private_path.read_text(encoding="utf-8"))
+            self.assertTrue(eligible)
+            self.assertTrue(receipt["release_eligible"])
+            self.assertTrue(all(receipt["gates"].values()))
+            self.assertTrue(receipt["recovery"]["ok"])
+            self.assertEqual(receipt["external_evidence"]["source_evidence_sha256"], "f" * 64)
+            self.assertEqual(
+                private["candidate_diagnostics"]["physical_rf_observer"],
+                "unavailable",
+            )
+            self.assertTrue(private["recovery"]["evidence"]["local_only"])
+            self.assertEqual(tool.write_roles, ["recovery", "candidate"])
+            self.assertEqual(tool.last_role, "candidate")
+            verify_observer.assert_called_once()
+            verify_source.assert_called_once_with(
+                root / "artifact-metadata.json",
+                root / "run-metadata.json",
+                source,
+                "a" * 40,
+            )
+
+    def test_invalid_external_evidence_stops_before_device_access(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            guard_called = False
+
+            def guard_factory(_: object) -> FakeGuard:
+                nonlocal guard_called
+                guard_called = True
+                return FakeGuard()
+
+            with mock.patch.object(
+                release,
+                "verify_attested_requirement",
+                side_effect=ValueError("recovery digest mismatch"),
+            ), mock.patch.object(release, "verify_github_source_metadata"):
+                bundle_path = root / "observer-bundle.json"
+                bundle_path.write_bytes(b"observer")
+                source = release.evidence_source_reference(
+                    "n30nex/KrabDeck",
+                    123,
+                    456,
+                    "sha256:" + "d" * 64,
+                    "a" * 40,
+                )
+                with self.assertRaisesRegex(release.SafetyError, "observer evidence"):
+                    release.execute_release(
+                        write_manifest(root, "candidate", "candidate.bin"),
+                        write_manifest(root, "recovery", "recovery.bin"),
+                        root / "state",
+                        root / "public.json",
+                        root / "smoke.json",
+                        "/venv/bin/python",
+                        observer_evidence_path=root / "release-evidence.json",
+                        observer_bundle_path=bundle_path,
+                        observer_source_reference=source,
+                        observer_artifact_metadata_path=root / "artifact-metadata.json",
+                        observer_run_metadata_path=root / "run-metadata.json",
+                        guard_factory=guard_factory,
+                    )
+            self.assertFalse(guard_called)
+            self.assertFalse((root / "state").exists())
 
     def test_readback_hash_mismatch_retries_without_losing_state(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

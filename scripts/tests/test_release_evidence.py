@@ -86,9 +86,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def make_completed_evidence(self, commit, tag):
-        requirements = json.loads(
-            (ROOT / "ci/release_evidence_requirements.json").read_text()
-        )["requirements"]
+        requirements = release_evidence.load_requirements()
         tested_at = datetime.now(timezone.utc).date().isoformat()
         records = []
         for requirement in requirements:
@@ -99,7 +97,7 @@ class ReleaseEvidenceTests(unittest.TestCase):
                 "tested_at": tested_at,
                 "firmware_version": tag,
             }
-            if requirement["hardware"]:
+            if requirement["peer_required"]:
                 record["peer_version"] = "test-peer-1"
             records.append(record)
         return {
@@ -115,7 +113,15 @@ class ReleaseEvidenceTests(unittest.TestCase):
             "requirements": records,
         }
 
-    def make_exact_evidence(self, commit, tag, production_digest):
+    def make_exact_evidence(
+        self, commit, tag, production_digest, artifact_sha256s=None
+    ):
+        artifact_sha256s = artifact_sha256s or {
+            "production": production_digest,
+            "recovery": "c" * 64,
+            "debug": "d" * 64,
+            "ota": "e" * 64,
+        }
         evidence = self.make_completed_evidence(commit, tag)
         evidence.pop("commit")
         evidence.pop("artifacts")
@@ -124,8 +130,30 @@ class ReleaseEvidenceTests(unittest.TestCase):
             "kind": "krabos-exact-release-evidence-input",
             "candidate_commit": commit,
             "production_image_sha256": production_digest,
+            "artifact_sha256s": artifact_sha256s,
         })
+        requirements = {item["id"]: item for item in release_evidence.load_requirements()}
         for record in evidence["requirements"]:
+            requirement = requirements[record["id"]]
+            record.pop("evidence_url")
+            record.update(
+                {
+                    "evidence_class": requirement["evidence_classes"][0],
+                    "evidence_bundle_url": (
+                        f"https://example.invalid/evidence/{requirement['id']}.json"
+                    ),
+                    "evidence_bundle_sha256": "f" * 64,
+                    "artifacts": [
+                        {"role": role, "sha256": artifact_sha256s[role]}
+                        for role in requirement["artifact_roles"]
+                    ],
+                    "claims": requirement["required_claims"],
+                    "metrics": {
+                        name: limits["min"] if "min" in limits else limits["max"]
+                        for name, limits in requirement["metric_bounds"].items()
+                    },
+                }
+            )
             record["candidate_commit"] = commit
             record["production_image_sha256"] = production_digest
         return evidence
@@ -139,6 +167,20 @@ class ReleaseEvidenceTests(unittest.TestCase):
                 "--evidence", path,
                 "--commit", commit,
                 "--tag", tag,
+            )
+
+    def verify_exact(self, evidence, commit="a" * 40, tag="v1.0.0"):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "evidence.json"
+            path.write_text(json.dumps(evidence), encoding="utf-8")
+            return release_evidence.verify_evidence(
+                path,
+                tag,
+                expected_commit=commit,
+                expected_production_image_sha256=evidence[
+                    "production_image_sha256"
+                ],
+                require_exact=True,
             )
 
     def test_completed_evidence_is_bound_to_tag_and_commit(self):
@@ -185,7 +227,13 @@ class ReleaseEvidenceTests(unittest.TestCase):
             with mock.patch.object(
                 release_evidence,
                 "_production_hashes",
-                return_value=({"firmware-merged.bin": production_digest}, production_digest),
+                return_value=(
+                    {
+                        filename: evidence["artifact_sha256s"][role]
+                        for role, filename in release_evidence.ARTIFACT_ROLE_FILES.items()
+                    },
+                    production_digest,
+                ),
             ):
                 count, _ = release_evidence.verify_evidence(
                     path,
@@ -202,7 +250,13 @@ class ReleaseEvidenceTests(unittest.TestCase):
             with mock.patch.object(
                 release_evidence,
                 "_production_hashes",
-                return_value=({"firmware-merged.bin": production_digest}, production_digest),
+                return_value=(
+                    {
+                        filename: evidence["artifact_sha256s"][role]
+                        for role, filename in release_evidence.ARTIFACT_ROLE_FILES.items()
+                    },
+                    production_digest,
+                ),
             ):
                 with self.assertRaisesRegex(ValueError, "candidate_commit"):
                     release_evidence.verify_evidence(
@@ -211,6 +265,92 @@ class ReleaseEvidenceTests(unittest.TestCase):
                         expected_commit=commit,
                         artifacts_dir=Path(directory),
                     )
+
+    def test_typed_exact_records_reject_free_text_mutable_links_and_wrong_class(self):
+        evidence = self.make_exact_evidence("a" * 40, "v1.0.0", "b" * 64)
+        self.assertGreater(self.verify_exact(evidence)[0], 0)
+        rf_index = next(
+            index
+            for index, record in enumerate(evidence["requirements"])
+            if record["id"] == "RF-END-TO-END"
+        )
+        mutations = []
+        extra = json.loads(json.dumps(evidence))
+        extra["requirements"][0]["notes"] = "looks good"
+        mutations.append((extra, "fields"))
+        mutable_url = json.loads(json.dumps(evidence))
+        mutable_url["requirements"][0]["evidence_bundle_url"] += "?token=secret"
+        mutations.append((mutable_url, "query"))
+        wrong_class = json.loads(json.dumps(evidence))
+        wrong_class["requirements"][rf_index]["evidence_class"] = "manual-review"
+        mutations.append((wrong_class, "evidence_class"))
+        wrong_role = json.loads(json.dumps(evidence))
+        wrong_role["requirements"][rf_index]["artifacts"][1]["sha256"] = "0" * 64
+        mutations.append((wrong_role, "artifact role digest"))
+        bool_confusion = json.loads(json.dumps(evidence))
+        bool_confusion["requirements"][rf_index]["claims"][
+            "observer_liveness_verified"
+        ] = 1
+        mutations.append((bool_confusion, "claims"))
+        for mutated, message in mutations:
+            with self.subTest(message=message), self.assertRaisesRegex(
+                ValueError, message
+            ):
+                self.verify_exact(mutated)
+
+    def test_active_soak_uses_two_hour_and_authoritative_heap_boundaries(self):
+        evidence = self.make_exact_evidence("a" * 40, "v1.0.0", "b" * 64)
+        record = next(
+            item for item in evidence["requirements"] if item["id"] == "SOAK-ACTIVE"
+        )
+        record["metrics"].update(
+            {
+                "duration_seconds": 7200,
+                "completion_percent": 90,
+                "heap_range_bytes": 999,
+            }
+        )
+        self.assertGreater(self.verify_exact(evidence)[0], 0)
+        for metric, value, message in (
+            ("duration_seconds", 7199, "below its minimum"),
+            ("heap_range_bytes", 1000, "exceeds its maximum"),
+            ("completion_percent", 89, "below its minimum"),
+        ):
+            mutated = json.loads(json.dumps(evidence))
+            target = next(
+                item
+                for item in mutated["requirements"]
+                if item["id"] == "SOAK-ACTIVE"
+            )
+            target["metrics"][metric] = value
+            with self.subTest(metric=metric), self.assertRaisesRegex(
+                ValueError, message
+            ):
+                self.verify_exact(mutated)
+
+    def test_rf_record_is_independent_and_binds_production_and_recovery(self):
+        evidence = self.make_exact_evidence("a" * 40, "v1.0.0", "b" * 64)
+        record = next(
+            item for item in evidence["requirements"] if item["id"] == "RF-END-TO-END"
+        )
+        self.assertEqual(record["evidence_class"], "independent-observer")
+        self.assertEqual(
+            [item["role"] for item in record["artifacts"]],
+            ["production", "recovery"],
+        )
+        mutated = json.loads(json.dumps(evidence))
+        target = next(
+            item for item in mutated["requirements"] if item["id"] == "RF-END-TO-END"
+        )
+        target["claims"]["observer_liveness_verified"] = False
+        with self.assertRaisesRegex(ValueError, "claims"):
+            self.verify_exact(mutated)
+
+    def test_numeric_artifact_digest_is_not_coerced_to_sha256(self):
+        with self.assertRaisesRegex(ValueError, "artifact digest"):
+            release_evidence._declared_hashes(
+                {"artifacts": {"firmware.bin": int("1" * 64)}}
+            )
 
     def test_version_only_schema_two_evidence_is_rejected(self):
         evidence = {
@@ -382,7 +522,13 @@ class ReleaseEvidenceTests(unittest.TestCase):
             name: (production_digest if name == "firmware-merged.bin" else "c" * 64)
             for name in REQUIRED_ARTIFACTS
         }
-        evidence = self.make_exact_evidence(commit, tag, production_digest)
+        role_hashes = {
+            role: artifact_hashes[filename]
+            for role, filename in release_evidence.ARTIFACT_ROLE_FILES.items()
+        }
+        evidence = self.make_exact_evidence(
+            commit, tag, production_digest, role_hashes
+        )
         source = release_evidence.evidence_source_reference(
             "n30nex/KrabDeck", 123, 456, "sha256:" + "d" * 64, commit
         )
@@ -412,8 +558,39 @@ class ReleaseEvidenceTests(unittest.TestCase):
                     root,
                     expected_source_reference=source,
                 )
+                rf_record, admitted_source_digest = (
+                    release_evidence.verify_attested_requirement(
+                        attestation_path,
+                        "RF-END-TO-END",
+                        expected_tag=tag,
+                        expected_commit=commit,
+                        expected_artifact_sha256s={
+                            "production": role_hashes["production"],
+                            "recovery": role_hashes["recovery"],
+                        },
+                        expected_source_reference=source,
+                    )
+                )
+                wrong_source = dict(source)
+                wrong_source["run_id"] = 999
+                with self.assertRaisesRegex(ValueError, "was not admitted"):
+                    release_evidence.verify_attested_requirement(
+                        attestation_path,
+                        "RF-END-TO-END",
+                        expected_tag=tag,
+                        expected_commit=commit,
+                        expected_artifact_sha256s={
+                            "production": role_hashes["production"],
+                            "recovery": role_hashes["recovery"],
+                        },
+                        expected_source_reference=wrong_source,
+                    )
             attestation = json.loads(attestation_path.read_text(encoding="utf-8"))
         self.assertGreater(count, 0)
+        self.assertEqual(rf_record["evidence_class"], "independent-observer")
+        self.assertEqual(
+            admitted_source_digest, attestation["source_evidence_sha256"]
+        )
         self.assertEqual(attestation["source_artifact"], source)
         self.assertEqual(attestation["production_image_sha256"], production_digest)
 

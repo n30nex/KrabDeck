@@ -18,10 +18,12 @@ Immutable evidence artifact: <!-- artifact ID, sha256: digest, and URL -->
 
 Evidence bundle: <!-- reviewed issue comment and immutable CI artifact URLs -->
 
-All machine-readable requirements below require a fresh `pass` record whose
-`firmware_version` is `v1.0.0` and whose `candidate_commit` and
-`production_image_sha256` match the exact candidate in every record. Hardware
-records also require the peer version and test date. The stable evidence
+All machine-readable requirements below require a fresh typed `pass` record
+whose exact evidence class, claims, integer metrics and artifact-role digests
+match the inventory. Every record binds `firmware_version`, `candidate_commit`,
+`production_image_sha256`, and an immutable HTTPS evidence bundle plus its
+SHA-256. Records marked `peer_required` also require a constrained peer version.
+The stable evidence
 validator does not accept `N/A`, prose waivers, checked-in version-only
 evidence, or another candidate's bytes. Never include device IDs, public keys,
 contact names, message text, Wi-Fi credentials, coordinates, serial paths,
@@ -45,9 +47,9 @@ private flash backups or keys.
 - [ ] The pinned T-Deck Plus identity, 16 MiB flash and security state passed without probing or touching neighbouring serial devices.
 - [ ] Pre-flash full capture and privacy-safe state export completed before erase; restoration receipts remained runner-local.
 - [ ] Candidate erase/write/readback verification and USB reconnection passed.
-- [ ] The candidate completed the 900-second smoke with exactly one verified boot advert, no Public chat messages and the required outbound proof.
-- [ ] The separate recovery image was actually flashed, remained RF-off for its 60-second drill, and the exact candidate was restored and revalidated afterwards.
-- [ ] `krabos-public-receipt.json` is bound to the candidate commit and both manifests; all twelve canonical gates are exactly `true`, `recovery.used=true`, and `recovery.ok=true`.
+- [ ] The candidate completed the 900-second target-local smoke; separately admitted independent evidence verifies exactly one boot advert, no Public chat messages and the required outbound proof.
+- [ ] The separate recovery image was actually flashed for its 60-second drill; independent evidence bound to those bytes verifies RF silence, and the exact candidate was restored and revalidated afterwards.
+- [ ] `krabos-public-receipt.json` is bound to the candidate commit, both manifests, and the admitted RF evidence source digest; all sixteen canonical gates are exactly `true`, `recovery.used=true`, and `recovery.ok=true`.
 - [ ] The canonical redaction validator found no supplied secret or private device material in public artifacts.
 
 ## Companion interop
@@ -61,7 +63,18 @@ private flash backups or keys.
 ## Soak
 
 - [ ] `SOAK-IDLE` — the dedicated debug build has a privacy-safe idle report with at least 120 samples spanning at least 600 seconds. Report: <!-- HTTPS link -->
-- [ ] `SOAK-ACTIVE` — the dedicated debug build has a privacy-safe active navigation/chat/map/companion report with at least 120 samples spanning at least 600 seconds. Report: <!-- HTTPS link -->
+- [ ] `SOAK-ACTIVE` — the dedicated debug build completes at least 7200 seconds of active navigation/chat/map/companion use and meets the authoritative heap, PSRAM, reboot, responsiveness and final-capture thresholds. Report: <!-- HTTPS link plus SHA-256 -->
+
+## Full product matrix
+
+- [ ] `DEVICE-ISOLATION` — the run accessed only the pinned T-Deck Plus; protected D1L and peer serial routes remained unopened.
+- [ ] `UI-MATRIX` — every production route and touch, keyboard, trackball and focus path passes with redaction-safe captures.
+- [ ] `RF-END-TO-END` — an independent live observer, bound to the exact production and recovery hashes, verifies one boot advert, zero Public chat transmissions, correlated DM/channel delivery and ACK, one forced retry, and recovery silence. Target-local serial markers do not satisfy this item.
+- [ ] `STATE-MIGRATION` — identity, settings and stores survive migration and reboot.
+- [ ] `SD-MAP` — SD sentinel/resume and offline maps pass with Wi-Fi disabled while shared-SPI radio behavior remains intact.
+- [ ] `WIFI-PRIVATE` — private Wi-Fi success/error paths pass and public evidence scans clean of secrets.
+- [ ] `GPS-SIM-LIVE` — simulated and live fixes plus local time pass without publishing coordinates.
+- [ ] `OTA-FULL-EQUIVALENCE` — static app bytes, runtime behavior and preserved state are equivalent between OTA and the production full image.
 
 ## OTA matrix
 

@@ -27,22 +27,145 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 ARTIFACT_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+SAFE_VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,79}$")
+FIELD_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 EXACT_EVIDENCE_SCHEMA = 3
 EXACT_EVIDENCE_KIND = "krabos-exact-release-evidence-input"
 EXACT_ATTESTATION_KIND = "sigurdos-exact-release-attestation"
+EXACT_EVIDENCE_KEYS = frozenset(
+    {
+        "schema_version",
+        "kind",
+        "candidate_commit",
+        "tag",
+        "generated_at",
+        "production_image_sha256",
+        "artifact_sha256s",
+        "requirements",
+    }
+)
+EXACT_ATTESTATION_KEYS = frozenset(
+    {
+        "schema_version",
+        "kind",
+        "commit",
+        "tag",
+        "generated_at",
+        "production_image_sha256",
+        "artifact_sha256s",
+        "source_evidence_sha256",
+        "source_artifact",
+        "artifacts",
+        "requirements",
+    }
+)
 PRODUCTION_IMAGE = "firmware-merged.bin"
+ARTIFACT_ROLE_FILES = {
+    "production": PRODUCTION_IMAGE,
+    "recovery": "krabos-recovery-rf-off.bin",
+    "debug": "firmware-debug.bin",
+    "ota": "firmware.bin",
+}
+EVIDENCE_CLASSES = frozenset({"automated", "manual-review", "independent-observer"})
 TRUSTED_EVIDENCE_WORKFLOW = ".github/workflows/krabos-evidence.yml"
 TRUSTED_EVIDENCE_BRANCH = "main"
 
 
 def load_requirements(path: Path = REQUIREMENTS) -> list[dict]:
     data = json.loads(path.read_text(encoding="utf-8"))
-    if data.get("schema_version") != 1:
+    if not isinstance(data, dict) or set(data) != {"schema_version", "requirements"}:
+        raise ValueError("requirements inventory fields are invalid")
+    if type(data.get("schema_version")) is not int or data["schema_version"] not in (1, 2):
         raise ValueError("unsupported requirements schema")
     requirements = data.get("requirements")
     if not isinstance(requirements, list) or not requirements:
         raise ValueError("release requirements are empty")
-    return requirements
+    normalized: list[dict] = []
+    allowed = {
+        "id",
+        "category",
+        "description",
+        "hardware",
+        "evidence_classes",
+        "artifact_roles",
+        "required_claims",
+        "metric_bounds",
+        "peer_required",
+    }
+    for raw in requirements:
+        required = {"id", "category", "description", "hardware"}
+        if (
+            not isinstance(raw, dict)
+            or not required <= set(raw)
+            or not set(raw) <= allowed
+        ):
+            raise ValueError("release requirement fields are invalid")
+        item = dict(raw)
+        if (
+            not isinstance(item["id"], str)
+            or not re.fullmatch(r"[A-Z0-9]+(?:-[A-Z0-9]+)*", item["id"])
+            or not isinstance(item["category"], str)
+            or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", item["category"])
+            or not isinstance(item["description"], str)
+            or not item["description"].strip()
+        ):
+            raise ValueError("release requirement identity is invalid")
+        hardware = item.get("hardware")
+        if type(hardware) is not bool:
+            raise ValueError("release requirement hardware field is invalid")
+        classes = item.get(
+            "evidence_classes", ["manual-review" if hardware else "automated"]
+        )
+        if (
+            not isinstance(classes, list)
+            or not classes
+            or any(not isinstance(value, str) for value in classes)
+            or len(classes) != len(set(classes))
+            or any(value not in EVIDENCE_CLASSES for value in classes)
+        ):
+            raise ValueError("release requirement evidence classes are invalid")
+        roles = item.get("artifact_roles", ["production"])
+        if (
+            not isinstance(roles, list)
+            or not roles
+            or any(not isinstance(value, str) for value in roles)
+            or roles != sorted(roles)
+            or len(roles) != len(set(roles))
+            or any(value not in ARTIFACT_ROLE_FILES for value in roles)
+        ):
+            raise ValueError("release requirement artifact roles are invalid")
+        claims = item.get("required_claims", {})
+        if not isinstance(claims, dict) or any(
+            not FIELD_NAME_RE.fullmatch(str(key)) or type(value) is not bool
+            for key, value in claims.items()
+        ):
+            raise ValueError("release requirement claims are invalid")
+        bounds = item.get("metric_bounds", {})
+        if not isinstance(bounds, dict):
+            raise ValueError("release requirement metric bounds are invalid")
+        for name, limit in bounds.items():
+            if not FIELD_NAME_RE.fullmatch(str(name)) or not isinstance(limit, dict):
+                raise ValueError("release requirement metric bounds are invalid")
+            if not set(limit) or not set(limit) <= {"min", "max"}:
+                raise ValueError("release requirement metric bounds are invalid")
+            if any(type(value) is not int for value in limit.values()):
+                raise ValueError("release requirement metric bounds must be integers")
+            if "min" in limit and "max" in limit and limit["min"] > limit["max"]:
+                raise ValueError("release requirement metric bounds are inverted")
+        peer_required = item.get("peer_required", hardware)
+        if type(peer_required) is not bool:
+            raise ValueError("release requirement peer_required is invalid")
+        item.update(
+            {
+                "evidence_classes": list(classes),
+                "artifact_roles": list(roles),
+                "required_claims": dict(claims),
+                "metric_bounds": {key: dict(value) for key, value in bounds.items()},
+                "peer_required": peer_required,
+            }
+        )
+        normalized.append(item)
+    return normalized
 
 
 def verify_contract() -> int:
@@ -60,7 +183,9 @@ def verify_contract() -> int:
         if not isinstance(category, str) or not category:
             raise ValueError(f"{requirement_id}: missing category")
         categories.add(category)
-        if not isinstance(item.get("description"), str) or not isinstance(item.get("hardware"), bool):
+        if not isinstance(item.get("description"), str) or not isinstance(
+            item.get("hardware"), bool
+        ):
             raise ValueError(f"{requirement_id}: invalid description/hardware fields")
         token = f"`{requirement_id}`"
         if template.count(token) != 1:
@@ -78,6 +203,24 @@ def _https_url(value: object, field: str) -> str:
     if parsed.scheme != "https" or not parsed.netloc:
         raise ValueError(f"{field} must be a non-empty HTTPS URL")
     return value
+
+
+def _immutable_https_url(value: object, field: str) -> str:
+    result = _https_url(value, field)
+    parsed = urlparse(result)
+    if (
+        any(character.isspace() for character in result)
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(
+            f"{field} must not contain credentials, a query, or a fragment"
+        )
+    if not parsed.path or parsed.path == "/" or len(result) > 2048:
+        raise ValueError(f"{field} must identify an immutable bundle path")
+    return result
 
 
 def _iso_date(value: object, field: str) -> date:
@@ -109,6 +252,98 @@ def _utc_timestamp(value: object, field: str) -> str:
     return value
 
 
+def _artifact_role_sha256s(value: object, field: str) -> dict[str, str]:
+    if not isinstance(value, dict) or set(value) != set(ARTIFACT_ROLE_FILES):
+        raise ValueError(f"{field} must contain the exact artifact role set")
+    if any(
+        not isinstance(digest, str) or not SHA256_RE.fullmatch(digest)
+        for digest in value.values()
+    ):
+        raise ValueError(f"{field} values must be lowercase SHA-256 digests")
+    return dict(value)
+
+
+def _verify_exact_record(
+    record: dict,
+    requirement: dict,
+    expected_tag: str,
+    expected_commit: str,
+    production_image_sha256: str,
+    artifact_sha256s: dict[str, str],
+) -> None:
+    required_keys = {
+        "id",
+        "outcome",
+        "evidence_class",
+        "evidence_bundle_url",
+        "evidence_bundle_sha256",
+        "tested_at",
+        "firmware_version",
+        "candidate_commit",
+        "production_image_sha256",
+        "artifacts",
+        "claims",
+        "metrics",
+    }
+    if requirement["peer_required"]:
+        required_keys.add("peer_version")
+    if set(record) != required_keys:
+        raise ValueError(f"{requirement['id']}: evidence fields are incomplete or unexpected")
+    if record.get("outcome") != "pass":
+        raise ValueError(f"{requirement['id']}: outcome must be pass")
+    if record.get("evidence_class") not in requirement["evidence_classes"]:
+        raise ValueError(f"{requirement['id']}: evidence_class is not allowed")
+    _immutable_https_url(
+        record.get("evidence_bundle_url"),
+        f"{requirement['id']}.evidence_bundle_url",
+    )
+    if not isinstance(record.get("evidence_bundle_sha256"), str) or not SHA256_RE.fullmatch(
+        record["evidence_bundle_sha256"]
+    ):
+        raise ValueError(f"{requirement['id']}: evidence_bundle_sha256 is invalid")
+    if record.get("firmware_version") != expected_tag:
+        raise ValueError(f"{requirement['id']}: firmware_version must match the release tag")
+    if record.get("candidate_commit") != expected_commit:
+        raise ValueError(f"{requirement['id']}: candidate_commit must match the exact candidate")
+    if record.get("production_image_sha256") != production_image_sha256:
+        raise ValueError(
+            f"{requirement['id']}: production_image_sha256 must match the tested image"
+        )
+    artifacts = record.get("artifacts")
+    expected_roles = requirement["artifact_roles"]
+    if not isinstance(artifacts, list) or len(artifacts) != len(expected_roles):
+        raise ValueError(f"{requirement['id']}: artifact role evidence is incomplete")
+    for index, role in enumerate(expected_roles):
+        artifact = artifacts[index]
+        if not isinstance(artifact, dict) or set(artifact) != {"role", "sha256"}:
+            raise ValueError(f"{requirement['id']}: artifact role evidence is invalid")
+        if artifact.get("role") != role or artifact.get("sha256") != artifact_sha256s[role]:
+            raise ValueError(f"{requirement['id']}: artifact role digest is not exact")
+    claims = record.get("claims")
+    if (
+        not isinstance(claims, dict)
+        or any(type(value) is not bool for value in claims.values())
+        or claims != requirement["required_claims"]
+    ):
+        raise ValueError(f"{requirement['id']}: claims are incomplete or unexpected")
+    metrics = record.get("metrics")
+    bounds = requirement["metric_bounds"]
+    if not isinstance(metrics, dict) or set(metrics) != set(bounds):
+        raise ValueError(f"{requirement['id']}: metrics are incomplete or unexpected")
+    for name, limits in bounds.items():
+        measured = metrics[name]
+        if type(measured) is not int:
+            raise ValueError(f"{requirement['id']}: metric {name} must be an integer")
+        if "min" in limits and measured < limits["min"]:
+            raise ValueError(f"{requirement['id']}: metric {name} is below its minimum")
+        if "max" in limits and measured > limits["max"]:
+            raise ValueError(f"{requirement['id']}: metric {name} exceeds its maximum")
+    if requirement["peer_required"]:
+        peer_version = record.get("peer_version")
+        if not isinstance(peer_version, str) or not SAFE_VERSION_RE.fullmatch(peer_version):
+            raise ValueError(f"{requirement['id']}: peer_version is invalid")
+
+
 def _verify_requirements(
     document: dict,
     expected_tag: str,
@@ -116,6 +351,7 @@ def _verify_requirements(
     *,
     expected_commit: str | None = None,
     production_image_sha256: str | None = None,
+    artifact_sha256s: dict[str, str] | None = None,
 ) -> int:
     generated_at = _utc_timestamp(document.get("generated_at"), "generated_at")
     del generated_at
@@ -143,30 +379,33 @@ def _verify_requirements(
     today = datetime.now(timezone.utc).date()
     for requirement_id, requirement in required_by_id.items():
         record = by_id[requirement_id]
-        if record.get("outcome") != "pass":
-            raise ValueError(f"{requirement_id}: outcome must be pass")
-        _https_url(record.get("evidence_url"), f"{requirement_id}.evidence_url")
+        if expected_commit is not None:
+            if production_image_sha256 is None or artifact_sha256s is None:
+                raise ValueError("exact evidence validation needs artifact role digests")
+            _verify_exact_record(
+                record,
+                requirement,
+                expected_tag,
+                expected_commit,
+                production_image_sha256,
+                artifact_sha256s,
+            )
+        else:
+            if record.get("outcome") != "pass":
+                raise ValueError(f"{requirement_id}: outcome must be pass")
+            _https_url(record.get("evidence_url"), f"{requirement_id}.evidence_url")
+            if record.get("firmware_version") != expected_tag:
+                raise ValueError(f"{requirement_id}: firmware_version must match the release tag")
+            if requirement["peer_required"]:
+                peer_version = record.get("peer_version")
+                if not isinstance(peer_version, str) or not peer_version.strip():
+                    raise ValueError(f"{requirement_id}: hardware evidence needs a peer_version")
         tested_at = _iso_date(record.get("tested_at"), f"{requirement_id}.tested_at")
         age = (today - tested_at).days
         if age < 0 or age > max_age_days:
             raise ValueError(
                 f"{requirement_id}: evidence is not within the allowed {max_age_days}-day window"
             )
-        if record.get("firmware_version") != expected_tag:
-            raise ValueError(f"{requirement_id}: firmware_version must match the release tag")
-        if expected_commit is not None:
-            if record.get("candidate_commit") != expected_commit:
-                raise ValueError(
-                    f"{requirement_id}: candidate_commit must match the exact candidate"
-                )
-            if record.get("production_image_sha256") != production_image_sha256:
-                raise ValueError(
-                    f"{requirement_id}: production_image_sha256 must match the tested image"
-                )
-        if requirement["hardware"]:
-            peer_version = record.get("peer_version")
-            if not isinstance(peer_version, str) or not peer_version.strip():
-                raise ValueError(f"{requirement_id}: hardware evidence needs a peer_version")
     return len(records)
 
 
@@ -177,7 +416,11 @@ def _declared_hashes(document: dict) -> dict[str, str] | None:
     if not isinstance(artifacts, dict):
         raise ValueError("artifacts must map release filenames to SHA-256 digests")
     for filename, digest in artifacts.items():
-        if not isinstance(filename, str) or not SHA256_RE.fullmatch(str(digest)):
+        if (
+            not isinstance(filename, str)
+            or not isinstance(digest, str)
+            or not SHA256_RE.fullmatch(digest)
+        ):
             raise ValueError(f"{filename!r}: artifact digest must be lowercase SHA-256")
     return artifacts
 
@@ -371,6 +614,33 @@ def _production_hashes(
     return hashes, str(production_digest)
 
 
+def _role_hashes_from_artifacts(hashes: dict[str, str]) -> dict[str, str]:
+    roles: dict[str, str] = {}
+    for role, filename in ARTIFACT_ROLE_FILES.items():
+        digest = hashes.get(filename)
+        if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
+            raise ValueError(f"artifact contract did not return the {role} image SHA-256")
+        roles[role] = digest
+    return roles
+
+
+def _validate_expected_role_hashes(
+    declared: dict[str, str], expected: dict[str, str] | None
+) -> None:
+    if expected is None:
+        return
+    if not isinstance(expected, dict) or not expected or any(
+        role not in ARTIFACT_ROLE_FILES
+        or not isinstance(digest, str)
+        or not SHA256_RE.fullmatch(digest)
+        for role, digest in expected.items()
+    ):
+        raise ValueError("expected artifact role digests are invalid")
+    for role, digest in expected.items():
+        if declared[role] != digest:
+            raise ValueError(f"evidence {role} image digest does not match admitted bytes")
+
+
 def verify_evidence(
     evidence_path: Path,
     expected_tag: str,
@@ -378,6 +648,7 @@ def verify_evidence(
     expected_commit: str | None = None,
     artifacts_dir: Path | None = None,
     expected_production_image_sha256: str | None = None,
+    expected_artifact_sha256s: dict[str, str] | None = None,
     max_age_days: int = 30,
     require_exact: bool = False,
 ) -> tuple[int, dict]:
@@ -397,7 +668,7 @@ def verify_evidence(
     schema = evidence.get("schema_version")
     if require_exact and schema != EXACT_EVIDENCE_SCHEMA:
         raise ValueError("stable v1.0.0 requires schema 3 exact evidence")
-    if schema not in (1, EXACT_EVIDENCE_SCHEMA):
+    if type(schema) is not int or schema not in (1, EXACT_EVIDENCE_SCHEMA):
         if schema == 2:
             raise ValueError(
                 "schema 2 version-only evidence cannot prove an exact tested candidate"
@@ -437,21 +708,18 @@ def verify_evidence(
         raise ValueError(
             "exact evidence requires --commit and exact production image bytes or SHA-256"
         )
-    allowed = {
-        "schema_version",
-        "kind",
-        "candidate_commit",
-        "tag",
-        "generated_at",
-        "production_image_sha256",
-        "requirements",
-    }
-    if set(evidence) != allowed:
+    if set(evidence) != EXACT_EVIDENCE_KEYS:
         raise ValueError("exact evidence has unknown or missing top-level fields")
+    declared_roles = _artifact_role_sha256s(
+        evidence.get("artifact_sha256s"), "artifact_sha256s"
+    )
     if artifacts_dir is not None:
-        _, production_digest = _production_hashes(
+        hashes, production_digest = _production_hashes(
             artifacts_dir, expected_commit, expected_tag
         )
+        actual_roles = _role_hashes_from_artifacts(hashes)
+        if declared_roles != actual_roles:
+            raise ValueError("evidence artifact role digests do not match produced bytes")
         if (
             expected_production_image_sha256 is not None
             and production_digest != expected_production_image_sha256
@@ -459,6 +727,7 @@ def verify_evidence(
             raise ValueError("expected production image digest does not match produced bytes")
     else:
         production_digest = expected_production_image_sha256
+    _validate_expected_role_hashes(declared_roles, expected_artifact_sha256s)
     if evidence.get("candidate_commit") != expected_commit:
         raise ValueError("evidence candidate_commit does not match the exact candidate")
     if evidence.get("production_image_sha256") != production_digest:
@@ -469,6 +738,7 @@ def verify_evidence(
         max_age_days,
         expected_commit=expected_commit,
         production_image_sha256=production_digest,
+        artifact_sha256s=declared_roles,
     )
     return count, evidence
 
@@ -482,8 +752,15 @@ def write_attestation(
     artifacts_dir: Path,
     source_reference: dict[str, object] | None = None,
 ) -> dict:
+    if _load_object(evidence_path, "release evidence") != evidence:
+        raise ValueError("release evidence bytes changed before attestation")
     hashes, production_digest = _production_hashes(artifacts_dir, commit, tag)
+    artifact_sha256s = _role_hashes_from_artifacts(hashes)
     if evidence.get("schema_version") == EXACT_EVIDENCE_SCHEMA:
+        if set(evidence) != EXACT_EVIDENCE_KEYS:
+            raise ValueError("exact evidence has unknown or missing top-level fields")
+        if evidence.get("kind") != EXACT_EVIDENCE_KIND:
+            raise ValueError("exact evidence kind is invalid")
         if source_reference is None:
             raise ValueError(
                 "exact evidence attestation requires immutable source artifact identity"
@@ -491,6 +768,7 @@ def write_attestation(
         if (
             evidence.get("candidate_commit") != commit
             or evidence.get("production_image_sha256") != production_digest
+            or evidence.get("artifact_sha256s") != artifact_sha256s
         ):
             raise ValueError("exact evidence identity changed before attestation")
         _verify_requirements(
@@ -499,6 +777,7 @@ def write_attestation(
             30,
             expected_commit=commit,
             production_image_sha256=production_digest,
+            artifact_sha256s=artifact_sha256s,
         )
         normalized_source = evidence_source_reference(
             str(source_reference.get("repository", "")),
@@ -516,6 +795,7 @@ def write_attestation(
             "tag": tag,
             "generated_at": evidence["generated_at"],
             "production_image_sha256": production_digest,
+            "artifact_sha256s": artifact_sha256s,
             "source_evidence_sha256": hashlib.sha256(
                 evidence_path.read_bytes()
             ).hexdigest(),
@@ -580,8 +860,15 @@ def verify_attestation(
         if declared.get(filename) != digest:
             raise ValueError(f"attested digest does not match produced bytes: {filename}")
     if schema == EXACT_EVIDENCE_SCHEMA:
+        if set(document) != EXACT_ATTESTATION_KEYS:
+            raise ValueError("exact attestation has unknown or missing top-level fields")
         if document.get("production_image_sha256") != production_digest:
             raise ValueError("release attestation production image digest is stale")
+        artifact_sha256s = _artifact_role_sha256s(
+            document.get("artifact_sha256s"), "artifact_sha256s"
+        )
+        if artifact_sha256s != _role_hashes_from_artifacts(actual):
+            raise ValueError("release attestation artifact role digests are stale")
         source_reference = document.get("source_artifact")
         if not isinstance(source_reference, dict):
             raise ValueError("release attestation has no immutable source artifact")
@@ -605,10 +892,72 @@ def verify_attestation(
             max_age_days,
             expected_commit=commit,
             production_image_sha256=production_digest,
+            artifact_sha256s=artifact_sha256s,
         )
     if expected_source_reference is not None:
         raise ValueError("legacy attestation cannot satisfy exact source artifact binding")
     return _verify_requirements(document, tag, max_age_days)
+
+
+def verify_attested_requirement(
+    path: Path,
+    requirement_id: str,
+    *,
+    expected_tag: str,
+    expected_commit: str,
+    expected_artifact_sha256s: dict[str, str],
+    expected_source_reference: dict[str, object],
+    max_age_days: int = 30,
+) -> tuple[dict, str]:
+    """Validate one record from an admitted exact attestation without hardware I/O."""
+    if not COMMIT_RE.fullmatch(expected_commit):
+        raise ValueError("expected commit must be a full lowercase 40-character SHA")
+    document = _load_object(path, "release attestation")
+    if (
+        document.get("schema_version") != EXACT_EVIDENCE_SCHEMA
+        or document.get("kind") != EXACT_ATTESTATION_KIND
+        or set(document) != EXACT_ATTESTATION_KEYS
+    ):
+        raise ValueError("independent evidence must be an exact release attestation")
+    if document.get("commit") != expected_commit or document.get("tag") != expected_tag:
+        raise ValueError("independent evidence does not match the exact candidate")
+    source_digest = document.get("source_evidence_sha256")
+    if not isinstance(source_digest, str) or not SHA256_RE.fullmatch(source_digest):
+        raise ValueError("independent evidence source digest is invalid")
+    declared = _declared_hashes(document)
+    if declared is None or set(declared) != set(REQUIRED_RELEASE_ARTIFACTS):
+        raise ValueError("independent evidence does not cover the artifact contract")
+    artifact_sha256s = _artifact_role_sha256s(
+        document.get("artifact_sha256s"), "artifact_sha256s"
+    )
+    _validate_expected_role_hashes(artifact_sha256s, expected_artifact_sha256s)
+    if document.get("production_image_sha256") != artifact_sha256s["production"]:
+        raise ValueError("independent evidence production image binding is invalid")
+    source_reference = document.get("source_artifact")
+    if not isinstance(source_reference, dict):
+        raise ValueError("independent evidence has no immutable source artifact")
+    normalized_source = evidence_source_reference(
+        str(source_reference.get("repository", "")),
+        source_reference.get("run_id"),
+        source_reference.get("artifact_id"),
+        str(source_reference.get("artifact_digest", "")),
+        expected_commit,
+    )
+    if normalized_source != source_reference or normalized_source != expected_source_reference:
+        raise ValueError("independent evidence source artifact identity was not admitted")
+    _verify_requirements(
+        document,
+        expected_tag,
+        max_age_days,
+        expected_commit=expected_commit,
+        production_image_sha256=artifact_sha256s["production"],
+        artifact_sha256s=artifact_sha256s,
+    )
+    records = document["requirements"]
+    record = next((item for item in records if item["id"] == requirement_id), None)
+    if record is None:
+        raise ValueError(f"missing requirement evidence: {requirement_id}")
+    return dict(record), source_digest
 
 
 def main() -> int:

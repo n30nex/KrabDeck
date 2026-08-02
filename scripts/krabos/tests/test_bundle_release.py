@@ -77,6 +77,21 @@ def write_fixture(root: Path) -> None:
     )
     candidate = write_flash_manifest(root, "candidate", "krabos-candidate.bin")
     recovery = write_flash_manifest(root, "recovery", "krabos-recovery-rf-off.bin")
+    source_evidence_sha256 = "f" * 64
+    (root / "release-evidence.json").write_text(
+        json.dumps(
+            {
+                "source_evidence_sha256": source_evidence_sha256,
+                "requirements": [
+                    {
+                        "id": "RF-END-TO-END",
+                        "evidence_bundle_sha256": "e" * 64,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     (root / "krabos-public-receipt.json").write_text(
         json.dumps(
             {
@@ -96,6 +111,14 @@ def write_fixture(root: Path) -> None:
                     name: True for name in release_contract.REQUIRED_RELEASE_GATES
                 },
                 "recovery": {"used": True, "ok": True},
+                "external_evidence": {
+                    "requirement_id": release_contract.RF_OBSERVER_REQUIREMENT,
+                    "evidence_class": "independent-observer",
+                    "source_evidence_sha256": source_evidence_sha256,
+                    "evidence_bundle_sha256": "e" * 64,
+                    "production_image_sha256": candidate["sha256"],
+                    "recovery_image_sha256": recovery["sha256"],
+                },
             }
         ),
         encoding="utf-8",
@@ -228,17 +251,63 @@ class BundleReleaseTests(unittest.TestCase):
                 with self.assertRaisesRegex(bundle.BundleError, "digest mismatch"):
                     bundle.verify(root, COMMIT, VERSION)
 
-    def test_production_bundle_rejects_claim_without_independent_rf_observer(
+    def test_stable_bundle_rejects_mismatched_rf_bundle_digest(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             write_fixture(root)
-            with fixture_artifact_contract():
+            receipt_path = root / "krabos-public-receipt.json"
+            receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            receipt["external_evidence"]["evidence_bundle_sha256"] = "0" * 64
+            receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+            with (
+                fixture_artifact_contract(),
+                mock.patch.object(bundle, "verify_release_attestation", return_value=29),
+            ):
                 with self.assertRaisesRegex(
-                    bundle.BundleError, "independent RF observer"
+                    bundle.BundleError, "admitted evidence bundle"
                 ):
-                    bundle.seal(root, COMMIT, VERSION)
+                    bundle.seal(root, COMMIT, bundle.STABLE_VERSION)
+
+    def test_stable_bundle_accepts_matching_attestation_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_fixture(root)
+            with (
+                fixture_artifact_contract(),
+                mock.patch.object(bundle, "verify_release_attestation", return_value=29),
+            ):
+                bundle.seal(root, COMMIT, bundle.STABLE_VERSION)
+            self.assertTrue((root / "krabos-bundle-manifest.json").is_file())
+
+    def test_edge_schema_fixture_does_not_require_stable_attestation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_fixture(root)
+            (root / "release-evidence.json").unlink()
+            with schema_only_bundle_contract():
+                bundle.seal(root, COMMIT, VERSION)
+            self.assertTrue((root / "krabos-bundle-manifest.json").is_file())
+
+    def test_stable_bundle_revalidates_the_exact_attestation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            write_fixture(root)
+            with (
+                fixture_artifact_contract(),
+                mock.patch.object(
+                    bundle, "verify_release_attestation", return_value=29
+                ) as verify_attestation,
+            ):
+                bundle.seal(root, COMMIT, bundle.STABLE_VERSION)
+            verify_attestation.assert_called_once_with(
+                root / "release-evidence.json",
+                COMMIT,
+                bundle.STABLE_VERSION,
+                root,
+                require_exact=True,
+            )
 
     def test_missing_or_extra_receipt_gate_fails_closed(self) -> None:
         mutations = (
@@ -253,7 +322,7 @@ class BundleReleaseTests(unittest.TestCase):
                 receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
                 mutate(receipt["gates"])
                 receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
-                with fixture_artifact_contract():
+                with schema_only_bundle_contract():
                     with self.assertRaisesRegex(bundle.BundleError, "gate set"):
                         bundle.seal(root, COMMIT, VERSION)
 
@@ -266,7 +335,7 @@ class BundleReleaseTests(unittest.TestCase):
                 receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
                 receipt["artifacts"][role][0]["sha256"] = "0" * 64
                 receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
-                with fixture_artifact_contract():
+                with schema_only_bundle_contract():
                     with self.assertRaisesRegex(bundle.BundleError, "do not match"):
                         bundle.seal(root, COMMIT, VERSION)
 
@@ -275,7 +344,7 @@ class BundleReleaseTests(unittest.TestCase):
             root = Path(temporary)
             write_fixture(root)
             (root / "krabos-recovery-rf-off.bin").write_bytes(b"mutated recovery")
-            with fixture_artifact_contract():
+            with schema_only_bundle_contract():
                 with self.assertRaisesRegex(bundle.BundleError, "bytes do not match"):
                     bundle.seal(root, COMMIT, VERSION)
 

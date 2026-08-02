@@ -10,6 +10,7 @@ runs:
   using: composite
   steps:
     - name: Restore PlatformIO package cache
+      if: runner.environment == 'github-hosted'
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         path: |

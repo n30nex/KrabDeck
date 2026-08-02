@@ -149,9 +149,16 @@ class PlatformioCacheContractTest(unittest.TestCase):
         self.assertIn("pio pkg list -e SigurdOS_TDeck", content)
 
     def test_helper_caches_packages_but_never_build_outputs(self):
-        content = (
+        path = (
             ROOT / ".github" / "actions" / "cache-platformio" / "action.yml"
-        ).read_text(encoding="utf-8")
+        )
+        content = path.read_text(encoding="utf-8")
+        action = yaml.safe_load(content)
+        cache_step = action["runs"]["steps"][0]
+        self.assertEqual(
+            cache_step.get("if"),
+            "runner.environment == 'github-hosted'",
+        )
         self.assertIn("~/.platformio/.cache", content)
         self.assertIn("~/.platformio/packages", content)
         self.assertIn("~/.platformio/platforms", content)

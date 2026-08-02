@@ -16,7 +16,9 @@ HASH_INPUTS = (
     "ci/platformio-packages.lock",
 )
 LOCKED_REQUIREMENTS = {
+    "ci/requirements-coverage-pi.txt",
     "ci/requirements-coverage.txt",
+    "ci/requirements-platformio-pi.txt",
     "ci/requirements-platformio.txt",
 }
 EXTERNAL_ACTION_REF = re.compile(r"uses:\s+(?!\./)[^@\s]+@([^\s]+)")
@@ -112,6 +114,23 @@ class PlatformioCacheContractTest(unittest.TestCase):
         )
         self.assertLess(cache_index, update_index)
 
+    def test_pi_locks_are_targeted_and_constrained_to_reviewed_versions(self):
+        for stem in ("platformio", "coverage"):
+            source = (ROOT / "ci" / f"requirements-{stem}-pi.in").read_text(
+                encoding="utf-8"
+            )
+            lock = (ROOT / "ci" / f"requirements-{stem}-pi.txt").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn(f"-c requirements-{stem}.txt", source)
+            self.assertIn("--python-version 3.13", source)
+            self.assertIn("--python-platform aarch64-unknown-linux-gnu", source)
+            self.assertIn("--python-version 3.13", lock.splitlines()[1])
+            self.assertIn(
+                "--python-platform aarch64-unknown-linux-gnu",
+                lock.splitlines()[1],
+            )
+
     def test_security_inventory_reverifies_platformio_from_cache(self):
         content = (WORKFLOWS / "security.yml").read_text(encoding="utf-8")
         self.assertNotIn("uses: actions/cache@", content)
@@ -120,9 +139,16 @@ class PlatformioCacheContractTest(unittest.TestCase):
         self.assertIn("pio pkg list -e SigurdOS_TDeck", content)
 
     def test_helper_caches_packages_but_never_build_outputs(self):
-        content = (
+        path = (
             ROOT / ".github" / "actions" / "cache-platformio" / "action.yml"
-        ).read_text(encoding="utf-8")
+        )
+        content = path.read_text(encoding="utf-8")
+        action = yaml.safe_load(content)
+        cache_step = action["runs"]["steps"][0]
+        self.assertEqual(
+            cache_step.get("if"),
+            "runner.environment == 'github-hosted'",
+        )
         self.assertIn("~/.platformio/.cache", content)
         self.assertIn("~/.platformio/packages", content)
         self.assertIn("~/.platformio/platforms", content)

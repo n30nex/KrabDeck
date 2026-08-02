@@ -277,7 +277,14 @@ static void build_step2()
             return;
         }
 
-        uint32_t epoch = sigurdos::mesh::makeEpoch(ny, nm, nd, nh, nmi);
+        uint32_t epoch = 0;
+        if (!sigurdos::mesh::makeLocalEpoch(
+                ny, nm, nd, nh, nmi, &epoch)) {
+            if (s_dt_error_label) {
+                lv_label_set_text(s_dt_error_label, "Invalid local date/time");
+            }
+            return;
+        }
         if (!sigurdos::mesh::setSystemTime(
                 epoch, sigurdos::mesh::TimeSource::Manual)) {
             if (s_dt_error_label) lv_label_set_text(s_dt_error_label, "Clock not ready");
@@ -299,9 +306,10 @@ static void build_step3()
 
     // Reload from prefs — "Full Radio Setup" may have changed freq/SF/power
     const auto& p = sigurdos::prefs_get();
-    s_freq = p.configured ? p.freq : 869.618f;
-    s_sf   = p.configured ? p.sf   : 8;
-    s_pwr  = p.configured ? p.tx_power_dbm : 22;
+    const auto* default_profile = sigurdos::radio_profile_default();
+    s_freq = p.configured ? p.freq : default_profile->freq_mhz;
+    s_sf   = p.configured ? p.sf   : default_profile->sf;
+    s_pwr  = p.configured ? p.tx_power_dbm : default_profile->tx_power_dbm;
     s_radio_profile = p.configured ? sigurdos::radio_profile_match(p)
                                    : sigurdos::radio_profile_default();
     if (!s_radio_profile) s_radio_profile = sigurdos::radio_profile_default();
@@ -443,12 +451,13 @@ void onboarding_screen_show()
     screens_clear_wifi_icon();
     screens_clear_companion_icon();
     const sigurdos::NodePrefs& p = sigurdos::prefs_get();
+    const auto* default_profile = sigurdos::radio_profile_default();
 
     strncpy(s_name, p.node_name, sizeof(s_name) - 1);
     s_name[sizeof(s_name) - 1] = '\0';
-    s_freq = p.configured ? p.freq : 869.618f;
-    s_sf   = p.configured ? p.sf   : 8;
-    s_pwr  = p.configured ? p.tx_power_dbm : 22;
+    s_freq = p.configured ? p.freq : default_profile->freq_mhz;
+    s_sf   = p.configured ? p.sf   : default_profile->sf;
+    s_pwr  = p.configured ? p.tx_power_dbm : default_profile->tx_power_dbm;
     s_step = 0;
 
     clear_widget_ptrs();

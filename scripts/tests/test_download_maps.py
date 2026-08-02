@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import io
+import json
 import tempfile
 import unittest
-import json
+from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -13,6 +15,16 @@ from scripts import download_maps
 
 
 class DownloadMapsTests(unittest.TestCase):
+    @staticmethod
+    def _valid_tile(marker: bytes) -> bytes:
+        return (
+            download_maps.PNG_SIGNATURE
+            + b"\x00\x00\x00\x0dIHDR"
+            + (256).to_bytes(4, "big")
+            + (256).to_bytes(4, "big")
+            + marker
+        )
+
     def test_documented_coordinate_mode_is_reachable(self) -> None:
         args = download_maps.parse_args(
             [
@@ -24,6 +36,26 @@ class DownloadMapsTests(unittest.TestCase):
             ]
         )
         self.assertEqual(args.bounds, (54.45, -1.45, 54.65, -1.05))
+
+    def test_generic_source_url_is_redacted_from_logs(self) -> None:
+        secret = "do-not-print-this-token"
+        output = io.StringIO()
+        with redirect_stdout(output):
+            download_maps.main([
+                "--name", "private-source",
+                "--bbox", "43.6,-79.4,43.61,-79.39",
+                "--zoom", "0", "0",
+                "--server", "generic",
+                "--url-template",
+                f"https://tiles.example/{{z}}/{{x}}/{{y}}.png?key={secret}",
+                "--attribution", "Example",
+                "--dry-run",
+            ])
+
+        rendered = output.getvalue()
+        self.assertNotIn(secret, rendered)
+        self.assertNotIn("tiles.example", rendered)
+        self.assertIn("custom HTTPS source; URL redacted", rendered)
 
     def test_bbox_and_city_modes_match_documented_commands(self) -> None:
         bbox = download_maps.parse_args(
@@ -53,7 +85,9 @@ class DownloadMapsTests(unittest.TestCase):
             root = Path(directory)
             tile = root / "1" / "0" / "0.png"
             tile.parent.mkdir(parents=True)
-            tile.write_bytes(b"old")
+            old_tile = self._valid_tile(b"old")
+            new_tile = self._valid_tile(b"new")
+            tile.write_bytes(old_tile)
             config = {"url": "https://example.invalid/{z}/{x}/{y}.png"}
 
             with mock.patch.object(download_maps, "session") as session:
@@ -62,14 +96,14 @@ class DownloadMapsTests(unittest.TestCase):
                 )
                 session.get.assert_not_called()
 
-            response = SimpleNamespace(status_code=200, content=b"new")
+            response = SimpleNamespace(status_code=200, content=new_tile)
             with mock.patch.object(
                 download_maps, "session", SimpleNamespace(get=mock.Mock(return_value=response))
             ):
                 self.assertTrue(
                     download_maps.download_tile((0, 0, 1, config, str(root), False))[3]
                 )
-            self.assertEqual(tile.read_bytes(), b"new")
+            self.assertEqual(tile.read_bytes(), new_tile)
 
     def test_tile_index_records_only_valid_nonempty_tiles(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

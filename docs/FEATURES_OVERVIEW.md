@@ -371,12 +371,15 @@ is green while an official companion is connected. See
 - **Mount check:** `sdcard_mounted()` for UI gating
 - **Capacity:** `capacity_bytes()`, `free_bytes()` with `format_size()` helper
 - **File I/O:** `sdcard_read()`, `sdcard_write()`, `sdcard_exists()` for map tile loading
-- **Init order:** Initialised after radio init so SPI bus is configured
+- **Init order:** Initialised before radio init because the SD handshake can
+  reset the shared SPI bus
 **Sources:** [`src/hal/sdcard.cpp`](../src/hal/sdcard.cpp), [`src/hal/sdcard.h`](../src/hal/sdcard.h), [`test/test_sdcard/`](../test/test_sdcard/)
 
 ### LoRa SX1262 Radio
 - **Interface:** SPI (NSS=9, SCK=40, MISO=38, MOSI=41, DIO1=45, RST=17, BUSY=13)
-- **Defaults:** 869.618 MHz, BW 62.5 kHz, SF 8, CR 4/5, TX power 22 dBm
+- **KrabOS production defaults:** 910.525 MHz, BW 62.5 kHz, SF 7, CR 4/5,
+  TX power 20 dBm; diagnostic/upstream images retain their separate safety
+  posture
 - **Driver:** RadioLib-based wrappers via MeshCore
 - **Wake-on-radio:** unavailable in deep sleep because DIO1/GPIO45 is not RTC-capable on ESP32-S3
 - **Configurable:** Frequency, bandwidth, spreading factor, coding rate, TX power via Radio Setup screen

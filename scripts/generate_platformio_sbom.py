@@ -47,7 +47,7 @@ def component(name: str, version: str, requirement: str) -> dict[str, object]:
         "name": name,
         "version": version,
         "purl": purl,
-        "properties": [{"name": "sigurdos:platformio-requirement", "value": requirement}],
+        "properties": [{"name": "krabos:platformio-requirement", "value": requirement}],
     }
 
 
@@ -86,12 +86,12 @@ def generate(lock_path: Path) -> dict[str, object]:
                 digest.update(source.read_bytes())
         components.append({
             "type": "library",
-            "bom-ref": f"pkg:github/espressif/arduino-esp32@2.0.17#libraries/WebServer",
+            "bom-ref": "pkg:github/espressif/arduino-esp32@2.0.17#libraries/WebServer",
             "name": "WebServer",
             "version": version,
             "purl": "pkg:github/espressif/arduino-esp32@2.0.17#libraries/WebServer",
             "hashes": [{"alg": "SHA-256", "content": digest.hexdigest()}],
-            "properties": [{"name": "sigurdos:source", "value": "tracked-security-overlay"}],
+            "properties": [{"name": "krabos:source", "value": "tracked-security-overlay"}],
         })
 
     components.sort(key=lambda item: str(item["bom-ref"]))
@@ -104,10 +104,10 @@ def generate(lock_path: Path) -> dict[str, object]:
         "metadata": {
             "component": {
                 "type": "firmware",
-                "bom-ref": "pkg:github/hermes-gadget/SigurdOS-tdeck",
-                "name": "SigurdOS-tdeck",
+                "bom-ref": "pkg:github/n30nex/KrabDeck",
+                "name": "KrabOS T-Deck Plus",
             },
-            "properties": [{"name": "sigurdos:lock-sha256", "value": lock_digest}],
+            "properties": [{"name": "krabos:lock-sha256", "value": lock_digest}],
         },
         "components": components,
     }

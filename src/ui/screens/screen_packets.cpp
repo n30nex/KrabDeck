@@ -24,6 +24,7 @@
 #include "../responsive.h"
 #include "../../mesh/mesh_wrapper.h"
 #include "../../fonts/emoji_font.h"
+#include "utils/local_time.h"
 #include <lvgl.h>
 #include <cstdio>
 #include <cstring>
@@ -85,12 +86,7 @@ static void packets_bind_row(PacketRow& row, int logical_index,
         lv_color_hex(logical_index % 2 == 0 ? BG_TERTIARY : BG_PRIMARY), 0);
 
     char text[20];
-    if (entry.timestamp > 0) {
-        const uint32_t sec = entry.timestamp % 86400;
-        snprintf(text, sizeof(text), "%02d:%02d", (sec / 3600) % 24, (sec / 60) % 60);
-    } else {
-        snprintf(text, sizeof(text), "--:--");
-    }
+    sigurdos::local_time::formatHm(text, sizeof(text), entry.timestamp);
     lv_label_set_text(row.time, text);
     lv_label_set_text(row.source, entry.source);
 

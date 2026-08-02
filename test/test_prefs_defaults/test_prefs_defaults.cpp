@@ -31,6 +31,13 @@ sigurdos::NodePrefs defaults_from_dirty_memory() {
     return prefs;
 }
 
+sigurdos::NodePrefs krabos_defaults_from_dirty_memory() {
+    sigurdos::NodePrefs prefs;
+    std::memset(&prefs, 0xA5, sizeof(prefs));
+    prefs.set_krabos_defaults();
+    return prefs;
+}
+
 TEST(PrefsDefaultsTest, RadioDefaultsStayNonTransmittingUntilConfigured) {
     const sigurdos::NodePrefs prefs = defaults_from_dirty_memory();
 
@@ -69,6 +76,64 @@ TEST(PrefsDefaultsTest, FactoryResetRevokesOldBleOwnerByDefault) {
     EXPECT_TRUE(prefs.ble_bond_reset_pending);
     EXPECT_EQ(prefs.ble_pin, 0u);
     EXPECT_FALSE(prefs.configured);
+}
+
+TEST(PrefsDefaultsTest, KrabOsProductionDefaultsUseCanadaProfile) {
+    const sigurdos::NodePrefs prefs = krabos_defaults_from_dirty_memory();
+
+    EXPECT_STREQ(KRABOS_DEVICE_NAME, prefs.node_name);
+    EXPECT_TRUE(prefs.configured);
+    EXPECT_FLOAT_EQ(910.525f, prefs.freq);
+    EXPECT_FLOAT_EQ(62.5f, prefs.bw);
+    EXPECT_EQ(7, prefs.sf);
+    EXPECT_EQ(5, prefs.cr);
+    EXPECT_EQ(20, prefs.tx_power_dbm);
+    EXPECT_EQ(1, prefs.advert_loc_policy);
+    EXPECT_TRUE(prefs.gps_enabled);
+    EXPECT_EQ(5u, prefs.gps_interval);
+    EXPECT_FALSE(prefs.gps_track_enabled);
+    EXPECT_STREQ("ca_902_928", prefs.radio_profile);
+}
+
+TEST(PrefsDefaultsTest, ExistingInstallMissingOptInKeysStayLegacySafe) {
+    const sigurdos::NodePrefs prefs =
+        sigurdos::detail::existingInstallMissingKeyDefaults();
+
+    EXPECT_FALSE(prefs.configured);
+    EXPECT_FLOAT_EQ(0.0f, prefs.freq);
+    EXPECT_FLOAT_EQ(0.0f, prefs.bw);
+    EXPECT_EQ(0, prefs.sf);
+    EXPECT_EQ(0, prefs.cr);
+    EXPECT_EQ(0, prefs.tx_power_dbm);
+    EXPECT_EQ(0, prefs.advert_loc_policy);
+    EXPECT_FALSE(prefs.gps_enabled);
+    EXPECT_EQ(5u, prefs.gps_interval);
+    EXPECT_STREQ("", prefs.radio_profile);
+}
+
+TEST(PrefsDefaultsTest, ProductDefaultsRequireConfirmedMissingNamespace) {
+    using sigurdos::detail::PrefsNamespaceState;
+    using sigurdos::detail::useKrabosProductDefaults;
+
+    EXPECT_TRUE(useKrabosProductDefaults(PrefsNamespaceState::Missing));
+    EXPECT_FALSE(useKrabosProductDefaults(PrefsNamespaceState::Present));
+    EXPECT_FALSE(useKrabosProductDefaults(PrefsNamespaceState::Error));
+}
+
+TEST(PrefsDefaultsTest, KrabOsFactoryResetKeepsRadioReadyAndRevokesBle) {
+    sigurdos::NodePrefs prefs;
+    std::memset(&prefs, 0xA5, sizeof(prefs));
+    prefs.set_krabos_factory_reset_defaults();
+
+    EXPECT_TRUE(prefs.configured);
+    EXPECT_FLOAT_EQ(910.525f, prefs.freq);
+    EXPECT_EQ(1, prefs.advert_loc_policy);
+    EXPECT_TRUE(prefs.gps_enabled);
+    EXPECT_FALSE(prefs.gps_track_enabled);
+    EXPECT_STREQ("ca_902_928", prefs.radio_profile);
+    EXPECT_FALSE(prefs.ble_enabled);
+    EXPECT_TRUE(prefs.ble_user_set);
+    EXPECT_TRUE(prefs.ble_bond_reset_pending);
 }
 
 TEST(PrefsDefaultsTest, MeshBehaviorDefaultsMatchSafeCompanionSettings) {

@@ -12,6 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 DEBUG_ENVIRONMENTS = (
+    "KrabOS_TDeckPlus_debug",
     "SigurdOS_TDeck_ble_validation",
     "SigurdOS_TDeck_ble_agent",
     "SigurdOS_TDeck_trackball_debug",
@@ -35,6 +36,15 @@ DEBUG_ENVIRONMENTS = (
     "SigurdOS_TDeck_gps_validation",
     "SigurdOS_TDeck_gps_validation_wifi",
 )
+REMOTE_RADIO_ENVIRONMENTS = {
+    "SigurdOS_TDeck_ble_agent",
+    "SigurdOS_TDeck_remote_test_radio",
+    "SigurdOS_TDeck_remote_test_radio_testfreq",
+    "SigurdOS_TDeck_remote_test_radio_roomtest",
+    "SigurdOS_TDeck_remote_test_radio_usca",
+    "SigurdOS_TDeck_remote_test_radio_usca_rxonly",
+    "SigurdOS_TDeck_remote_test_radio_meshv2",
+}
 SILENT_DEBUG_ENVIRONMENTS = {"SigurdOS_TDeck_companion_usb"}
 TELEMETRY_ENVIRONMENTS = (
     "SigurdOS_TDeck_telemetry",
@@ -97,12 +107,67 @@ class PlatformIODebugConfigTests(unittest.TestCase):
                 with self.subTest(environment=environment, macro=macro):
                     self.assertEqual(macros.count(macro), 1)
 
+    def test_named_remote_radio_profiles_keep_their_documented_tuples(self) -> None:
+        room = self.effective_flags("SigurdOS_TDeck_remote_test_radio_roomtest")
+        self.assertIn("-DLORA_FREQ=910.525", room)
+        self.assertIn("-DLORA_BW=62.5", room)
+        self.assertIn("-DLORA_SF=11", room)
+
+        for environment in (
+            "SigurdOS_TDeck_remote_test_radio_usca",
+            "SigurdOS_TDeck_remote_test_radio_usca_rxonly",
+        ):
+            with self.subTest(environment=environment):
+                usca = self.effective_flags(environment)
+                self.assertIn("-DLORA_FREQ=915.000f", usca)
+                self.assertIn("-DLORA_BW=62.5", usca)
+                self.assertIn("-DLORA_SF=7", usca)
+
     def test_companion_usb_replaces_ble_transport_definition(self) -> None:
         flags = self.effective_flags("SigurdOS_TDeck_companion_usb")
         macros = [macro_name(flag) for flag in flags]
         self.assertEqual(macros.count("SIGURDOS_COMPANION_BLE"), 1)
         self.assertIn("-DSIGURDOS_COMPANION_BLE=0", flags)
         self.assertIn("-DCORE_DEBUG_LEVEL=0", flags)
+
+    def test_krabos_production_is_the_default_tdeck_plus_image(self) -> None:
+        platform = self.sections["platformio"]
+        flags = self.effective_flags("KrabOS_TDeckPlus")
+        macros = [macro_name(flag) for flag in flags]
+
+        self.assertEqual(platform["default_envs"], ["KrabOS_TDeckPlus"])
+        self.assertIn("KRABOS_PRODUCTION", macros)
+        self.assertIn("KRABOS_TDECK_PLUS", macros)
+        self.assertIn("-DLORA_FREQ=910.525", flags)
+        self.assertIn("-DLORA_SF=7", flags)
+        self.assertIn("-DLORA_TX_PWR=20", flags)
+
+    def test_recovery_debug_and_base_remote_test_images_are_rf_off(self) -> None:
+        recovery_macros = [
+            macro_name(flag)
+            for flag in self.effective_flags("KrabOS_TDeckPlus_recovery")
+        ]
+        self.assertIn("KRABOS_RECOVERY", recovery_macros)
+        self.assertNotIn("KRABOS_PRODUCTION", recovery_macros)
+
+        debug_macros = [
+            macro_name(flag)
+            for flag in self.effective_flags("KrabOS_TDeckPlus_debug")
+        ]
+        self.assertIn("KRABOS_DEBUG_IMAGE", debug_macros)
+        self.assertNotIn("KRABOS_PRODUCTION", debug_macros)
+
+        for environment in DEBUG_ENVIRONMENTS:
+            with self.subTest(environment=environment):
+                macros = [macro_name(flag) for flag in self.effective_flags(environment)]
+                if "SIGURDOS_REMOTE_TEST" not in macros:
+                    continue
+                self.assertIn("SIGURDOS_REMOTE_TEST", macros)
+                if environment in REMOTE_RADIO_ENVIRONMENTS:
+                    self.assertIn("SIGURDOS_REMOTE_TEST_RADIO", macros)
+                else:
+                    self.assertNotIn("SIGURDOS_REMOTE_TEST_RADIO", macros)
+                self.assertNotIn("SIGURDOS_DEBUG_FORCE_RADIO_PARAMS", macros)
 
     def test_telemetry_builds_compile_the_flash_coredump_contract(self) -> None:
         for environment in TELEMETRY_ENVIRONMENTS:
@@ -125,7 +190,7 @@ class PlatformIODebugConfigTests(unittest.TestCase):
             "CONFIG_ESP_COREDUMP_MAX_TASKS_NUM",
         ):
             with self.subTest(symbol=symbol):
-                self.assertIn(f'#error "Telemetry crash recovery', source)
+                self.assertIn('#error "Telemetry crash recovery', source)
                 self.assertIn(symbol, source)
 
 

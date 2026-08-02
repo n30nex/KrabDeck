@@ -18,6 +18,7 @@ if __package__ in (None, ""):
     from hw_test.hw_constants import (  # type: ignore[import-not-found]
         DEFAULT_BUILD_ENV,
         PI_TDECK_PORT,
+        RADIO_REBOOT_SETTLE_S,
         SERIAL_BAUD,
         TEST_CHANNEL_PREFIX,
         TEST_RADIO_PARAMS,
@@ -55,6 +56,7 @@ else:
     from .hw_constants import (
         DEFAULT_BUILD_ENV,
         PI_TDECK_PORT,
+        RADIO_REBOOT_SETTLE_S,
         SERIAL_BAUD,
         TEST_CHANNEL_PREFIX,
         TEST_RADIO_PARAMS,
@@ -402,7 +404,7 @@ def _nav_check(connection: PersistentSerial, screen: str) -> tuple[bool, str, di
     )
     response = connection.send_command(
         f"nav {screen}",
-        timeout_s=5,
+        timeout_s=15 if screen == "map" else 5,
         expected=expected,
     )
     marker = contains_crash(response.output)
@@ -593,6 +595,12 @@ def _reboot_radio_connection(
         time.sleep(2)
         connection.connect()
         info = connection.detect_firmware()
+        # The controller can answer while radio/mesh startup output is still
+        # draining. Bound the complete reboot window before channel or restore
+        # operations instead of racing the mesh around 17-23 seconds.
+        remaining = RADIO_REBOOT_SETTLE_S - (time.monotonic() - started)
+        if remaining > 0:
+            time.sleep(remaining)
         passed = info.protocol == CommandProtocol.REMOTE_TEST
         _record(
             report,

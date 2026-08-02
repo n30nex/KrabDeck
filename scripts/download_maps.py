@@ -1,27 +1,28 @@
 #!/usr/bin/env python3
 """
-SigurdOS Map Downloader
+KrabOS Map Downloader
 
-Downloads OpenStreetMap tiles for a specified region and zoom range,
+Downloads NRCan WMS or owner-permitted XYZ tiles for a region and zoom range,
 outputting PNG tiles in the directory structure expected by the firmware:
     tiles/{z}/{x}/{y}.png
 
 Copy the resulting 'tiles/' directory to the root of the T-Deck SD card.
 
 Usage examples:
-    # Download Teesside area, zooms 8-14
-    python3 download_maps.py --name teesside --lat1 54.45 --lon1 -1.45 --lat2 54.65 --lon2 -1.05 --zoom 8 14
+    # Download a Canadian region from the built-in NRCan source
+    python3 download_maps.py --city toronto --zoom 10 14
 
     # Download London, zooms 10-15 only
     python3 download_maps.py --name london --bbox "51.3,-0.5,51.7,0.3" --zoom 10 15
 
-    # UK national overview (zooms 5-8 only, larger tiles)
-    python3 download_maps.py --name uk --lat1 49.8 --lon1 -8.5 --lat2 58.8 --lon2 1.8 --zoom 5 8 --server cyclosm
+    # Use another source only when its terms permit offline bulk caching
+    python3 download_maps.py --city toronto --server generic \
+      --url-template 'https://tiles.example/{z}/{x}/{y}.png' \
+      --attribution 'Example Maps'
 
 Tile servers:
-    osm       OpenStreetMap (default, requires User-Agent)
-    cyclosm   CyclOSM (bicycle-oriented, OSM data)
-    carto     CartoDB (light theme)
+    nrcan     Natural Resources Canada CBMT WMS (default)
+    generic   Explicit HTTPS XYZ template supplied by the operator
 
 Dependencies: pip install requests
 License: GPL-3.0-or-later
@@ -34,6 +35,9 @@ import os
 import sys
 import time
 import json
+import ipaddress
+import struct
+from urllib.parse import urlsplit
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
@@ -46,27 +50,21 @@ except ImportError:
 # ── Tile servers ────────────────────────────────────────────
 
 TILE_SERVERS = {
-    "osm": {
-        "url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-        "attribution": "© OpenStreetMap contributors",
-        "max_zoom": 19,
-        "user_agent": "SigurdOS-MapDownloader/1.0",
-    },
-    "cyclosm": {
-        "url": "https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png",
-        "attribution": "© OpenStreetMap contributors, CyclOSM",
-        "max_zoom": 20,
-        "subdomains": ["a", "b", "c"],
-        "user_agent": "SigurdOS-MapDownloader/1.0",
-    },
-    "carto": {
-        "url": "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
-        "attribution": "© OpenStreetMap contributors, CARTO",
-        "max_zoom": 19,
-        "subdomains": ["a", "b", "c", "d"],
-        "user_agent": "SigurdOS-MapDownloader/1.0",
+    "nrcan": {
+        "kind": "wms",
+        "url": (
+            "https://maps.geogratis.gc.ca/wms/CBMT?SERVICE=WMS&VERSION=1.1.1"
+            "&REQUEST=GetMap&LAYERS=CBMT&STYLES=&SRS=EPSG:3857"
+            "&BBOX={bbox}&WIDTH=256&HEIGHT=256&FORMAT=image/png"
+        ),
+        "attribution": "Natural Resources Canada, Canada Base Map Transportation",
+        "max_zoom": 18,
+        "user_agent": "KrabOS-MapDownloader/1.0",
     },
 }
+
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+MAX_PNG_BYTES = 320 * 1024
 
 CITIES = {
     "london": (51.3, -0.5, 51.7, 0.3),
@@ -154,24 +152,72 @@ def init_session(server_config):
     global session
     session = requests.Session()
     session.headers.update({
-        "User-Agent": server_config.get("user_agent", "Sigurdos/1.0"),
-        "Accept": "image/png,image/jpeg,image/webp,*/*",
+        "User-Agent": server_config.get("user_agent", "KrabOS/1.0"),
+        "Accept": "image/png",
     })
     return session
+
+def mercator_bbox(x, y, zoom):
+    """Return an EPSG:3857 WMS BBOX for one slippy-map tile."""
+    origin = 20037508.342789244
+    width = origin * 2 / (1 << zoom)
+    min_x = -origin + x * width
+    max_x = min_x + width
+    max_y = origin - y * width
+    min_y = max_y - width
+    return f"{min_x:.3f},{min_y:.3f},{max_x:.3f},{max_y:.3f}"
+
+
+def https_template_valid(template):
+    """Reject malformed, local, credential-bearing, or incomplete templates."""
+    if not template or any(token not in template for token in ("{z}", "{x}", "{y}")):
+        return False
+    expanded = template.replace("{z}", "0").replace("{x}", "0").replace("{y}", "0")
+    if "{" in expanded or "}" in expanded or any(ord(char) <= 32 for char in expanded):
+        return False
+    parsed = urlsplit(expanded)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        return False
+    if parsed.fragment or parsed.hostname == "localhost" or parsed.hostname.endswith(".local"):
+        return False
+    try:
+        address = ipaddress.ip_address(parsed.hostname)
+    except ValueError:
+        return True
+    return not (address.is_private or address.is_loopback or address.is_link_local or
+                address.is_multicast or address.is_unspecified or address.is_reserved)
+
+
+def build_tile_url(server_config, x, y, zoom):
+    template = server_config["url"]
+    if server_config.get("kind") == "wms":
+        return template.replace("{bbox}", mercator_bbox(x, y, zoom))
+    return template.replace("{z}", str(zoom)).replace("{x}", str(x)).replace("{y}", str(y))
+
+
+def server_description_for_log(server_name, server_config):
+    """Describe a source without exposing custom URL path/query credentials."""
+    if server_name == "generic":
+        return "generic (custom HTTPS source; URL redacted)"
+    return f"{server_name} ({server_config['url']})"
+
+
+def valid_png(data):
+    """Match the firmware's bounded 256px PNG admission contract."""
+    return (
+        24 <= len(data) <= MAX_PNG_BYTES
+        and data.startswith(PNG_SIGNATURE)
+        and data[12:16] == b"IHDR"
+        and struct.unpack(">II", data[16:24]) == (256, 256)
+    )
+
 
 def download_tile(args):
     """Download a single PNG tile. Returns (x, y, zoom, success)."""
     x, y, zoom, server_config, output_dir, resume = args
     global session, download_stats
 
-    # Build URL
-    url_tpl = server_config["url"]
-    sub = server_config.get("subdomains", [None])
-    sub_idx = (x + y) % len(sub) if sub[0] else 0
-    s = sub[sub_idx] if sub_idx is not None else ""
-    url = url_tpl.replace("{z}", str(zoom)).replace("{x}", str(x)).replace("{y}", str(y))
-    if "{s}" in url and s:
-        url = url.replace("{s}", s)
+    url = build_tile_url(server_config, x, y, zoom)
 
     # Output path
     out_dir = os.path.join(output_dir, str(zoom), str(x))
@@ -179,27 +225,35 @@ def download_tile(args):
     out_path = os.path.join(out_dir, f"{y}.png")
 
     # Resume keeps a prior non-empty tile. The default refreshes it.
-    if resume and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
-        with stats_lock:
-            download_stats["done"] += 1
-        return x, y, zoom, True
+    if resume and os.path.exists(out_path):
+        with open(out_path, "rb") as existing_tile:
+            existing_valid = valid_png(existing_tile.read())
+        if existing_valid:
+            with stats_lock:
+                download_stats["done"] += 1
+            return x, y, zoom, True
 
     # Download with retries
     max_retries = 3
     for attempt in range(max_retries):
         try:
             resp = session.get(url, timeout=30)
-            if resp.status_code == 200:
-                with open(out_path, "wb") as f:
+            if resp.status_code == 200 and valid_png(resp.content):
+                content_type = getattr(resp, "headers", {}).get("Content-Type", "")
+                if content_type and not content_type.lower().startswith("image/png"):
+                    raise ValueError("server response is not image/png")
+                part_path = out_path + ".part"
+                with open(part_path, "wb") as f:
                     f.write(resp.content)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(part_path, out_path)
 
                 with stats_lock:
                     download_stats["done"] += 1
                 return x, y, zoom, True
             elif resp.status_code == 404:
-                # Tile doesn't exist at this zoom (e.g., ocean tile)
-                if os.path.exists(out_path):
-                    os.unlink(out_path)
+                # A refresh never deletes an existing offline tile.
                 with stats_lock:
                     download_stats["done"] += 1
                 return x, y, zoom, True
@@ -207,7 +261,7 @@ def download_tile(args):
                 time.sleep(2 * (attempt + 1))
             else:
                 time.sleep(1 * (attempt + 1))
-        except Exception as e:
+        except Exception:
             if attempt == max_retries - 1:
                 with stats_lock:
                     download_stats["failed"] += 1
@@ -221,7 +275,7 @@ def download_tile(args):
 # ── Metadata ────────────────────────────────────────────────
 
 def write_metadata(output_dir, name, server_config, lat1, lon1, lat2, lon2, zoom_min, zoom_max):
-    """Write metadata.json describing the downloaded area."""
+    """Atomically write metadata.json describing the downloaded area."""
     min_lat, max_lat = min(lat1, lat2), max(lat1, lat2)
     min_lon, max_lon = min(lon1, lon2), max(lon1, lon2)
 
@@ -235,8 +289,13 @@ def write_metadata(output_dir, name, server_config, lat1, lon1, lat2, lon2, zoom
     }
 
     meta_path = os.path.join(output_dir, "metadata.json")
-    with open(meta_path, "w") as f:
+    temporary_path = meta_path + ".tmp"
+    with open(temporary_path, "w") as f:
         json.dump(metadata, f, indent=2)
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(temporary_path, meta_path)
 
     return metadata
 
@@ -326,7 +385,7 @@ def write_tile_index(output_dir):
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Download map tiles for Sigurdos offline use",
+        description="Download map tiles for KrabOS offline use",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -346,8 +405,12 @@ def build_parser():
     parser.add_argument("--zoom", type=int, nargs=2, metavar=("MIN", "MAX"),
                         default=[10, 14], help="Zoom range (default: 10 14)")
 
-    parser.add_argument("--server", choices=list(TILE_SERVERS.keys()),
-                        default="osm", help="Tile server (default: osm)")
+    parser.add_argument("--server", choices=["nrcan", "generic"],
+                        default="nrcan", help="Tile server (default: nrcan)")
+    parser.add_argument("--url-template",
+                        help="Permitted generic HTTPS XYZ template")
+    parser.add_argument("--attribution",
+                        help="Required attribution for a generic source")
     parser.add_argument("--workers", type=int, default=4,
                         help="Parallel download threads (default: 4)")
     parser.add_argument("--dry-run", action="store_true",
@@ -373,6 +436,13 @@ def parse_args(argv=None):
         parser.error("--name is required with --bbox or coordinate mode")
     if args.workers < 1:
         parser.error("--workers must be at least 1")
+    if not (0 <= min(args.zoom) <= max(args.zoom) <= 18):
+        parser.error("--zoom values must be in the firmware range 0..18")
+    if args.server == "generic":
+        if not args.attribution or not https_template_valid(args.url_template):
+            parser.error(
+                "generic sources require --attribution and a safe HTTPS "
+                "--url-template containing {z}, {x}, and {y}")
 
     # Parse bounding box
     if args.bbox is not None:
@@ -406,14 +476,22 @@ def main(argv=None):
     if zoom_min > zoom_max:
         zoom_min, zoom_max = zoom_max, zoom_min
 
-    server_config = TILE_SERVERS[args.server]
+    server_config = TILE_SERVERS.get(args.server)
+    if args.server == "generic":
+        server_config = {
+            "kind": "xyz",
+            "url": args.url_template,
+            "attribution": args.attribution,
+            "max_zoom": 18,
+            "user_agent": "KrabOS-MapDownloader/1.0",
+        }
     output_dir = args.output or f"maps-{args.name}"
     tiles_dir = os.path.join(output_dir, "tiles")
 
     print(f"Region: {args.name}")
     print(f"Bounds: {lat1:.4f},{lon1:.4f} -> {lat2:.4f},{lon2:.4f}")
     print(f"Zooms:  {zoom_min}-{zoom_max}")
-    print(f"Server: {args.server} ({server_config['url']})")
+    print(f"Server: {server_description_for_log(args.server, server_config)}")
     print(f"Output: {output_dir}/")
     print()
 
@@ -467,7 +545,7 @@ def main(argv=None):
 
         last_report = 0
         for future in as_completed(futures):
-            result = future.result()
+            future.result()
             now = time.time()
             if now - last_report > 2.0:  # report every 2 seconds
                 elapsed = now - start_time
@@ -490,9 +568,9 @@ def main(argv=None):
 
     print(f"\nDone! {download_stats['done']} tiles downloaded, {download_stats['failed']} failed")
     print(f"Output: {output_dir}/")
-    print(f"\nTo use on T-Deck:")
-    print(f"  Copy the 'tiles/' folder to the root of the SD card")
-    print(f"  The firmware reads from: /sdcard/tiles/{{z}}/{{x}}/{{y}}.png")
+    print("\nTo use on T-Deck:")
+    print("  Copy the 'tiles/' folder to the root of the SD card")
+    print("  The firmware reads from: /sdcard/tiles/{z}/{x}/{y}.png")
 
 
 if __name__ == "__main__":

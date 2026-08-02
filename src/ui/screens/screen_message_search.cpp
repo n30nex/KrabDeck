@@ -25,6 +25,7 @@
 #include "../message_search.h"
 #include "../../mesh/message_store.h"
 #include "../../fonts/emoji_font.h"
+#include "utils/local_time.h"
 #include <lvgl.h>
 #include <cstdio>
 #include <cstdlib>
@@ -138,13 +139,7 @@ static void ms_add_result_row(int row_idx,
     // ── Context line: #channel / DM · sender · HH:MM ──
     char ctx[96];
     char tbuf[8];
-    if (msg.timestamp == 0) {
-        std::snprintf(tbuf, sizeof(tbuf), "--:--");
-    } else {
-        const uint32_t sec = msg.timestamp % 86400;
-        std::snprintf(tbuf, sizeof(tbuf), "%02u:%02u",
-                      (sec / 3600) % 24, (sec / 60) % 60);
-    }
+    sigurdos::local_time::formatHm(tbuf, sizeof(tbuf), msg.timestamp);
     const char* conv = msg.conversation[0] ? msg.conversation : "(unknown)";
     const char* sender = msg.is_self ? "You"
                        : (msg.sender[0] ? msg.sender : "");

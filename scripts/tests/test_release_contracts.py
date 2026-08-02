@@ -24,6 +24,10 @@ class ReleaseContractTests(unittest.TestCase):
             "bool set_keyboard_mode(uint8_t command) { return true; }\n"
             "void init() { set_keyboard_mode(CMD_MODE_KEY); }\n"
         )
+        (root / "src/hal/sdcard.cpp").write_text(
+            'void mount() { SD.begin(39, spi, 4000000, "/sdcard", 5, false); }\n'
+        )
+        (root / "src/hal/sdcard.h").write_text("bool sigurdos_sdcard_init();\n")
         (root / "src/ui/screen.cpp").write_text(
             "void show() { lv_scr_load_anim(scr, anim, 0, 0, false); }\n"
         )
@@ -72,6 +76,24 @@ class ReleaseContractTests(unittest.TestCase):
         with (root / "src/hal/keyboard.cpp").open("a") as stream:
             stream.write("void raw() { Wire.write(0x03); }\n")
         self.assertTrue(any("raw keyboard" in item for item in MODULE.check(root)))
+
+    def test_rejects_production_sd_formatter_api(self):
+        temporary, root = self.make_root()
+        self.addCleanup(temporary.cleanup)
+        (root / "src/hal/sdcard.h").write_text(
+            "bool sigurdos_sdcard_recover_test_card(bool owner_authorized);\n"
+        )
+        self.assertTrue(any("SD formatting" in item for item in MODULE.check(root)))
+
+    def test_rejects_sd_mount_with_format_on_failure(self):
+        temporary, root = self.make_root()
+        self.addCleanup(temporary.cleanup)
+        (root / "src/hal/sdcard.cpp").write_text(
+            'void mount() { SD.begin(39, spi, 4000000, "/sdcard", 5, true); }\n'
+        )
+        self.assertTrue(
+            any("format-on-failure" in item for item in MODULE.check(root))
+        )
 
     def test_rejects_bare_latest_documentation(self):
         temporary, root = self.make_root()

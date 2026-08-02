@@ -22,6 +22,7 @@
 #include "../theme.h"
 #include "../responsive.h"
 #include "../../mesh/mesh_wrapper.h"
+#include "utils/local_time.h"
 #include <lvgl.h>
 #include <cstdio>
 
@@ -102,10 +103,9 @@ void bluetooth_screen_show()
     if (last == 0) {
         snprintf(buf, sizeof(buf), "  Last sync: Never");
     } else {
-        uint32_t sec = last % 86400;
-        snprintf(buf, sizeof(buf), "  Last sync: %02lu:%02lu",
-                 (unsigned long)((sec / 3600) % 24),
-                 (unsigned long)((sec / 60) % 60));
+        char clock[6];
+        sigurdos::local_time::formatHm(clock, sizeof(clock), last);
+        snprintf(buf, sizeof(buf), "  Last sync: %s", clock);
     }
     lv_obj_t* row_sync = lv_list_add_btn(list, LV_SYMBOL_REFRESH, buf);
     lv_obj_set_style_bg_color(row_sync, lv_color_hex(BG_INPUT), 0);

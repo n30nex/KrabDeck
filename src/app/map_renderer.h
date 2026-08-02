@@ -454,6 +454,11 @@ inline bool sigurdos_map_release_owned_buffer(T*& buffer, FreeFn free_fn) {
 void sigurdos_map_init();
 bool sigurdos_map_initialized();
 
+// Permanently stop accepting tile work, cancel the current generation, and
+// wait until the renderer worker has released the shared SD lock. This is a
+// terminal power-transition barrier; timeout means SD.end() is not safe.
+bool sigurdos_map_quiesce(std::uint32_t timeout_ms = 30000);
+
 // Start discovering available tile zoom levels. This resets discovery state
 // but performs no directory traversal; the screen advances it with step().
 void sigurdos_map_discover_tiles();

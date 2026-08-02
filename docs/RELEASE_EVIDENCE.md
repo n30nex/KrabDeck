@@ -170,6 +170,13 @@ non-stable tags. Schema 2 version-only source evidence is rejected, and the
 `v1.0.0` workflow passes `--require-exact` for both its schema-3 input and
 schema-3 published attestation.
 
+Stable publication fails while any open issue is labelled `gate` or identified
+as P0/P1. Issue #6 is the sole publication tracker: the workflow names it
+explicitly, and the exception is valid only while it carries the `gate`,
+`phase:m5`, and `release` labels. It cannot override a P0/P1 label or exempt
+any other issue. Close #6 only after the published release and its immutable
+assets have been verified.
+
 The successful Pi gate uploads the complete sealed bundle once and exports its
 immutable artifact ID and archive digest to the publish job. Publication
 downloads that ID from the same workflow run, not the newest artifact with a

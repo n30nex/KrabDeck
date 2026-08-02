@@ -1,0 +1,9 @@
+# Python 3.13 / Linux ARM64 artifact lock for the self-hosted Pi 5 runner.
+# Keep package versions constrained to the reviewed cross-platform lock.
+# Regenerate with:
+# uv pip compile ci/requirements-platformio-pi.in \
+#   --output-file ci/requirements-platformio-pi.txt \
+#   --generate-hashes --python-version 3.13 \
+#   --python-platform aarch64-unknown-linux-gnu
+-c requirements-platformio.txt
+-r requirements-platformio.in

@@ -15,8 +15,17 @@ HASH_INPUTS = (
     "ci/requirements-platformio.txt",
     "ci/platformio-packages.lock",
 )
+PI_HASH_INPUTS = (
+    "platformio.ini",
+    "lib/meshcore/library.json",
+    "ci/requirements-platformio-pi.in",
+    "ci/requirements-platformio-pi.txt",
+    "ci/platformio-packages.lock",
+)
 LOCKED_REQUIREMENTS = {
+    "ci/requirements-coverage-pi.txt",
     "ci/requirements-coverage.txt",
+    "ci/requirements-platformio-pi.txt",
     "ci/requirements-platformio.txt",
 }
 EXTERNAL_ACTION_REF = re.compile(r"uses:\s+(?!\./)[^@\s]+@([^\s]+)")
@@ -57,8 +66,15 @@ class PlatformioCacheContractTest(unittest.TestCase):
                 dependency_hash = helpers[0].get("with", {}).get(
                     "dependency-hash", ""
                 )
-                for dependency_input in HASH_INPUTS:
+                uses_pi_lock = "requirements-platformio-pi.txt" in job_text
+                expected_inputs = PI_HASH_INPUTS if uses_pi_lock else HASH_INPUTS
+                unexpected_inputs = (
+                    HASH_INPUTS[2:4] if uses_pi_lock else PI_HASH_INPUTS[2:4]
+                )
+                for dependency_input in expected_inputs:
                     self.assertIn(dependency_input, dependency_hash, label)
+                for dependency_input in unexpected_inputs:
+                    self.assertNotIn(dependency_input, dependency_hash, label)
 
     def test_hash_locked_installs_do_not_append_unlocked_packages(self):
         for workflow_path in WORKFLOWS.glob("*.yml"):
@@ -82,8 +98,23 @@ class PlatformioCacheContractTest(unittest.TestCase):
         steps = workflow["jobs"]["coverage"]["steps"]
         helper = next(step for step in steps if step.get("uses") == HELPER_ACTION)
         dependency_hash = helper["with"]["dependency-hash"]
-        self.assertIn("ci/requirements-coverage.in", dependency_hash)
-        self.assertIn("ci/requirements-coverage.txt", dependency_hash)
+        uses_pi_lock = "requirements-coverage-pi.txt" in repr(
+            workflow["jobs"]["coverage"]
+        )
+        expected = (
+            ("ci/requirements-coverage-pi.in", "ci/requirements-coverage-pi.txt")
+            if uses_pi_lock
+            else ("ci/requirements-coverage.in", "ci/requirements-coverage.txt")
+        )
+        unexpected = (
+            ("ci/requirements-coverage.in", "ci/requirements-coverage.txt")
+            if uses_pi_lock
+            else ("ci/requirements-coverage-pi.in", "ci/requirements-coverage-pi.txt")
+        )
+        for dependency_input in expected:
+            self.assertIn(dependency_input, dependency_hash)
+        for dependency_input in unexpected:
+            self.assertNotIn(dependency_input, dependency_hash)
 
     def test_dependency_refresh_uses_only_a_pre_update_bootstrap_cache(self):
         path = WORKFLOWS / PRE_UPDATE_CACHE_WORKFLOW
@@ -112,6 +143,23 @@ class PlatformioCacheContractTest(unittest.TestCase):
         )
         self.assertLess(cache_index, update_index)
 
+    def test_pi_locks_are_targeted_and_constrained_to_reviewed_versions(self):
+        for stem in ("platformio", "coverage"):
+            source = (ROOT / "ci" / f"requirements-{stem}-pi.in").read_text(
+                encoding="utf-8"
+            )
+            lock = (ROOT / "ci" / f"requirements-{stem}-pi.txt").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn(f"-c requirements-{stem}.txt", source)
+            self.assertIn("--python-version 3.13", source)
+            self.assertIn("--python-platform aarch64-unknown-linux-gnu", source)
+            self.assertIn("--python-version 3.13", lock.splitlines()[1])
+            self.assertIn(
+                "--python-platform aarch64-unknown-linux-gnu",
+                lock.splitlines()[1],
+            )
+
     def test_security_inventory_reverifies_platformio_from_cache(self):
         content = (WORKFLOWS / "security.yml").read_text(encoding="utf-8")
         self.assertNotIn("uses: actions/cache@", content)
@@ -120,9 +168,16 @@ class PlatformioCacheContractTest(unittest.TestCase):
         self.assertIn("pio pkg list -e SigurdOS_TDeck", content)
 
     def test_helper_caches_packages_but_never_build_outputs(self):
-        content = (
+        path = (
             ROOT / ".github" / "actions" / "cache-platformio" / "action.yml"
-        ).read_text(encoding="utf-8")
+        )
+        content = path.read_text(encoding="utf-8")
+        action = yaml.safe_load(content)
+        cache_step = action["runs"]["steps"][0]
+        self.assertEqual(
+            cache_step.get("if"),
+            "runner.environment == 'github-hosted'",
+        )
         self.assertIn("~/.platformio/.cache", content)
         self.assertIn("~/.platformio/packages", content)
         self.assertIn("~/.platformio/platforms", content)

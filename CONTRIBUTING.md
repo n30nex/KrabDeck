@@ -1,13 +1,13 @@
-# Contributing to KrabDeck / KrabOS
+# Contributing to SigurdOS T-Deck
 
-Thanks for considering contributing. KrabOS is under active development and
-welcomes bug reports, feature requests, documentation and code contributions.
+Thanks for considering contributing! This project is in beta and welcomes
+bug reports, feature requests, and code contributions.
 
 ## Quick Start
 
 ```bash
-git clone --recurse-submodules https://github.com/n30nex/KrabDeck.git
-cd KrabDeck
+git clone --recurse-submodules https://github.com/hermes-gadget/SigurdOS-tdeck.git
+cd SigurdOS-tdeck
 pio test -e native_test -v
 ```
 
@@ -32,13 +32,13 @@ tolerated.
 
 ## Reporting Bugs
 
-1. Search [open issues](https://github.com/n30nex/KrabDeck/issues)
+1. Search [open issues](https://github.com/hermes-gadget/SigurdOS-tdeck/issues)
    first — your bug may already be known.
 2. If not found, open a new issue with:
    - A clear, descriptive title
    - Steps to reproduce (exact and minimal)
    - Expected vs. actual behavior
-   - T-Deck Plus hardware revision and fixture identity, if known
+   - T-Deck hardware revision (v1.0 / v1.1), if known
    - Serial monitor logs (run `pio device monitor -b 115200`)
 3. Label the issue `bug`.
 
@@ -61,10 +61,10 @@ tolerated.
 ### Work on it
 
 1. **Fork the repo** on GitHub.
-2. **Create a branch on your fork** from the `main` branch:
+2. **Create a branch on your fork** from the `dev` branch:
    ```
-   git checkout main
-   git pull upstream main
+   git checkout dev
+   git pull upstream dev
    git checkout -b fix/your-bug-fix
    # or: feature/your-feature
    # or: docs/your-doc-change
@@ -76,9 +76,9 @@ tolerated.
    ```
 5. **Ensure it builds** for the target hardware:
    ```
-   pio run -e KrabOS_TDeckPlus
+   pio run -e SigurdOS_TDeck
    ```
-6. **Push to your fork** and open a PR against the `main` branch.
+6. **Push to your fork** and open a PR against the `dev` branch.
 7. In the PR description, reference the related issue (`Fixes #123`).
 8. If you discovered new issues during testing, add them to `docs/KNOWN_ISSUES.md`.
 9. Respond to review feedback promptly.
@@ -89,15 +89,11 @@ Once the PR is merged, the maintainer closes the original issue with notes descr
 
 ### Who Can Merge
 
-Only repository maintainers have merge access. Pull request authors and other
-contributors cannot merge their own PRs. This keeps every merge subject to
-review by someone familiar with the full codebase and release constraints.
+Only the repository maintainers (Ben and the Hermes agent) have merge access. Pull request authors and other contributors cannot merge their own PRs. This ensures every merge goes through review by someone familiar with the full codebase.
 
 ### Merging
 
-Pull requests are merged via `gh pr merge --squash --delete-branch`. Squash
-merging keeps the commit history on `main` focused — each PR becomes one atomic
-commit. Feature branches are deleted after merge.
+Pull requests are merged via `gh pr merge --squash --delete-branch`. Squash merging keeps the commit history on `dev` clean — each PR becomes one atomic commit. Feature branches are deleted after merge.
 
 ### Hardware Testing
 
@@ -135,21 +131,21 @@ Fixes #ISSUE_NUMBER
 
 Testing method: [Remote test / Physical hardware test / Both]
 
-Environment: [e.g. KrabOS_TDeckPlus]
-Device/gateway/port: [T-Deck Plus fixture / gateway / immutable by-id path]
+Environment: [e.g. SigurdOS_TDeck_remote_test_radio]
+Device/gateway/port: [e.g. T-Deck v1.1 / hermes-pi / /dev/ttyACM0]
 Merged image SHA-256: [hash]
 RF parameters: [frequency/SF/BW/CR/power, or not used]
 Evidence: [logs, screenshots, soak results, or explicit not-run reason]
 
 <!--
-Remote test = serial-controlled simulation using the applicable remote-test environment
+Remote test = SigurdOS_TDeck_remote_test build env, serial-controlled simulation
 Physical hardware test = flashed to a real T-Deck with observable device evidence
 -->
 
 ## Checklist
 - [ ] `pio test -e native_test -v` passes
-- [ ] `pio run -e KrabOS_TDeckPlus` builds
-- [ ] `pio run -e KrabOS_TDeckPlus_recovery` builds
+- [ ] `pio run -e SigurdOS_TDeck` builds
+- [ ] `pio run -e SigurdOS_TDeck_remote_test_radio` builds
 - [ ] `docs/HARDWARE_TESTING.md` protocol completed for affected phases, or hardware testing is explicitly not applicable
 - [ ] Home, Settings, and every changed screen were captured and visually inspected when firmware/UI changed
 - [ ] Feature-specific physical/RF/persistence coverage and any test gaps are stated
@@ -167,33 +163,25 @@ The following files require separate PRs and cannot be bundled with feature or b
 - `docs/MISSING_FEATURES.md` — missing features roadmap
 - `.github/workflows/*` — CI/CD pipeline
 
-If you need to change one of these, open a dedicated PR with only that protected
-document or protected-document group. Do not bury protected file changes inside
-a feature or bug-fix PR.
-
-Workflow changes are stricter: every `.github/workflows/*` change must be in a
-dedicated **workflow-only PR**. Do not combine workflow YAML with firmware,
-tests, scripts, release evidence or documentation. The workflow PR must explain
-its permissions and trigger changes and receive CODEOWNER review before merge.
+If you need to change one of these, open a dedicated PR with only that change. Do not bury protected file changes inside a larger feature PR — they will be rejected.
 
 ## Development Workflow
 
 ```
-upstream/main ─────► your-fork/main
+upstream/dev  ─────►  your-fork/dev
                           │
                     git checkout -b feature/foo
                           │
                     commits...
                           │
-                    push && open PR ──► upstream/main
+                    push && open PR ──► upstream/dev
 ```
 
-- `main` is the integration and release branch — all PRs target it. Release
-  automation binds artifacts and evidence to an exact commit on `main`.
-- Rebase your branch on `main` before opening a PR to avoid merge conflicts:
+- The `dev` branch is the integration branch — all PRs merge here. There is no `main` branch; releases are tagged directly on `dev`.
+- Rebase your branch on `dev` before opening a PR to avoid merge conflicts:
   ```
   git fetch upstream
-  git rebase upstream/main
+  git rebase upstream/dev
   ```
 
 ## Style Guide
@@ -254,8 +242,7 @@ native-test-only PRs may state that hardware testing is not applicable.
 
 ## Design Guide
 
-The UI retains the upstream dark, compact visual language while KrabOS adds
-larger touch targets and rounded primary surfaces. Key principles:
+The UI follows a **pixel / blocky retro aesthetic** inspired by Discord's dark theme on an 8-bit display. Key principles:
 
 ### Palette
 
@@ -273,13 +260,9 @@ Theme constants are defined in `src/ui/theme.h`.
 
 ### Layout
 
-- Use shared theme helpers where a screen already follows the inherited pixel
-  treatment; do not hardcode a new colour palette.
-- KrabOS Home is a fixed **2x2 grid** with four large routes: CHATS, MAP,
-  NETWORK and MORE. Its cards use an 8px radius and 1px resting border.
-- The MORE hub uses rounded list rows. Existing specialist screens may retain
-  zero-radius controls where that is already their established pattern.
-- Touch, keyboard focus and trackball must expose the same actions.
+- **Zero radius** everywhere — no pill buttons, no round cards. Use `lv_obj_set_style_radius(obj, 0, 0)`.
+- **2px minimum borders** — cards, inputs, and buttons get thick solid outlines from the palette.
+- **4-column grid** on the home screen (320px T-Deck), no scrolling, 12 tiles per page. Smaller displays auto-adapt via `src/ui/responsive.h`.
 
 ### Typography
 

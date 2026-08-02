@@ -31,6 +31,7 @@ using namespace sigurdos::responsive;
 #include "../hal/prefs.h"
 #include "../hal/buzzer.h"
 #include "../fonts/emoji_font.h"
+#include "utils/local_time.h"
 #include <Arduino.h>
 #include <lvgl.h>
 
@@ -54,7 +55,7 @@ void init()
     theme::apply_dark_bg(splash_scr);
 
     lv_obj_t* logo = lv_label_create(splash_scr);
-    lv_label_set_text(logo, "SigurdOS");
+    lv_label_set_text(logo, "KrabOS");
     lv_obj_set_style_text_color(logo, lv_color_hex(theme::ACCENT), 0);
     lv_obj_set_style_text_font(logo, emoji_wrapped_montserrat_24, 0);
     lv_obj_align(logo, LV_ALIGN_CENTER, 0, -16);
@@ -133,14 +134,9 @@ void loop()
         home_screen_update_battery(sigurdos_battery_pct());
         home_screen_update_badges();
         {
-            uint32_t epoch = sigurdos::mesh::getCurrentTime();
             char tbuf[8];
-            if (epoch == 0) {
-                snprintf(tbuf, sizeof(tbuf), "--:--");
-            } else {
-                uint32_t sec = epoch % 86400;
-                snprintf(tbuf, sizeof(tbuf), "%02d:%02d", (sec/3600)%24, (sec/60)%60);
-            }
+            sigurdos::local_time::formatHm(
+                tbuf, sizeof(tbuf), sigurdos::mesh::getCurrentTime());
             home_screen_update_time(tbuf);
         }
     }

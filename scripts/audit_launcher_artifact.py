@@ -360,7 +360,7 @@ def main() -> int:
         "path",
         nargs="?",
         type=Path,
-        default=Path(".pio/build/SigurdOS_TDeck/firmware-merged.bin"),
+        default=Path(".pio/build/KrabOS_TDeckPlus/firmware-merged.bin"),
     )
     parser.add_argument("--json", action="store_true", help="emit the structured result as JSON")
     args = parser.parse_args()

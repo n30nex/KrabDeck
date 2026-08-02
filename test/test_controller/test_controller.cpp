@@ -32,7 +32,7 @@ TEST(TestControllerCommandTest, EveryDispatchedCommandAndAliasIsRecognized) {
         "addchannel Public", "addchan Public", "removechannel 1", "rmchannel 1",
         "removechan 1", "rmchan 1", "addrepeater node", "addroomserver room",
         "login node pass", "setlogin node", "setloginguest node", "screen", "status",
-        "stresschat", "keydiag", "kbddiag", "inputdiag", "touchdiag", "trackballdiag",
+        "buildinfo", "stresschat", "keydiag", "kbddiag", "inputdiag", "touchdiag", "trackballdiag",
         "tbdiag", "gpsdiag", "contactstats", "ble status", "debug level", "emoji",
         "emoji-ac a", "capture", "acmd node", "loginstat node", "tree", "widgets",
         "telemetry on", "query crash", "crash report", "drift", "scrolllist 1",

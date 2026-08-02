@@ -1,7 +1,9 @@
 Import("env")
 
 import os
+import re
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -61,6 +63,62 @@ def _git_describe(cwd):
     return value if value else None
 
 
+def _commit_epoch(cwd):
+    raw = _git(["show", "-s", "--format=%ct", "HEAD"], cwd)
+    try:
+        epoch = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("Git commit timestamp is required") from exc
+    if epoch < 0:
+        raise RuntimeError("Git commit timestamp cannot be negative")
+    return epoch
+
+
+def _build_date(epoch):
+    # Protocol field is 12 bytes including NUL. Use an explicit English month
+    # table so locale cannot change otherwise-reproducible firmware bytes.
+    months = (
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec",
+    )
+    stamp = datetime.fromtimestamp(epoch, timezone.utc)
+    return f"{stamp.day:02d}-{months[stamp.month - 1]}-{stamp.year:04d}"
+
+
+def _actions_provenance(
+    release_version,
+    head_sha,
+    server_url,
+    repository,
+    run_id,
+    run_attempt,
+    ref,
+):
+    if release_version:
+        commit_url = (
+            f"{server_url.rstrip('/')}/{repository}/commit/{head_sha}"
+            if repository
+            else ""
+        )
+        return f"commit-{head_sha[:12]}", "", head_sha, commit_url
+    run_url = (
+        f"{server_url.rstrip('/')}/{repository}/actions/runs/{run_id}"
+        if repository and run_id
+        else ""
+    )
+    return run_id, run_attempt, ref, run_url
+
+
 project_dir = Path(env.subst("$PROJECT_DIR"))
 meshcore_dir = project_dir / "lib" / "meshcore"
 board_config = env.BoardConfig()
@@ -73,22 +131,56 @@ if not partitions:
     partitions = board_config.get("build.partitions", "unknown")
 
 git_sha = _git(["rev-parse", "--short=12", "HEAD"], project_dir)
+head_sha = _git(["rev-parse", "HEAD"], project_dir).lower()
 meshcore_sha = _git(["rev-parse", "--short=12", "HEAD"], meshcore_dir)
 git_dirty = _git_dirty(project_dir)
 git_tag = _git_describe(project_dir)
+commit_epoch = _commit_epoch(project_dir)
+build_date = _build_date(commit_epoch)
+
+# GCC honors SOURCE_DATE_EPOCH for its date/time macros. Pin it to the checked
+# out commit for every build instead of accepting caller-controlled wall time.
+os.environ["SOURCE_DATE_EPOCH"] = str(commit_epoch)
+env["ENV"]["SOURCE_DATE_EPOCH"] = str(commit_epoch)
 if git_tag and git_dirty and not git_tag.endswith("-dirty"):
     git_tag += "-dirty"
 
 build_source = "github_actions" if os.environ.get("GITHUB_ACTIONS") == "true" else "local"
-actions_run_id = os.environ.get("GITHUB_RUN_ID", "local")
-actions_run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "")
-actions_ref = os.environ.get("GITHUB_REF_NAME") or _git(["rev-parse", "--abbrev-ref", "HEAD"], project_dir)
-actions_run_url = ""
-if build_source == "github_actions":
-    server_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com").rstrip("/")
-    repository = os.environ.get("GITHUB_REPOSITORY", "")
-    if repository and actions_run_id:
-        actions_run_url = f"{server_url}/{repository}/actions/runs/{actions_run_id}"
+release_version = os.environ.get("KRABOS_RELEASE_VERSION", "")
+if release_version:
+    actions_sha = os.environ.get("GITHUB_SHA", "").lower()
+    if build_source != "github_actions":
+        raise RuntimeError("KRABOS_RELEASE_VERSION is accepted only in GitHub Actions")
+    if not re.fullmatch(r"[0-9a-f]{40}", actions_sha) or actions_sha != head_sha:
+        raise RuntimeError("release build GITHUB_SHA does not match checked-out HEAD")
+    if git_dirty:
+        raise RuntimeError("release version override requires a clean checkout")
+    if not re.fullmatch(
+        r"(?:v[1-9][0-9]*\.[0-9]+\.[0-9]+|"
+        r"edge-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{12})",
+        release_version,
+    ):
+        raise RuntimeError("invalid KRABOS_RELEASE_VERSION")
+    git_tag = release_version
+
+server_url = os.environ.get("GITHUB_SERVER_URL", "https://github.com")
+repository = (
+    os.environ.get("GITHUB_REPOSITORY", "")
+    if build_source == "github_actions"
+    else ""
+)
+actions_run_id, actions_run_attempt, actions_ref, actions_run_url = (
+    _actions_provenance(
+        release_version,
+        head_sha,
+        server_url,
+        repository,
+        os.environ.get("GITHUB_RUN_ID", "local"),
+        os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+        os.environ.get("GITHUB_REF_NAME")
+        or _git(["rev-parse", "--abbrev-ref", "HEAD"], project_dir),
+    )
+)
 
 build_source = _bounded(build_source, 32)
 actions_run_id = _bounded(actions_run_id, 32)
@@ -102,6 +194,7 @@ sigurdos_version = _macro_string(git_tag) if git_tag else None
 env.Append(
     CPPDEFINES=[
         ("SIGURDOS_BUILD_GIT_SHA", _macro_string(git_sha)),
+        ("SIGURDOS_BUILD_DATE", _macro_string(build_date)),
         ("SIGURDOS_BUILD_GIT_DIRTY", "1" if git_dirty else "0"),
         ("SIGURDOS_BUILD_MESHCORE_SHA", _macro_string(meshcore_sha)),
         ("SIGURDOS_BUILD_ENV", _macro_string(build_env)),
@@ -123,7 +216,7 @@ if sigurdos_version:
 
 dirty_suffix = "+dirty" if git_dirty else ""
 print(
-    "SigurdOS build metadata: "
+    "KrabOS build metadata: "
     f"env={build_env} git={git_sha}{dirty_suffix} "
     f"meshcore={meshcore_sha} partitions={partitions} "
     f"source={build_source} run={actions_run_id}"

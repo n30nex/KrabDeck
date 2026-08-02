@@ -177,6 +177,15 @@ TEST_F(PinsTest, LoraDefaultsInRange) {
     EXPECT_LE(LORA_TX_PWR, 23);
 }
 
+TEST_F(PinsTest, KrabOsRadioDefaultsMatchCanadaMeshCoreProfile) {
+    EXPECT_FLOAT_EQ(LORA_FREQ, 910.525f);
+    EXPECT_FLOAT_EQ(LORA_BW, 62.5f);
+    EXPECT_EQ(LORA_SF, 7);
+    EXPECT_EQ(LORA_CR, 5);
+    EXPECT_EQ(LORA_TX_PWR, 20);
+    EXPECT_STREQ(KRABOS_RADIO_PROFILE_ID, "ca_902_928");
+}
+
 // ── GPS baud rate is standard ───────────────────────────
 TEST_F(PinsTest, GPSBaudRateIsValid) {
     EXPECT_GE(GPS_BAUD_RATE, 4800);
@@ -192,9 +201,13 @@ TEST_F(PinsTest, GPSBaudRateIsValid) {
 TEST_F(PinsTest, GPSUartMatchesLilyGoGpsShieldExample) {
     EXPECT_EQ(PIN_GPS_RX, 44);
     EXPECT_EQ(PIN_GPS_TX, 43);
-    EXPECT_EQ(GPS_PRIMARY_BAUD_RATE, 9600);
-    EXPECT_EQ(GPS_FALLBACK_BAUD_RATE, 38400);
+    EXPECT_EQ(GPS_PRIMARY_BAUD_RATE, 38400);
+    EXPECT_EQ(GPS_FALLBACK_BAUD_RATE, 9600);
     EXPECT_EQ(GPS_BAUD_RATE, GPS_PRIMARY_BAUD_RATE);
+}
+
+TEST_F(PinsTest, ProductUsesTorontoPosixTimezone) {
+    EXPECT_STREQ(KRABOS_TORONTO_TZ, "EST5EDT,M3.2.0,M11.1.0");
 }
 
 // ── Battery voltage range ────────────────────────────────

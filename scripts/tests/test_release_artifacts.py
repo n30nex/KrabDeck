@@ -16,11 +16,13 @@ sys.path.insert(0, str(SCRIPTS))
 import audit_launcher_artifact as launcher  # noqa: E402
 from release_artifact_contract import (  # noqa: E402
     COMPONENT_OFFSETS,
+    FIRMWARE_ROLE_SPECS,
     FULL_IMAGE_NAMES,
     GENERATED_WEB_OFFSETS,
     REQUIRED_RELEASE_ARTIFACTS,
     ReleaseArtifactError,
     sha256_file,
+    validate_firmware_roles,
     validate_release_directory,
 )
 
@@ -65,8 +67,17 @@ def app_image(segment=b"test"):
     return image + hashlib.sha256(image).digest()
 
 
-def merged_fixture():
-    app = app_image()
+def merged_fixture(role="production"):
+    spec = FIRMWARE_ROLE_SPECS[role]
+    identity = (
+        b"test\0"
+        + spec["build_environment"].encode("utf-8")
+        + b"\0"
+        + spec["semantic_marker"].encode("utf-8")
+        + b"\0"
+    )
+    identity += b"\0" * (-len(identity) % 4)
+    app = app_image(identity)
     bootloader = app_image(b"boot")
     entries = b"".join(
         [
@@ -94,21 +105,25 @@ def merged_fixture():
 
 def make_release_directory(path, commit="a" * 40, version="beta-test"):
     merged, bootloader, partitions, boot_app0, firmware = merged_fixture()
+    recovery, *_ = merged_fixture("recovery")
+    debug, *_ = merged_fixture("debug")
     components = {
-        "sigurdos-tdeck-bootloader.bin": bootloader,
-        "sigurdos-tdeck-partitions.bin": partitions,
-        "sigurdos-tdeck-boot_app0.bin": boot_app0,
-        "sigurdos-tdeck-firmware.bin": firmware,
+        "krabos-tdeck-plus-bootloader.bin": bootloader,
+        "krabos-tdeck-plus-partitions.bin": partitions,
+        "krabos-tdeck-plus-boot_app0.bin": boot_app0,
+        "krabos-tdeck-plus-firmware.bin": firmware,
     }
     for name, data in components.items():
         (path / name).write_bytes(data)
     for name in FULL_IMAGE_NAMES:
         (path / name).write_bytes(merged)
+    (path / "krabos-candidate.bin").write_bytes(merged)
+    (path / "krabos-recovery-rf-off.bin").write_bytes(recovery)
     (path / "firmware.bin").write_bytes(firmware)
-    (path / "firmware-debug.bin").write_bytes(merged)
+    (path / "firmware-debug.bin").write_bytes(debug)
 
     manifest = {
-        "name": "SigurdOS T-Deck",
+        "name": "KrabOS T-Deck Plus",
         "version": version,
         "new_install_prompt_erase": True,
         "builds": [
@@ -124,7 +139,7 @@ def make_release_directory(path, commit="a" * 40, version="beta-test"):
     (path / "manifest.json").write_text(json.dumps(manifest))
     records = {}
     for name, offset in GENERATED_WEB_OFFSETS.items():
-        key = name.removeprefix("sigurdos-tdeck-").removesuffix(".bin")
+        key = name.removeprefix("krabos-tdeck-plus-").removesuffix(".bin")
         file_path = path / name
         records[key] = {
             "file": name,
@@ -141,7 +156,7 @@ def make_release_directory(path, commit="a" * 40, version="beta-test"):
         "git_sha": commit,
         "git_dirty": False,
         "meshcore_sha": "b" * 40,
-        "build_environment": "SigurdOS_TDeck",
+        "build_environment": "KrabOS_TDeckPlus",
         "partition_table": "partitions_sigurdos_16MB.csv",
         "source_timestamp_utc": "2026-01-01T00:00:00Z",
         "flash_mode": "keep",
@@ -210,14 +225,48 @@ class ReleaseArtifactTests(unittest.TestCase):
         }
 
     def test_complete_release_directory_passes(self):
+        path = self.release_dir()
         hashes = validate_release_directory(
-            self.release_dir(), expected_commit="a" * 40, expected_version="beta-test"
+            path, expected_commit="a" * 40, expected_version="beta-test"
         )
-        self.assertEqual(len(hashes), 12)
+        self.assertEqual(len(hashes), 14)
+        roles = validate_firmware_roles(path)
+        self.assertEqual(
+            {role: record["build_environment"] for role, record in roles.items()},
+            {
+                role: spec["build_environment"]
+                for role, spec in FIRMWARE_ROLE_SPECS.items()
+            },
+        )
+        self.assertEqual(3, len({record["sha256"] for record in roles.values()}))
+
+    def test_identical_or_mislabelled_role_images_fail_closed(self):
+        path = self.release_dir()
+        (path / "krabos-recovery-rf-off.bin").write_bytes(
+            (path / "firmware-merged.bin").read_bytes()
+        )
+        with self.assertRaisesRegex(ReleaseArtifactError, "environment identity"):
+            validate_release_directory(path)
+
+        path = self.release_dir()
+        recovery = (path / "krabos-recovery-rf-off.bin").read_bytes()
+        debug = (path / "firmware-debug.bin").read_bytes()
+        (path / "krabos-recovery-rf-off.bin").write_bytes(debug)
+        (path / "firmware-debug.bin").write_bytes(recovery)
+        with self.assertRaisesRegex(ReleaseArtifactError, "environment identity"):
+            validate_release_directory(path)
+
+    def test_production_candidate_alias_is_cryptographically_bound(self):
+        path = self.release_dir()
+        (path / "krabos-candidate.bin").write_bytes(
+            (path / "firmware-debug.bin").read_bytes()
+        )
+        with self.assertRaisesRegex(ReleaseArtifactError, "production alias"):
+            validate_release_directory(path)
 
     def test_missing_file_and_string_offset_fail(self):
         path = self.release_dir()
-        (path / "sigurdos-tdeck-boot_app0.bin").unlink()
+        (path / "krabos-tdeck-plus-boot_app0.bin").unlink()
         with self.assertRaisesRegex(ReleaseArtifactError, "missing release artifacts"):
             validate_release_directory(path)
 
@@ -239,7 +288,7 @@ class ReleaseArtifactTests(unittest.TestCase):
             validate_release_directory(path)
 
         path = self.release_dir()
-        with (path / "sigurdos-tdeck-full.bin").open("ab") as output:
+        with (path / "krabos-tdeck-plus-full.bin").open("ab") as output:
             output.write(b"corrupt")
         with self.assertRaisesRegex(ReleaseArtifactError, "digest/size mismatch|byte-identical"):
             validate_release_directory(path)
@@ -259,7 +308,15 @@ class ReleaseArtifactTests(unittest.TestCase):
         path = self.release_dir()
         source = path / "source-evidence.json"
         attestation = path / "release-evidence.json"
-        source.write_text(json.dumps(self.completed_source_evidence()))
+        source_evidence = self.completed_source_evidence()
+        source_evidence.update({
+            "schema_version": 1,
+            "commit": "a" * 40,
+            "artifacts": validate_release_directory(
+                path, expected_commit="a" * 40, expected_version="beta-test"
+            ),
+        })
+        source.write_text(json.dumps(source_evidence))
         create = self.run_script(
             "verify_release_evidence.py",
             "--evidence",
@@ -275,7 +332,7 @@ class ReleaseArtifactTests(unittest.TestCase):
         )
         self.assertEqual(create.returncode, 0, create.stderr)
         declared = json.loads(attestation.read_text())["artifacts"]
-        self.assertEqual(len(declared), 12)
+        self.assertEqual(len(declared), 14)
 
         verify = self.run_script(
             "verify_release_evidence.py",

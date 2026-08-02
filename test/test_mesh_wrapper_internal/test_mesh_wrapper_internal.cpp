@@ -192,6 +192,46 @@ TEST(MeshInitLifecycle, DistinguishesStoppedClockOnlyAndReady)
         MeshInitState::Ready));
 }
 
+TEST(MeshInitLifecycle, BootAdvertRequiresReadyProductionRadio)
+{
+    using sigurdos::mesh::detail::shouldAttemptBootAdvert;
+
+    EXPECT_TRUE(shouldAttemptBootAdvert(
+        true, false, MeshInitState::Ready, true, false));
+    EXPECT_FALSE(shouldAttemptBootAdvert(
+        true, false, MeshInitState::ClockOnly, true, false));
+    EXPECT_FALSE(shouldAttemptBootAdvert(
+        true, false, MeshInitState::Ready, false, false));
+    EXPECT_FALSE(shouldAttemptBootAdvert(
+        false, false, MeshInitState::Ready, true, false));
+}
+
+TEST(MeshInitLifecycle, BootAdvertIsBlockedForRecoveryRemoteAndSecondAttempt)
+{
+    using sigurdos::mesh::detail::shouldAttemptBootAdvert;
+
+    EXPECT_FALSE(shouldAttemptBootAdvert(
+        true, true, MeshInitState::Ready, true, false));
+    EXPECT_FALSE(shouldAttemptBootAdvert(
+        true, false, MeshInitState::Ready, true, true));
+}
+
+TEST(MeshInitLifecycle, FailedBootAdvertRetriesWithWrapSafeBackoff)
+{
+    using sigurdos::mesh::detail::bootAdvertRetryDue;
+
+    EXPECT_TRUE(bootAdvertRetryDue(false, false, 100, 0, 5000));
+    EXPECT_FALSE(bootAdvertRetryDue(true, false, 4999, 0, 5000));
+    EXPECT_TRUE(bootAdvertRetryDue(true, false, 5000, 0, 5000));
+    EXPECT_FALSE(bootAdvertRetryDue(true, true, 10000, 0, 5000));
+
+    const uint32_t before_wrap = UINT32_MAX - 1000U;
+    EXPECT_FALSE(bootAdvertRetryDue(
+        true, false, before_wrap + 4000U, before_wrap, 5000));
+    EXPECT_TRUE(bootAdvertRetryDue(
+        true, false, before_wrap + 5000U, before_wrap, 5000));
+}
+
 TEST(MeshInitLifecycle, EarlyShutdownQuiescesAndSleepsWithoutPersistence)
 {
     std::vector<int> order;

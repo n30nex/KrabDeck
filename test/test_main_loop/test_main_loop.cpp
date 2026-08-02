@@ -148,6 +148,125 @@ TEST(MainLoopDispatchTest, EveryCriticalBatteryPathUsesOrderlyShutdown)
     EXPECT_EQ(source.find("board.trySleep("), std::string::npos);
 }
 
+TEST(MainLoopDispatchTest, RemoteRadioAndRfOffImagesHaveExplicitBootContracts)
+{
+    const std::string source = read_project_file("src/main.cpp");
+    ASSERT_FALSE(source.empty());
+
+    EXPECT_NE(source.find("defined(SIGURDOS_REMOTE_TEST_RADIO)"),
+              std::string::npos);
+    EXPECT_NE(source.find("[boot] REMOTE RADIO TEST MODE"),
+              std::string::npos);
+    EXPECT_NE(source.find(
+                  "@krabos|event=rf_policy|tx=blocked|role=recovery"),
+              std::string::npos);
+    EXPECT_NE(source.find(
+                  "@krabos|event=rf_policy|tx=blocked|role=debug"),
+              std::string::npos);
+    EXPECT_NE(source.find("defined(KRABOS_DEBUG_IMAGE)"),
+              std::string::npos);
+}
+
+TEST(MainLoopDispatchTest, ShutdownQuiescesMapWorkersAndSerializesSdEnd)
+{
+    const std::string source = read_project_file("src/mesh/mesh_wrapper.cpp");
+    ASSERT_FALSE(source.empty());
+
+    const size_t shutdown_pos = source.find("void shutdown(uint32_t wake_secs)");
+    const size_t renderer_quiesce_pos = source.find(
+        "sigurdos_map_quiesce()", shutdown_pos);
+    const size_t downloader_quiesce_pos = source.find(
+        "sigurdos::app::map_download::quiesce()", shutdown_pos);
+    const size_t sd_lock_pos = source.find(
+        "SigurdosSdLock sd_lock;", shutdown_pos);
+    const size_t sleep_pos = source.find("board.sleep(wake_secs);", shutdown_pos);
+    ASSERT_NE(shutdown_pos, std::string::npos);
+    ASSERT_NE(renderer_quiesce_pos, std::string::npos);
+    ASSERT_NE(downloader_quiesce_pos, std::string::npos);
+    ASSERT_NE(sd_lock_pos, std::string::npos);
+    ASSERT_NE(sleep_pos, std::string::npos);
+    EXPECT_LT(renderer_quiesce_pos, sd_lock_pos);
+    EXPECT_LT(downloader_quiesce_pos, sd_lock_pos);
+    EXPECT_LT(sd_lock_pos, sleep_pos);
+}
+
+TEST(MainLoopDispatchTest, MapDownloadInstallUsesSerializedDurableCommit)
+{
+    const std::string source = read_project_file("src/app/map_download.cpp");
+    ASSERT_FALSE(source.empty());
+
+    const size_t helper_pos = source.find("commitPreparedStateLocked(");
+    const size_t policy_pos = source.find("durableCommitIfCurrent(", helper_pos);
+    const size_t start_pos = source.find("bool start(const Request& request)");
+    const size_t lock_pos = source.find("DurableCommitLock commit_lock;", start_pos);
+    const size_t install_pos = source.find(
+        "commitPreparedStateLocked(installed.generation, next)", start_pos);
+    ASSERT_NE(helper_pos, std::string::npos);
+    ASSERT_NE(policy_pos, std::string::npos);
+    ASSERT_NE(start_pos, std::string::npos);
+    ASSERT_NE(lock_pos, std::string::npos);
+    ASSERT_NE(install_pos, std::string::npos);
+    EXPECT_LT(start_pos, lock_pos);
+    EXPECT_LT(lock_pos, install_pos);
+    EXPECT_EQ(source.find("saveCurrentState"), std::string::npos);
+}
+
+TEST(MainLoopDispatchTest, MapRendererBarrierInvalidatesThenDrainsSdWorker)
+{
+    const std::string source = read_project_file("src/app/map_renderer.cpp");
+    ASSERT_FALSE(source.empty());
+
+    const size_t worker_pos = source.find("static void tile_worker_task(void*)");
+    const size_t worker_active_pos = source.find(
+        "tile_worker_active.store(true", worker_pos);
+    const size_t load_pos = source.find(
+        "load_tile_off_ui(request);", worker_active_pos);
+    const size_t worker_idle_pos = source.find(
+        "tile_worker_active.store(false", load_pos);
+    const size_t completion_send_pos = source.find(
+        "xQueueSend(tile_completion_queue", worker_idle_pos);
+    const size_t normal_idle_pos = source.find(
+        "tile_worker_active.store(false", completion_send_pos);
+    const size_t load_function_pos = source.find(
+        "static SigurdosMapTileCompletion load_tile_off_ui(");
+    const size_t worker_sd_lock_pos = source.find(
+        "SigurdosSdLock sd_lock(SIGURDOS_MAP_TILE_WORK_MAX_MS);",
+        load_function_pos);
+    const size_t post_lock_owner_check_pos = source.find(
+        "if (!tile_request_still_owned(request))", worker_sd_lock_pos);
+    const size_t quiesce_pos = source.find(
+        "bool sigurdos_map_quiesce(uint32_t timeout_ms)");
+    const size_t gate_pos = source.find(
+        "tile_worker_quiescing.store(true", quiesce_pos);
+    const size_t generation_pos = source.find(
+        "advance_tile_generation();", gate_pos);
+    const size_t active_pos = source.find(
+        "while (tile_worker_active.load", generation_pos);
+    const size_t sd_lock_pos = source.find(
+        "SigurdosSdLock sd_lock(remaining);", active_pos);
+    ASSERT_NE(worker_pos, std::string::npos);
+    ASSERT_NE(worker_active_pos, std::string::npos);
+    ASSERT_NE(load_pos, std::string::npos);
+    ASSERT_NE(worker_idle_pos, std::string::npos);
+    ASSERT_NE(completion_send_pos, std::string::npos);
+    ASSERT_NE(normal_idle_pos, std::string::npos);
+    ASSERT_NE(load_function_pos, std::string::npos);
+    ASSERT_NE(worker_sd_lock_pos, std::string::npos);
+    ASSERT_NE(post_lock_owner_check_pos, std::string::npos);
+    ASSERT_NE(quiesce_pos, std::string::npos);
+    ASSERT_NE(gate_pos, std::string::npos);
+    ASSERT_NE(generation_pos, std::string::npos);
+    ASSERT_NE(active_pos, std::string::npos);
+    ASSERT_NE(sd_lock_pos, std::string::npos);
+    EXPECT_LT(worker_active_pos, load_pos);
+    EXPECT_LT(load_pos, worker_idle_pos);
+    EXPECT_LT(completion_send_pos, normal_idle_pos);
+    EXPECT_LT(worker_sd_lock_pos, post_lock_owner_check_pos);
+    EXPECT_LT(gate_pos, generation_pos);
+    EXPECT_LT(generation_pos, active_pos);
+    EXPECT_LT(active_pos, sd_lock_pos);
+}
+
 TEST(GpsClockHandoffTest, AppliesSecondsAndMarksOnlyAfterClockAccepts)
 {
     uint32_t applied = 0;

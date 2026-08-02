@@ -463,7 +463,7 @@ pct = ((mv - 3000) * 100) / (4200 - 3000);
 
 ### Init Sequence
 
-1. `Serial1.begin(active_baud, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX)`, starting at 9600 baud and cycling once to 38400 baud if no checksum-valid NMEA is seen
+1. `Serial1.begin(active_baud, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX)`, starting at 38400 baud and cycling once to 9600 baud if no checksum-valid NMEA is seen
 2. Buffer NMEA characters in 128-byte line buffer
 3. On `\n` delimiter, validate checksum and dispatch parser
 
@@ -472,9 +472,12 @@ pct = ((mv - 3000) * 100) / (4200 - 3000);
 - GPS UART acquisition is serviced on every application-loop pass after the
   UART has been initialized; this prevents the 256-byte receive buffer from
   overflowing between position updates.
-- Background GPS is off by default. When enabled, the minimum published-fix
-  interval is 5 seconds; legacy 0-second and 1-second preferences are migrated
-  to 5 seconds.
+- The KrabOS production image enables background GPS and location-bearing
+  adverts on a new/empty NVS namespace. Diagnostic, recovery, compatibility,
+  and upstream SigurdOS images retain the privacy-first GPS-off default.
+  Breadcrumb track logging remains off until explicitly enabled. The minimum
+  published-fix interval is 5 seconds; legacy 0-second and 1-second
+  preferences are migrated to 5 seconds.
 - Opening Map temporarily requests a 200 ms fix-publication cadence and releases it
   when the screen closes without changing the saved GPS preference.
 - Settings → GPS → Sync time from GPS temporarily requests the same foreground
@@ -498,6 +501,7 @@ pct = ((mv - 3000) * 100) / (4200 - 3000);
 | VFS Mountpoint     | **`/sdcard`** (`SIGURDOS_SD_MOUNTPOINT`) |
 | Init Strategy     | Single attempt at boot (`sigurdos_sdcard_init()`) + lazy retry<br>via `sigurdos_sdcard_retry()` capped at 3 total attempts |
 | Capacity           | Exposed via `sigurdos_sdcard_capacity_bytes()` |
+| Format policy      | Never format in firmware; mount failures preserve the card for off-device recovery |
 
 ### Shared Bus Note
 
@@ -567,11 +571,11 @@ same pins for compatibility.
 
 | Parameter            | Value     | Macro        |
 |----------------------|-----------|--------------|
-| Frequency            | 869.618 MHz | `LORA_FREQ`  |
+| Frequency            | 910.525 MHz | `LORA_FREQ`  |
 | Bandwidth            | 62.5 kHz  | `LORA_BW`    |
-| Spreading Factor     | 8         | `LORA_SF`    |
+| Spreading Factor     | 7         | `LORA_SF`    |
 | Coding Rate          | 5 (4/5)   | `LORA_CR`    |
-| TX Power             | 22 dBm    | `LORA_TX_PWR`|
+| TX Power             | 20 dBm    | `LORA_TX_PWR`|
 
 ### Runtime Configuration
 
@@ -592,8 +596,12 @@ custom configuration. The on-device custom editor intentionally exposes a
 narrower 400–930 MHz, SF6–12, and 2–22 dBm range.
 
 > **Safety:** `NodePrefs.configured` must be `true` before the radio transmits.
-> Until the user explicitly saves settings in the UI, radio defaults are used
-> only for display purposes and the MeshCore mesh will not start.
+> A new KrabOS production namespace deliberately starts configured with the
+> Canada profile (910.525 MHz, BW 62.5 kHz, SF7, CR 4/5, 20 dBm) and queues a
+> wildcard boot advert. Diagnostic, recovery, compatibility, and upstream
+> SigurdOS images do not inherit that product default; they remain RF-off until
+> explicitly configured, and RF-enabled remote-test images remain separately
+> named.
 
 ### Init Sequence
 
@@ -824,11 +832,11 @@ All hardware pin and configuration defines are in `src/hal/tdeck_pins.h`.
 | `PIN_BUZZER`          | 46    | Buzzer output               |
 | `TFT_WIDTH`           | 320   | Display width (landscape)   |
 | `TFT_HEIGHT`          | 240   | Display height (landscape)  |
-| `LORA_FREQ`           | 869.618 | Default frequency (MHz)  |
+| `LORA_FREQ`           | 910.525 | Default frequency (MHz)  |
 | `LORA_BW`             | 62.5  | Default bandwidth (kHz)     |
-| `LORA_SF`             | 8     | Default spreading factor    |
+| `LORA_SF`             | 7     | Default spreading factor    |
 | `LORA_CR`             | 5     | Default coding rate         |
-| `LORA_TX_PWR`         | 22    | Default TX power (dBm)      |
+| `LORA_TX_PWR`         | 20    | Default TX power (dBm)      |
 | `BAT_ADC_MULT`        | 6600.0 | ADC-to-mV multiplier        |
 | `BAT_MIN_MV`          | 3000  | 0% battery threshold        |
 | `BAT_MAX_MV`          | 4200  | 100% battery threshold      |

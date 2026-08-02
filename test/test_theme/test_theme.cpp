@@ -18,8 +18,7 @@
 
 
 /**
- * Unit tests for theme color constants
- * Validates the Discord-inspired dark palette
+ * Unit tests for the Krab Material theme color constants.
  */
 #include <gtest/gtest.h>
 #include <cstdint>
@@ -45,6 +44,13 @@ TEST_F(ThemeTest, BackgroundColorsAreDark) {
     EXPECT_TRUE(is_dark(BG_SECONDARY));
     EXPECT_TRUE(is_dark(BG_TERTIARY));
     EXPECT_TRUE(is_dark(BG_INPUT));
+}
+
+TEST_F(ThemeTest, DefaultThemeIsKrabMaterialCoralOnNavy) {
+    using namespace sigurdos::theme;
+    EXPECT_STREQ(THEMES[0].name, "Krab Material");
+    EXPECT_EQ(THEMES[0].accent, 0xff6b5aU);
+    EXPECT_EQ(THEMES[0].bg_primary, 0x10131bU);
 }
 
 // ── Accent colors are vibrant ───────────────────────────

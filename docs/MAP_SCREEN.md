@@ -1,6 +1,9 @@
 # Map Screen
 
-The Map screen renders **offline map tiles** from the SD card onto an LVGL canvas, enabling fully-offline geographic awareness on the LilyGo T-Deck. It supports pan, zoom, GPS position overlay, and auto-centers on the available tile set — no network required after the tiles are downloaded.
+The Map screen renders **offline map tiles** from the SD card onto an LVGL canvas, enabling fully-offline geographic awareness on the LILYGO T-Deck Plus. It supports pan, zoom, GPS track overlays, tile-set auto-centring, and bounded on-device downloads. Once a region has been downloaded, viewing it does not require a network connection.
+
+This document describes the candidate implementation in the source tree. It
+does not claim that release or physical-device gates have passed.
 
 ---
 
@@ -13,6 +16,9 @@ The Map screen renders **offline map tiles** from the SD card onto an LVGL canva
 | `src/app/tile_cache.h` | Positive/negative cache structs, LRU API, and load-budget policy |
 | `src/app/tile_cache.cpp` | LRU cache plus wrap-safe missing-tile expiry/eviction |
 | `src/app/lodepng_alloc.cpp` | lodepng memory allocator with PSRAM-fallback (for PNG decode) |
+| `src/app/map_download.h` | On-device NRCan and permitted HTTPS XYZ download API |
+| `src/app/map_download.cpp` | Background worker, TLS validation, durable progress and atomic tile writes |
+| `src/app/map_download_policy.h` | Bounds, URL-template, tile-count and PNG admission rules |
 | `scripts/download_maps.py` | Python tile downloader — fetches PNG tiles and writes the validated discovery index |
 | `test/test_map/test_map.cpp` | Tile math, LRU/negative cache, budget, expiry, and path tests |
 | `test/test_map_renderer/test_map_renderer.cpp` | Discovery budget, deadline, index validation, and renderer-policy tests |
@@ -26,6 +32,7 @@ The Map screen is invoked from the **MAP tile** on the home screen:
 | Trigger | Function | What happens |
 |---------|----------|--------------|
 | Home "MAP" tile | `navigate_to(Screen::Map)` → `map_screen_show()` | Opens the offline map view with pan/zoom controls |
+| Map `TILES` button | `show_download_dialog()` | Opens NRCan/custom-source download status and controls |
 
 ### `map_screen_show()` (`src/ui/screens/screen_map.cpp`)
 
@@ -43,7 +50,7 @@ The Map screen is invoked from the **MAP tile** on the home screen:
 │   └──────────┴──────────┘       │
 │                                  │
 ├──────────────────────────────────┤
-│ SigurdOS T-Deck   ▂▄▆█       72%  │  ← bottom bar: device name, signal, battery
+│ KrabOS device                 72%  │  ← bottom bar: device name and battery
 └──────────────────────────────────┘
 ```
 
@@ -53,9 +60,10 @@ The Map screen is invoked from the **MAP tile** on the home screen:
 3. Calls `sigurdos_map_reparent(scr)` — creates/attaches the LVGL canvas
 4. Calls `sigurdos_map_render()` — draws the initial tile grid
 5. Wires a transparent, clickable overlay for **drag-to-pan** (throttled to 200ms between renders)
-6. Adds **zoom buttons** (`+` and `-`, 32×32px, bottom-right, pixel-themed)
-7. Starts a screen-owned, cancellable discovery timer after the screen is shown
-8. Schedules up to three screen-owned 250ms warmup renders while tiles remain
+6. Adds **zoom buttons** (`+` and `-`, 32×32px, bottom-right)
+7. Adds GPS track recording/status and the `TILES` download dialog entry point
+8. Starts a screen-owned, cancellable discovery timer after the screen is shown
+9. Schedules up to three screen-owned 250ms warmup renders while tiles remain
    budget-deferred; navigation cancels the timer safely
 
 ---
@@ -474,45 +482,103 @@ Optional file at `/sdcard/tiles/metadata.json` that overrides the initial map ce
 {
     "name": "london",
     "attribution": "© OpenStreetMap contributors",
-    "bounds": [51.3, -0.5, 51.7, 0.3],
+    "bounds": [-0.5, 51.3, 0.3, 51.7],
     "zoom_range": [10, 14],
     "format": "png",
     "tile_size": 256
 }
 ```
 
-The firmware only uses the `"bounds"` array: `[min_lat, min_lon, max_lat, max_lon]`. The center is set to the midpoint of the bounds. If `metadata.json` is missing, the map auto-centers on the sample tile found during tile discovery.
+The firmware only uses the `"bounds"` array:
+`[min_lon, min_lat, max_lon, max_lat]`. The centre is set to the midpoint of
+the bounds. If `metadata.json` is missing, the map auto-centres on the sample
+tile found during tile discovery.
 
-### Map Download Script
+### On-device map downloader
 
-`scripts/download_maps.py` downloads tiles from public tile servers:
+Tap **TILES** on the Map screen to open the on-device downloader. A new job
+covers approximately 0.05 degrees on each side of the current map centre and
+requests zoom levels 10 through 15. The dialog reports state, processed/total
+tiles, free SD space and the latest detail message.
 
-```bash
-# Download Teesside area, zooms 8-14
-python3 scripts/download_maps.py --name teesside \
-    --lat1 54.45 --lon1 -1.45 --lat2 54.65 --lon2 -1.05 \
-    --zoom 8 14
+Two provider paths are available:
 
-# Quick city download
-python3 scripts/download_maps.py --city london --zoom 10 14
+| Button | Source and admission rules |
+|---|---|
+| **NRCAN** | Built-in HTTPS request for Natural Resources Canada's Canada Base Map Transportation WMS, with the source attribution written to `metadata.json` |
+| **CUSTOM** | A user-configured HTTPS XYZ template; use only a source whose terms permit local/offline caching |
 
-# UK national overview (zooms 5-8, CyclOSM tiles)
-python3 scripts/download_maps.py --name uk \
-    --lat1 49.8 --lon1 -8.5 --lat2 58.8 --lon2 1.8 \
-    --zoom 5 8 --server cyclosm
-```
+The built-in path is specifically NRCan; the firmware does not assert that an
+arbitrary third-party tile service permits bulk or offline use. The person
+configuring a custom source is responsible for its licence, attribution,
+request limits and acceptable-use terms.
 
-**Supported tile servers:**
+#### Custom HTTPS XYZ configuration
 
-| Server | URL | Max Zoom |
-|--------|-----|----------|
-| `osm` | `tile.openstreetmap.org/{z}/{x}/{y}.png` | 19 |
-| `cyclosm` | `{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png` | 20 |
-| `carto` | `{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png` | 19 |
+Place these files in `/tiles` on the SD card before choosing **CUSTOM**:
 
-Output: `maps-{name}/tiles/{z}/{x}/{y}.png` — copy the `tiles/` directory to the SD card root.
-By default an existing tile is downloaded again so a region can be refreshed.
-Pass `--resume` to keep existing non-empty files and fetch only missing tiles.
+| Path | Content |
+|---|---|
+| `/tiles/provider.url` | HTTPS template containing all three supported `{z}`, `{x}` and `{y}` placeholders and no other brace tokens |
+| `/tiles/provider.attribution` | Human-readable attribution stored with the downloaded region |
+| `/tiles/provider-ca.pem` | PEM trust anchor for that provider |
+
+The URL validator rejects non-HTTPS input, credentials in the authority,
+fragments, control/space characters, backslashes, unknown braces, localhost,
+`.local`, link-local, private and non-unicast IPv4 destinations. A custom
+download does not fall back to an insecure TLS mode when its CA file is absent
+or invalid.
+
+#### Pause, resume, cancel and restart
+
+- **PAUSE** stops accepting the next tile after the active request reaches a
+  cancellation point and persists the job cursor.
+- **RESUME** continues the persisted cursor when the SD card and worker are
+  available.
+- **CANCEL** changes the job generation, stops further work and removes an
+  in-progress partial tile when the active request unwinds.
+- A job saved as running is restored automatically at boot. A paused or
+  completed job remains in its recorded state.
+
+Closing the dialog does not cancel the background job. The status timer keeps
+the visible dialog current, while the downloader's state is independent of the
+Map screen's LVGL object lifetime.
+
+#### TLS, file and SD-card safety
+
+The downloader applies the following fail-closed limits:
+
+- valid geographic bounds, zooms 0-18 and at most 20,000 tiles per job;
+- TLS certificate validation using a provider-specific trust anchor;
+- 10-second connection and 15-second transfer timeouts with strict redirects;
+- PNG content admission, a 320 KiB maximum and a required 256x256 IHDR;
+- at least 1 MiB free on the SD card before each worker cycle;
+- serialized SD access through `SigurdosSdLock`;
+- writes to `{y}.png.part`, validation, then same-directory rename to the final
+  tile path;
+- durable job state at `/tiles/.download-state.bin` and refreshed
+  `/tiles/metadata.json` after completion.
+
+The renderer's host-generated `index.json` is removed after an on-device job
+finishes so bounded discovery sees the newly downloaded tiles. The terminal
+shutdown path waits for `map_download::quiesce()` to release HTTP, file and SD
+resources before peripheral teardown. A timeout delays shutdown rather than
+powering down underneath an active transfer.
+
+There is no production SD-card formatting API or UI. Every firmware mount uses
+format-on-failure disabled; an unreadable or unsupported card is preserved and
+must be recovered off-device. The map downloader either uses an already mounted
+card or waits/fails; it never erases or reformats media.
+
+### Host-side map download alternative
+
+`scripts/download_maps.py` remains available for preparing an SD card on a
+computer. It writes `maps-{name}/tiles/{z}/{x}/{y}.png` plus metadata and a
+validated discovery index; copy the resulting `tiles/` directory to the SD
+card root. Provider permission and attribution requirements still apply.
+
+By default the host tool refreshes existing tiles. Pass `--resume` to preserve
+existing valid 256x256 PNG tiles and fetch only missing or invalid entries.
 
 ---
 
@@ -692,6 +758,8 @@ by the GPS interval alone via `gpsTrackGpsDemandInterval()`.
 |----------|-------------|
 | [`FEATURES_OVERVIEW.md`](FEATURES_OVERVIEW.md) | Feature catalog with map renderer summary |
 | [`KNOWN_ISSUES.md`](KNOWN_ISSUES.md) | Bug history — includes LRU clock uint32→uint64 fix |
+| [`src/app/map_download.h`](../src/app/map_download.h) | On-device downloader API and lifecycle contract |
+| [`src/app/map_download_policy.h`](../src/app/map_download_policy.h) | Source, bounds, count and PNG admission rules |
 | [`scripts/download_maps.py`](../scripts/download_maps.py) | Tile download tool (full documentation in docstring) |
 | [`src/hal/sdcard.h`](../src/hal/sdcard.h) | SD card mountpoint and filesystem API |
 | [`test/test_map/test_map.cpp`](../test/test_map/test_map.cpp) | Unit tests for tile math and cache |

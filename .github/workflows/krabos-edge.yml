@@ -177,18 +177,20 @@ jobs:
 
       - name: Create isolated Python environment
         shell: bash
-        run: python3 -m venv "$RUNNER_TEMP/krabos-venv"
+        run: |
+          python3 -c 'import sys; assert sys.version_info[:2] == (3, 13), sys.version'
+          python3 -m venv "$RUNNER_TEMP/krabos-venv"
 
       - name: Restore PlatformIO packages
         uses: ./.github/actions/cache-platformio
         with:
-          dependency-hash: ${{ hashFiles('platformio.ini', 'lib/meshcore/library.json', 'ci/requirements-platformio.in', 'ci/requirements-platformio.txt', 'ci/platformio-packages.lock') }}
+          dependency-hash: ${{ hashFiles('platformio.ini', 'lib/meshcore/library.json', 'ci/requirements-platformio-pi.in', 'ci/requirements-platformio-pi.txt', 'ci/platformio-packages.lock') }}
 
       - name: Install pinned PlatformIO
         shell: bash
         run: >-
           "$RUNNER_TEMP/krabos-venv/bin/python" -m pip install
-          --require-hashes -r ci/requirements-platformio.txt
+          --require-hashes -r ci/requirements-platformio-pi.txt
 
       - name: Enforce stable source evidence and open-priority gate
         if: steps.request.outputs.release_channel == 'stable-v1.0.0'

@@ -6,6 +6,7 @@
       "reason": "Requires the ESP32/Arduino hardware runtime or a device transport that is not available in native_test.",
       "sources": [
         "src/app/lodepng_alloc.cpp",
+        "src/app/map_download.cpp",
         "src/app/map_renderer.cpp",
         "src/app/qr_show.cpp",
         "src/comms/observed_ble_interface.cpp",

@@ -59,7 +59,7 @@ public:
     void resetAllContacts() { resetContacts(); }
 
     // ── Identity & name ─────────────────────────
-    char _own_name[32] = "SigurdOS";
+    char _own_name[32] = KRABOS_PRODUCT_NAME;
 
     void setOwnName(const char* name) {
         if (name) {

@@ -600,8 +600,12 @@ static void datetime_set_dialog(lv_obj_t* parent, bool is_date)
                 if (nd <= max_days) {
                     int cy, cmo, cd, ch, cmi;
                     sigurdos::mesh::getCurrentLocalDateTime(&cy, &cmo, &cd, &ch, &cmi);
-                    epoch = sigurdos::mesh::makeEpoch(ny, nm, nd, ch, cmi);
-                    valid = true;
+                    valid = sigurdos::mesh::makeLocalEpoch(
+                        ny, nm, nd, ch, cmi, &epoch);
+                    if (!valid) {
+                        lv_label_set_text(ctx->feedback,
+                                          "Invalid local date/time");
+                    }
                 } else {
                     lv_label_set_text(ctx->feedback, "Invalid day for month");
                 }
@@ -614,8 +618,12 @@ static void datetime_set_dialog(lv_obj_t* parent, bool is_date)
                 nh >= 0 && nh <= 23 && nm_v >= 0 && nm_v <= 59) {
                 int cy, cmo, cd, ch, cmi;
                 sigurdos::mesh::getCurrentLocalDateTime(&cy, &cmo, &cd, &ch, &cmi);
-                epoch = sigurdos::mesh::makeEpoch(cy, cmo, cd, nh, nm_v);
-                valid = true;
+                valid = sigurdos::mesh::makeLocalEpoch(
+                    cy, cmo, cd, nh, nm_v, &epoch);
+                if (!valid) {
+                    lv_label_set_text(ctx->feedback,
+                                      "Invalid local date/time");
+                }
             } else {
                 lv_label_set_text(ctx->feedback, "Invalid time (HH:MM)");
             }
@@ -907,7 +915,7 @@ void settings_system_show()
             lv_obj_set_style_pad_all(dlg, 8, 0);
 
             lv_obj_t* msg = lv_label_create(dlg);
-            lv_label_set_text(msg, "Update SigurdOS\nthrough Launcher instead");
+            lv_label_set_text(msg, "Update KrabOS\nthrough Launcher instead");
             lv_obj_set_style_text_color(msg, lv_color_hex(TEXT_PRIMARY), 0);
             lv_obj_set_style_text_font(msg, emoji_wrapped_montserrat_10, 0);
             lv_obj_align(msg, LV_ALIGN_CENTER, 0, 0);
@@ -972,7 +980,7 @@ void settings_system_show()
         lv_obj_set_style_radius(dlg, 0, 0);
         lv_obj_set_style_pad_all(dlg, 8, 0);
 
-        if (!sigurdos::ota::start("SigurdOS-OTA")) {
+        if (!sigurdos::ota::start("KrabOS-OTA")) {
             lv_obj_t* err = lv_label_create(dlg);
             const char* ota_error = sigurdos::ota::getLastError();
             lv_label_set_text(err, ota_error[0] ? ota_error : "OTA failed to start");
@@ -1005,7 +1013,7 @@ void settings_system_show()
         const char* ap_password = sigurdos::ota::getAPPassword();
         if (ap_password[0]) {
             snprintf(info, sizeof(info),
-                "WiFi: SigurdOS-OTA\nPassword: %s\nIP: %s\n"
+                "WiFi: KrabOS-OTA\nPassword: %s\nIP: %s\n"
                 "Enter device PIN + firmware.bin\nExpires in 10 minutes",
                 ap_password, ip);
         } else {
@@ -1116,7 +1124,7 @@ void settings_system_show()
             lv_obj_set_style_pad_all(dlg, 8, 0);
 
             lv_obj_t* msg = lv_label_create(dlg);
-            lv_label_set_text(msg, "Update SigurdOS\nthrough Launcher instead");
+            lv_label_set_text(msg, "Update KrabOS\nthrough Launcher instead");
             lv_obj_set_style_text_color(msg, lv_color_hex(TEXT_PRIMARY), 0);
             lv_obj_set_style_text_font(msg, emoji_wrapped_montserrat_10, 0);
             lv_obj_align(msg, LV_ALIGN_CENTER, 0, 0);
@@ -1524,7 +1532,7 @@ void settings_system_show()
         row++;
     }
 
-    snprintf(buf, sizeof(buf), "  SigurdOS " SIGURDOS_VERSION);
+    snprintf(buf, sizeof(buf), "  KrabOS " SIGURDOS_VERSION);
     lv_obj_t* rv = lv_list_add_btn(list, LV_SYMBOL_HOME, buf);
     lv_obj_set_style_bg_color(rv, lv_color_hex(row % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
     lv_obj_set_style_bg_opa(rv, LV_OPA_COVER, 0);

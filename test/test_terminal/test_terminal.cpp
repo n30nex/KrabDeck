@@ -25,6 +25,8 @@
  * command creates a new LVGL label that accumulates indefinitely, consuming heap.
  */
 #include <gtest/gtest.h>
+#include <cstdlib>
+#include <ctime>
 
 #include "ui/identity_command_guard.h"
 #include "ui/pin_gate_policy.h"
@@ -179,10 +181,12 @@ TEST(TermLineCapTest, DeferredDeletionCannotLivelockOrQueueSameRowTwice) {
 }
 
 TEST(RepeaterTranscriptTest, CliReplyHasExplicitTypeBadge) {
+    ASSERT_EQ(setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1), 0);
+    tzset();
     char out[64];
     EXPECT_TRUE(sigurdos::ui::format_repeater_cli_reply(
         out, sizeof(out), 3661, "version 1.2"));
-    EXPECT_STREQ(out, "[01:01:01] < [CLI] version 1.2\n");
+    EXPECT_STREQ(out, "[20:01:01] < [CLI] version 1.2\n");
 }
 
 TEST(RepeaterTranscriptTest, CliReplyReportsTruncationAndStaysTerminated) {

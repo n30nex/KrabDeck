@@ -27,6 +27,7 @@ LOCAL_ESPTOOL_CANDIDATES: tuple[str, ...] = (
 
 BOOT_WAIT_REMOTE_TEST_S = 10.0
 BOOT_WAIT_RELEASE_S = 4.0
+RADIO_REBOOT_SETTLE_S = 30.0
 SERIAL_RECOVERY_WAIT_S = 10.0
 # The bounded remote-test streamer deliberately yields to mesh/UI work. A
 # radio-enabled debug build may need around two minutes for 4,800 CDATA lines.

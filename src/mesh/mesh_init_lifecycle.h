@@ -20,6 +20,26 @@ inline bool meshInitUsable(MeshInitState state)
     return state != MeshInitState::Stopped;
 }
 
+// A boot advert is a production-only, one-success action. Keeping the
+// decisions pure makes the RF boundary testable without constructing the
+// ESP32 mesh. A failed queue attempt remains eligible after a bounded delay.
+inline bool shouldAttemptBootAdvert(bool production_build,
+                                    bool recovery_or_remote_build,
+                                    MeshInitState state, bool tx_allowed,
+                                    bool already_queued)
+{
+    return production_build && !recovery_or_remote_build &&
+           state == MeshInitState::Ready && tx_allowed && !already_queued;
+}
+
+inline bool bootAdvertRetryDue(bool attempted, bool already_queued,
+                               uint32_t now_ms, uint32_t last_attempt_ms,
+                               uint32_t retry_interval_ms)
+{
+    return !already_queued && (!attempted ||
+        static_cast<uint32_t>(now_ms - last_attempt_ms) >= retry_interval_ms);
+}
+
 // Keep shutdown ordering explicit and testable without ESP32 hardware. Even an
 // early-boot shutdown, where the mesh never became usable, must still quiesce
 // services and enter sleep. Once persistence is available, it must complete

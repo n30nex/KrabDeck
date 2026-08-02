@@ -9,13 +9,13 @@ FONT_SETUP = ROOT / "src/fonts/emoji_font_setup.cpp"
 
 
 def generated_codepoints():
-    source = FONT_SOURCE.read_text()
+    source = FONT_SOURCE.read_text(encoding="utf-8")
     values = re.findall(r"/\* U\+([0-9A-F]+)", source)
     return [int(value, 16) for value in values]
 
 
 def indexed_codepoints():
-    source = FONT_SETUP.read_text()
+    source = FONT_SETUP.read_text(encoding="utf-8")
     match = re.search(
         r"static const char\* emoji_list\[\] = \{(.*?)\n\};", source, re.DOTALL
     )

@@ -253,6 +253,8 @@ static QueueHandle_t tile_request_queue = nullptr;
 static QueueHandle_t tile_completion_queue = nullptr;
 static TaskHandle_t tile_worker_task_handle = nullptr;
 static std::atomic<uint32_t> tile_generation{1};
+static std::atomic<bool> tile_worker_active{false};
+static std::atomic<bool> tile_worker_quiescing{false};
 
 enum class TileLoadResult : uint8_t { Ready, Missing, Deferred };
 
@@ -266,8 +268,9 @@ static TileLoadResult record_tile_failure(int zoom, int tx, int ty,
 }
 
 static bool tile_request_still_owned(const SigurdosMapTileRequest& request) {
-    return sigurdos_map_generation_owns(
-        tile_generation.load(std::memory_order_acquire), request.generation);
+    return !tile_worker_quiescing.load(std::memory_order_acquire) &&
+        sigurdos_map_generation_owns(
+            tile_generation.load(std::memory_order_acquire), request.generation);
 }
 
 static SigurdosMapTileCompletion load_tile_off_ui(
@@ -275,6 +278,12 @@ static SigurdosMapTileCompletion load_tile_off_ui(
     SigurdosMapTileCompletion completion{
         request.zoom, request.tx, request.ty, request.generation,
         SigurdosMapTileCompletionStatus::Missing, nullptr};
+    SigurdosSdLock sd_lock(SIGURDOS_MAP_TILE_WORK_MAX_MS);
+    if (!sd_lock) return completion;
+    if (!tile_request_still_owned(request)) {
+        completion.status = SigurdosMapTileCompletionStatus::Cancelled;
+        return completion;
+    }
     const uint32_t started_at = millis();
     const auto cancelled_or_timed_out = [&]() {
         if (!tile_request_still_owned(request)) {
@@ -417,20 +426,27 @@ static void tile_worker_task(void*) {
         if (xQueueReceive(tile_request_queue, &request, portMAX_DELAY) != pdTRUE) {
             continue;
         }
-        if (!tile_request_still_owned(request)) continue;
+        tile_worker_active.store(true, std::memory_order_release);
+        if (!tile_request_still_owned(request)) {
+            tile_worker_active.store(false, std::memory_order_release);
+            continue;
+        }
         SigurdosMapTileCompletion completion = load_tile_off_ui(request);
         if (completion.status == SigurdosMapTileCompletionStatus::Cancelled) {
             if (completion.pixels) map_free(completion.pixels);
+            tile_worker_active.store(false, std::memory_order_release);
             continue;
         }
         if (xQueueSend(tile_completion_queue, &completion, 0) != pdTRUE &&
             completion.pixels) {
             map_free(completion.pixels);
         }
+        tile_worker_active.store(false, std::memory_order_release);
     }
 }
 
 static bool ensure_tile_worker() {
+    if (tile_worker_quiescing.load(std::memory_order_acquire)) return false;
     if (tile_worker_task_handle) return true;
     tile_request_queue = xQueueCreate(
         SIGURDOS_MAP_TILE_REQUEST_QUEUE_LENGTH,
@@ -462,6 +478,29 @@ static uint32_t advance_tile_generation() {
         tile_generation.fetch_add(1, std::memory_order_acq_rel) + 1;
     if (tile_request_queue) xQueueReset(tile_request_queue);
     return next;
+}
+
+bool sigurdos_map_quiesce(uint32_t timeout_ms) {
+    const uint32_t started_at = millis();
+    tile_worker_quiescing.store(true, std::memory_order_release);
+    advance_tile_generation();
+
+    while (tile_worker_active.load(std::memory_order_acquire)) {
+        if (static_cast<uint32_t>(millis() - started_at) >= timeout_ms) {
+            return false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    // Acquiring the shared SD lock after invalidating the generation proves
+    // that a worker which entered before the barrier has released the bus. A
+    // dequeued late request sees quiescing=true both before and after lock
+    // acquisition and cannot start file I/O.
+    const uint32_t elapsed = static_cast<uint32_t>(millis() - started_at);
+    const uint32_t remaining = elapsed < timeout_ms ? timeout_ms - elapsed : 0;
+    SigurdosSdLock sd_lock(remaining);
+    return static_cast<bool>(sd_lock) &&
+        !tile_worker_active.load(std::memory_order_acquire);
 }
 
 static TileLoadResult request_tile(int zoom, int tx, int ty,
@@ -955,6 +994,8 @@ void sigurdos_map_discover_tiles() {
 }
 
 bool sigurdos_map_discovery_step(int max_items, uint32_t max_ms) {
+    SigurdosSdLock sd_lock(max_ms ? max_ms : 1);
+    if (!sd_lock) return true;
     if (discovery.phase == DiscoveryPhase::Idle) return false;
     if (max_items <= 0 || max_ms == 0) return true;
 
@@ -1219,6 +1260,8 @@ bool sigurdos_map_discovery_in_progress() {
 }
 
 void sigurdos_map_cancel_discovery() {
+    SigurdosSdLock sd_lock;
+    if (!sd_lock) return;
     if (discovery.phase == DiscoveryPhase::Idle) return;
     close_discovery_directories();
     reset_tile_coverage();
@@ -1651,6 +1694,8 @@ void sigurdos_map_render() {
 }
 
 bool sigurdos_map_tiles_available() {
+    SigurdosSdLock sd_lock;
+    if (!sd_lock) return false;
     if (!sigurdos_sdcard_mounted()) return false;
     int tx = sigurdos_map_tile_x_index(lon_to_tile_x(center_lon, zoom_level),
                                        zoom_level);

@@ -1,156 +1,159 @@
-# SigurdOS T-Deck Firmware Binaries
+# KrabOS T-Deck Plus release artifacts
 
-Pre-built firmware is published only as immutable, versioned assets on the
-[GitHub Releases page](https://github.com/hermes-gadget/SigurdOS-tdeck/releases).
-The unversioned binaries formerly tracked in this directory were removed because
-they were a mismatched pair from the
-[beta-0.1.30](https://github.com/hermes-gadget/SigurdOS-tdeck/releases/tag/beta-0.1.30)
-and [beta-0.1.31](https://github.com/hermes-gadget/SigurdOS-tdeck/releases/tag/beta-0.1.31)
-eras. Do not combine artifacts from different releases.
+KrabOS binaries are published only as immutable, versioned assets on the
+[KrabDeck Releases page](https://github.com/n30nex/KrabDeck/releases). The
+stable v1 release tag is `v1.0.0`.
 
-Pre-built firmware for the LilyGo T-Deck (ESP32-S3, 16 MB flash).
+> [!WARNING]
+> These images target the **LILYGO T-Deck Plus only**. Do not flash them to a
+> T-Deck Pro, Seeed Indicator, generic ESP32-S3 or another board. Verify the
+> release signature, checksums, exact tag and hardware identity before install.
 
-| File | Use |
-|------|-----|
-| `firmware-merged.bin` | **Full flash at 0x0** — recommended for standalone first install (bootloader + partitions + boot_app0 + firmware) |
-| `SigurdOS-tdeck-launcher.bin` | Same bytes as merged — feed to [bmorcelli/Launcher](https://github.com/bmorcelli/Launcher) for install as a Launcher app. Published with each [tagged release](https://github.com/hermes-gadget/SigurdOS-tdeck/releases); local builds emit it as `webflasher/sigurdos-tdeck-launcher.bin` |
-| `firmware.bin` | App update only — flash at 0x10000 (preserves bootloader/partitions) |
+`.github/workflows/krabos-edge.yml` is the sole owner of the KrabOS v1 release.
+Its dedicated Pi 5 job builds and physically tests the exact candidate before a
+separate GitHub-hosted job signs and publishes the sealed bytes. The inherited
+`build-release.yml` workflow does not produce KrabOS `v1.0.0`.
 
-## Which file should I flash?
+## Production install images
 
-| Scenario | File | Offset |
-|----------|------|--------|
-| **First install / fresh device** | `firmware-merged.bin` from one tagged release | 0x0 |
-| **Update firmware only** (keep settings + bootloader) | `firmware.bin` from the same tagged release | 0x10000 |
-| **Web flasher** (e.g. flasher.sigurdos.dev) | `sigurdos-tdeck-full.bin` from `webflasher/` | auto |
+| File | Role | Flash offset |
+|---|---|---:|
+| `firmware-merged.bin` | Complete standalone production image | `0x0` |
+| `firmware.bin` | Production app-only update for an already compatible layout | `0x10000` |
+| `KrabOS-tdeck-plus-launcher.bin` | Production image for bmorcelli/Launcher installation | Launcher-managed |
+| `krabos-tdeck-plus-full.bin` | Complete production image used by Web/ESP flashing tools | `0x0` |
+| `krabos-tdeck-plus-launcher.bin` | Lowercase Web/Launcher alias | Launcher-managed |
+| `krabos-candidate.bin` | Exact production merged image admitted to the automated hardware gate | Automation evidence |
 
-**Use `firmware-merged.bin` for ESP32 flash tools (esptool, ESP Flash Download Tool, etc.) — it contains everything needed to boot in a single image.**
+The release validator requires `firmware-merged.bin`,
+`KrabOS-tdeck-plus-launcher.bin`, `krabos-tdeck-plus-full.bin`, and
+`krabos-tdeck-plus-launcher.bin` to be byte-identical valid ESP32-S3 merged
+images with the canonical DIO header. `firmware.bin` must be byte-identical to
+`krabos-tdeck-plus-firmware.bin`.
 
-## How the merged binary is built — the `merge_bin` process
+## Web-flasher parts
 
-The merged binary is produced automatically by `scripts/merge_bin.py` as a PlatformIO
-post-build action (configured in `platformio.ini` for the `SigurdOS_TDeck` environment).
+`manifest.json` names exactly these four production components:
 
-After a successful firmware build, `merge_bin.py`:
+| File | Offset |
+|---|---:|
+| `krabos-tdeck-plus-bootloader.bin` | `0x0000` |
+| `krabos-tdeck-plus-partitions.bin` | `0x8000` |
+| `krabos-tdeck-plus-boot_app0.bin` | `0xe000` |
+| `krabos-tdeck-plus-firmware.bin` | `0x10000` |
 
-1.  Uses `esptool.py merge_bin` to combine **bootloader**, **partition table**,
-    **boot_app0**, and the **firmware app** into `${PROGNAME}-merged.bin`. Missing
-    inputs, overlapping parts, merge failures, stale output, or an app-slice
-    mismatch fail the PlatformIO build.
-2.  Copies each component to `webflasher/` as separate files (for web-based flashers
-    that download individual binaries):
-    - `sigurdos-tdeck-bootloader.bin`
-    - `sigurdos-tdeck-partitions.bin`
-    - `sigurdos-tdeck-boot_app0.bin`
-    - `sigurdos-tdeck-firmware.bin`
-    - `sigurdos-tdeck-full.bin` (identical to release `firmware-merged.bin`)
-    - `sigurdos-tdeck-launcher.bin` (identical to release `firmware-merged.bin` — the Launcher install artifact)
-3.  Generates a standard ESP Web Tools `webflasher/manifest.json` with the
-    `ESP32-S3` component paths and numeric flash offsets.
-4.  Writes provenance, deterministic source timestamp, component sizes, and
-    SHA-256 checksums separately to `webflasher/build-metadata.json`.
+The manifest must identify `KrabOS T-Deck Plus`, version `v1.0.0`, one
+`ESP32-S3` build and `new_install_prompt_erase=true`. The companion
+`build-metadata.json` binds the files to `KrabOS_TDeckPlus`, the full candidate
+Git SHA, pinned MeshCore SHA, clean source state, partition table, sizes,
+offsets and SHA-256 values.
 
-The canonical PlatformIO environment builds the ESP32-S3 bootloader for DIO
-flash mode at 80 MHz with 16 MB flash. The merge preserves that header instead
-of applying the board JSON's QIO default.
+Do not combine components from different tags or substitute a locally built
+file. The merged image must contain those exact component bytes at the listed
+offsets.
 
-## Where to find the files
+## Recovery and debug are separate
 
-| Path | Contents |
-|------|----------|
-| Tagged release: `firmware-merged.bin` | **Single image** — flash at 0x0 with esptool |
-| Tagged release: `firmware.bin` | App-only update — flash at 0x10000 |
-| Local build: `.pio/build/SigurdOS_TDeck/firmware-merged.bin` | Locally built single image |
-| `webflasher/sigurdos-tdeck-full.bin` | Same as `firmware-merged.bin` — for web flashers |
-| `webflasher/sigurdos-tdeck-*.bin` | Individual components — for web-based or custom flashing |
-| `webflasher/manifest.json` | ESP Web Tools install manifest |
-| `webflasher/build-metadata.json` | Build provenance, component sizes, offsets, and SHA-256 hashes |
+| File | Built by | Purpose |
+|---|---|---|
+| `krabos-recovery-rf-off.bin` | `KrabOS_TDeckPlus_recovery` | Dedicated RF-off recovery drill image |
+| `krabos-recovery-rf-off.elf` | `KrabOS_TDeckPlus_recovery` | Recovery symbols |
+| `firmware-debug.bin` | `KrabOS_TDeckPlus_debug` | Full diagnostic image for controlled testing |
+| `krabos-debug-rf-off.elf` | `KrabOS_TDeckPlus_debug` | Debug symbols |
 
-## Flash with esptool (no PlatformIO needed)
+The recovery image is not a normal install image. The automated gate actually
+flashes it, proves RF remains blocked, and restores the exact production
+candidate. The debug image is independently built and is not a recovery alias.
+Neither role can be used as evidence for the other.
+
+## Evidence and supply-chain files
+
+The stable bundle also contains:
+
+| File | Purpose |
+|---|---|
+| `firmware.elf` | Production symbols for the exact candidate |
+| `candidate-flash-manifest.json` | Exact admitted production bytes, addresses, sizes and hashes |
+| `recovery-flash-manifest.json` | Exact admitted recovery bytes, addresses, sizes and hashes |
+| `krabos-public-receipt.json` | Canonical redacted exact-device and recovery result |
+| `release-evidence.json` | Checked-in v1 evidence bound to the candidate commit and production bytes |
+| `krabos-bundle-manifest.json` | Size and SHA-256 record for the complete sealed regular-file set |
+| `SHA256SUMS.txt` | Ordered checksums for every sealed input and bundle manifest |
+| `SHA256SUMS.sigstore.json` | Sigstore bundle signing `SHA256SUMS.txt` with GitHub OIDC |
+| `firmware-sbom.cdx.json` | CycloneDX firmware dependency inventory |
+| `krabos-licenses.tar.gz` | Project and bundled dependency licence texts |
+
+Private flash backups, state exports, device identifiers, credentials,
+coordinates, serial paths and raw logs are deliberately excluded.
+
+## Verify before installing
+
+Download all release assets into one directory. Verify the checksum signature
+against the exact workflow identity:
 
 ```bash
-# Install esptool if you don't have it
-pip install esptool
-
-# Full flash (first install)
-esptool.py --chip esp32s3 --port /dev/ttyACM0 --baud 921600 \
-  --before default_reset --after hard_reset write_flash \
-  0x0 firmware-merged.bin
-
-# App update only (keep settings)
-esptool.py --chip esp32s3 --port /dev/ttyACM0 --baud 921600 \
-  write_flash 0x10000 firmware.bin
+cosign verify-blob \
+  --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity \
+    'https://github.com/n30nex/KrabDeck/.github/workflows/krabos-edge.yml@refs/heads/main' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  SHA256SUMS.txt
+sha256sum --check SHA256SUMS.txt
 ```
 
-Do not pass `--flash_mode qio` when flashing the merged image. Its bootloader
-header is DIO; forcing QIO can make affected T-Deck units boot-loop.
-
-## Flash with PlatformIO
+Then verify GitHub provenance for each asset, substituting the release's exact
+40-character candidate SHA:
 
 ```bash
-pio run -e SigurdOS_TDeck -t upload
+gh attestation verify <artifact> \
+  --repo n30nex/KrabDeck \
+  --signer-workflow \
+    https://github.com/n30nex/KrabDeck/.github/workflows/krabos-edge.yml \
+  --source-ref refs/heads/main \
+  --source-digest <full-candidate-sha> \
+  --deny-self-hosted-runners
 ```
 
-## Flash with web flasher (flasher.sigurdos.dev)
+Checksums protect byte integrity after signature verification. They do not mean
+the ESP32-S3 verifies publisher signatures at boot or during OTA; that remains
+a separate device-side trust capability and must not be inferred from the
+Sigstore or GitHub attestations.
 
-Use the **Custom Firmware** option and upload `webflasher/sigurdos-tdeck-full.bin`.  
-The flasher will flash the merged binary at offset 0x0.
+## Which production file to use
 
-## What's in the merged binary
+| Scenario | File |
+|---|---|
+| Fresh standalone install | `firmware-merged.bin` at `0x0` |
+| App-only update on the matching standalone layout | `firmware.bin` at `0x10000` |
+| ESP Web Tools | `manifest.json` plus its four named component files |
+| bmorcelli/Launcher | `KrabOS-tdeck-plus-launcher.bin` |
 
-| Offset | Component |
-|--------|-----------|
-| 0x0000 | Bootloader |
-| 0x8000 | Partition table |
-| 0xe000 | Boot app0 |
-| 0x10000 | SigurdOS firmware |
+Do not force QIO when flashing a merged image; the admitted bootloader header
+is DIO. An app-only image does not contain the bootloader or partition table and
+must not be used for a fresh install. Flashing a complete merged image directly
+at `0x0` replaces any existing Launcher bootloader and layout.
 
-Flash the merged binary at offset 0x0 — it contains everything needed to boot.
+Under Launcher, use Launcher's own installer/update path. KrabOS detects that
+Launcher owns updates and disables self-OTA to avoid corrupting co-installed
+apps. Switching between Launcher and standalone layouts can relocate or reset
+NVS and filesystem state; preserve identity and contacts through the documented
+export path before changing modes.
 
----
+## Reproducing non-release builds
 
-## Install via bmorcelli/Launcher
+The three release environments are:
 
-SigurdOS can be installed as an app under [bmorcelli/Launcher](https://github.com/bmorcelli/Launcher) (v2.7.2+).
-
-### Prerequisites
-
-- A T-Deck already running Launcher (v2.7.2 or newer)
-- The file `SigurdOS-tdeck-launcher.bin` from a specific [tagged release](https://github.com/hermes-gadget/SigurdOS-tdeck/releases). Use the tag shown on that release; prereleases are not resolved by GitHub's stable-release alias.
-
-### Installation
-
-Feed `SigurdOS-tdeck-launcher.bin` to Launcher via:
-
-- **SD card** — copy the file to FAT32 SD, insert, use Launcher's SD install
-- **WebUI** — upload through Launcher's browser interface
-- **Direct URL** (OTA) — enter the versioned release asset URL in Launcher's online installer, replacing `<tag>` with the exact release tag:
-  `https://github.com/hermes-gadget/SigurdOS-tdeck/releases/download/<tag>/SigurdOS-tdeck-launcher.bin`
-
-Launcher detects the embedded partition table, creates a SPIFFS partition for persistence, and boots SigurdOS.
-
-### Important warnings
-
-| Issue | What happens | Mitigation |
-|-------|-------------|------------|
-| **App-only (`firmware.bin`) loses persistence** | If you feed `firmware.bin` (app-only, no partition table) to Launcher, SPIFFS is not created — mesh identity regenerates on every boot, contacts/channels never persist | Always use `SigurdOS-tdeck-launcher.bin` (or `firmware-merged.bin`) for Launcher installs |
-| **Merged image overwrites Launcher** | Flashing `firmware-merged.bin` at 0x0 with esptool replaces Launcher's bootloader and partition table — reflash Launcher to recover | Only feed the merged image **to Launcher's installer**, not esptool, if you want to keep Launcher |
-| **Self-OTA disabled under Launcher** | WiFi AP OTA and GitHub OTA are automatically detected and refuse to start when running under Launcher (preventing flash corruption of co-installed apps) | Update SigurdOS through Launcher's own update mechanism |
-| **Settings reset on mode switch** | Switching between standalone and Launcher-installed modes resets NVS preferences and SPIFFS identity — onboarding re-runs, radio TX stays safely gated | Back up your identity/contacts before switching install methods |
-
-### How it works
-
-`SigurdOS-tdeck-launcher.bin` is byte-identical to `firmware-merged.bin` (bootloader + partition table + app). Launcher uses the embedded partition table as a manifest to create the app partition and a 1 MB SPIFFS partition at runtime. The bootloader inside our merged image is never flashed — Launcher uses its own custom bootloader to return to Launcher at power-on.
-
-The firmware detects it is running under Launcher by probing for Launcher's resident `test`-subtype app partition, which never exists in the standard standalone partition layout. When detected:
-- Self-OTA features are disabled with an on-screen explanation
-- Boot-time diagnostics provide targeted advice if SPIFFS mount fails
-
-### Switching back to standalone
-
-To return to standalone operation:
 ```bash
-esptool.py --chip esp32s3 --port /dev/ttyACM0 write_flash 0x0 firmware-merged.bin
+pio run -e KrabOS_TDeckPlus
+pio run -e KrabOS_TDeckPlus_recovery
+pio run -e KrabOS_TDeckPlus_debug
 ```
 
-This replaces Launcher entirely with standalone SigurdOS. Your mesh identity will regenerate (it's stored in a differently-located SPIFFS), and NVS settings will reset. Re-onboard via the setup wizard and reconfigure your radio preferences.
+These commands are useful for development, but local output is not a release
+candidate. Only bytes produced from the exact clean `main` SHA by the Pi job,
+validated against the artifact contract, exercised on the pinned fixture,
+sealed, approved, signed and re-downloaded by `krabos-edge.yml` are publishable.
+
+KrabOS is derived from SigurdOS T-Deck and retains its GPL and third-party
+attribution. See [`NOTICE.md`](../NOTICE.md) and the licence bundle included in
+the release.

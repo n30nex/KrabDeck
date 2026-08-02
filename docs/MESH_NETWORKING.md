@@ -712,14 +712,20 @@ AutoDiscoverRTCClock
 | `getCurrentTime()` | Returns current Unix epoch timestamp |
 | `setSystemTime(epoch, source)` | Sets both clocks and records Manual, Companion, or GPS provenance |
 | `getTimeSyncStatus()` | Returns the last explicit source, sync epoch, and current age |
-| `getCurrentLocalDateTime(y,m,d,h,min)` | Decomposes epoch into local date/time components using `gmtime()` |
-| `makeEpoch(year,month,day,hour,minute)` | Builds an epoch timestamp from date/time components (UTC) |
+| `getCurrentLocalDateTime(y,m,d,h,min)` | Decomposes the UTC epoch into Toronto-local date/time using the configured POSIX timezone and DST rules |
+| `makeLocalEpoch(year,month,day,hour,minute,out)` | Validates local wall time and converts it to UTC epoch for manual Settings/Onboarding input |
+| `makeEpoch(year,month,day,hour,minute)` | Builds an epoch timestamp from UTC components for GPS/network input |
 
 ### Time Sync
 
 - MeshCore synchronises time across the network automatically via protocol messages
 - Time can be set manually via Terminal commands or programmatically via `setSystemTime()`
-- GPS parsing exposes a valid UTC fix from `hal/gps.cpp`; the main loop applies it through `setSystemTime()` only while user-enabled GPS polling is already active. GPS is never enabled solely to maintain the clock.
+- GPS parsing exposes a valid UTC fix from `hal/gps.cpp`; the main loop applies
+  it through `setSystemTime()` only while GPS polling is active. KrabOS
+  production enables polling in a new namespace; other images retain their
+  existing opt-in behavior. GPS is never enabled solely to maintain the clock.
+- RTC and MeshCore timestamps remain UTC epochs. Human-facing clocks are
+  rendered in Toronto local time (`EST5EDT,M3.2.0,M11.1.0`).
 
 ---
 
@@ -735,11 +741,11 @@ AutoDiscoverRTCClock
 ### Compile-Time Defaults
 
 ```cpp
-#define LORA_FREQ   869.618f    // MHz
+#define LORA_FREQ   910.525f    // MHz
 #define LORA_BW     62.5f       // kHz
-#define LORA_SF     8           // Spreading factor
+#define LORA_SF     7           // Spreading factor
 #define LORA_CR     5           // Coding rate denominator (4/5)
-#define LORA_TX_PWR 22          // dBm
+#define LORA_TX_PWR 20          // dBm
 ```
 
 These are defined in `src/hal/tdeck_pins.h`.

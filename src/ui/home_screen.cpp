@@ -28,9 +28,11 @@
 #include "responsive.h"
 #include "../hal/tdeck_pins.h"
 #include "../hal/prefs.h"
+#include "../hal/radio_profiles.h"
 #include "../hal/battery.h"
 #include "../mesh/mesh_wrapper.h"
 #include "../diagnostics/debug_cfg.h"
+#include "utils/local_time.h"
 #if SIGURDOS_DEBUG_UI
 #include "../diagnostics/debug.h"
 #endif
@@ -58,10 +60,7 @@ static constexpr int GRID_PAD   = 3;
 // GRID_COLS, GRID_ROWS, TOP_BAR_H, BOT_BAR_H, DIVIDER_H — now from responsive.h
 
 static const char* const ICON_SYMBOLS[HOME_ROUTE_COUNT] = {
-    LV_SYMBOL_ENVELOPE, LV_SYMBOL_FILE, LV_SYMBOL_DIRECTORY,
-    LV_SYMBOL_CALL, LV_SYMBOL_WIFI, LV_SYMBOL_BELL, LV_SYMBOL_GPS,
-    LV_SYMBOL_KEYBOARD, LV_SYMBOL_LIST, LV_SYMBOL_SETTINGS,
-    LV_SYMBOL_HOME, LV_SYMBOL_BARS,
+    LV_SYMBOL_ENVELOPE, LV_SYMBOL_GPS, LV_SYMBOL_WIFI, LV_SYMBOL_SETTINGS,
 };
 
 static constexpr int ICON_COUNT = static_cast<int>(HOME_ROUTE_COUNT);
@@ -76,13 +75,8 @@ static int active_cols = 1;
 static int active_rows = 1;
 
 static void format_time_str(char* out, size_t sz) {
-    uint32_t epoch = sigurdos::mesh::getCurrentTime();
-    if (epoch == 0) {
-        snprintf(out, sz, "--:--");
-    } else {
-        uint32_t sec = epoch % 86400;
-        snprintf(out, sz, "%02d:%02d", (sec/3600)%24, (sec/60)%60);
-    }
+    sigurdos::local_time::formatHm(
+        out, sz, sigurdos::mesh::getCurrentTime());
 }
 
 static constexpr lv_obj_flag_t no_scroll_flags()
@@ -191,22 +185,25 @@ static void create_top_bar()
     lv_obj_set_style_pad_all(top_bar, 0, 0);
     lv_obj_set_style_border_width(top_bar, 0, 0);
 
-    // ≡ hamburger using LVGL symbol font (reliable on all builds)
+    // Text-only KrabOS wordmark renders on every bundled LVGL font.
     lv_obj_t* menu_icon = lv_label_create(top_bar);
-    lv_label_set_text(menu_icon, LV_SYMBOL_LIST);
-    lv_obj_set_style_text_color(menu_icon, lv_color_hex(TEXT_SECONDARY), 0);
+    lv_label_set_text(menu_icon, "KRABOS");
+    lv_obj_set_style_text_color(menu_icon, lv_color_hex(ACCENT), 0);
+    lv_obj_set_style_text_font(menu_icon, emoji_wrapped_montserrat_10, 0);
     lv_obj_align(menu_icon, LV_ALIGN_LEFT_MID, 4, 0);
 
-    // Radio status / setup warning (replaces old channel hashtags)
-    const bool configured = sigurdos::prefs_get().configured;
+    // Keep setup warnings visible and report the exact active profile.
+    const sigurdos::NodePrefs& prefs = sigurdos::prefs_get();
+    const bool configured = prefs.configured;
     hashtag_label = lv_label_create(top_bar);
-    lv_label_set_text(hashtag_label, configured ? "" : "Do setup for radio");
+    lv_label_set_text(
+        hashtag_label, sigurdos::radio_profile_status_label(prefs));
     lv_label_set_long_mode(hashtag_label, LV_LABEL_LONG_DOT);
     lv_obj_set_width(hashtag_label, HASHTAG_LABEL_W());
     lv_obj_set_style_text_color(hashtag_label,
         lv_color_hex(configured ? CHANNEL_HASH : ACCENT_RED), 0);
     lv_obj_set_style_text_font(hashtag_label, emoji_wrapped_montserrat_10, 0);
-    lv_obj_align(hashtag_label, LV_ALIGN_LEFT_MID, 26, 0);
+    lv_obj_align(hashtag_label, LV_ALIGN_LEFT_MID, 52, 0);
 
     // Time (far right)
     time_label = lv_label_create(top_bar);
@@ -274,9 +271,9 @@ static lv_obj_t* create_icon_tile(lv_obj_t* parent, const HomeRoute& route,
     lv_obj_set_pos(tile, tile_x[idx], tile_y[idx]);
     lv_obj_set_style_bg_color(tile, lv_color_hex(BG_TERTIARY), 0);
     lv_obj_set_style_bg_opa(tile, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(tile, 0, 0);
-    lv_obj_set_style_border_width(tile, PIXEL_BORDER, 0);
-    lv_obj_set_style_border_color(tile, lv_color_hex(BG_PRIMARY), 0);
+    lv_obj_set_style_radius(tile, 8, 0);
+    lv_obj_set_style_border_width(tile, 1, 0);
+    lv_obj_set_style_border_color(tile, lv_color_hex(DIVIDER), 0);
     lv_obj_set_style_pad_all(tile, 4, 0);
     disable_scroll(tile);
 
@@ -324,8 +321,8 @@ static lv_obj_t* create_icon_tile(lv_obj_t* parent, const HomeRoute& route,
 // ── Adaptive icon grid — LVGL grid layout fills the full content area ──────
 static void create_icon_grid()
 {
-    GridLayout gl = compute_grid(GRID_PAD);
-    active_cols = gl.cols;
+    // Four primary surfaces deserve large, touch-first targets on T-Deck.
+    active_cols = 2;
     active_rows = (ICON_COUNT + active_cols - 1) / active_cols;
 
     const int usable_w = CONTENT_W - (GRID_PAD * 2) - (GRID_PAD * (active_cols - 1));
@@ -358,6 +355,13 @@ static void create_icon_grid()
 
     for (int i = 0; i < ICON_COUNT; i++) {
         icon_tiles[i] = create_icon_tile(grid, *homeRouteAt(i), ICON_SYMBOLS[i], i);
+    }
+
+    // Keyboard and trackball reach the same targets as touch.
+    lv_group_t* group = lv_group_get_default();
+    if (group) {
+        for (int i = 0; i < ICON_COUNT; i++) lv_group_add_obj(group, icon_tiles[i]);
+        lv_group_focus_obj(icon_tiles[0]);
     }
 
     selected_icon = 0;
@@ -495,8 +499,10 @@ void home_screen_update_time(const char* time_str)
 void home_screen_update_channels()
 {
     if (!hashtag_label) return;
-    const bool configured = sigurdos::prefs_get().configured;
-    lv_label_set_text(hashtag_label, configured ? "" : "Do setup for radio");
+    const sigurdos::NodePrefs& prefs = sigurdos::prefs_get();
+    const bool configured = prefs.configured;
+    lv_label_set_text(
+        hashtag_label, sigurdos::radio_profile_status_label(prefs));
     lv_obj_set_style_text_color(hashtag_label,
         lv_color_hex(configured ? CHANNEL_HASH : ACCENT_RED), 0);
 }

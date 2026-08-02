@@ -49,16 +49,16 @@ uint32_t contrast_foreground(uint32_t background)
     return black_contrast >= white_contrast ? 0x000000 : 0xFFFFFF;
 }
 
-uint32_t BG_PRIMARY   = 0x0f0f0f;
-uint32_t BG_SECONDARY = 0x181818;
-uint32_t BG_TERTIARY  = 0x1e1e1e;
-uint32_t BG_INPUT     = 0x252525;
+uint32_t BG_PRIMARY   = 0x10131b;
+uint32_t BG_SECONDARY = 0x172033;
+uint32_t BG_TERTIARY  = 0x202b3d;
+uint32_t BG_INPUT     = 0x2a3549;
 
-uint32_t ACCENT       = 0x00bfff;
-uint32_t ACCENT_HOVER = 0x00a5e0;
+uint32_t ACCENT       = 0xff6b5a;
+uint32_t ACCENT_HOVER = 0xe85a4a;
 uint32_t ACCENT_FOREGROUND = contrast_foreground(ACCENT);
 
-uint32_t CHANNEL_HASH = 0x00bfff;
+uint32_t CHANNEL_HASH = 0xff6b5a;
 
 } // namespace theme
 } // namespace sigurdos

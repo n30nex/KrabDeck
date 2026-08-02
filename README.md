@@ -11,7 +11,7 @@
 
 # KrabDeck / KrabOS
 
-**KrabDeck** is the source, tooling, and autonomous release system for
+**KrabDeck** is the source, tooling, and evidence-gated release system for
 **KrabOS**: a Canada-first, touch-first MeshCore client for the LILYGO
 T-Deck Plus. It brings messaging, network tools, GPS, and offline SD-card
 maps into one small handheld interface.
@@ -45,7 +45,7 @@ colour: **✓ Complete**, **▶ Active**, **○ Planned**, **! Blocked**.
 
 ```mermaid
 flowchart LR
-    M0["▶ M0<br/>Seed & Safeguard"] --> M1["○ M1<br/>Autonomous Edge"]
+    M0["▶ M0<br/>Seed & Safeguard"] --> M1["○ M1<br/>Protected Edge"]
     M1 --> M2["○ M2<br/>Krab UI"]
     M2 --> M3["○ M3<br/>Client Parity"]
     M3 --> M4["○ M4<br/>Maps & GPS"]
@@ -63,11 +63,11 @@ flowchart LR
 | Phase | Status | Exit gate | GitHub |
 |---|---|---|---|
 | M0 | ▶ Active | Exact-device backup and unattended RF-off recovery pass without touching either neighbouring ESP32. | [Milestone](https://github.com/n30nex/KrabDeck/milestone/1) · [Issue #1](https://github.com/n30nex/KrabDeck/issues/1) |
-| M1 | ○ Planned | A trusted `main` push builds, flashes, verifies, tests, rolls back on injected failure, and publishes a signed edge release. | [Milestone](https://github.com/n30nex/KrabDeck/milestone/2) · [Issue #2](https://github.com/n30nex/KrabDeck/issues/2) |
+| M1 | ○ Planned | A trusted `main` push builds and validates exact candidate bytes without hardware access or publication; protected manual qualification, evidence admission, and publication follow. | [Milestone](https://github.com/n30nex/KrabDeck/milestone/2) · [Issue #2](https://github.com/n30nex/KrabDeck/issues/2) |
 | M2 | ○ Planned | Every retained feature is reachable by touch, keyboard, and trackball with clean visual evidence. | [Milestone](https://github.com/n30nex/KrabDeck/milestone/3) · [Issue #3](https://github.com/n30nex/KrabDeck/issues/3) |
 | M3 | ○ Planned | Safe client parity, one boot advert, and correlated bot DM/channel delivery pass without Public chat traffic. | [Milestone](https://github.com/n30nex/KrabDeck/milestone/4) · [Issue #4](https://github.com/n30nex/KrabDeck/issues/4) |
 | M4 | ○ Planned | SD maps survive interruption and reboot, secrets stay private, and simulated plus live GPS gates pass. | [Milestone](https://github.com/n30nex/KrabDeck/milestone/5) · [Issue #5](https://github.com/n30nex/KrabDeck/issues/5) |
-| M5 | ○ Planned | Exact-SHA regression, recovery, accessibility, licensing, and extended soak gates automatically publish `v1.0.0`. | [Milestone](https://github.com/n30nex/KrabDeck/milestone/6) · [Issue #6](https://github.com/n30nex/KrabDeck/issues/6) |
+| M5 | ○ Planned | Exact-SHA regression, recovery, accessibility, licensing, and extended soak gates permit protected manual approval and publication of `v1.0.0`. | [Milestone](https://github.com/n30nex/KrabDeck/milestone/6) · [Issue #6](https://github.com/n30nex/KrabDeck/issues/6) |
 <!-- roadmap-status:end -->
 
 The detailed gates and update rules live in [ROADMAP.md](ROADMAP.md). Roadmap
@@ -82,7 +82,7 @@ image, web-flasher manifest and segments, ELF, checksums, SBOM/licence bundle,
 provenance, and a redacted hardware receipt.
 
 Until an edge release is present, there is no supported binary to install.
-The autonomous flasher refuses aliases and binds to one recorded device
+The protected exact-device flasher refuses aliases and binds to one recorded device
 identity; it cannot be pointed at an arbitrary serial port.
 
 ## Build from source

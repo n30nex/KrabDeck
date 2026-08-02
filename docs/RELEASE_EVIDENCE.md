@@ -1,51 +1,150 @@
-# Release evidence
+# KrabOS v1.0 release evidence
 
-Every release PR uses `.github/PULL_REQUEST_TEMPLATE/release.md`. The machine-readable inventory in `ci/release_evidence_requirements.json` is the source of truth; CI fails if a requirement disappears from the template.
+Every KrabOS v1.0 release PR uses
+`.github/PULL_REQUEST_TEMPLATE/release.md`. The machine-readable inventory in
+`ci/release_evidence_requirements.json` is the source of truth; the contract
+check fails if any requirement disappears from the template. For `v1.0.0`,
+every inventory item must have a fresh passing record. The evidence validator
+does not accept prose waivers or `N/A` outcomes.
 
 ## Publication gate
 
-A tag is publishable only when `release-evidence/<tag>.json` exists at the tagged
-commit and passes `scripts/verify_release_evidence.py`. This checked-in source
-evidence names the tag, contains a fresh passing record for every requirement,
-links to reviewed evidence, and identifies firmware and peer versions for
-hardware checks.
+A stable release never accepts a checked-in `release-evidence/v1.0.0.json`.
+Such a file changes the commit it tries to describe, while a version-only file
+can be reused for unrelated candidate bytes. The stable gate instead consumes
+one out-of-tree schema-3 evidence packet from an immutable GitHub Actions
+artifact. The source artifact is pinned by repository, source run ID, artifact
+ID, exact artifact name and `sha256:` archive digest.
 
-The tag workflow then builds once, validates the complete artifact directory,
-and generates `release-evidence.json` as a post-build attestation. That published
-attestation adds the exact tagged commit, the SHA-256 of the checked-in source
-evidence, and hashes of every release artifact. CI validates those hashes against
-the actual bytes immediately before upload. Keeping commit and artifact hashes
-out of the checked-in schema avoids an impossible self-reference: editing a
-tracked evidence file changes the commit it would claim to identify. These
-SHA-256 values prove byte consistency, not publisher identity: **checksums are
-not signatures**. See [Security model](SECURITY_MODEL.md#firmware-update-trust).
+Evidence admission is a separate, callable workflow:
 
-Use this shape (repeat the requirement object for every ID in the requirements inventory):
+1. Dispatch `krabos-edge.yml` from `main` with `release_channel=validation`,
+   `candidate_branch=main`, and the exact candidate SHA. Record the successful
+   run ID plus the ID and digest of `krabos-validation-<candidate-sha>`. This
+   validation channel compiles with the same deterministic `v1.0.0` identity
+   as stable so the production firmware bytes are reproducible across runs.
+2. Prepare `release-evidence-input.json` outside the repository. Its top-level
+   identity and every requirement record repeat the exact 40-character
+   candidate commit and SHA-256 of that validation artifact's
+   `firmware-merged.bin`. The top level also binds the `production`, `recovery`,
+   `debug`, and `ota` roles to exact SHA-256 values. Each record repeats the
+   inventory-selected role/digest subset.
+3. Dispatch `krabos-evidence.yml` from that same `main` commit. Supply the
+   validation run/artifact identities, the base64-encoded JSON packet, and the
+   SHA-256 of its decoded bytes. Do not put secrets or private device data in a
+   workflow input. The hosted job admits only a successful, non-PR, internal
+   `krabos-edge.yml` validation run from `main`; revalidates the downloaded Pi
+   build; checks the packet against its production image; and uploads exactly
+   `krabos-v1-evidence-<candidate-sha>` with 90-day retention.
+4. Record the successful evidence run ID, evidence artifact ID, and its exact
+   `sha256:` digest from the Actions API. Supply those three values to the
+   stable dispatch. Names alone are not accepted.
+
+Both source runs must still exist, be unexpired, be no older than 30 days, and
+identify the exact trusted workflow paths. A source run from any other manual
+workflow, fork, branch, pull request, commit or repository fails closed.
+
+`.github/workflows/krabos-edge.yml` owns this release. It is manually dispatched
+from `main` with `release_channel=stable-v1.0.0`,
+`candidate_branch=main`, the exact 40-character `candidate_sha`, and the three
+immutable evidence artifact inputs. The Pi 5 job rejects any mismatch between
+the requested SHA, workflow SHA, remote branch head and checked-out source
+before building or touching the fixture. The legacy
+`.github/workflows/build-release.yml` does not build, gate, tag or publish
+KrabOS `v1.0.0`.
+
+The Pi 5 job builds three separate environments:
+
+| Environment | Role | Public image |
+|---|---|---|
+| `KrabOS_TDeckPlus` | Production candidate | `firmware.bin`, `firmware-merged.bin`, `krabos-candidate.bin` and web/Launcher aliases |
+| `KrabOS_TDeckPlus_recovery` | RF-off recovery drill | `krabos-recovery-rf-off.bin` |
+| `KrabOS_TDeckPlus_debug` | Diagnostic build | `firmware-debug.bin` |
+
+Recovery and debug are independent builds with different release roles. A
+debug image is never evidence that recovery passed, and a recovery image must
+never be renamed or substituted as `firmware-debug.bin`.
+
+After the production artifact directory passes its manifest, metadata, image
+layout and digest contract, the stable run downloads the evidence packet by
+artifact ID from its exact completed source run. It validates the Actions API
+metadata and archive digest, then generates `release-evidence.json` as a
+post-build attestation. The attestation retains the immutable source artifact
+identity, SHA-256 of the packet bytes, exact candidate commit, production image
+SHA-256, every exact-bound requirement record, and hashes of the complete
+validated artifact contract.
+The final sealed bundle additionally binds the admitted candidate/recovery
+flash manifests and canonical redacted hardware receipt to the same commit and
+bytes. SHA-256 values prove byte consistency, not publisher identity:
+**checksums are not signatures**. See
+[Security model](SECURITY_MODEL.md#firmware-update-trust).
+
+Schema 3 has exact allowed keys. It accepts no notes, waivers, log excerpts or
+other free-text fields. Every supporting bundle uses a query-free HTTPS URL and
+a separate SHA-256 so mutable link contents cannot silently change the proof.
+Claims are inventory-defined booleans; metrics are inventory-defined integers
+with checked bounds. Evidence classes are limited to `automated`,
+`manual-review`, and `independent-observer`.
+
+Use this shape (repeat the typed requirement object for every inventory ID):
 
 ```json
 {
-  "schema_version": 2,
-  "tag": "<current-tag>",
-  "generated_at": "2026-07-14T18:00:00Z",
+  "schema_version": 3,
+  "kind": "krabos-exact-release-evidence-input",
+  "candidate_commit": "<full-lowercase-40-character-sha>",
+  "tag": "v1.0.0",
+  "generated_at": "<ISO-8601 UTC timestamp>",
+  "production_image_sha256": "<firmware-merged.bin-sha256>",
+  "artifact_sha256s": {
+    "debug": "<firmware-debug.bin-sha256>",
+    "ota": "<firmware.bin-sha256>",
+    "production": "<firmware-merged.bin-sha256>",
+    "recovery": "<krabos-recovery-rf-off.bin-sha256>"
+  },
   "requirements": [
     {
-      "id": "INT-BLE",
+      "id": "SOAK-ACTIVE",
       "outcome": "pass",
-      "evidence_url": "<reviewed-evidence-url>",
-      "tested_at": "2026-07-14",
-      "firmware_version": "<current-tag>",
-      "peer_version": "official-client-version"
+      "evidence_class": "manual-review",
+      "evidence_bundle_url": "https://example.invalid/immutable/soak-active.json",
+      "evidence_bundle_sha256": "<supporting-bundle-sha256>",
+      "tested_at": "<YYYY-MM-DD>",
+      "firmware_version": "v1.0.0",
+      "candidate_commit": "<same-full-candidate-sha>",
+      "production_image_sha256": "<same-firmware-merged.bin-sha256>",
+      "artifacts": [
+        {"role": "debug", "sha256": "<same-debug-image-sha256>"},
+        {"role": "production", "sha256": "<same-production-image-sha256>"}
+      ],
+      "claims": {
+        "final_capture_valid": true,
+        "no_crash_or_reboot": true,
+        "no_monotonic_heap_loss": true,
+        "no_monotonic_psram_loss": true,
+        "regular_samples_present": true,
+        "responsive_at_end": true
+      },
+      "metrics": {
+        "completion_percent": 100,
+        "duration_seconds": 7200,
+        "heap_range_bytes": 184,
+        "sample_count": 1440
+      },
+      "peer_version": "test-peer-1"
     }
   ]
 }
 ```
 
-Validate checked-in source evidence before building:
+Validate the out-of-tree packet against the downloaded Pi validation build
+before admission:
 
 ```bash
 python3 scripts/verify_release_evidence.py \
-  --evidence release-evidence/<tag>.json \
-  --tag "<tag>"
+  --evidence /outside/release-evidence-input.json \
+  --commit "<candidate-sha>" --tag v1.0.0 \
+  --artifacts-dir artifacts --require-exact
 ```
 
 After flattening the release build into `artifacts/`, generate and immediately
@@ -53,42 +152,148 @@ recheck the byte-bound attestation:
 
 ```bash
 python3 scripts/verify_release_evidence.py \
-  --evidence release-evidence/<tag>.json \
-  --commit "$(git rev-parse HEAD)" --tag "<tag>" \
+  --evidence /outside/release-evidence-input.json \
+  --commit "$(git rev-parse HEAD)" --tag v1.0.0 \
   --artifacts-dir artifacts \
+  --source-repository n30nex/KrabDeck \
+  --source-run-id "<evidence-run-id>" \
+  --source-artifact-id "<evidence-artifact-id>" \
+  --source-artifact-digest "sha256:<archive-digest>" \
+  --source-artifact-metadata /tmp/evidence-artifact.json \
+  --source-run-metadata /tmp/evidence-run.json \
+  --require-exact \
   --write-attestation artifacts/release-evidence.json
 python3 scripts/verify_release_evidence.py \
   --attestation artifacts/release-evidence.json \
-  --commit "$(git rev-parse HEAD)" --tag "<tag>" \
-  --artifacts-dir artifacts
+  --commit "$(git rev-parse HEAD)" --tag v1.0.0 \
+  --artifacts-dir artifacts \
+  --source-repository n30nex/KrabDeck \
+  --source-run-id "<evidence-run-id>" \
+  --source-artifact-id "<evidence-artifact-id>" \
+  --source-artifact-digest "sha256:<archive-digest>" \
+  --require-exact
 ```
 
-The attestation covers `firmware.bin`, both release-level merged/Launcher
-images, `firmware-debug.bin`, the ESP Web Tools manifest, build metadata, and
-all six web-flasher component/full/Launcher binaries. Legacy schema-1 evidence
-is still parsed, but any declared hashes must cover and exactly match this full
-set during post-build verification.
+The production byte attestation covers the exact files enforced by
+`scripts/release_artifact_contract.py`:
 
-For tagged releases, the workflow also hashes every published input (including
-the manifest, build metadata, and release evidence) into `SHA256SUMS.txt`, then
-uses GitHub's OIDC identity to create `SHA256SUMS.sigstore.json`. Verify it with
-Cosign before trusting the checksum file:
+- `firmware.bin`, `firmware-merged.bin`, and the separately built
+  `firmware-debug.bin`;
+- `KrabOS-tdeck-plus-launcher.bin`;
+- `manifest.json` and `build-metadata.json`;
+- `krabos-tdeck-plus-bootloader.bin`,
+  `krabos-tdeck-plus-partitions.bin`,
+  `krabos-tdeck-plus-boot_app0.bin`, and
+  `krabos-tdeck-plus-firmware.bin`;
+- the byte-identical production aliases `krabos-tdeck-plus-full.bin` and
+  `krabos-tdeck-plus-launcher.bin`.
+
+The sealed public bundle then requires those files plus `firmware.elf`,
+`krabos-candidate.bin`, the dedicated recovery image and ELF,
+`candidate-flash-manifest.json`, `recovery-flash-manifest.json`,
+`krabos-public-receipt.json`, `firmware-sbom.cdx.json`, and
+`krabos-licenses.tar.gz`. Stable publication also includes the generated
+`release-evidence.json`, `krabos-bundle-manifest.json`, `SHA256SUMS.txt`, and
+`SHA256SUMS.sigstore.json`; the debug ELF is published as
+`krabos-debug-rf-off.elf`.
+
+`firmware-merged.bin`, both Launcher aliases and
+`krabos-tdeck-plus-full.bin` must be byte-identical production images.
+`firmware-debug.bin` and `krabos-recovery-rf-off.bin` are not members of that
+alias set. Legacy schema-1 evidence remains readable only for historical
+non-stable tags. Schema 2 version-only source evidence is rejected, and the
+`v1.0.0` workflow passes `--require-exact` for both its schema-3 input and
+schema-3 published attestation.
+
+Stable publication fails while any open issue is labelled `gate` or identified
+as P0/P1. Issue #6 is the sole publication tracker: the workflow names it
+explicitly, and the exception is valid only while it carries the `gate`,
+`phase:m5`, and `release` labels. It cannot override a P0/P1 label or exempt
+any other issue. Close #6 only after the published release and its immutable
+assets have been verified.
+
+The successful Pi gate uploads the complete sealed bundle once and exports its
+immutable artifact ID and archive digest to the publish job. Publication
+downloads that ID from the same workflow run, not the newest artifact with a
+matching name. If publication stops after creating a tag or uploading only
+some assets, use **Re-run failed jobs** on that original workflow run. This
+reuses the frozen bundle, including its random hardware challenge and receipt
+bytes. Starting a new stable dispatch after partial publication creates a new
+receipt and intentionally cannot replace or clobber existing immutable assets.
+
+After the Pi gate, exact-device receipt, sealed-bundle verification and
+protected `krabos-v1-production` approval pass, the GitHub-hosted publish job
+hashes every sealed input into `SHA256SUMS.txt`. It uses GitHub OIDC to create
+`SHA256SUMS.sigstore.json` and build-provenance attestations. Verify the workflow
+identity before trusting the checksum file:
 
 ```bash
 cosign verify-blob \
   --bundle SHA256SUMS.sigstore.json \
-  --certificate-identity-regexp \
-    '^https://github.com/hermes-gadget/SigurdOS-tdeck/.github/workflows/build-release.yml@refs/tags/' \
+  --certificate-identity \
+    'https://github.com/n30nex/KrabDeck/.github/workflows/krabos-edge.yml@refs/heads/main' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   SHA256SUMS.txt
 sha256sum --check SHA256SUMS.txt
 ```
 
-GitHub build-provenance attestations bind the same release files to the tagged
-workflow run and can be checked with `gh attestation verify <file> --repo
-hermes-gadget/SigurdOS-tdeck`. These publisher signatures do not enable ESP32-S3
-secure boot or device-side signed OTA verification; those require a separate
-device-key provisioning and rollback policy.
+GitHub build-provenance attestations bind the same files to the `main` workflow
+and exact candidate SHA. Verify each downloaded asset, substituting that full
+40-character SHA:
+
+```bash
+gh attestation verify <artifact> \
+  --repo n30nex/KrabDeck \
+  --signer-workflow \
+    https://github.com/n30nex/KrabDeck/.github/workflows/krabos-edge.yml \
+  --source-ref refs/heads/main \
+  --source-digest <full-candidate-sha> \
+  --deny-self-hosted-runners
+```
+
+`--deny-self-hosted-runners` is intentional: firmware bytes are built and
+physically tested on the dedicated Pi, while publisher attestations are issued
+only by the GitHub-hosted publish job after it re-verifies the sealed bundle.
+These publisher signatures do not enable ESP32-S3 secure boot or device-side
+signed OTA verification; those require a separate device-key provisioning and
+rollback policy.
+
+### Exact-device and recovery receipt
+
+The stable bundle is ineligible unless `krabos-public-receipt.json` is the
+canonical redacted schema, is bound to the candidate SHA and admitted candidate
+and recovery bytes, and reports every required gate as exactly `true`:
+
+- manifest validity, exact-device binding, pre-flash capture and state export;
+- byte-verified flash and USB reconnection;
+- the 900-second target-local candidate smoke and candidate RF-policy binding;
+- independently observed, exact-image-bound proof of one boot advert, no Public
+  chat traffic, correlated DM/channel delivery and ACK, and one forced retry;
+- an actually exercised 60-second recovery drill with independently observed
+  RF silence, followed by restored candidate readiness;
+- secret redaction.
+
+The receipt's `recovery.used` and `recovery.ok` values must both be `true`.
+Its exact `external_evidence` object binds the `RF-END-TO-END` record's source
+packet digest and supporting-bundle digest to the production and recovery
+full-image hashes. Bundle sealing cross-checks that source digest against
+`release-evidence.json`. Without that match, the receipt remains ineligible.
+Private flash backups, device identifiers, credentials, coordinates, serial
+paths and raw logs remain runner-local and must not enter artifacts, issues or
+the release. `scripts/krabos/bundle_release.py seal` revalidates the receipt,
+both flash manifests and their referenced bytes before it creates the bundle
+manifest and checksum list.
+
+The protected exact-device invocation supplies the already verified attestation
+with `--observer-evidence`, the downloaded sanitized supporting bundle with
+`--observer-bundle`, and the separately admitted source repository, run ID,
+artifact ID/archive digest, artifact metadata and run metadata. Before hardware
+access, the tool rechecks the trusted workflow identity and hashes the local
+supporting bundle against the `RF-END-TO-END` record. Its later `check-public`
+call must supply both `--source-evidence-sha256` and
+`--evidence-bundle-sha256`. Omitting any observer admission input keeps the
+hardware run fail-closed; omitting either public-check digest keeps publication
+ineligible.
 
 ## Dependency pin policy
 
@@ -120,9 +325,9 @@ relying on objects already present in a developer checkout:
 ```bash
 clean_root="$(mktemp -d)"
 git clone --recurse-submodules \
-  https://github.com/hermes-gadget/SigurdOS-tdeck.git \
-  "$clean_root/SigurdOS-tdeck"
-git -C "$clean_root/SigurdOS-tdeck/lib/meshcore" rev-parse HEAD
+  https://github.com/n30nex/KrabDeck.git \
+  "$clean_root/KrabDeck"
+git -C "$clean_root/KrabDeck/lib/meshcore" rev-parse HEAD
 ```
 
 The printed SHA must equal the superproject gitlink. Then run the companion
@@ -173,9 +378,37 @@ reconnect, retry, ordering, and durable delivered markers. This is the required
 property/sequence gate for dependency refreshes; focused tests remain required
 for any newly introduced state machine.
 
+## Full product gate groups
+
+The typed inventory adds these release-wide groups. Their names are deliberate
+machine-readable categories as well as checklist IDs:
+
+- `device-isolation` / `DEVICE-ISOLATION`: no protected D1L or peer route was opened;
+- `ui-matrix` / `UI-MATRIX`: all production routes and physical input modes pass;
+- `rf-end-to-end` / `RF-END-TO-END`: only an `independent-observer` record may prove RF delivery, ACK correlation, forced retry, Public silence, one boot advert, and recovery silence;
+- `state-migration` / `STATE-MIGRATION`: identity, settings, and stores survive;
+- `sd-map` / `SD-MAP`: sentinel/resume, offline map, shared SPI, and radio coexist;
+- `wifi-private` / `WIFI-PRIVATE`: private success/error paths and public secret scan pass;
+- `gps-sim-live` / `GPS-SIM-LIVE`: simulated/live fixes and local time pass without published coordinates;
+- `ota-full-equivalence` / `OTA-FULL-EQUIVALENCE`: OTA app bytes, runtime, and state match the production full image.
+
+Target-local boot/radio markers remain diagnostic-only. They cannot satisfy
+`RF-END-TO-END` or set any public RF gate, even when their values look correct.
+
 ## Privacy-safe soak reports
 
-Use a debug build at verbosity level 2 and capture at least 10 minutes (at least 120 `[stat]` samples spanning 600 seconds) for each scenario. Idle means the home screen with radio and configured transports running. Active means repeated screen navigation, message send/receive, map use, and companion reconnects representative of normal operation.
+Use the dedicated `KrabOS_TDeckPlus_debug` build at verbosity level 2. Idle
+evidence captures at least 10 minutes. Active release evidence captures at
+least 7200 seconds and satisfies the authoritative Phase 6 thresholds in
+[`HARDWARE_TESTING.md`](HARDWARE_TESTING.md#phase-6-soak-test): at least 90%
+completion, regular samples, no crash/reboot, no monotonic heap or PSRAM loss,
+heap range below 1000 bytes, responsiveness, and a valid final capture. This
+diagnostic build is separate from
+`KrabOS_TDeckPlus_recovery`; recovery output cannot satisfy a debug soak. Idle
+means the home screen with radio and configured transports running. Active
+means repeated screen navigation, message send/receive, map use, and companion
+reconnects representative of normal operation. These privacy-safe heap soaks
+are additional to the exact production candidate's 900-second hardware smoke.
 
 ```bash
 python3 scripts/analyze_soak_log.py idle.log \
@@ -184,7 +417,11 @@ python3 scripts/analyze_soak_log.py active.log \
   --scenario active --json-out active.json --markdown-out active.md
 ```
 
-The reports contain only numeric memory summaries and a source-log digest. Attach the reports, not raw serial logs. Review raw logs locally for secrets before retaining them. Defaults fail on fewer than 120 samples, a span shorter than 600 seconds, non-monotonic timestamps, heap range over 16 KiB, or first-to-last heap drop over 8 KiB.
+The reports contain only numeric memory summaries and a source-log digest.
+Attach the reports, not raw serial logs. Review raw logs locally for secrets
+before retaining them. The generic analyzer's shorter defaults are useful for
+development only; `SOAK-ACTIVE` enforces the release-specific 7200-second and
+sub-1000-byte heap-range contract above.
 
 ## OTA matrix
 
@@ -210,14 +447,22 @@ Use versioned release URLs. A negative test passes only when the error is bounde
 
 ## Launcher matrix
 
-Follow `docs/LAUNCHER.md` with the final Launcher artifact. Verify environment detection, update ownership/OTA gating, handoff back to Launcher, relaunch, and persistence of settings, contacts, channels, and messages. Record Launcher and SigurdOS versions without recording a device identifier.
+Follow `docs/LAUNCHER.md` with the exact
+`KrabOS-tdeck-plus-launcher.bin` from the candidate bundle. Verify environment
+detection, update ownership/OTA gating, handoff back to Launcher, relaunch, and
+persistence of settings, contacts, channels, and messages. Record Launcher and
+KrabOS versions without recording a device identifier.
 
 ## Release artifacts and warnings
 
-The tag workflow validates source evidence before building, runs native
-sanitizers, verifies the resolved PlatformIO graph, and validates the generated
-manifest, image layouts, exact aliases, offsets, provenance, and SHA-256 values
-before promotion. Confirm those results in the release PR. The first-party
-warning gate parses only compiler warnings whose paths start with `src/`;
-third-party warnings do not spend this budget. When a warning is fixed, reduce
-`ci/first_party_warnings.json` in the same PR so the debt cannot return.
+The Pi job in `.github/workflows/krabos-edge.yml` runs the native and sanitizer
+gates, verifies the resolved PlatformIO graph, builds all three KrabOS
+environments, validates manifest identity, image layouts, exact production
+aliases, offsets, provenance and SHA-256 values, and then verifies the
+out-of-tree exact evidence packet before hardware access. The publish job then
+re-verifies the sealed exact-tested bundle before tag creation and verifies the
+downloaded GitHub release after upload. Confirm both job results in the release
+PR. The first-party warning gate parses only compiler warnings whose paths
+start with `src/`; third-party warnings do not spend this budget. When a
+warning is fixed, reduce `ci/first_party_warnings.json` in the same PR so the
+debt cannot return.

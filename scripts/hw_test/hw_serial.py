@@ -564,7 +564,7 @@ class PersistentSerial:
                 test_controller=False,
                 evidence="\n".join(item for item in evidence if item)[-4000:],
             )
-        if "SigurdOS T-Deck ready" in boot_text:
+        if "KrabOS T-Deck Plus ready" in boot_text:
             return DeviceInfo(
                 protocol=self.protocol,
                 radio_available=None,

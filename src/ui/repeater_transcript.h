@@ -9,6 +9,7 @@
 #include <cstring>
 
 #include "utils/utf8_util.h"
+#include "utils/local_time.h"
 
 namespace sigurdos::ui {
 
@@ -70,13 +71,11 @@ inline bool format_repeater_cli_line(char* out, size_t out_size, uint32_t timest
                                      const char* marker, const char* text)
 {
     if (!out || out_size == 0) return false;
-    const uint32_t seconds = timestamp % 86400u;
-    const int written = timestamp == 0
-        ? std::snprintf(out, out_size, "[--:--:--] %s%s\n",
-                        marker ? marker : "", text ? text : "")
-        : std::snprintf(out, out_size, "[%02u:%02u:%02u] %s%s\n",
-                        seconds / 3600u, (seconds / 60u) % 60u, seconds % 60u,
-                        marker ? marker : "", text ? text : "");
+    char clock[9];
+    sigurdos::local_time::formatHms(clock, sizeof(clock), timestamp);
+    const int written = std::snprintf(
+        out, out_size, "[%s] %s%s\n", clock,
+        marker ? marker : "", text ? text : "");
     return written >= 0 && static_cast<size_t>(written) < out_size;
 }
 

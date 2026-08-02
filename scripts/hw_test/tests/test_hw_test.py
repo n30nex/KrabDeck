@@ -36,6 +36,7 @@ from hw_test.hw_test_runner import (
     PhaseSelection,
     _check_variant,
     _merge_report_metadata,
+    _nav_check,
     _parse_radio_profile,
     build_parser,
     run_crash_recovery,
@@ -180,6 +181,27 @@ class SerialParsingTests(unittest.TestCase):
             ),
             (869.525, 10, 250.0, 5, 7, True),
         )
+
+    def test_map_navigation_uses_bounded_long_timeout(self) -> None:
+        class FakeConnection:
+            protocol = CommandProtocol.REMOTE_TEST
+
+            def __init__(self) -> None:
+                self.timeout_s = 0
+
+            def send_command(self, command, *, timeout_s, **_kwargs):
+                self.timeout_s = timeout_s
+                return SimpleNamespace(
+                    output="[test] nav -> map",
+                    attempts=1,
+                    recovered=False,
+                    wire_command=command,
+                )
+
+        connection = FakeConnection()
+        passed, _detail, _data = _nav_check(connection, "map")
+        self.assertTrue(passed)
+        self.assertEqual(connection.timeout_s, 15)
 
 
 class ReportTests(unittest.TestCase):
@@ -336,7 +358,7 @@ class ReportTests(unittest.TestCase):
 
         connection = FakeConnection()
         report = HardwareReport(mode="radio", transport="local")
-        with mock.patch("hw_test.hw_test_runner.time.sleep"):
+        with mock.patch("hw_test.hw_test_runner.time.sleep") as sleep:
             run_radio(
                 connection,
                 report,
@@ -346,6 +368,7 @@ class ReportTests(unittest.TestCase):
                 coding_rate=5,
                 tx_power_dbm=2,
             )
+        self.assertTrue(any(call.args and call.args[0] > 20 for call in sleep.call_args_list))
         self.assertIn("setrf 869.525 10 250 5 7 1", connection.commands)
         self.assertEqual(connection.getrf_count, 3)
         self.assertEqual(
@@ -530,7 +553,9 @@ class ConstantsAndFlashTests(unittest.TestCase):
         self.assertIn("--sha256 alone cannot identify", result.stderr)
 
     def test_remote_controller_reports_provenance_without_telemetry(self) -> None:
-        controller = (PACKAGE_PARENT.parent / "src/test/test_controller.cpp").read_text()
+        controller = (PACKAGE_PARENT.parent / "src/test/test_controller.cpp").read_text(
+            encoding="utf-8"
+        )
         self.assertIn('strcmp(cmd, "buildinfo")', controller)
         self.assertIn("build.git_sha", controller)
         self.assertIn("build.meshcore_sha", controller)
@@ -554,7 +579,7 @@ class ConstantsAndFlashTests(unittest.TestCase):
         )
         self.assertTrue(HardwareFlasher.assess_boot_log(clean)[0])
         self.assertFalse(
-            HardwareFlasher.assess_boot_log("Invalid image block\nSigurdOS T-Deck ready")[0]
+            HardwareFlasher.assess_boot_log("Invalid image block\nKrabOS T-Deck Plus ready")[0]
         )
 
 

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Ben
 //
-// SigurdOS Pixel Theme — Discord-inspired palette with blocky pixel styling
+// Krab Material theme — charcoal/navy surfaces with a coral accent.
 // Theme colors are runtime variables so they can be changed by the
 // theme system and persist across reboots via NVS.
 
@@ -51,8 +51,8 @@ constexpr uint32_t MSG_INCOMING = 0x3a4560;
 
 // ── Text (always fixed for readability) ──────────────────
 constexpr uint32_t TEXT_PRIMARY   = 0xf2f3f5;
-constexpr uint32_t TEXT_SECONDARY = 0x949ba4;
-constexpr uint32_t TEXT_MUTED     = 0x9098a2;  // AA-readable on dark/input surfaces
+constexpr uint32_t TEXT_SECONDARY = 0xb0b8c5;
+constexpr uint32_t TEXT_MUTED     = 0x9ca6b4;  // AA-readable on Krab navy/input surfaces
 constexpr uint32_t TEXT_LINK      = 0x00aff4;
 
 // ── Themeable channel colors ─────────────────────────────
@@ -63,7 +63,7 @@ constexpr uint32_t CHANNEL_ACTIVE = 0xffffff;
 constexpr uint32_t DIVIDER        = 0x2a2a2a;
 
 // ── Pixel border width ───────────────────────────────────
-constexpr int32_t PIXEL_BORDER    = 2;
+constexpr int32_t PIXEL_BORDER    = 1;
 
 // ── Theme preset definitions ─────────────────────────────
 struct ThemeDef {
@@ -78,8 +78,8 @@ struct ThemeDef {
 };
 
 constexpr ThemeDef THEMES[] = {
-    // 0: Default Cyan
-    {"Default Cyan",   0x0f0f0f, 0x181818, 0x1e1e1e, 0x252525, 0x00bfff, 0x00a5e0, 0x00bfff},
+    // 0: Krab Material (default)
+    {"Krab Material",  0x10131b, 0x172033, 0x202b3d, 0x2a3549, 0xff6b5a, 0xe85a4a, 0xff6b5a},
     // 1: Midnight Blue
     {"Midnight Blue",  0x050510, 0x0d0d20, 0x12122a, 0x181838, 0x4488ff, 0x3377ee, 0x4488ff},
     // 2: Forest Green
@@ -184,7 +184,7 @@ inline void apply_focus_style(lv_obj_t* obj) {
 inline void apply_pixel_card(lv_obj_t* obj) {
     lv_obj_set_style_bg_color(obj, lv_color_hex(BG_TERTIARY), 0);
     lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(obj, 0, 0);
+    lv_obj_set_style_radius(obj, 8, 0);
     lv_obj_set_style_border_width(obj, PIXEL_BORDER, 0);
     lv_obj_set_style_border_color(obj, lv_color_hex(DIVIDER), 0);
     lv_obj_set_style_pad_all(obj, 6, 0);
@@ -202,7 +202,7 @@ inline void apply_pixel_btn(lv_obj_t* obj) {
     lv_obj_set_style_bg_color(obj, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_bg_opa(obj, LV_OPA_COVER, 0);
     lv_obj_set_style_text_color(obj, lv_color_hex(ACCENT_FOREGROUND), 0);
-    lv_obj_set_style_radius(obj, 0, 0);
+    lv_obj_set_style_radius(obj, 8, 0);
     lv_obj_set_style_border_width(obj, PIXEL_BORDER, 0);
     lv_obj_set_style_border_color(obj, lv_color_hex(ACCENT_HOVER), 0);
     lv_obj_set_style_pad_all(obj, 6, 0);
@@ -212,7 +212,7 @@ inline void apply_pixel_btn(lv_obj_t* obj) {
 // ── Pixel button (outline) ──────────────────────────────
 inline void apply_pixel_btn_outline(lv_obj_t* obj) {
     lv_obj_set_style_bg_opa(obj, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_radius(obj, 0, 0);
+    lv_obj_set_style_radius(obj, 8, 0);
     lv_obj_set_style_border_width(obj, PIXEL_BORDER, 0);
     lv_obj_set_style_border_color(obj, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_pad_all(obj, 6, 0);
@@ -247,7 +247,7 @@ inline void apply_pixel_input(lv_obj_t* obj) {
 inline void apply_pixel_badge(lv_obj_t* obj) {
     lv_obj_set_style_bg_color(obj, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_bg_opa(obj, LV_OPA_30, 0);
-    lv_obj_set_style_radius(obj, 0, 0);
+    lv_obj_set_style_radius(obj, 6, 0);
     lv_obj_set_style_border_width(obj, 1, 0);
     lv_obj_set_style_border_color(obj, lv_color_hex(ACCENT), 0);
     lv_obj_set_style_pad_all(obj, 2, 0);

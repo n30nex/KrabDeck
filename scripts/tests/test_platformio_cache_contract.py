@@ -66,13 +66,15 @@ class PlatformioCacheContractTest(unittest.TestCase):
                 dependency_hash = helpers[0].get("with", {}).get(
                     "dependency-hash", ""
                 )
-                expected_inputs = (
-                    PI_HASH_INPUTS
-                    if "requirements-platformio-pi.txt" in job_text
-                    else HASH_INPUTS
+                uses_pi_lock = "requirements-platformio-pi.txt" in job_text
+                expected_inputs = PI_HASH_INPUTS if uses_pi_lock else HASH_INPUTS
+                unexpected_inputs = (
+                    HASH_INPUTS[2:4] if uses_pi_lock else PI_HASH_INPUTS[2:4]
                 )
                 for dependency_input in expected_inputs:
                     self.assertIn(dependency_input, dependency_hash, label)
+                for dependency_input in unexpected_inputs:
+                    self.assertNotIn(dependency_input, dependency_hash, label)
 
     def test_hash_locked_installs_do_not_append_unlocked_packages(self):
         for workflow_path in WORKFLOWS.glob("*.yml"):
@@ -96,13 +98,23 @@ class PlatformioCacheContractTest(unittest.TestCase):
         steps = workflow["jobs"]["coverage"]["steps"]
         helper = next(step for step in steps if step.get("uses") == HELPER_ACTION)
         dependency_hash = helper["with"]["dependency-hash"]
+        uses_pi_lock = "requirements-coverage-pi.txt" in repr(
+            workflow["jobs"]["coverage"]
+        )
         expected = (
             ("ci/requirements-coverage-pi.in", "ci/requirements-coverage-pi.txt")
-            if "requirements-coverage-pi.txt" in repr(workflow["jobs"]["coverage"])
+            if uses_pi_lock
             else ("ci/requirements-coverage.in", "ci/requirements-coverage.txt")
+        )
+        unexpected = (
+            ("ci/requirements-coverage.in", "ci/requirements-coverage.txt")
+            if uses_pi_lock
+            else ("ci/requirements-coverage-pi.in", "ci/requirements-coverage-pi.txt")
         )
         for dependency_input in expected:
             self.assertIn(dependency_input, dependency_hash)
+        for dependency_input in unexpected:
+            self.assertNotIn(dependency_input, dependency_hash)
 
     def test_dependency_refresh_uses_only_a_pre_update_bootstrap_cache(self):
         path = WORKFLOWS / PRE_UPDATE_CACHE_WORKFLOW

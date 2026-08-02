@@ -15,6 +15,13 @@ HASH_INPUTS = (
     "ci/requirements-platformio.txt",
     "ci/platformio-packages.lock",
 )
+PI_HASH_INPUTS = (
+    "platformio.ini",
+    "lib/meshcore/library.json",
+    "ci/requirements-platformio-pi.in",
+    "ci/requirements-platformio-pi.txt",
+    "ci/platformio-packages.lock",
+)
 LOCKED_REQUIREMENTS = {
     "ci/requirements-coverage-pi.txt",
     "ci/requirements-coverage.txt",
@@ -59,7 +66,12 @@ class PlatformioCacheContractTest(unittest.TestCase):
                 dependency_hash = helpers[0].get("with", {}).get(
                     "dependency-hash", ""
                 )
-                for dependency_input in HASH_INPUTS:
+                expected_inputs = (
+                    PI_HASH_INPUTS
+                    if "requirements-platformio-pi.txt" in job_text
+                    else HASH_INPUTS
+                )
+                for dependency_input in expected_inputs:
                     self.assertIn(dependency_input, dependency_hash, label)
 
     def test_hash_locked_installs_do_not_append_unlocked_packages(self):
@@ -84,8 +96,13 @@ class PlatformioCacheContractTest(unittest.TestCase):
         steps = workflow["jobs"]["coverage"]["steps"]
         helper = next(step for step in steps if step.get("uses") == HELPER_ACTION)
         dependency_hash = helper["with"]["dependency-hash"]
-        self.assertIn("ci/requirements-coverage.in", dependency_hash)
-        self.assertIn("ci/requirements-coverage.txt", dependency_hash)
+        expected = (
+            ("ci/requirements-coverage-pi.in", "ci/requirements-coverage-pi.txt")
+            if "requirements-coverage-pi.txt" in repr(workflow["jobs"]["coverage"])
+            else ("ci/requirements-coverage.in", "ci/requirements-coverage.txt")
+        )
+        for dependency_input in expected:
+            self.assertIn(dependency_input, dependency_hash)
 
     def test_dependency_refresh_uses_only_a_pre_update_bootstrap_cache(self):
         path = WORKFLOWS / PRE_UPDATE_CACHE_WORKFLOW

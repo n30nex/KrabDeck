@@ -26,6 +26,18 @@ import time
 import uuid
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
+
+SCRIPT_DIRECTORY = Path(__file__).resolve().parent
+SCRIPTS_DIRECTORY = SCRIPT_DIRECTORY.parent
+if str(SCRIPTS_DIRECTORY) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIRECTORY))
+
+from verify_release_evidence import (  # noqa: E402 - fixed repository module
+    evidence_source_reference,
+    verify_attested_requirement,
+    verify_github_source_metadata,
+)
+
 try:  # Linux-only hardware execution; imports must still work in Windows CI.
     import fcntl
 except ImportError:  # pragma: no cover - exercised by Windows import itself
@@ -45,11 +57,8 @@ FLASH_POLICIES = {
     "recovery": {"rf_policy": "blocked", "mesh_tx_enabled": False},
 }
 
-# There is currently no repository-owned, independently observed RF evidence
-# contract.  Target serial markers are intentionally diagnostic-only until one
-# is integrated and reviewed; public release eligibility therefore stays
-# fail-closed.
-INDEPENDENT_RF_OBSERVER_INTEGRATED = False
+STABLE_RELEASE_TAG = "v1.0.0"
+RF_OBSERVER_REQUIREMENT = "RF-END-TO-END"
 
 TARGET_BY_ID = Path(
     "/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_CC:8D:A2:0D:14:28-if00"
@@ -131,6 +140,7 @@ PUBLIC_RECEIPT_KEYS = frozenset(
         "artifacts",
         "gates",
         "recovery",
+        "external_evidence",
     }
 )
 PUBLIC_ARTIFACT_ROLES = frozenset({"candidate", "recovery"})
@@ -146,12 +156,26 @@ REQUIRED_RELEASE_GATES = frozenset(
         "smoke_passed",
         "candidate_rf_policy_bound",
         "one_boot_advert_verified",
+        "public_silence_verified",
+        "correlated_dm_ack_verified",
+        "correlated_channel_ack_verified",
+        "forced_retry_rf_off_verified",
         "recovery_rf_blocked",
         "recovery_ready",
         "secrets_redacted",
     }
 )
 PUBLIC_RECOVERY_KEYS = frozenset({"used", "ok"})
+PUBLIC_EXTERNAL_EVIDENCE_KEYS = frozenset(
+    {
+        "requirement_id",
+        "evidence_class",
+        "source_evidence_sha256",
+        "evidence_bundle_sha256",
+        "production_image_sha256",
+        "recovery_image_sha256",
+    }
+)
 
 
 class SafetyError(RuntimeError):
@@ -1102,11 +1126,118 @@ def _validate_public_artifacts(artifacts: object) -> dict[str, list[dict[str, An
     return validated
 
 
+def _full_image_sha256(manifest: FlashManifest) -> str:
+    if len(manifest.segments) != 1 or manifest.segments[0].address != 0:
+        raise SafetyError(
+            f"{manifest.role} observer binding requires one full image at address 0"
+        )
+    return manifest.segments[0].sha256
+
+
+def validate_independent_rf_evidence(
+    path: Path,
+    bundle_path: Path,
+    source_reference: Mapping[str, object],
+    artifact_metadata_path: Path,
+    run_metadata_path: Path,
+    candidate: FlashManifest,
+    recovery: FlashManifest,
+) -> dict[str, str]:
+    candidate_digest = _full_image_sha256(candidate)
+    recovery_digest = _full_image_sha256(recovery)
+    try:
+        normalized_source = evidence_source_reference(
+            str(source_reference.get("repository", "")),
+            source_reference.get("run_id"),
+            source_reference.get("artifact_id"),
+            str(source_reference.get("artifact_digest", "")),
+            candidate.commit,
+        )
+        if normalized_source != source_reference:
+            raise ValueError("observer source reference is not canonical")
+        verify_github_source_metadata(
+            artifact_metadata_path,
+            run_metadata_path,
+            normalized_source,
+            candidate.commit,
+        )
+        record, source_digest = verify_attested_requirement(
+            path,
+            RF_OBSERVER_REQUIREMENT,
+            expected_tag=STABLE_RELEASE_TAG,
+            expected_commit=candidate.commit,
+            expected_artifact_sha256s={
+                "production": candidate_digest,
+                "recovery": recovery_digest,
+            },
+            expected_source_reference=normalized_source,
+        )
+        if bundle_path.is_symlink() or not bundle_path.is_file():
+            raise ValueError("observer evidence bundle must be a regular file")
+        if sha256_file(bundle_path) != record["evidence_bundle_sha256"]:
+            raise ValueError("observer evidence bundle digest is invalid")
+    except (OSError, ValueError) as error:
+        raise SafetyError("independent RF observer evidence is invalid") from error
+    binding = {
+        "requirement_id": RF_OBSERVER_REQUIREMENT,
+        "evidence_class": "independent-observer",
+        "source_evidence_sha256": source_digest,
+        "evidence_bundle_sha256": record["evidence_bundle_sha256"],
+        "production_image_sha256": candidate_digest,
+        "recovery_image_sha256": recovery_digest,
+    }
+    assert_public_receipt_safe(binding)
+    return binding
+
+
+def _validate_public_external_evidence(
+    value: object,
+    artifacts: Mapping[str, Sequence[Mapping[str, Any]]],
+    *,
+    expected_source_evidence_sha256: str | None,
+    expected_evidence_bundle_sha256: str | None,
+) -> None:
+    if not isinstance(value, dict) or set(value) != PUBLIC_EXTERNAL_EVIDENCE_KEYS:
+        raise SafetyError("public receipt external evidence is incomplete or unexpected")
+    if value.get("requirement_id") != RF_OBSERVER_REQUIREMENT:
+        raise SafetyError("public receipt external evidence requirement is invalid")
+    if value.get("evidence_class") != "independent-observer":
+        raise SafetyError("public receipt external evidence class is invalid")
+    for field in (
+        "source_evidence_sha256",
+        "evidence_bundle_sha256",
+        "production_image_sha256",
+        "recovery_image_sha256",
+    ):
+        digest = value.get(field)
+        if not isinstance(digest, str) or not SHA256_RE.fullmatch(digest):
+            raise SafetyError(f"public receipt external evidence {field} is invalid")
+    if (
+        expected_source_evidence_sha256 is not None
+        and value["source_evidence_sha256"] != expected_source_evidence_sha256
+    ):
+        raise SafetyError("public receipt is not bound to the admitted evidence packet")
+    if (
+        expected_evidence_bundle_sha256 is not None
+        and value["evidence_bundle_sha256"] != expected_evidence_bundle_sha256
+    ):
+        raise SafetyError("public receipt is not bound to the admitted evidence bundle")
+    if len(artifacts["candidate"]) != 1 or len(artifacts["recovery"]) != 1:
+        raise SafetyError("public receipt external evidence requires full-image artifacts")
+    if (
+        value["production_image_sha256"] != artifacts["candidate"][0]["sha256"]
+        or value["recovery_image_sha256"] != artifacts["recovery"][0]["sha256"]
+    ):
+        raise SafetyError("public receipt external evidence has stale image bindings")
+
+
 def _validate_public_release_receipt_schema(
     receipt: Mapping[str, Any],
     *,
     expected_commit: str | None = None,
     expected_artifacts: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
+    expected_source_evidence_sha256: str | None = None,
+    expected_evidence_bundle_sha256: str | None = None,
 ) -> None:
     """Validate canonical receipt shape without admitting it for release."""
     assert_public_receipt_safe(receipt)
@@ -1167,6 +1298,12 @@ def _validate_public_release_receipt_schema(
             raise SafetyError(
                 "public receipt artifacts do not match admitted manifests"
             )
+    _validate_public_external_evidence(
+        receipt["external_evidence"],
+        artifacts,
+        expected_source_evidence_sha256=expected_source_evidence_sha256,
+        expected_evidence_bundle_sha256=expected_evidence_bundle_sha256,
+    )
 
 
 def validate_public_release_receipt(
@@ -1174,26 +1311,42 @@ def validate_public_release_receipt(
     *,
     expected_commit: str | None = None,
     expected_artifacts: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
+    expected_source_evidence_sha256: str | None = None,
+    expected_evidence_bundle_sha256: str | None = None,
 ) -> None:
-    """Reject release claims until independent RF observation is integrated."""
+    """Admit only a canonical receipt bound to pre-admitted external RF evidence."""
+    if (
+        not isinstance(expected_source_evidence_sha256, str)
+        or not SHA256_RE.fullmatch(expected_source_evidence_sha256)
+    ):
+        raise SafetyError("an admitted independent evidence digest is required")
+    if (
+        not isinstance(expected_evidence_bundle_sha256, str)
+        or not SHA256_RE.fullmatch(expected_evidence_bundle_sha256)
+    ):
+        raise SafetyError("an admitted independent evidence bundle digest is required")
     _validate_public_release_receipt_schema(
         receipt,
         expected_commit=expected_commit,
         expected_artifacts=expected_artifacts,
+        expected_source_evidence_sha256=expected_source_evidence_sha256,
+        expected_evidence_bundle_sha256=expected_evidence_bundle_sha256,
     )
-    if not INDEPENDENT_RF_OBSERVER_INTEGRATED:
-        raise SafetyError(
-            "no approved independent RF observer evidence contract is integrated"
-        )
-    # This branch is deliberately unreachable until a reviewed observer schema
-    # and verifier replace the fail-closed placeholder above.
-    raise SafetyError("independent RF observer evidence was not verified")
 
 
-def public_receipt_release_eligible(receipt: Mapping[str, Any]) -> bool:
+def public_receipt_release_eligible(
+    receipt: Mapping[str, Any],
+    *,
+    expected_source_evidence_sha256: str | None = None,
+    expected_evidence_bundle_sha256: str | None = None,
+) -> bool:
     """Fail closed unless the complete canonical public contract is satisfied."""
     try:
-        validate_public_release_receipt(receipt)
+        validate_public_release_receipt(
+            receipt,
+            expected_source_evidence_sha256=expected_source_evidence_sha256,
+            expected_evidence_bundle_sha256=expected_evidence_bundle_sha256,
+        )
     except (SafetyError, TypeError, ValueError):
         return False
     return True
@@ -1781,6 +1934,7 @@ def _public_receipt(private: Mapping[str, Any]) -> dict[str, Any]:
             "used": private["recovery"]["used"],
             "ok": private["recovery"]["ok"],
         },
+        "external_evidence": private["external_evidence"],
     }
 
 
@@ -1792,6 +1946,11 @@ def execute_release(
     smoke_evidence_path: Path,
     esptool_python: str,
     *,
+    observer_evidence_path: Path | None = None,
+    observer_bundle_path: Path | None = None,
+    observer_source_reference: Mapping[str, object] | None = None,
+    observer_artifact_metadata_path: Path | None = None,
+    observer_run_metadata_path: Path | None = None,
     runner: CommandRunner | None = None,
     lock_factory: Callable[[], Any] = HardwareLock,
     guard_factory: Callable[[CommandRunner], DeviceGuard] = DeviceGuard,
@@ -1806,6 +1965,32 @@ def execute_release(
     _, recovery_table = validate_manifest_partition_layout(recovery)
     if recovery_table != candidate_table:
         raise SafetyError("candidate and recovery partition tables differ")
+    observer_inputs = (
+        observer_evidence_path,
+        observer_bundle_path,
+        observer_source_reference,
+        observer_artifact_metadata_path,
+        observer_run_metadata_path,
+    )
+    if any(value is not None for value in observer_inputs) and not all(
+        value is not None for value in observer_inputs
+    ):
+        raise SafetyError("independent RF observer admission inputs are incomplete")
+    observer_binding = {}
+    if observer_evidence_path is not None:
+        assert observer_bundle_path is not None
+        assert observer_source_reference is not None
+        assert observer_artifact_metadata_path is not None
+        assert observer_run_metadata_path is not None
+        observer_binding = validate_independent_rf_evidence(
+            observer_evidence_path,
+            observer_bundle_path,
+            observer_source_reference,
+            observer_artifact_metadata_path,
+            observer_run_metadata_path,
+            candidate,
+            recovery,
+        )
 
     active_runner = runner or CommandRunner()
     guard = guard_factory(active_runner)
@@ -1835,6 +2020,7 @@ def execute_release(
         "preflash_export": {},
         "state_restoration": {},
         "candidate_diagnostics": {},
+        "external_evidence": observer_binding,
         "attempts": [],
         "recovery": {
             "used": False,
@@ -1856,6 +2042,10 @@ def execute_release(
             "smoke_passed": False,
             "candidate_rf_policy_bound": True,
             "one_boot_advert_verified": False,
+            "public_silence_verified": False,
+            "correlated_dm_ack_verified": False,
+            "correlated_channel_ack_verified": False,
+            "forced_retry_rf_off_verified": False,
             "recovery_rf_blocked": False,
             "recovery_ready": False,
             "secrets_redacted": False,
@@ -2058,46 +2248,61 @@ def execute_release(
             revalidate_manifest_bytes(recovery)
             private["gates"]["smoke_passed"] = True
 
-            # Target-local diagnostics cannot establish either RF gate.  Put
-            # the device back on the verified recovery artifact before
-            # reporting the missing independent observer.
-            device_posture = "unknown"
-            final_recovery = _flash_with_retries(
-                private,
-                guard,
-                esptool,
-                recovery,
-                "final_recovery_posture",
-                max_attempts=1,
-                checkpoint_path=private_receipt_path,
-                state_archive=state_archive,
-                restoration_receipt=restoration_receipt,
-                restoration_receipt_path=restoration_receipt_path,
-            )
-            if final_recovery is None:
-                private["gates"]["recovery_ready"] = _run_recovery(
+            if observer_binding:
+                # These gates are owned only by the independently observed,
+                # exact-image-bound RF record. Target-local diagnostics above
+                # remain diagnostic and cannot set them.
+                for gate in (
+                    "one_boot_advert_verified",
+                    "public_silence_verified",
+                    "correlated_dm_ack_verified",
+                    "correlated_channel_ack_verified",
+                    "forced_retry_rf_off_verified",
+                    "recovery_rf_blocked",
+                ):
+                    private["gates"][gate] = True
+                private["recovery"]["ok"] = True
+                private["outcome"] = "pass"
+            else:
+                # Without independent evidence, restore RF-off recovery before
+                # reporting failure. Target serial markers never satisfy RF.
+                device_posture = "unknown"
+                final_recovery = _flash_with_retries(
                     private,
                     guard,
                     esptool,
                     recovery,
+                    "final_recovery_posture",
+                    max_attempts=1,
+                    checkpoint_path=private_receipt_path,
                     state_archive=state_archive,
                     restoration_receipt=restoration_receipt,
                     restoration_receipt_path=restoration_receipt_path,
                 )
-                if not private["gates"]["recovery_ready"]:
-                    raise SafetyError(
-                        "final RF-off recovery posture could not be restored"
+                if final_recovery is None:
+                    private["gates"]["recovery_ready"] = _run_recovery(
+                        private,
+                        guard,
+                        esptool,
+                        recovery,
+                        state_archive=state_archive,
+                        restoration_receipt=restoration_receipt,
+                        restoration_receipt_path=restoration_receipt_path,
                     )
-                device_posture = "recovery"
-            else:
-                private["recovery"]["final_target"] = final_recovery.private_dict()
-                private["gates"]["recovery_ready"] = True
-                device_posture = "recovery"
-            private["recovery"]["installed_final"] = True
-            raise SafetyError(
-                "independent RF observer unavailable; target serial markers are "
-                "diagnostic only; device remains on RF-off recovery"
-            )
+                    if not private["gates"]["recovery_ready"]:
+                        raise SafetyError(
+                            "final RF-off recovery posture could not be restored"
+                        )
+                    device_posture = "recovery"
+                else:
+                    private["recovery"]["final_target"] = final_recovery.private_dict()
+                    private["gates"]["recovery_ready"] = True
+                    device_posture = "recovery"
+                private["recovery"]["installed_final"] = True
+                raise SafetyError(
+                    "independent RF observer unavailable; target serial markers are "
+                    "diagnostic only; device remains on RF-off recovery"
+                )
     except Exception as error:
         private["outcome"] = "fail"
         original_failure = _failure_context(error)
@@ -2122,7 +2327,7 @@ def execute_release(
         gates = private["gates"]
         recovery_status = private["recovery"]
         private["release_eligible"] = bool(
-            INDEPENDENT_RF_OBSERVER_INTEGRATED
+            observer_binding
             and private["outcome"] == "pass"
             and isinstance(gates, dict)
             and set(gates) == REQUIRED_RELEASE_GATES
@@ -2134,7 +2339,15 @@ def execute_release(
         assert_public_receipt_safe(public)
         atomic_write_json(private_receipt_path, private, 0o600)
         atomic_write_json(public_receipt_path, public, 0o644)
-    return public_receipt_release_eligible(public)
+    return public_receipt_release_eligible(
+        public,
+        expected_source_evidence_sha256=observer_binding.get(
+            "source_evidence_sha256"
+        ),
+        expected_evidence_bundle_sha256=observer_binding.get(
+            "evidence_bundle_sha256"
+        ),
+    )
 
 
 def make_manifest(image: Path, output: Path, commit: str, role: str) -> None:
@@ -2186,10 +2399,20 @@ def build_parser() -> argparse.ArgumentParser:
     release.add_argument("--state-directory", type=Path, required=True)
     release.add_argument("--public-receipt", type=Path, required=True)
     release.add_argument("--smoke-evidence", type=Path, required=True)
+    release.add_argument("--observer-evidence", type=Path)
+    release.add_argument("--observer-bundle", type=Path)
+    release.add_argument("--observer-source-repository")
+    release.add_argument("--observer-source-run-id", type=int)
+    release.add_argument("--observer-source-artifact-id", type=int)
+    release.add_argument("--observer-source-artifact-digest")
+    release.add_argument("--observer-artifact-metadata", type=Path)
+    release.add_argument("--observer-run-metadata", type=Path)
     release.add_argument("--esptool-python", default=sys.executable)
 
     check = subparsers.add_parser("check-public")
     check.add_argument("--receipt", type=Path, required=True)
+    check.add_argument("--source-evidence-sha256")
+    check.add_argument("--evidence-bundle-sha256")
     check.add_argument("--github-output", type=Path)
     return parser
 
@@ -2202,6 +2425,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             make_manifest(args.image, args.output, args.commit, args.role)
             return 0
         if args.command == "release":
+            source_values = (
+                args.observer_source_repository,
+                args.observer_source_run_id,
+                args.observer_source_artifact_id,
+                args.observer_source_artifact_digest,
+            )
+            if any(value is not None for value in source_values) and not all(
+                value is not None for value in source_values
+            ):
+                raise SafetyError("observer source identity inputs are incomplete")
+            observer_source_reference = (
+                evidence_source_reference(
+                    args.observer_source_repository,
+                    args.observer_source_run_id,
+                    args.observer_source_artifact_id,
+                    args.observer_source_artifact_digest,
+                    load_manifest(args.manifest, "candidate").commit,
+                )
+                if all(value is not None for value in source_values)
+                else None
+            )
             eligible = execute_release(
                 args.manifest,
                 args.recovery_manifest,
@@ -2209,17 +2453,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                 args.public_receipt,
                 args.smoke_evidence,
                 args.esptool_python,
+                observer_evidence_path=args.observer_evidence,
+                observer_bundle_path=args.observer_bundle,
+                observer_source_reference=observer_source_reference,
+                observer_artifact_metadata_path=args.observer_artifact_metadata,
+                observer_run_metadata_path=args.observer_run_metadata,
             )
             return 0 if eligible else 2
         receipt = json.loads(args.receipt.read_text(encoding="utf-8"))
         if not isinstance(receipt, dict):
             raise SafetyError("public receipt must be an object")
-        eligible = public_receipt_release_eligible(receipt)
+        eligible = public_receipt_release_eligible(
+            receipt,
+            expected_source_evidence_sha256=args.source_evidence_sha256,
+            expected_evidence_bundle_sha256=args.evidence_bundle_sha256,
+        )
         if args.github_output:
             with args.github_output.open("a", encoding="utf-8", newline="\n") as handle:
                 handle.write(f"release_eligible={'true' if eligible else 'false'}\n")
         return 0 if eligible else 2
-    except (OSError, json.JSONDecodeError, SafetyError) as error:
+    except (OSError, json.JSONDecodeError, SafetyError, ValueError) as error:
         print(f"ERROR: {redact_text(str(error))}", file=sys.stderr)
         return 2
 

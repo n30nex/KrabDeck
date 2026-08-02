@@ -24,9 +24,11 @@ Evidence admission is a separate, callable workflow:
    validation channel compiles with the same deterministic `v1.0.0` identity
    as stable so the production firmware bytes are reproducible across runs.
 2. Prepare `release-evidence-input.json` outside the repository. Its top-level
-   identity and every requirement record must repeat the exact 40-character
+   identity and every requirement record repeat the exact 40-character
    candidate commit and SHA-256 of that validation artifact's
-   `firmware-merged.bin`.
+   `firmware-merged.bin`. The top level also binds the `production`, `recovery`,
+   `debug`, and `ota` roles to exact SHA-256 values. Each record repeats the
+   inventory-selected role/digest subset.
 3. Dispatch `krabos-evidence.yml` from that same `main` commit. Supply the
    validation run/artifact identities, the base64-encoded JSON packet, and the
    SHA-256 of its decoded bytes. Do not put secrets or private device data in a
@@ -77,7 +79,14 @@ bytes. SHA-256 values prove byte consistency, not publisher identity:
 **checksums are not signatures**. See
 [Security model](SECURITY_MODEL.md#firmware-update-trust).
 
-Use this shape (repeat the requirement object for every ID in the requirements inventory):
+Schema 3 has exact allowed keys. It accepts no notes, waivers, log excerpts or
+other free-text fields. Every supporting bundle uses a query-free HTTPS URL and
+a separate SHA-256 so mutable link contents cannot silently change the proof.
+Claims are inventory-defined booleans; metrics are inventory-defined integers
+with checked bounds. Evidence classes are limited to `automated`,
+`manual-review`, and `independent-observer`.
+
+Use this shape (repeat the typed requirement object for every inventory ID):
 
 ```json
 {
@@ -87,16 +96,42 @@ Use this shape (repeat the requirement object for every ID in the requirements i
   "tag": "v1.0.0",
   "generated_at": "<ISO-8601 UTC timestamp>",
   "production_image_sha256": "<firmware-merged.bin-sha256>",
+  "artifact_sha256s": {
+    "debug": "<firmware-debug.bin-sha256>",
+    "ota": "<firmware.bin-sha256>",
+    "production": "<firmware-merged.bin-sha256>",
+    "recovery": "<krabos-recovery-rf-off.bin-sha256>"
+  },
   "requirements": [
     {
-      "id": "INT-BLE",
+      "id": "SOAK-ACTIVE",
       "outcome": "pass",
-      "evidence_url": "<reviewed-evidence-url>",
+      "evidence_class": "manual-review",
+      "evidence_bundle_url": "https://example.invalid/immutable/soak-active.json",
+      "evidence_bundle_sha256": "<supporting-bundle-sha256>",
       "tested_at": "<YYYY-MM-DD>",
       "firmware_version": "v1.0.0",
       "candidate_commit": "<same-full-candidate-sha>",
       "production_image_sha256": "<same-firmware-merged.bin-sha256>",
-      "peer_version": "official-client-version"
+      "artifacts": [
+        {"role": "debug", "sha256": "<same-debug-image-sha256>"},
+        {"role": "production", "sha256": "<same-production-image-sha256>"}
+      ],
+      "claims": {
+        "final_capture_valid": true,
+        "no_crash_or_reboot": true,
+        "no_monotonic_heap_loss": true,
+        "no_monotonic_psram_loss": true,
+        "regular_samples_present": true,
+        "responsive_at_end": true
+      },
+      "metrics": {
+        "completion_percent": 100,
+        "duration_seconds": 7200,
+        "heap_range_bytes": 184,
+        "sample_count": 1440
+      },
+      "peer_version": "test-peer-1"
     }
   ]
 }
@@ -231,18 +266,34 @@ and recovery bytes, and reports every required gate as exactly `true`:
 
 - manifest validity, exact-device binding, pre-flash capture and state export;
 - byte-verified flash and USB reconnection;
-- the 900-second candidate smoke, candidate RF-policy binding and exactly one
-  verified boot advert with no Public chat traffic;
-- an actually exercised 60-second RF-off recovery drill, followed by restored
-  candidate readiness;
+- the 900-second target-local candidate smoke and candidate RF-policy binding;
+- independently observed, exact-image-bound proof of one boot advert, no Public
+  chat traffic, correlated DM/channel delivery and ACK, and one forced retry;
+- an actually exercised 60-second recovery drill with independently observed
+  RF silence, followed by restored candidate readiness;
 - secret redaction.
 
 The receipt's `recovery.used` and `recovery.ok` values must both be `true`.
+Its exact `external_evidence` object binds the `RF-END-TO-END` record's source
+packet digest and supporting-bundle digest to the production and recovery
+full-image hashes. Bundle sealing cross-checks that source digest against
+`release-evidence.json`. Without that match, the receipt remains ineligible.
 Private flash backups, device identifiers, credentials, coordinates, serial
 paths and raw logs remain runner-local and must not enter artifacts, issues or
 the release. `scripts/krabos/bundle_release.py seal` revalidates the receipt,
 both flash manifests and their referenced bytes before it creates the bundle
 manifest and checksum list.
+
+The protected exact-device invocation supplies the already verified attestation
+with `--observer-evidence`, the downloaded sanitized supporting bundle with
+`--observer-bundle`, and the separately admitted source repository, run ID,
+artifact ID/archive digest, artifact metadata and run metadata. Before hardware
+access, the tool rechecks the trusted workflow identity and hashes the local
+supporting bundle against the `RF-END-TO-END` record. Its later `check-public`
+call must supply both `--source-evidence-sha256` and
+`--evidence-bundle-sha256`. Omitting any observer admission input keeps the
+hardware run fail-closed; omitting either public-check digest keeps publication
+ineligible.
 
 ## Dependency pin policy
 
@@ -327,11 +378,32 @@ reconnect, retry, ordering, and durable delivered markers. This is the required
 property/sequence gate for dependency refreshes; focused tests remain required
 for any newly introduced state machine.
 
+## Full product gate groups
+
+The typed inventory adds these release-wide groups. Their names are deliberate
+machine-readable categories as well as checklist IDs:
+
+- `device-isolation` / `DEVICE-ISOLATION`: no protected D1L or peer route was opened;
+- `ui-matrix` / `UI-MATRIX`: all production routes and physical input modes pass;
+- `rf-end-to-end` / `RF-END-TO-END`: only an `independent-observer` record may prove RF delivery, ACK correlation, forced retry, Public silence, one boot advert, and recovery silence;
+- `state-migration` / `STATE-MIGRATION`: identity, settings, and stores survive;
+- `sd-map` / `SD-MAP`: sentinel/resume, offline map, shared SPI, and radio coexist;
+- `wifi-private` / `WIFI-PRIVATE`: private success/error paths and public secret scan pass;
+- `gps-sim-live` / `GPS-SIM-LIVE`: simulated/live fixes and local time pass without published coordinates;
+- `ota-full-equivalence` / `OTA-FULL-EQUIVALENCE`: OTA app bytes, runtime, and state match the production full image.
+
+Target-local boot/radio markers remain diagnostic-only. They cannot satisfy
+`RF-END-TO-END` or set any public RF gate, even when their values look correct.
+
 ## Privacy-safe soak reports
 
-Use the dedicated `KrabOS_TDeckPlus_debug` build at verbosity level 2 and
-capture at least 10 minutes (at least 120 `[stat]` samples spanning 600
-seconds) for each scenario. This diagnostic build is separate from
+Use the dedicated `KrabOS_TDeckPlus_debug` build at verbosity level 2. Idle
+evidence captures at least 10 minutes. Active release evidence captures at
+least 7200 seconds and satisfies the authoritative Phase 6 thresholds in
+[`HARDWARE_TESTING.md`](HARDWARE_TESTING.md#phase-6-soak-test): at least 90%
+completion, regular samples, no crash/reboot, no monotonic heap or PSRAM loss,
+heap range below 1000 bytes, responsiveness, and a valid final capture. This
+diagnostic build is separate from
 `KrabOS_TDeckPlus_recovery`; recovery output cannot satisfy a debug soak. Idle
 means the home screen with radio and configured transports running. Active
 means repeated screen navigation, message send/receive, map use, and companion
@@ -345,7 +417,11 @@ python3 scripts/analyze_soak_log.py active.log \
   --scenario active --json-out active.json --markdown-out active.md
 ```
 
-The reports contain only numeric memory summaries and a source-log digest. Attach the reports, not raw serial logs. Review raw logs locally for secrets before retaining them. Defaults fail on fewer than 120 samples, a span shorter than 600 seconds, non-monotonic timestamps, heap range over 16 KiB, or first-to-last heap drop over 8 KiB.
+The reports contain only numeric memory summaries and a source-log digest.
+Attach the reports, not raw serial logs. Review raw logs locally for secrets
+before retaining them. The generic analyzer's shorter defaults are useful for
+development only; `SOAK-ACTIVE` enforces the release-specific 7200-second and
+sub-1000-byte heap-range contract above.
 
 ## OTA matrix
 

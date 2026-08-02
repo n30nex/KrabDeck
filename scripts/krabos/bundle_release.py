@@ -33,6 +33,9 @@ from release_artifact_contract import (  # noqa: E402 - fixed repository module
     validate_firmware_roles,
     validate_release_directory,
 )
+from verify_release_evidence import (  # noqa: E402 - fixed repository module
+    verify_attestation as verify_release_attestation,
+)
 
 
 PRODUCT = "KrabOS"
@@ -72,6 +75,7 @@ REQUIRED_ARTIFACTS = frozenset(
 )
 GENERATED = {"krabos-bundle-manifest.json", "SHA256SUMS.txt"}
 POST_SEAL = {"SHA256SUMS.sigstore.json"}
+STABLE_ONLY_ARTIFACTS = frozenset({"release-evidence.json"})
 
 
 class BundleError(ValueError):
@@ -189,7 +193,7 @@ def _regular_files(root: Path, excluded: set[str]) -> dict[str, Path]:
 
 
 def _validate_release_evidence(
-    root: Path, files: Mapping[str, Path], commit: str
+    root: Path, files: Mapping[str, Path], commit: str, version: str
 ) -> None:
     try:
         candidate = load_manifest(root / "candidate-flash-manifest.json", "candidate")
@@ -206,6 +210,41 @@ def _validate_release_evidence(
                     )
 
         receipt = _load_object(root / "krabos-public-receipt.json")
+        source_evidence_sha256 = None
+        evidence_bundle_sha256 = None
+        if version == STABLE_VERSION:
+            attestation_path = files.get("release-evidence.json")
+            if attestation_path is None:
+                raise ReceiptError("release attestation is missing from the sealed inputs")
+            attestation = _load_object(attestation_path)
+            verify_release_attestation(
+                attestation_path,
+                commit,
+                version,
+                root,
+                require_exact=True,
+            )
+            source_evidence_sha256 = attestation.get("source_evidence_sha256")
+            if not isinstance(source_evidence_sha256, str) or not HASH_RE.fullmatch(
+                source_evidence_sha256
+            ):
+                raise ReceiptError(
+                    "release attestation source evidence digest is invalid"
+                )
+            records = attestation.get("requirements")
+            rf_records = (
+                [record for record in records if record.get("id") == "RF-END-TO-END"]
+                if isinstance(records, list)
+                and all(isinstance(record, dict) for record in records)
+                else []
+            )
+            if len(rf_records) != 1:
+                raise ReceiptError("release attestation RF evidence is missing")
+            evidence_bundle_sha256 = rf_records[0].get("evidence_bundle_sha256")
+            if not isinstance(evidence_bundle_sha256, str) or not HASH_RE.fullmatch(
+                evidence_bundle_sha256
+            ):
+                raise ReceiptError("release attestation RF bundle digest is invalid")
         validate_public_release_receipt(
             receipt,
             expected_commit=commit,
@@ -213,10 +252,12 @@ def _validate_release_evidence(
                 "candidate": manifest_public_artifacts(candidate),
                 "recovery": manifest_public_artifacts(recovery),
             },
+            expected_source_evidence_sha256=source_evidence_sha256,
+            expected_evidence_bundle_sha256=evidence_bundle_sha256,
         )
         revalidate_manifest_bytes(candidate)
         revalidate_manifest_bytes(recovery)
-    except ReceiptError as error:
+    except (ReceiptError, ValueError) as error:
         raise BundleError(f"release evidence is not eligible: {error}") from error
 
 
@@ -232,15 +273,23 @@ def _validate_artifact_contract(
         raise BundleError(f"release artifact contract failed: {error}") from error
 
 
+def _required_artifacts(version: str) -> frozenset[str]:
+    return (
+        REQUIRED_ARTIFACTS | STABLE_ONLY_ARTIFACTS
+        if version == STABLE_VERSION
+        else REQUIRED_ARTIFACTS
+    )
+
+
 def seal(directory: Path, commit: str, version: str) -> None:
     root = _validate_inputs(directory, commit, version)
     stamp(root, commit, version)
     files = _regular_files(root, GENERATED | POST_SEAL)
-    missing = sorted(REQUIRED_ARTIFACTS - set(files))
+    missing = sorted(_required_artifacts(version) - set(files))
     if missing:
         raise BundleError(f"release bundle is missing: {', '.join(missing)}")
     firmware_roles = _validate_artifact_contract(root, commit, version)
-    _validate_release_evidence(root, files, commit)
+    _validate_release_evidence(root, files, commit, version)
 
     entries = {
         name: {"size": path.stat().st_size, "sha256": sha256_file(path)}
@@ -282,7 +331,7 @@ def verify(directory: Path, commit: str, version: str) -> None:
         raise BundleError("bundle manifest has no artifacts")
 
     files = _regular_files(root, GENERATED | POST_SEAL)
-    missing = sorted(REQUIRED_ARTIFACTS - set(files))
+    missing = sorted(_required_artifacts(version) - set(files))
     if missing:
         raise BundleError(f"release bundle is missing: {', '.join(missing)}")
     if set(entries) != set(files):
@@ -290,7 +339,7 @@ def verify(directory: Path, commit: str, version: str) -> None:
     firmware_roles = _validate_artifact_contract(root, commit, version)
     if bundle.get("firmware_roles") != firmware_roles:
         raise BundleError("bundle firmware role records do not match exact image bytes")
-    _validate_release_evidence(root, files, commit)
+    _validate_release_evidence(root, files, commit, version)
     for name, path in files.items():
         record = entries.get(name)
         if not isinstance(record, dict) or set(record) != {"size", "sha256"}:

@@ -14,6 +14,24 @@ SPEC.loader.exec_module(MODULE)
 
 
 class PlatformIOLockTests(unittest.TestCase):
+    def test_resolved_graph_canonicalizes_environment_heading(self) -> None:
+        with mock.patch.object(
+            MODULE,
+            "run",
+            side_effect=[
+                "PlatformIO Core, 6.1.0",
+                "a" * 40,
+                "Resolving KrabOS_TDeckPlus dependencies...\nplatform",
+                "Resolving KrabOS_TDeckPlus dependencies...\nlibraries",
+            ],
+        ):
+            graph = MODULE.resolved_graph("KrabOS_TDeckPlus")
+
+        self.assertEqual(
+            graph.count("Resolving SigurdOS_TDeck dependencies..."), 2
+        )
+        self.assertNotIn("Resolving KrabOS_TDeckPlus dependencies...", graph)
+
     def test_requested_environment_reaches_both_package_queries(self) -> None:
         with mock.patch.object(
             MODULE,

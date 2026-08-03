@@ -94,7 +94,12 @@ jobs:
           fi
 
       - name: Verify resolved PlatformIO graph
-        run: python scripts/platformio_lock.py --check
+        run: |
+          if grep -Fqx '[env:KrabOS_TDeckPlus]' platformio.ini; then
+            python scripts/platformio_lock.py --check --environment KrabOS_TDeckPlus
+          else
+            python scripts/platformio_lock.py --check --environment SigurdOS_TDeck
+          fi
 
       - name: Generate firmware CycloneDX SBOM
         run: >-
@@ -180,7 +185,12 @@ jobs:
           fi
 
       - name: Verify resolved PlatformIO graph
-        run: python scripts/platformio_lock.py --check
+        run: |
+          if grep -Fqx '[env:KrabOS_TDeckPlus]' platformio.ini; then
+            python scripts/platformio_lock.py --check --environment KrabOS_TDeckPlus
+          else
+            python scripts/platformio_lock.py --check --environment SigurdOS_TDeck
+          fi
 
   codeql:
     name: CodeQL C/C++ SAST

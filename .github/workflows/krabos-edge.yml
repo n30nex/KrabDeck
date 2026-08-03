@@ -248,7 +248,7 @@ jobs:
           pio pkg install -e KrabOS_TDeckPlus
           pio pkg install -e KrabOS_TDeckPlus_recovery
           pio pkg install -e KrabOS_TDeckPlus_debug
-          "$RUNNER_TEMP/krabos-venv/bin/python" scripts/platformio_lock.py --check
+          "$RUNNER_TEMP/krabos-venv/bin/python" scripts/platformio_lock.py --check --environment KrabOS_TDeckPlus
 
       - name: Run repository and native test gates
         shell: bash

@@ -122,7 +122,7 @@ jobs:
         if: >-
           steps.firmware_build.outputs.skipped != 'true' &&
           (matrix.env == 'SigurdOS_TDeck' || matrix.env == 'KrabOS_TDeckPlus')
-        run: python scripts/platformio_lock.py --check
+        run: python scripts/platformio_lock.py --check --environment "${{ matrix.env }}"
       - name: Upload firmware artifacts for ${{ matrix.env }}
         if: steps.firmware_build.outputs.skipped != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

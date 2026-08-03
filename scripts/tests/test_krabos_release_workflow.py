@@ -179,10 +179,38 @@ class KrabosReleaseWorkflowTests(unittest.TestCase):
         ]
         self.assertTrue(hardware["continue-on-error"])
         self.assertIn("exact_device_release.py release", hardware["run"])
+        observer = self.step_by_name["Admit independent RF observer inputs"]
+        self.assertIn("steps.request.outputs.release_mode == 'true'", observer["if"])
+        self.assertIn('test ! -L "$path"', observer["run"])
+        self.assertIn("sha256sum \"$OBSERVER_EVIDENCE\"", observer["run"])
+        self.assertIn("sha256sum \"$OBSERVER_BUNDLE\"", observer["run"])
+        for name in (
+            "observer_evidence_path",
+            "observer_bundle_path",
+            "observer_source_run_id",
+            "observer_source_artifact_id",
+            "observer_source_artifact_digest",
+            "observer_artifact_metadata_path",
+            "observer_run_metadata_path",
+        ):
+            self.assertIn(name, self.workflow["on"]["workflow_dispatch"]["inputs"])
+        for argument in (
+            "--observer-evidence",
+            "--observer-bundle",
+            "--observer-source-repository",
+            "--observer-source-run-id",
+            "--observer-source-artifact-id",
+            "--observer-source-artifact-digest",
+            "--observer-artifact-metadata",
+            "--observer-run-metadata",
+        ):
+            self.assertIn(argument, hardware["run"])
         public = self.step_by_name[
             "Validate canonical redacted publication receipt"
         ]["run"]
         self.assertIn("exact_device_release.py check-public", public)
+        self.assertIn("--source-evidence-sha256", public)
+        self.assertIn("--evidence-bundle-sha256", public)
         failure = self.step_by_name[
             "Fail closed when exact hardware evidence is incomplete"
         ]

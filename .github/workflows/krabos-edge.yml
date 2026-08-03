@@ -379,6 +379,8 @@ jobs:
           github.ref == 'refs/heads/main' &&
           steps.request.outputs.candidate_branch == 'main'
         continue-on-error: true
+        env:
+          KRABOS_FIXTURE_CONFIG: /etc/krabos/tdeck-plus-fixture.json
         shell: bash
         run: >-
           "$RUNNER_TEMP/krabos-venv/bin/python"

@@ -93,6 +93,39 @@ def check(root: Path) -> list[str]:
         if re.search(r"Current firmware snapshot:[^\n]*`beta-[^`]+`", readme):
             violations.append("README.md: do not duplicate the firmware version literal")
 
+    release_evidence = root / "docs/RELEASE_EVIDENCE.md"
+    if release_evidence.is_file():
+        evidence = release_evidence.read_text(errors="replace")
+        expected_signer = (
+            "https://github.com/n30nex/KrabDeck/.github/workflows/"
+            "krabos-edge.yml@refs/heads/main"
+        )
+        if "hermes-gadget/SigurdOS-tdeck" in evidence or expected_signer not in evidence:
+            violations.append(
+                "docs/RELEASE_EVIDENCE.md: provenance must name the KrabDeck "
+                "krabos-edge.yml workflow on main"
+            )
+
+    boot_source = root / "src/main.cpp"
+    if boot_source.is_file():
+        boot_code = without_comments(boot_source.read_text(errors="replace"))
+        ready_marker = re.escape(
+            "@krabos|event=boot|status=ready|env=%s|sha=%.12s"
+        )
+        if not re.search(ready_marker, boot_code):
+            violations.append("src/main.cpp: machine-readable ready marker is missing")
+        elif re.search(rf"Serial\.printf\s*\(\s*\"{ready_marker}", boot_code):
+            violations.append(
+                "src/main.cpp: ready marker must not use direct Serial.printf"
+            )
+        elif not re.search(
+            rf"sigurdos::diagnostics::diagnostic_logf\s*\(\s*\"\"\s*,\s*\"{ready_marker}",
+            boot_code,
+        ):
+            violations.append(
+                "src/main.cpp: ready marker must use the diagnostics evidence logger"
+            )
+
     return violations
 
 

@@ -12,9 +12,9 @@ namespace sigurdos {
 namespace {
 
 static constexpr RadioProfile PROFILES[] = {
-    {"us_902_928", "United States", "USA 902-928", "902-928 MHz",
-     915.000f, 62.5f, 8, 5, 22, 902.0f, 928.0f, 22},
     {"ca_902_928", "Canada", "Canada 902-928", "902-928 MHz",
+     910.525f, 62.5f, 7, 5, 20, 902.0f, 928.0f, 20},
+    {"us_902_928", "United States", "USA 902-928", "902-928 MHz",
      915.000f, 62.5f, 8, 5, 22, 902.0f, 928.0f, 22},
     {"eu_868", "Europe", "EU 868", "868 MHz",
      868.000f, 62.5f, 8, 5, 22, 863.0f, 870.0f, 22},
@@ -35,7 +35,7 @@ struct RepeatFrequencyRange {
 #define ALLOWED_REPEAT_FREQ_RANGE \
     { 433000, 433000 },          \
     { 869495, 869495 },          \
-    { 918000, 918000 }
+    { 910525, 910525 }
 #endif
 static constexpr RepeatFrequencyRange REPEAT_FREQUENCY_RANGES[] = {
     ALLOWED_REPEAT_FREQ_RANGE

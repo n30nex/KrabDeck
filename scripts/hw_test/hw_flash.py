@@ -1,4 +1,4 @@
-"""Build, flash, and boot-verify SigurdOS T-Deck firmware."""
+"""Build, flash, and boot-verify KrabOS T-Deck Plus firmware."""
 
 from __future__ import annotations
 
@@ -162,7 +162,7 @@ def digest_from_metadata(metadata: Path, firmware: Path) -> str:
 
     aliases = {firmware.name}
     if firmware.name == MERGED_FIRMWARE_NAME:
-        aliases.update({"sigurdos-tdeck-full.bin", "full", "merged"})
+        aliases.update({"krabos-tdeck-plus-full.bin", "full", "merged"})
     for key, record in artifacts.items():
         if not isinstance(record, dict):
             continue
@@ -360,8 +360,8 @@ sys.stdout.buffer.write(bytes(data))
         if filtered.count("ESP-ROM:esp32s3") > 2:
             return False, "repeated ROM banners indicate a boot loop"
         ready = (
-            "SigurdOS T-Deck ready" in filtered
-            or "SigurdOS Remote Test Controller" in filtered
+            "KrabOS T-Deck Plus ready" in filtered
+            or "KrabOS Remote Test Controller" in filtered
             or "[test] >" in filtered
         )
         if not ready:

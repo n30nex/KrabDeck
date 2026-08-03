@@ -10,7 +10,7 @@ evidence names the tag, contains a fresh passing record for every requirement,
 links to reviewed evidence, and identifies firmware and peer versions for
 hardware checks.
 
-The tag workflow then builds once, validates the complete artifact directory,
+The KrabOS `krabos-edge.yml` workflow then builds once, validates the complete artifact directory,
 and generates `release-evidence.json` as a post-build attestation. That published
 attestation adds the exact tagged commit, the SHA-256 of the checked-in source
 evidence, and hashes of every release artifact. CI validates those hashes against
@@ -19,6 +19,15 @@ out of the checked-in schema avoids an impossible self-reference: editing a
 tracked evidence file changes the commit it would claim to identify. These
 SHA-256 values prove byte consistency, not publisher identity: **checksums are
 not signatures**. See [Security model](SECURITY_MODEL.md#firmware-update-trust).
+
+The exact-device step loads its target and protected-neighbour identities from
+the runner-private file named by `KRABOS_FIXTURE_CONFIG`. The file must be a
+regular, non-symlink JSON file owned by the runner user with mode `0600`, and
+must contain only the target identity, exact public USB properties, and at least
+one forbidden device. Missing, weakly protected, malformed, or incomplete
+configuration fails closed before device access. This file is runner
+provisioning state: never commit it or copy its identifiers into logs or public
+evidence.
 
 Use this shape (repeat the requirement object for every ID in the requirements inventory):
 
@@ -78,15 +87,15 @@ Cosign before trusting the checksum file:
 cosign verify-blob \
   --bundle SHA256SUMS.sigstore.json \
   --certificate-identity-regexp \
-    '^https://github.com/hermes-gadget/SigurdOS-tdeck/.github/workflows/build-release.yml@refs/tags/' \
+    '^https://github.com/n30nex/KrabDeck/.github/workflows/krabos-edge.yml@refs/heads/main' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   SHA256SUMS.txt
 sha256sum --check SHA256SUMS.txt
 ```
 
-GitHub build-provenance attestations bind the same release files to the tagged
+GitHub build-provenance attestations bind the same release files to the KrabOS
 workflow run and can be checked with `gh attestation verify <file> --repo
-hermes-gadget/SigurdOS-tdeck`. These publisher signatures do not enable ESP32-S3
+n30nex/KrabDeck`. These publisher signatures do not enable ESP32-S3
 secure boot or device-side signed OTA verification; those require a separate
 device-key provisioning and rollback policy.
 
@@ -120,9 +129,9 @@ relying on objects already present in a developer checkout:
 ```bash
 clean_root="$(mktemp -d)"
 git clone --recurse-submodules \
-  https://github.com/hermes-gadget/SigurdOS-tdeck.git \
-  "$clean_root/SigurdOS-tdeck"
-git -C "$clean_root/SigurdOS-tdeck/lib/meshcore" rev-parse HEAD
+  https://github.com/n30nex/KrabDeck.git \
+  "$clean_root/KrabDeck"
+git -C "$clean_root/KrabDeck/lib/meshcore" rev-parse HEAD
 ```
 
 The printed SHA must equal the superproject gitlink. Then run the companion
@@ -210,11 +219,11 @@ Use versioned release URLs. A negative test passes only when the error is bounde
 
 ## Launcher matrix
 
-Follow `docs/LAUNCHER.md` with the final Launcher artifact. Verify environment detection, update ownership/OTA gating, handoff back to Launcher, relaunch, and persistence of settings, contacts, channels, and messages. Record Launcher and SigurdOS versions without recording a device identifier.
+Follow `docs/LAUNCHER.md` with the final Launcher artifact. Verify environment detection, update ownership/OTA gating, handoff back to Launcher, relaunch, and persistence of settings, contacts, channels, and messages. Record Launcher and KrabOS versions without recording a device identifier.
 
 ## Release artifacts and warnings
 
-The tag workflow validates source evidence before building, runs native
+The KrabOS `krabos-edge.yml` workflow validates source evidence before building, runs native
 sanitizers, verifies the resolved PlatformIO graph, and validates the generated
 manifest, image layouts, exact aliases, offsets, provenance, and SHA-256 values
 before promotion. Confirm those results in the release PR. The first-party

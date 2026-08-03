@@ -1364,12 +1364,6 @@ bool init(bool spiffs_ok)
 
     companionAdapterInit();
 
-    // Auto-advert is now exclusively duration-limited and user-enabled:
-    // the periodic loop() handler below checks advert_duration_h and only
-    // fires adverts when the user has explicitly set a non-zero duration.
-    // No boot-time one-shot advert occurs — all advert traffic must be
-    // explicitly authorised by the user via Settings → Auto-advert.
-
     init_state = sigurdos::mesh::detail::MeshInitState::Ready;
 #if SIGURDOS_DEBUG_MESH
     Serial.println("[mesh] SigurdMeshV2 initialized");

@@ -1,0 +1,112 @@
+name: KrabOS exact evidence handoff
+
+"on":
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact lowercase main-branch SHA represented by the evidence
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: krabos-evidence-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  handoff:
+    name: Validate and hand off exact source evidence
+    if: >-
+      github.repository == 'n30nex/KrabDeck' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: write
+    outputs:
+      candidate_sha: ${{ steps.admit.outputs.candidate_sha }}
+      evidence_artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      evidence_artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
+
+    steps:
+      - name: Admit exact main candidate
+        id: admit
+        shell: bash
+        env:
+          REQUESTED_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          candidate_sha="${REQUESTED_SHA,,}"
+          [[ "$candidate_sha" =~ ^[0-9a-f]{40}$ ]]
+          test "$GITHUB_REPOSITORY" = "n30nex/KrabDeck"
+          test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$candidate_sha" = "$GITHUB_SHA"
+          echo "candidate_sha=$candidate_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Check out exact candidate
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ steps.admit.outputs.candidate_sha }}
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Verify exact source evidence contract
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ steps.admit.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          remote_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          test "$remote_sha" = "$CANDIDATE_SHA"
+          test "$(git ls-tree HEAD lib/meshcore | awk '{print $3}')" = "c5787ee46124d540944ea238ff443f8d87ca0899"
+          python3 scripts/check_meshcore_pin.py
+
+          evidence="release-evidence/v1.0.0.json"
+          test -f "$evidence"
+          production_sha256="$(python3 - "$evidence" <<'PY'
+          import json
+          import re
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              document = json.load(source)
+          digest = document.get("production_image_sha256")
+          if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+              raise SystemExit("schema-3 source evidence has no valid production digest")
+          print(digest)
+          PY
+          )"
+          python3 scripts/verify_release_evidence.py \
+            --evidence "$evidence" \
+            --commit "$CANDIDATE_SHA" \
+            --tag v1.0.0 \
+            --production-image-sha256 "$production_sha256" \
+            --require-exact
+
+      - name: Upload candidate-bound source evidence
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: krabos-v1-evidence-${{ steps.admit.outputs.candidate_sha }}
+          path: release-evidence/v1.0.0.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Verify immutable evidence handoff identity
+        shell: bash
+        env:
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          CANDIDATE_SHA: ${{ steps.admit.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "candidate=$CANDIDATE_SHA artifact=krabos-v1-evidence-$CANDIDATE_SHA id=$ARTIFACT_ID digest=$ARTIFACT_DIGEST"

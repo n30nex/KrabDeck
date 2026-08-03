@@ -3,25 +3,25 @@
 
 #include "companion_bridge.h"
 #include "secure_wipe.h"
+#include "hal/tdeck_pins.h"
 #include "mesh/path_codec.h"
 
 #include <cstring>
-
-#if defined(ESP32_PLATFORM)
-#include "hal/tdeck_pins.h"
-#endif
 
 namespace sigurdos {
 namespace comms {
 
 namespace {
 
-static constexpr const char* BUILD_DATE = __DATE__;
-static constexpr const char* MANUFACTURER = "SigurdOS";
+#ifndef SIGURDOS_BUILD_DATE
+#define SIGURDOS_BUILD_DATE "unknown"
+#endif
+static constexpr const char* BUILD_DATE = SIGURDOS_BUILD_DATE;
+static constexpr const char* MANUFACTURER = KRABOS_PRODUCT_NAME;
 #if defined(SIGURDOS_VERSION)
 static constexpr const char* FIRMWARE_VERSION = SIGURDOS_VERSION;
 #else
-static constexpr const char* FIRMWARE_VERSION = "SigurdOS";
+static constexpr const char* FIRMWARE_VERSION = KRABOS_PRODUCT_NAME;
 #endif
 static constexpr uint8_t COMPANION_OUT_PATH_UNKNOWN = 0xFF;
 

@@ -19,9 +19,56 @@ class KrabosReleaseWorkflowTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.text = (WORKFLOWS / "krabos-edge.yml").read_text(encoding="utf-8")
         cls.workflow = yaml.safe_load(cls.text)
+        cls.evidence_text = (WORKFLOWS / "krabos-evidence.yml").read_text(
+            encoding="utf-8"
+        )
+        cls.evidence_workflow = yaml.safe_load(cls.evidence_text)
         cls.pi5 = cls.workflow["jobs"]["pi5"]
         cls.steps = cls.pi5["steps"]
         cls.step_by_name = {step["name"]: step for step in cls.steps}
+
+    def test_evidence_handoff_is_manual_main_only_and_candidate_bound(self) -> None:
+        triggers = self.evidence_workflow["on"]
+        self.assertNotIn("push", triggers)
+        self.assertNotIn("pull_request", triggers)
+        self.assertIn("workflow_dispatch", triggers)
+        inputs = triggers["workflow_dispatch"]["inputs"]
+        self.assertTrue(inputs["candidate_sha"]["required"])
+
+        handoff = self.evidence_workflow["jobs"]["handoff"]
+        self.assertIn("github.repository == 'n30nex/KrabDeck'", handoff["if"])
+        self.assertIn("github.event_name == 'workflow_dispatch'", handoff["if"])
+        self.assertIn("github.ref == 'refs/heads/main'", handoff["if"])
+        self.assertEqual(handoff["permissions"], {"contents": "read", "actions": "write"})
+        steps = {step["name"]: step for step in handoff["steps"]}
+        admit = steps["Admit exact main candidate"]["run"]
+        self.assertIn('test "$candidate_sha" = "$GITHUB_SHA"', admit)
+        self.assertIn('test "$GITHUB_REF" = "refs/heads/main"', admit)
+        checkout = steps["Check out exact candidate"]
+        self.assertEqual(checkout["with"]["ref"], "${{ steps.admit.outputs.candidate_sha }}")
+        verify = steps["Verify exact source evidence contract"]["run"]
+        self.assertIn('test "$remote_sha" = "$CANDIDATE_SHA"', verify)
+        self.assertIn("git ls-tree HEAD lib/meshcore", verify)
+        self.assertIn("c5787ee46124d540944ea238ff443f8d87ca0899", verify)
+        self.assertIn("scripts/verify_release_evidence.py", verify)
+        self.assertIn("--require-exact", verify)
+        upload = steps["Upload candidate-bound source evidence"]
+        self.assertEqual(
+            upload["with"]["name"],
+            "krabos-v1-evidence-${{ steps.admit.outputs.candidate_sha }}",
+        )
+        self.assertEqual(upload["with"]["path"], "release-evidence/v1.0.0.json")
+        self.assertEqual(upload["with"]["if-no-files-found"], "error")
+        identity = steps["Verify immutable evidence handoff identity"]["run"]
+        self.assertIn("artifact-digest", self.evidence_text)
+        self.assertIn("artifact-id", self.evidence_text)
+        self.assertIn("sha256:[0-9a-f]{64}", identity)
+
+    def test_evidence_handoff_actions_are_immutable(self) -> None:
+        refs = ACTION_REF.findall(self.evidence_text)
+        self.assertEqual(len(refs), 2)
+        for ref in refs:
+            self.assertRegex(ref, r"^[0-9a-f]{40}$")
 
     def test_workflow_is_manual_only_and_uses_main_definition(self) -> None:
         triggers = self.workflow["on"]
@@ -33,7 +80,13 @@ class KrabosReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("github.ref == 'refs/heads/main'", job_if)
         self.assertEqual(
             self.pi5["runs-on"],
-            ["self-hosted", "Linux", "ARM64", "krabdeck-pi5"],
+            [
+                "self-hosted",
+                "Linux",
+                "ARM64",
+                "krabdeck-pi5",
+                "krabos-hardware-target",
+            ],
         )
         self.assertEqual(
             self.workflow["concurrency"]["group"],
@@ -89,8 +142,8 @@ class KrabosReleaseWorkflowTests(unittest.TestCase):
             "Enforce stable source evidence and open-priority gate"
         ]["run"]
         self.assertIn("scripts/verify_release_evidence.py", gate)
+        self.assertIn("scripts/check_release_issue_gate.py", gate)
         self.assertIn("--paginate --slurp", gate)
-        self.assertIn("p[01]", gate)
         postbuild = self.step_by_name[
             "Bind stable evidence to produced public bytes"
         ]["run"]
@@ -132,10 +185,38 @@ class KrabosReleaseWorkflowTests(unittest.TestCase):
         ]
         self.assertTrue(hardware["continue-on-error"])
         self.assertIn("exact_device_release.py release", hardware["run"])
+        observer = self.step_by_name["Admit independent RF observer inputs"]
+        self.assertIn("steps.request.outputs.release_mode == 'true'", observer["if"])
+        self.assertIn('test ! -L "$path"', observer["run"])
+        self.assertIn("sha256sum \"$OBSERVER_EVIDENCE\"", observer["run"])
+        self.assertIn("sha256sum \"$OBSERVER_BUNDLE\"", observer["run"])
+        for name in (
+            "observer_evidence_path",
+            "observer_bundle_path",
+            "observer_source_run_id",
+            "observer_source_artifact_id",
+            "observer_source_artifact_digest",
+            "observer_artifact_metadata_path",
+            "observer_run_metadata_path",
+        ):
+            self.assertIn(name, self.workflow["on"]["workflow_dispatch"]["inputs"])
+        for argument in (
+            "--observer-evidence",
+            "--observer-bundle",
+            "--observer-source-repository",
+            "--observer-source-run-id",
+            "--observer-source-artifact-id",
+            "--observer-source-artifact-digest",
+            "--observer-artifact-metadata",
+            "--observer-run-metadata",
+        ):
+            self.assertIn(argument, hardware["run"])
         public = self.step_by_name[
             "Validate canonical redacted publication receipt"
         ]["run"]
         self.assertIn("exact_device_release.py check-public", public)
+        self.assertIn("--source-evidence-sha256", public)
+        self.assertIn("--evidence-bundle-sha256", public)
         failure = self.step_by_name[
             "Fail closed when exact hardware evidence is incomplete"
         ]
@@ -210,6 +291,7 @@ class KrabosReleaseWorkflowTests(unittest.TestCase):
 
     def test_every_platformio_build_or_test_runs_only_on_pi5(self) -> None:
         pi5_runner = ["self-hosted", "Linux", "ARM64", "krabdeck-pi5"]
+        hardware_runner = pi5_runner + ["krabos-hardware-target"]
         command = re.compile(r"\bpio\s+(?:run|test|check)\b")
         for path in WORKFLOWS.glob("*.yml"):
             workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -218,9 +300,14 @@ class KrabosReleaseWorkflowTests(unittest.TestCase):
                     str(step.get("run", "")) for step in job.get("steps", [])
                 )
                 if command.search(runs):
+                    expected_runner = (
+                        hardware_runner
+                        if path.name == "krabos-edge.yml" and job_name == "pi5"
+                        else pi5_runner
+                    )
                     self.assertEqual(
                         job.get("runs-on"),
-                        pi5_runner,
+                        expected_runner,
                         f"{path.name}:{job_name} can build outside the Pi 5",
                     )
         nightly = yaml.safe_load(

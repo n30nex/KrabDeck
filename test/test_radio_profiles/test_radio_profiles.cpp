@@ -10,31 +10,40 @@
 
 namespace {
 
-TEST(RadioProfilesTest, DefaultProfileIsUnitedStates915) {
+TEST(RadioProfilesTest, DefaultProfileIsKrabOsCanada) {
     const auto* profile = sigurdos::radio_profile_default();
 
     ASSERT_NE(nullptr, profile);
-    EXPECT_STREQ("us_902_928", profile->id);
-    EXPECT_STREQ("USA 902-928", profile->short_label);
-    EXPECT_FLOAT_EQ(915.000f, profile->freq_mhz);
+    EXPECT_STREQ("ca_902_928", profile->id);
+    EXPECT_STREQ("Canada 902-928", profile->short_label);
+    EXPECT_FLOAT_EQ(910.525f, profile->freq_mhz);
     EXPECT_FLOAT_EQ(62.5f, profile->bw_khz);
-    EXPECT_EQ(8, profile->sf);
+    EXPECT_EQ(7, profile->sf);
     EXPECT_EQ(5, profile->cr);
-    EXPECT_EQ(22, profile->tx_power_dbm);
+    EXPECT_EQ(20, profile->tx_power_dbm);
 }
 
-TEST(RadioProfilesTest, UnitedStatesAndCanadaUseAuditTuple) {
+TEST(RadioProfilesTest, ProfileAtRejectsTheCountBoundary) {
+    const size_t count = sigurdos::radio_profile_count();
+
+    ASSERT_GT(count, 0u);
+    EXPECT_EQ(sigurdos::radio_profile_default(), sigurdos::radio_profile_at(0));
+    EXPECT_EQ(nullptr, sigurdos::radio_profile_at(count));
+}
+
+TEST(RadioProfilesTest, CanadaUsesKrabOsProductionTuple) {
     const auto* us = sigurdos::radio_profile_find("us_902_928");
     const auto* ca = sigurdos::radio_profile_find("ca_902_928");
 
     ASSERT_NE(nullptr, us);
     ASSERT_NE(nullptr, ca);
-    EXPECT_FLOAT_EQ(us->freq_mhz, ca->freq_mhz);
-    EXPECT_FLOAT_EQ(915.000f, ca->freq_mhz);
+    EXPECT_NE(us->freq_mhz, ca->freq_mhz);
+    EXPECT_FLOAT_EQ(910.525f, ca->freq_mhz);
     EXPECT_FLOAT_EQ(62.5f, ca->bw_khz);
-    EXPECT_EQ(8, ca->sf);
+    EXPECT_EQ(7, ca->sf);
     EXPECT_EQ(5, ca->cr);
-    EXPECT_EQ(22, ca->tx_power_dbm);
+    EXPECT_EQ(20, ca->tx_power_dbm);
+    EXPECT_EQ(20, ca->max_tx_power_dbm);
 }
 
 TEST(RadioProfilesTest, ApplySetsPrefsAndKeepsTransmitGuardExplicit) {
@@ -48,11 +57,11 @@ TEST(RadioProfilesTest, ApplySetsPrefsAndKeepsTransmitGuardExplicit) {
 
     EXPECT_TRUE(prefs.configured);
     EXPECT_STREQ("ca_902_928", prefs.radio_profile);
-    EXPECT_FLOAT_EQ(915.000f, prefs.freq);
+    EXPECT_FLOAT_EQ(910.525f, prefs.freq);
     EXPECT_FLOAT_EQ(62.5f, prefs.bw);
-    EXPECT_EQ(8, prefs.sf);
+    EXPECT_EQ(7, prefs.sf);
     EXPECT_EQ(5, prefs.cr);
-    EXPECT_EQ(22, prefs.tx_power_dbm);
+    EXPECT_EQ(20, prefs.tx_power_dbm);
 }
 
 TEST(RadioProfilesTest, SavedProfileBreaksTiesForIdenticalTuples) {
@@ -82,6 +91,21 @@ TEST(RadioProfilesTest, CustomMarksManualSettings) {
 
     sigurdos::radio_profile_set_custom(prefs);
     EXPECT_STREQ("custom", prefs.radio_profile);
+}
+
+TEST(RadioProfilesTest, StatusLabelTracksNamedCustomAndUnconfiguredRadio) {
+    sigurdos::NodePrefs prefs;
+    prefs.set_defaults();
+    EXPECT_STREQ("Radio setup required",
+                 sigurdos::radio_profile_status_label(prefs));
+
+    const auto* us = sigurdos::radio_profile_find("us_902_928");
+    ASSERT_NE(nullptr, us);
+    sigurdos::radio_profile_apply(*us, prefs);
+    EXPECT_STREQ("USA 902-928", sigurdos::radio_profile_status_label(prefs));
+
+    prefs.freq = 916.250f;
+    EXPECT_STREQ("Custom RF", sigurdos::radio_profile_status_label(prefs));
 }
 
 TEST(RadioProfilesTest, RepeatFrequencyUsesExactActiveProfileFrequency) {
@@ -135,13 +159,14 @@ TEST(RadioProfilesTest, CompanionRepeatRangesMatchCompileTimePolicy) {
     EXPECT_EQ(pairs[1], 433000u);
     EXPECT_EQ(pairs[2], 869495u);
     EXPECT_EQ(pairs[3], 869495u);
-    EXPECT_EQ(pairs[4], 918000u);
-    EXPECT_EQ(pairs[5], 918000u);
+    EXPECT_EQ(pairs[4], 910525u);
+    EXPECT_EQ(pairs[5], 910525u);
 }
 
 TEST(RadioProfilesTest, CompanionRepeatAcceptanceUsesAdvertisedFrequencyUnion) {
     EXPECT_TRUE(sigurdos::radio_profile_repeat_frequency_allowed(433000));
-    EXPECT_TRUE(sigurdos::radio_profile_repeat_frequency_allowed(918000));
+    EXPECT_TRUE(sigurdos::radio_profile_repeat_frequency_allowed(910525));
+    EXPECT_FALSE(sigurdos::radio_profile_repeat_frequency_allowed(918000));
     EXPECT_FALSE(sigurdos::radio_profile_repeat_frequency_allowed(869500));
 }
 

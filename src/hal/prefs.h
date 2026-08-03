@@ -11,6 +11,8 @@
 #include <cstring>
 #include <cmath>
 
+#include "tdeck_pins.h"
+
 namespace sigurdos {
 
 struct NodePrefs {
@@ -121,20 +123,71 @@ struct NodePrefs {
         radio_profile[0] = '\0';        // empty = not set / custom
     }
 
+    // KrabOS is a Canada-first product image, so its production and factory
+    // defaults are immediately usable without an onboarding RF write. Keeping
+    // this explicit preserves the upstream non-transmitting defaults for every
+    // diagnostic and compatibility build.
+    void set_krabos_defaults() {
+        set_defaults();
+        strncpy(node_name, KRABOS_DEVICE_NAME, sizeof(node_name) - 1);
+        node_name[sizeof(node_name) - 1] = '\0';
+        freq = LORA_FREQ;
+        bw = LORA_BW;
+        sf = LORA_SF;
+        cr = LORA_CR;
+        tx_power_dbm = LORA_TX_PWR;
+        configured = true;
+        advert_loc_policy = 1;  // MeshCore ADVERT_LOC_SHARE
+        gps_enabled = true;
+        strncpy(radio_profile, KRABOS_RADIO_PROFILE_ID,
+                sizeof(radio_profile) - 1);
+        radio_profile[sizeof(radio_profile) - 1] = '\0';
+    }
+
+    void set_krabos_factory_reset_defaults() {
+        set_krabos_defaults();
+        ble_enabled = false;
+        ble_user_set = true;
+        ble_bond_reset_pending = true;
+    }
+
     // Factory reset is intentionally stricter than first-boot defaults: no
     // bonded phone may reconnect until the new owner explicitly enables BLE
     // and opens a local pairing window.
     void set_factory_reset_defaults() {
+#if defined(KRABOS_PRODUCTION) && KRABOS_PRODUCTION
+        set_krabos_factory_reset_defaults();
+#else
         set_defaults();
         ble_enabled = false;
         ble_user_set = true;
         ble_bond_reset_pending = true;
+#endif
     }
 };
 
 namespace detail {
 
 constexpr uint8_t BLE_PREFS_SCHEMA_VERSION = 1;
+
+enum class PrefsNamespaceState : uint8_t {
+    Missing,
+    Present,
+    Error,
+};
+
+inline bool useKrabosProductDefaults(PrefsNamespaceState state) {
+    return state == PrefsNamespaceState::Missing;
+}
+
+// Product defaults are only for a namespace that does not exist yet. When an
+// older namespace is present, absent keys must retain the legacy privacy and
+// radio posture instead of inheriting newly introduced product opt-ins.
+inline NodePrefs existingInstallMissingKeyDefaults() {
+    NodePrefs prefs{};
+    prefs.set_defaults();
+    return prefs;
+}
 
 inline uint8_t normalizePathHashMode(uint8_t mode) {
     return mode <= 2 ? mode : 0;

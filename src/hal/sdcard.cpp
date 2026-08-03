@@ -31,6 +31,8 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 // T-Deck SD card uses SPI on the shared LoRa/display bus (GPIO40/38/41).
 // FSPI (SPI2_HOST) is used here; the display also uses SPI2_HOST (via
@@ -44,6 +46,8 @@ static bool mounted = false;
 static bool bus_reset_locked = false;
 static uint64_t capacity_bytes = 0;
 static uint64_t free_bytes = 0;
+static SemaphoreHandle_t sdcard_mutex = nullptr;
+static portMUX_TYPE sdcard_mutex_init = portMUX_INITIALIZER_UNLOCKED;
 
 static constexpr uint8_t SDCARD_INIT_MAX_ATTEMPTS = 3;
 static constexpr uint8_t SDCARD_LAZY_RETRY_MAX_ATTEMPTS = 3;
@@ -167,8 +171,36 @@ bool sdcard_recover_file(const char* path)
 
 } // namespace
 
+static bool ensure_sdcard_mutex()
+{
+    if (sdcard_mutex) return true;
+    SemaphoreHandle_t created = xSemaphoreCreateRecursiveMutex();
+    if (!created) return false;
+    portENTER_CRITICAL(&sdcard_mutex_init);
+    if (!sdcard_mutex) {
+        sdcard_mutex = created;
+        created = nullptr;
+    }
+    portEXIT_CRITICAL(&sdcard_mutex_init);
+    if (created) vSemaphoreDelete(created);
+    return true;
+}
+
+bool sigurdos_sdcard_lock(uint32_t timeout_ms)
+{
+    return ensure_sdcard_mutex() &&
+        xSemaphoreTakeRecursive(
+            sdcard_mutex, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
+}
+
+void sigurdos_sdcard_unlock()
+{
+    if (sdcard_mutex) xSemaphoreGiveRecursive(sdcard_mutex);
+}
+
 static SigurdosSdMountDiagnostic sdcard_diag = {
     false,
+    0,
     0,
     SIGURDOS_SD_MOUNT_SOURCE_NONE,
     SIGURDOS_SD_MOUNT_ERROR_NONE,
@@ -194,6 +226,7 @@ static void sdcard_reset_diagnostics()
 {
     sdcard_diag.mounted = false;
     sdcard_diag.attempt_count = 0;
+    sdcard_diag.begin_failure_count = 0;
     sdcard_diag.last_source = SIGURDOS_SD_MOUNT_SOURCE_NONE;
     sdcard_diag.last_error = SIGURDOS_SD_MOUNT_ERROR_NONE;
     sdcard_diag.last_backoff_ms = 0;
@@ -208,14 +241,12 @@ static void sdcard_record_success()
     free_bytes = used <= total ? (total - used) : 0;
     mounted = true;
     sdcard_diag.mounted = true;
+    sdcard_diag.begin_failure_count = 0;
     sdcard_diag.last_error = SIGURDOS_SD_MOUNT_ERROR_NONE;
 }
 
-static bool sdcard_mount_once(SigurdosSdMountSource source)
+static bool sdcard_prepare_bus()
 {
-    sdcard_diag.attempt_count++;
-    sdcard_diag.last_source = source;
-
     // Pre-radio probing may reset SPI2 for the card's CMD0 handshake. After
     // radio startup, retries must preserve the active SX1262 peripheral state.
     if (sigurdos_sdcard_may_reset_bus(bus_reset_locked)) {
@@ -243,8 +274,18 @@ static bool sdcard_mount_once(SigurdosSdMountSource source)
     // Give the SD card time to stabilise before CMD0.
     // Some cards need >1ms after power-on before they accept CMD0.
     delay(10);
+    return true;
+}
 
-    if (SD.begin(PIN_SD_CS, sd_spi, 4000000, SIGURDOS_SD_MOUNTPOINT)) {
+static bool sdcard_mount_once(SigurdosSdMountSource source)
+{
+    sdcard_diag.last_source = source;
+    if (!sdcard_prepare_bus()) return false;
+
+    sdcard_diag.attempt_count++;
+    // Release-critical: the final argument disables format-on-mount-failure.
+    if (SD.begin(PIN_SD_CS, sd_spi, 4000000, SIGURDOS_SD_MOUNTPOINT,
+                 5, false)) {
         sdcard_record_success();
         return true;
     }
@@ -252,6 +293,9 @@ static bool sdcard_mount_once(SigurdosSdMountSource source)
     SD.end();
     sdcard_reset_mount_state();
     sdcard_diag.mounted = false;
+    if (sdcard_diag.begin_failure_count < UINT8_MAX) {
+        ++sdcard_diag.begin_failure_count;
+    }
     sdcard_diag.last_error = SIGURDOS_SD_MOUNT_ERROR_BEGIN_FAILED;
     return false;
 }
@@ -275,6 +319,8 @@ static bool sdcard_mount_with_backoff(SigurdosSdMountSource source, uint8_t max_
 
 bool sigurdos_sdcard_init()
 {
+    SigurdosSdLock lock;
+    if (!lock) return false;
     sdcard_reset_diagnostics();
     sdcard_reset_mount_state();
     sdcard_retry_count = 0;
@@ -299,6 +345,8 @@ bool sigurdos_sdcard_bus_reset_locked()
 
 bool sigurdos_sdcard_retry()
 {
+    SigurdosSdLock lock;
+    if (!lock) return false;
     if (mounted) return true;  // already mounted
     if (sdcard_retry_count >= SDCARD_LAZY_RETRY_MAX_ATTEMPTS) {
         sdcard_diag.last_source = SIGURDOS_SD_MOUNT_SOURCE_RETRY;
@@ -357,11 +405,21 @@ const char* sigurdos_sdcard_mount_error_name(SigurdosSdMountError error)
 
 uint64_t sigurdos_sdcard_capacity_bytes()
 {
+    SigurdosSdLock lock;
+    if (!lock) return 0;
     return capacity_bytes;
 }
 
 uint64_t sigurdos_sdcard_free_bytes()
 {
+    SigurdosSdLock lock;
+    if (!lock) return 0;
+    if (mounted) {
+        const uint64_t total = static_cast<uint64_t>(SD.totalBytes());
+        const uint64_t used = static_cast<uint64_t>(SD.usedBytes());
+        capacity_bytes = total;
+        free_bytes = used <= total ? total - used : 0;
+    }
     return free_bytes;
 }
 
@@ -386,6 +444,8 @@ const char* sigurdos_sdcard_format_size(uint64_t bytes, char* buf, size_t buf_sz
 
 bool sigurdos_sdcard_exists(const char* path)
 {
+    SigurdosSdLock lock;
+    if (!lock) return false;
     if (!mounted || !sigurdos_sdcard_path_valid(path)) return false;
     if (!sdcard_recover_file(path)) return false;
     char live_path[sizeof(SIGURDOS_SD_MOUNTPOINT) + SIGURDOS_SD_MAX_PATH_LEN + 1];
@@ -395,6 +455,8 @@ bool sigurdos_sdcard_exists(const char* path)
 
 size_t sigurdos_sdcard_read(const char* path, uint8_t* buf, size_t max_len)
 {
+    SigurdosSdLock lock;
+    if (!lock) return 0;
     if (!mounted || !sigurdos_sdcard_path_valid(path) || !buf || max_len == 0) return 0;
 
     if (!sdcard_recover_file(path)) return 0;
@@ -410,6 +472,8 @@ size_t sigurdos_sdcard_read(const char* path, uint8_t* buf, size_t max_len)
 bool sigurdos_sdcard_list(const char* path, SigurdosSdDirEntry* entries,
                           size_t max_entries, size_t* count, bool* truncated)
 {
+    SigurdosSdLock lock;
+    if (!lock) return false;
     if (count) *count = 0;
     if (truncated) *truncated = false;
     if (!mounted || !sigurdos_sdcard_path_valid(path) || !entries ||
@@ -475,6 +539,8 @@ bool sigurdos_sdcard_list(const char* path, SigurdosSdDirEntry* entries,
 
 bool sigurdos_sdcard_copy_file(const char* source_path, const char* destination_path)
 {
+    SigurdosSdLock lock;
+    if (!lock) return false;
     if (!mounted || !sigurdos_sdcard_path_valid(source_path) ||
         !sigurdos_sdcard_path_valid(destination_path) ||
         std::strcmp(source_path, destination_path) == 0) {
@@ -527,6 +593,8 @@ bool sigurdos_sdcard_copy_file(const char* source_path, const char* destination_
 
 bool sigurdos_sdcard_delete_file(const char* path)
 {
+    SigurdosSdLock lock;
+    if (!lock) return false;
     if (!mounted || !sigurdos_sdcard_path_valid(path) ||
         std::strcmp(path, "/") == 0) {
         return false;
@@ -540,6 +608,8 @@ bool sigurdos_sdcard_delete_file(const char* path)
 
 bool sigurdos_sdcard_write(const char* path, const uint8_t* data, size_t len)
 {
+    SigurdosSdLock lock;
+    if (!lock) return false;
     if (!mounted || !sigurdos_sdcard_path_valid(path)) return false;
     if (len > 0 && !data) return false;  // data required only for non-empty writes
 

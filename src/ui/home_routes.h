@@ -9,7 +9,9 @@
 
 namespace sigurdos::ui {
 
-static constexpr std::size_t HOME_ROUTE_COUNT = 12;
+// KrabOS keeps the launcher intentionally small. Everything else remains
+// reachable through More, backed by the existing navigation routes.
+static constexpr std::size_t HOME_ROUTE_COUNT = 4;
 
 struct HomeTileFilters {
     int chat_filter;

@@ -10,6 +10,7 @@ from pathlib import Path
 
 COMMENT_RE = re.compile(r"/\*.*?\*/|//[^\n]*", re.DOTALL)
 LOAD_RE = re.compile(r"lv_scr_load_anim\s*\((.*?)\)\s*;", re.DOTALL)
+SD_BEGIN_RE = re.compile(r"\bSD\.begin\s*\((.*?)\)\s*;", re.DOTALL)
 
 
 def without_comments(text: str) -> str:
@@ -72,6 +73,28 @@ def check(root: Path) -> list[str]:
                     f"src/hal/keyboard.cpp: set_keyboard_mode({argument}) is not key mode"
                 )
 
+    for relative_name in ("src/hal/sdcard.cpp", "src/hal/sdcard.h"):
+        sdcard = root / relative_name
+        if not sdcard.is_file():
+            continue
+        code = without_comments(sdcard.read_text(errors="replace"))
+        forbidden_sd_symbols = (
+            r"\bsigurdos_sdcard_recover_test_card\b",
+            r"\bsdcard_format_policy\.h\b",
+            r"\bformat_enabled_attempts\b",
+            r"\bsdcard_(?:init|mount|unmount|uninit|read_raw)\s*\(",
+        )
+        if any(re.search(pattern, code) for pattern in forbidden_sd_symbols):
+            violations.append(
+                f"{relative_name}: production SD formatting path is forbidden"
+            )
+        for call in SD_BEGIN_RE.findall(code):
+            arguments = [argument.strip() for argument in call.split(",")]
+            if arguments and arguments[-1] == "true":
+                violations.append(
+                    f"{relative_name}: SD.begin format-on-failure must be false"
+                )
+
     for path in documentation_files(root):
         if path.name == "COMPANION_PARITY_ACTION_PLAN.md":
             continue
@@ -92,6 +115,39 @@ def check(root: Path) -> list[str]:
         readme = readme_path.read_text(errors="replace")
         if re.search(r"Current firmware snapshot:[^\n]*`beta-[^`]+`", readme):
             violations.append("README.md: do not duplicate the firmware version literal")
+
+    release_evidence = root / "docs/RELEASE_EVIDENCE.md"
+    if release_evidence.is_file():
+        evidence = release_evidence.read_text(errors="replace")
+        expected_signer = (
+            "https://github.com/n30nex/KrabDeck/.github/workflows/"
+            "krabos-edge.yml@refs/heads/main"
+        )
+        if "hermes-gadget/SigurdOS-tdeck" in evidence or expected_signer not in evidence:
+            violations.append(
+                "docs/RELEASE_EVIDENCE.md: provenance must name the KrabDeck "
+                "krabos-edge.yml workflow on main"
+            )
+
+    boot_source = root / "src/main.cpp"
+    if boot_source.is_file():
+        boot_code = without_comments(boot_source.read_text(errors="replace"))
+        ready_marker = re.escape(
+            "@krabos|event=boot|status=ready|env=%s|sha=%.12s"
+        )
+        if not re.search(ready_marker, boot_code):
+            violations.append("src/main.cpp: machine-readable ready marker is missing")
+        elif re.search(rf"Serial\.printf\s*\(\s*\"{ready_marker}", boot_code):
+            violations.append(
+                "src/main.cpp: ready marker must not use direct Serial.printf"
+            )
+        elif not re.search(
+            rf"sigurdos::diagnostics::diagnostic_logf\s*\(\s*\"\"\s*,\s*\"{ready_marker}",
+            boot_code,
+        ):
+            violations.append(
+                "src/main.cpp: ready marker must use the diagnostics evidence logger"
+            )
 
     return violations
 

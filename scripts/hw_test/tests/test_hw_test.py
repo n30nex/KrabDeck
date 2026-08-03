@@ -550,11 +550,11 @@ class ConstantsAndFlashTests(unittest.TestCase):
         clean = (
             "i2cRead returned Error 263\n"
             "SPIFFS Already Mounted!\n"
-            "SigurdOS Remote Test Controller\n"
+            "KrabOS Remote Test Controller\n"
         )
         self.assertTrue(HardwareFlasher.assess_boot_log(clean)[0])
         self.assertFalse(
-            HardwareFlasher.assess_boot_log("Invalid image block\nSigurdOS T-Deck ready")[0]
+            HardwareFlasher.assess_boot_log("Invalid image block\nKrabOS T-Deck Plus ready")[0]
         )
 
 

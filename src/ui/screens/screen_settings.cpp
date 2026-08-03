@@ -31,7 +31,7 @@ using namespace theme;
 using namespace responsive;
 
 // ════════════════════════════════════════════════════════
-// Settings — category menu
+// More — the advanced KrabOS tools hub
 // ════════════════════════════════════════════════════════
 void settings_screen_show()
 {
@@ -40,7 +40,7 @@ void settings_screen_show()
         pin_entry_show(Screen::Settings);
         return;
     }
-    lv_obj_t* scr = make_screen_full("Settings");
+    lv_obj_t* scr = make_screen_full("More");
 
     lv_obj_t* list = lv_list_create(scr);
     lv_obj_set_size(list, LV_PCT(100), CONTENT_H);
@@ -49,14 +49,27 @@ void settings_screen_show()
     lv_obj_set_style_border_width(list, 0, 0);
     lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_OFF);
 
-    // Category helpers — compact row with accent icon
+    // Keep advanced tools here rather than multiplying primary navigation.
     struct Cat { const char* icon; const char* label; Screen target; };
     Cat cats[] = {
+        {LV_SYMBOL_CALL,     "Contacts",         Screen::Contacts},
+        {LV_SYMBOL_DIRECTORY,"Channels / Rooms", Screen::Channels},
+        {LV_SYMBOL_WIFI,     "Repeaters",        Screen::Repeaters},
+        {LV_SYMBOL_BELL,     "Advertise",        Screen::Advertise},
+        {LV_SYMBOL_LIST,     "Packets",          Screen::Heard},
+        {LV_SYMBOL_LIST,     "Message search",   Screen::MessageSearch},
+        {LV_SYMBOL_KEYBOARD, "Terminal",         Screen::Terminal},
+        {LV_SYMBOL_BARS,     "Signal",           Screen::Signal},
+        {LV_SYMBOL_LIST,     "Mesh dashboard",   Screen::MeshDashboard},
+        {LV_SYMBOL_LIST,     "Telemetry",        Screen::Telemetry},
         {LV_SYMBOL_WIFI,    "WiFi",             Screen::WiFiNetworks},
         {LV_SYMBOL_WIFI,    "Bluetooth",        Screen::Bluetooth},
         {LV_SYMBOL_WIFI,    "Radio / Mesh",     Screen::SettingsRadio},
+        {LV_SYMBOL_LIST,    "Flood regions",     Screen::Regions},
         {LV_SYMBOL_GPS,     "GPS / Location",   Screen::SettingsGPS},
         {LV_SYMBOL_IMAGE,   "Display / UI",     Screen::SettingsDisplay},
+        {LV_SYMBOL_DIRECTORY,"SD files",         Screen::FileBrowser},
+        {LV_SYMBOL_HOME,    "Setup",            Screen::Onboarding},
         {LV_SYMBOL_SETTINGS,"System",           Screen::SettingsSystem},
         {LV_SYMBOL_SETTINGS,"Node Stats",       Screen::NodeStats},
     };
@@ -67,6 +80,9 @@ void settings_screen_show()
         lv_obj_set_style_bg_color(btn, lv_color_hex(i % 2 == 0 ? BG_TERTIARY : BG_INPUT), 0);
         lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
         lv_obj_set_style_text_color(btn, lv_color_hex(TEXT_PRIMARY), 0);
+        lv_obj_set_style_radius(btn, 8, 0);
+        lv_obj_set_style_border_width(btn, 1, 0);
+        lv_obj_set_style_border_color(btn, lv_color_hex(DIVIDER), 0);
         lv_obj_t* arrow = lv_label_create(btn);
         lv_label_set_text(arrow, LV_SYMBOL_RIGHT);
         lv_obj_set_style_text_color(arrow, lv_color_hex(TEXT_MUTED), 0);
@@ -76,6 +92,12 @@ void settings_screen_show()
             Screen s = (Screen)(intptr_t)lv_event_get_user_data(e);
             navigate_to(s);
         }, LV_EVENT_CLICKED, (void*)(intptr_t)target);
+
+        lv_group_t* group = lv_group_get_default();
+        if (group) {
+            lv_group_add_obj(group, btn);
+            if (i == 0) lv_group_focus_obj(btn);
+        }
     }
 
     show_screen(scr);

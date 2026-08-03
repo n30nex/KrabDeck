@@ -357,7 +357,7 @@ static sigurdos::ui::Screen screen_from_name(const char* name) {
 // ── Help text ────────────────────────────────────────────
 static void print_help() {
     Serial.println(F("╔══════════════════════════════════════╗"));
-    Serial.println(F("║  SigurdOS Remote Test Controller      ║"));
+    Serial.println(F("║  KrabOS Remote Test Controller       ║"));
     Serial.println(F("╠══════════════════════════════════════╣"));
     Serial.println(F("║  Commands:                          ║"));
     Serial.println(F("║  help        Show this help          ║"));
@@ -2421,7 +2421,7 @@ void sigurdos_test_controller_init() {
 
     Serial.println();
     Serial.println(F("╔══════════════════════════════════════╗"));
-    Serial.println(F("║  SigurdOS Remote Test Controller      ║"));
+    Serial.println(F("║  KrabOS Remote Test Controller       ║"));
     Serial.println(F("║  Type 'help' for available commands ║"));
     Serial.println(F("╚══════════════════════════════════════╝"));
     Serial.println();

@@ -23,8 +23,12 @@
  *        lat/lon ↔ tile conversion, zoom level validation, pan limits
  */
 #include <gtest/gtest.h>
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <vector>
+#include "app/map_download_policy.h"
 #include "tile_cache.h"
 
 namespace {
@@ -32,6 +36,39 @@ namespace {
 // Earth radius for Web Mercator
 static constexpr double PI = 3.14159265358979323846;
 static constexpr double EARTH_RADIUS_M = 6378137.0;
+
+void append_be32(std::vector<uint8_t>* bytes, uint32_t value) {
+    bytes->push_back(static_cast<uint8_t>(value >> 24));
+    bytes->push_back(static_cast<uint8_t>(value >> 16));
+    bytes->push_back(static_cast<uint8_t>(value >> 8));
+    bytes->push_back(static_cast<uint8_t>(value));
+}
+
+void append_png_chunk(std::vector<uint8_t>* bytes, const char type[5],
+                      const std::vector<uint8_t>& data) {
+    using sigurdos::app::map_download::pngCrc32Update;
+    append_be32(bytes, static_cast<uint32_t>(data.size()));
+    const auto* type_bytes = reinterpret_cast<const uint8_t*>(type);
+    bytes->insert(bytes->end(), type_bytes, type_bytes + 4);
+    bytes->insert(bytes->end(), data.begin(), data.end());
+    uint32_t crc = pngCrc32Update(0xffffffffU, type_bytes, 4);
+    crc = pngCrc32Update(crc, data.data(), data.size()) ^ 0xffffffffU;
+    append_be32(bytes, crc);
+}
+
+std::vector<uint8_t> complete_png_fixture() {
+    std::vector<uint8_t> bytes = {
+        0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a};
+    std::vector<uint8_t> ihdr(13, 0);
+    ihdr[2] = 1;  // width = 256
+    ihdr[6] = 1;  // height = 256
+    ihdr[8] = 8;  // bit depth
+    ihdr[9] = 6;  // RGBA
+    append_png_chunk(&bytes, "IHDR", ihdr);
+    append_png_chunk(&bytes, "IDAT", {0x78, 0x9c});
+    append_png_chunk(&bytes, "IEND", {});
+    return bytes;
+}
 
 // ── Web Mercator math (EPSG:3857) ────────────────────────
 // Convert longitude to meters
@@ -545,6 +582,145 @@ TEST(TileLoadBudgetTest, AttemptsNeverExceedConfiguredLimit) {
 
     TileLoadBudget disabled(0);
     EXPECT_FALSE(disabled.consume());
+}
+
+TEST(MapDownloadPolicyTest, PersistedCursorMustRemainInsideRequestedArea) {
+    using namespace sigurdos::app::map_download;
+    const Bounds bounds{43.55, -79.65, 43.85, -79.15};
+    const Cursor first = firstCursor(bounds, 10);
+
+    EXPECT_TRUE(cursorInRequest(first, bounds, 10, 14));
+    EXPECT_FALSE(cursorInRequest({9, first.x, first.y}, bounds, 10, 14));
+    EXPECT_FALSE(cursorInRequest({19, first.x, first.y}, bounds, 10, 14));
+
+    const TileRange range = tileRange(bounds, 10);
+    EXPECT_FALSE(cursorInRequest(
+        {10, range.min_x - 1, range.min_y}, bounds, 10, 14));
+    EXPECT_FALSE(cursorInRequest(
+        {10, range.min_x, range.max_y + 1}, bounds, 10, 14));
+}
+
+TEST(MapDownloadPolicyTest, PersistedProgressRejectsMismatchAndOverflow) {
+    using sigurdos::app::map_download::progressValid;
+
+    EXPECT_TRUE(progressValid(10, 10, 4, 3, 2));
+    EXPECT_FALSE(progressValid(10, 9, 4, 3, 2));
+    EXPECT_FALSE(progressValid(10, 10, 8, 3, 0));
+    EXPECT_FALSE(progressValid(10, 10, UINT32_MAX, UINT32_MAX, UINT32_MAX));
+}
+
+TEST(MapDownloadPolicyTest, CompletePngRejectsInterruptedOrCorruptTile) {
+    using sigurdos::app::map_download::pngCompleteValid;
+    const auto valid = complete_png_fixture();
+    const auto validates = [](const std::vector<uint8_t>& bytes) {
+        return pngCompleteValid(
+            bytes.size(), [&](size_t offset, uint8_t* output, size_t length) {
+                if (offset > bytes.size() || length > bytes.size() - offset) {
+                    return false;
+                }
+                std::memcpy(output, bytes.data() + offset, length);
+                return true;
+            });
+    };
+
+    EXPECT_TRUE(validates(valid));
+
+    auto interrupted_after_header = valid;
+    interrupted_after_header.resize(33);
+    EXPECT_FALSE(validates(interrupted_after_header));
+
+    auto interrupted_before_iend_crc = valid;
+    interrupted_before_iend_crc.pop_back();
+    EXPECT_FALSE(validates(interrupted_before_iend_crc));
+
+    auto corrupt_idat = valid;
+    corrupt_idat[41] ^= 0x01;
+    EXPECT_FALSE(validates(corrupt_idat));
+
+    auto trailing_bytes = valid;
+    trailing_bytes.push_back(0);
+    EXPECT_FALSE(validates(trailing_bytes));
+}
+
+TEST(MapDownloadPolicyTest, StreamFailuresBackOffInsteadOfCyclingAsCancelled) {
+    using sigurdos::app::map_download::classifyPngStream;
+    using sigurdos::app::map_download::PngStreamDisposition;
+
+    EXPECT_EQ(PngStreamDisposition::Retry,
+              classifyPngStream(-1, 100, false, true));
+    EXPECT_EQ(PngStreamDisposition::Retry,
+              classifyPngStream(23, -1, false, true));
+    EXPECT_EQ(PngStreamDisposition::Retry,
+              classifyPngStream(99, 100, false, true));
+    EXPECT_EQ(PngStreamDisposition::PermanentFailure,
+              classifyPngStream(24, -1, true, true));
+    EXPECT_EQ(PngStreamDisposition::Cancelled,
+              classifyPngStream(24, 24, false, false));
+    EXPECT_EQ(PngStreamDisposition::Validate,
+              classifyPngStream(100, 100, false, true));
+    EXPECT_EQ(PngStreamDisposition::Validate,
+              classifyPngStream(100, -1, false, true));
+}
+
+TEST(MapDownloadPolicyTest, DurableGenerationCommitRejectsOldWorkerInterleaving) {
+    using namespace sigurdos::app::map_download;
+
+    struct ModelState {
+        uint32_t generation;
+        int progress;
+    };
+
+    ModelState installed{7, 0};
+    ModelState durable{7, 0};
+    int persist_calls = 0;
+    int install_calls = 0;
+    auto commit = [&](uint32_t expected, ModelState next, bool persist_ok) {
+        return durableCommitIfCurrent(
+            expected, installed.generation,
+            [&]() {
+                ++persist_calls;
+                if (!persist_ok) return false;
+                durable = next;
+                return true;
+            },
+            [&]() {
+                ++install_calls;
+                installed = next;
+            });
+    };
+
+    // A new start wins the serialized commit first. The old worker then sees
+    // a stale generation and cannot invoke either disk or install callback.
+    EXPECT_EQ(DurableCommitResult::Installed,
+              commit(7, {nextGeneration(7), 0}, true));
+    EXPECT_EQ(DurableCommitResult::StaleGeneration,
+              commit(7, {7, 1}, true));
+    EXPECT_EQ(8U, durable.generation);
+    EXPECT_EQ(8U, installed.generation);
+    EXPECT_EQ(1, persist_calls);
+    EXPECT_EQ(1, install_calls);
+
+    // If the old worker commits first, the subsequent start is still the last
+    // durable and installed state. The ordering is deterministic either way.
+    installed = {11, 0};
+    durable = installed;
+    EXPECT_EQ(DurableCommitResult::Installed,
+              commit(11, {11, 1}, true));
+    EXPECT_EQ(DurableCommitResult::Installed,
+              commit(11, {nextGeneration(11), 0}, true));
+    EXPECT_EQ(12U, durable.generation);
+    EXPECT_EQ(12U, installed.generation);
+
+    // Persist-first is fail closed: a write failure cannot install the new
+    // generation in memory.
+    const ModelState before = installed;
+    const int installs_before_failure = install_calls;
+    EXPECT_EQ(DurableCommitResult::PersistFailed,
+              commit(12, {13, 0}, false));
+    EXPECT_EQ(before.generation, installed.generation);
+    EXPECT_EQ(before.progress, installed.progress);
+    EXPECT_EQ(installs_before_failure, install_calls);
+    EXPECT_EQ(1U, nextGeneration(UINT32_MAX));
 }
 
 } // anonymous namespace

@@ -20,8 +20,20 @@
 // You should have received a copy of the GNU General Public License
 // along with SigurdOS.  If not, see <https://www.gnu.org/licenses/>.
 
-// SigurdOS T-Deck Hardware Pin Definitions
-// LilyGo T-Deck: ESP32-S3 + ST7789 320x240 + SX1262 LoRa + GT911 Touch
+// KrabOS T-Deck Plus Hardware Pin Definitions. Internal sigurdos symbols and
+// persistence namespaces intentionally stay stable for upgrade compatibility.
+// LilyGo T-Deck Plus: ESP32-S3 + ST7789 320x240 + SX1262 LoRa + GT911 Touch
+
+#define KRABOS_PRODUCT_NAME "KrabOS"
+#define KRABOS_DEVICE_NAME "KrabOS T-Deck Plus"
+#define KRABOS_TORONTO_TZ "EST5EDT,M3.2.0,M11.1.0"
+#define KRABOS_RADIO_PROFILE_ID "ca_902_928"
+
+#if defined(KRABOS_PRODUCTION) && KRABOS_PRODUCTION && \
+    ((defined(KRABOS_RECOVERY) && KRABOS_RECOVERY) || \
+     (defined(SIGURDOS_REMOTE_TEST) && SIGURDOS_REMOTE_TEST))
+#error "KrabOS production cannot be combined with recovery or remote-test mode"
+#endif
 
 static constexpr int SIGURDOS_GPIO_DISABLED = -1;
 static constexpr int SIGURDOS_ESP32S3_GPIO_MIN = 0;
@@ -110,8 +122,8 @@ static constexpr uint64_t SIGURDOS_LORA_DIO1_WAKE_MASK =
 // ════════════════════════════════════════════════════════
 #define PIN_GPS_RX       44  // ESP32-S3 RX; LILYGO GPSShield uses rx=44
 #define PIN_GPS_TX       43  // ESP32-S3 TX; LILYGO GPSShield uses tx=43
-#define GPS_PRIMARY_BAUD_RATE 9600
-#define GPS_FALLBACK_BAUD_RATE 38400
+#define GPS_PRIMARY_BAUD_RATE 38400
+#define GPS_FALLBACK_BAUD_RATE 9600
 #define GPS_BAUD_RATE GPS_PRIMARY_BAUD_RATE
 
 // ════════════════════════════════════════════════════════
@@ -129,19 +141,19 @@ static constexpr uint64_t SIGURDOS_LORA_DIO1_WAKE_MASK =
 // LoRa Radio Defaults
 // ════════════════════════════════════════════════════════
 #ifndef LORA_FREQ
-#define LORA_FREQ    869.618f
+#define LORA_FREQ    910.525f
 #endif
 #ifndef LORA_BW
 #define LORA_BW        62.5f
 #endif
 #ifndef LORA_SF
-#define LORA_SF           8
+#define LORA_SF           7
 #endif
 #ifndef LORA_CR
 #define LORA_CR           5
 #endif
 #ifndef LORA_TX_PWR
-#define LORA_TX_PWR      22
+#define LORA_TX_PWR      20
 #endif
 #ifndef MAX_LORA_TX_POWER
 #define MAX_LORA_TX_POWER LORA_TX_PWR
@@ -177,5 +189,5 @@ static constexpr uint64_t SIGURDOS_LORA_DIO1_WAKE_MASK =
 // Firmware version — displayed in Settings > About
 // Can be overridden at build time by scripts/build_metadata.py (git describe --tags)
 #ifndef SIGURDOS_VERSION
-#define SIGURDOS_VERSION  "beta-0.1.46-RC8"
+#define SIGURDOS_VERSION  "KrabOS-dev"
 #endif

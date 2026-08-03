@@ -215,6 +215,10 @@ bool setSystemTime(uint32_t epoch_seconds,
 TimeSyncStatus getTimeSyncStatus();
 
 void getCurrentLocalDateTime(int* year, int* month, int* day, int* hour, int* minute);
+bool makeLocalEpoch(int year, int month, int day, int hour, int minute,
+                    uint32_t* out);
+// UTC conversion for GPS/network timestamps. Manual UI input must use
+// makeLocalEpoch() so the configured timezone and DST rules are applied.
 uint32_t makeEpoch(int year, int month, int day, int hour, int minute);
 
 // Packet log

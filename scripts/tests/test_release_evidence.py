@@ -11,16 +11,18 @@ PYTHON = sys.executable
 REQUIRED_ARTIFACTS = {
     "firmware.bin",
     "firmware-merged.bin",
-    "SigurdOS-tdeck-launcher.bin",
+    "KrabOS-tdeck-plus-launcher.bin",
     "firmware-debug.bin",
     "manifest.json",
     "build-metadata.json",
-    "sigurdos-tdeck-bootloader.bin",
-    "sigurdos-tdeck-partitions.bin",
-    "sigurdos-tdeck-boot_app0.bin",
-    "sigurdos-tdeck-firmware.bin",
-    "sigurdos-tdeck-full.bin",
-    "sigurdos-tdeck-launcher.bin",
+    "krabos-tdeck-plus-bootloader.bin",
+    "krabos-tdeck-plus-partitions.bin",
+    "krabos-tdeck-plus-boot_app0.bin",
+    "krabos-tdeck-plus-firmware.bin",
+    "krabos-tdeck-plus-full.bin",
+    "krabos-tdeck-plus-launcher.bin",
+    "krabos-candidate.bin",
+    "krabos-recovery-rf-off.bin",
 }
 
 

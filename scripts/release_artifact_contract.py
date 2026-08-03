@@ -1,4 +1,4 @@
-"""Validation contract for the complete SigurdOS release artifact directory."""
+"""Validation contract for the complete KrabOS release artifact directory."""
 
 from __future__ import annotations
 
@@ -10,26 +10,46 @@ from audit_launcher_artifact import audit
 
 
 COMPONENT_OFFSETS = {
-    "sigurdos-tdeck-bootloader.bin": 0x0000,
-    "sigurdos-tdeck-partitions.bin": 0x8000,
-    "sigurdos-tdeck-boot_app0.bin": 0xE000,
-    "sigurdos-tdeck-firmware.bin": 0x10000,
+    "krabos-tdeck-plus-bootloader.bin": 0x0000,
+    "krabos-tdeck-plus-partitions.bin": 0x8000,
+    "krabos-tdeck-plus-boot_app0.bin": 0xE000,
+    "krabos-tdeck-plus-firmware.bin": 0x10000,
 }
 GENERATED_WEB_OFFSETS = {
     **COMPONENT_OFFSETS,
-    "sigurdos-tdeck-full.bin": 0,
-    "sigurdos-tdeck-launcher.bin": 0,
+    "krabos-tdeck-plus-full.bin": 0,
+    "krabos-tdeck-plus-launcher.bin": 0,
 }
 FULL_IMAGE_NAMES = (
     "firmware-merged.bin",
-    "SigurdOS-tdeck-launcher.bin",
-    "sigurdos-tdeck-full.bin",
-    "sigurdos-tdeck-launcher.bin",
+    "KrabOS-tdeck-plus-launcher.bin",
+    "krabos-tdeck-plus-full.bin",
+    "krabos-tdeck-plus-launcher.bin",
 )
+FIRMWARE_ROLE_SPECS = {
+    "production": {
+        "file": "firmware-merged.bin",
+        "build_environment": "KrabOS_TDeckPlus",
+        "semantic_marker": "@krabos|event=boot_advert|status=queued|scope=wildcard",
+    },
+    "recovery": {
+        "file": "krabos-recovery-rf-off.bin",
+        "build_environment": "KrabOS_TDeckPlus_recovery",
+        "semantic_marker": "@krabos|event=rf_policy|tx=blocked|role=recovery",
+    },
+    "debug": {
+        "file": "firmware-debug.bin",
+        "build_environment": "KrabOS_TDeckPlus_debug",
+        "semantic_marker": "@krabos|event=rf_policy|tx=blocked|role=debug",
+    },
+}
+PRODUCTION_IMAGE_ALIASES = ("krabos-candidate.bin",)
 REQUIRED_RELEASE_ARTIFACTS = frozenset(
     {
         "firmware.bin",
         "firmware-debug.bin",
+        "krabos-candidate.bin",
+        "krabos-recovery-rf-off.bin",
         "manifest.json",
         "build-metadata.json",
         *COMPONENT_OFFSETS,
@@ -60,12 +80,82 @@ def _load_json(path: Path) -> dict:
     return value
 
 
+def _contains_c_string(image: bytes, value: str) -> bool:
+    """Match a compiled, NUL-terminated identity rather than a filename fragment."""
+
+    return value.encode("utf-8") + b"\0" in image
+
+
+def validate_firmware_roles(directory: Path) -> dict[str, dict[str, str | int]]:
+    """Bind each release image to its compiled PlatformIO environment and role."""
+
+    records: dict[str, dict[str, str | int]] = {}
+    hashes: dict[str, str] = {}
+    for role, spec in FIRMWARE_ROLE_SPECS.items():
+        path = directory / spec["file"]
+        if path.is_symlink() or not path.is_file():
+            raise ReleaseArtifactError(
+                f"{role} firmware must be a regular non-symlink file"
+            )
+        result = audit(path)
+        if not result.ok:
+            raise ReleaseArtifactError(
+                f"{spec['file']} is not a valid merged ESP32-S3 image: "
+                f"{result.errors[0]}"
+            )
+        image = path.read_bytes()
+        if not _contains_c_string(image, spec["build_environment"]):
+            raise ReleaseArtifactError(
+                f"{spec['file']} lacks the compiled {spec['build_environment']} "
+                "environment identity"
+            )
+        if not _contains_c_string(image, spec["semantic_marker"]):
+            raise ReleaseArtifactError(
+                f"{spec['file']} lacks the compiled {role} semantic identity"
+            )
+        for other_role, other in FIRMWARE_ROLE_SPECS.items():
+            if other_role == role:
+                continue
+            if _contains_c_string(image, other["build_environment"]) or _contains_c_string(
+                image, other["semantic_marker"]
+            ):
+                raise ReleaseArtifactError(
+                    f"{spec['file']} contains ambiguous {other_role} identity"
+                )
+        digest = sha256_file(path)
+        hashes[role] = digest
+        records[role] = {
+            "file": spec["file"],
+            "build_environment": spec["build_environment"],
+            "size": path.stat().st_size,
+            "sha256": digest,
+        }
+
+    if len(set(hashes.values())) != len(hashes):
+        raise ReleaseArtifactError(
+            "production, recovery, and debug firmware must have distinct SHA-256 digests"
+        )
+
+    production_hash = hashes["production"]
+    for name in PRODUCTION_IMAGE_ALIASES:
+        path = directory / name
+        if path.is_symlink() or not path.is_file():
+            raise ReleaseArtifactError(
+                f"production alias {name} must be a regular non-symlink file"
+            )
+        if sha256_file(path) != production_hash:
+            raise ReleaseArtifactError(
+                f"production alias {name} does not match firmware-merged.bin"
+            )
+    return records
+
+
 def validate_manifest(path: Path, expected_version: str | None = None) -> dict:
     manifest = _load_json(path)
     if set(manifest) != {"name", "version", "new_install_prompt_erase", "builds"}:
         raise ReleaseArtifactError("manifest does not match the ESP Web Tools install schema")
-    if manifest.get("name") != "SigurdOS T-Deck":
-        raise ReleaseArtifactError("manifest name must be SigurdOS T-Deck")
+    if manifest.get("name") != "KrabOS T-Deck Plus":
+        raise ReleaseArtifactError("manifest name must be KrabOS T-Deck Plus")
     version = manifest.get("version")
     if not isinstance(version, str) or not version:
         raise ReleaseArtifactError("manifest version must be non-empty")
@@ -116,8 +206,8 @@ def validate_release_directory(
     metadata = _load_json(directory / "build-metadata.json")
     if metadata.get("schema_version") != 1:
         raise ReleaseArtifactError("unsupported build metadata schema")
-    if metadata.get("build_environment") != "SigurdOS_TDeck":
-        raise ReleaseArtifactError("release artifacts were not built by SigurdOS_TDeck")
+    if metadata.get("build_environment") != "KrabOS_TDeckPlus":
+        raise ReleaseArtifactError("release artifacts were not built by KrabOS_TDeckPlus")
     if metadata.get("platformio_board") != "t-deck":
         raise ReleaseArtifactError("build metadata does not identify the T-Deck board")
     if metadata.get("chip_family") != "ESP32-S3" or metadata.get("mcu") != "esp32s3":
@@ -142,11 +232,19 @@ def validate_release_directory(
     if not isinstance(timestamp, str) or not timestamp.endswith("Z"):
         raise ReleaseArtifactError("build metadata needs a deterministic UTC source timestamp")
 
+    role_records = validate_firmware_roles(directory)
+    if role_records["production"]["build_environment"] != metadata.get(
+        "build_environment"
+    ):
+        raise ReleaseArtifactError(
+            "production binary identity and build metadata environment differ"
+        )
+
     artifact_metadata = metadata.get("artifacts")
     if not isinstance(artifact_metadata, dict):
         raise ReleaseArtifactError("build metadata must describe generated artifacts")
     for name, expected_offset in GENERATED_WEB_OFFSETS.items():
-        key = name.removeprefix("sigurdos-tdeck-").removesuffix(".bin")
+        key = name.removeprefix("krabos-tdeck-plus-").removesuffix(".bin")
         record = artifact_metadata.get(key)
         if not isinstance(record, dict):
             raise ReleaseArtifactError(f"build metadata is missing {key}")
@@ -168,15 +266,8 @@ def validate_release_directory(
         if len(header) != 3 or header[0] != 0xE9 or header[2] != 0x02:
             raise ReleaseArtifactError(f"{name} does not preserve the canonical DIO boot header")
 
-    debug_result = audit(directory / "firmware-debug.bin")
-    if not debug_result.ok:
-        raise ReleaseArtifactError(
-            "firmware-debug.bin is not a valid merged ESP32-S3 image: "
-            f"{debug_result.errors[0]}"
-        )
-
     if sha256_file(directory / "firmware.bin") != sha256_file(
-        directory / "sigurdos-tdeck-firmware.bin"
+        directory / "krabos-tdeck-plus-firmware.bin"
     ):
         raise ReleaseArtifactError("firmware.bin does not match the web-flasher app")
 

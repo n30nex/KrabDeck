@@ -48,6 +48,7 @@ class KrabosReleaseWorkflowTests(unittest.TestCase):
         self.assertEqual(checkout["with"]["ref"], "${{ steps.admit.outputs.candidate_sha }}")
         verify = steps["Verify exact source evidence contract"]["run"]
         self.assertIn('test "$remote_sha" = "$CANDIDATE_SHA"', verify)
+        self.assertIn("git ls-tree HEAD lib/meshcore", verify)
         self.assertIn("c5787ee46124d540944ea238ff443f8d87ca0899", verify)
         self.assertIn("scripts/verify_release_evidence.py", verify)
         self.assertIn("--require-exact", verify)

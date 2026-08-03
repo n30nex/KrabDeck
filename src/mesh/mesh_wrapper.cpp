@@ -112,7 +112,7 @@ static mesh_impl_t*   g_mesh = nullptr;
 
 static sigurdos::mesh::detail::MeshInitState init_state =
     sigurdos::mesh::detail::MeshInitState::Stopped;
-static char own_name[32] = "SigurdOS";
+static char own_name[32] = KRABOS_PRODUCT_NAME;
 static uint32_t last_advert_time = 0;
 static bool     last_advert_success = false;
 static bool     last_advert_used_gps = false;
@@ -1094,7 +1094,10 @@ bool init(bool spiffs_ok)
     fallback_clock.begin();
     rtc_clock.begin(Wire);
 
-#if !defined(SIGURDOS_REMOTE_TEST) || defined(SIGURDOS_REMOTE_TEST_RADIO)
+#if (!defined(SIGURDOS_REMOTE_TEST) || !(SIGURDOS_REMOTE_TEST) || \
+     (defined(SIGURDOS_REMOTE_TEST_RADIO) && SIGURDOS_REMOTE_TEST_RADIO)) && \
+    (!defined(KRABOS_RECOVERY) || !(KRABOS_RECOVERY)) && \
+    (!defined(KRABOS_DEBUG_IMAGE) || !(KRABOS_DEBUG_IMAGE))
     // Delayed allocation of RadioLib Module and radio driver objects.
     // These were previously allocated at file scope (static init time),
     // before PSRAM was available. On ESP32 Arduino builds, a failed

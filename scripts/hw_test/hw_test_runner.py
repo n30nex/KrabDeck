@@ -430,7 +430,7 @@ def run_smoke(
             lambda: _command_expect(
                 connection,
                 "help",
-                ("SigurdOS Remote Test Controller",),
+                ("KrabOS Remote Test Controller",),
                 timeout_s=5,
             ),
         )

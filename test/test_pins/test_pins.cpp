@@ -177,6 +177,15 @@ TEST_F(PinsTest, LoraDefaultsInRange) {
     EXPECT_LE(LORA_TX_PWR, 23);
 }
 
+TEST_F(PinsTest, KrabOsRadioDefaultsMatchCanadaMeshCoreProfile) {
+    EXPECT_FLOAT_EQ(LORA_FREQ, 910.525f);
+    EXPECT_FLOAT_EQ(LORA_BW, 62.5f);
+    EXPECT_EQ(LORA_SF, 7);
+    EXPECT_EQ(LORA_CR, 5);
+    EXPECT_EQ(LORA_TX_PWR, 20);
+    EXPECT_STREQ(KRABOS_RADIO_PROFILE_ID, "ca_902_928");
+}
+
 // ── GPS baud rate is standard ───────────────────────────
 TEST_F(PinsTest, GPSBaudRateIsValid) {
     EXPECT_GE(GPS_BAUD_RATE, 4800);

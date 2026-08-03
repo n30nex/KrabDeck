@@ -120,10 +120,12 @@ static char own_name[32] = KRABOS_PRODUCT_NAME;
 static uint32_t last_advert_time = 0;
 static bool     last_advert_success = false;
 static bool     last_advert_used_gps = false;
+#if defined(KRABOS_PRODUCTION) && KRABOS_PRODUCTION
 static bool     boot_advert_attempted = false;
 static bool     boot_advert_queued = false;
 static uint32_t boot_advert_last_attempt_ms = 0;
 static constexpr uint32_t BOOT_ADVERT_RETRY_MS = 5000;
+#endif
 static sigurdos::mesh::TimeSyncTracker time_sync_tracker;
 
 static bool sigurdos_mesh_radio_tx_allowed();
@@ -198,6 +200,10 @@ static bool radioPrefsSupported(const sigurdos::NodePrefs& prefs)
            sigurdos::radio_profile_configuration_valid(prefs);
 }
 
+#if (!defined(SIGURDOS_REMOTE_TEST) || !(SIGURDOS_REMOTE_TEST) || \
+     (defined(SIGURDOS_REMOTE_TEST_RADIO) && SIGURDOS_REMOTE_TEST_RADIO)) && \
+    (!defined(KRABOS_RECOVERY) || !(KRABOS_RECOVERY)) && \
+    (!defined(KRABOS_DEBUG_IMAGE) || !(KRABOS_DEBUG_IMAGE))
 static void disableRadioPrefs(sigurdos::NodePrefs& prefs)
 {
     prefs.configured = false;
@@ -208,6 +214,7 @@ static void disableRadioPrefs(sigurdos::NodePrefs& prefs)
     prefs.tx_power_dbm = 0;
     prefs.radio_profile[0] = '\0';
 }
+#endif
 
 static sigurdos::mesh::RadioApplyResult applyRadioHardware(
     const sigurdos::mesh::RadioConfig& config)

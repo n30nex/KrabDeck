@@ -55,6 +55,7 @@ int32_t commit(void* raw) {
     return nvs_commit(static_cast<NvsWriterContext*>(raw)->handle);
 }
 
+#if defined(KRABOS_PRODUCTION) && KRABOS_PRODUCTION
 detail::PrefsNamespaceState prefsNamespaceState() {
     nvs_handle_t handle = 0;
     const esp_err_t error = nvs_open(NVS_NS, NVS_READONLY, &handle);
@@ -68,6 +69,7 @@ detail::PrefsNamespaceState prefsNamespaceState() {
     SIG_LOGE("[prefs] namespace probe failed: %s", esp_err_to_name(error));
     return detail::PrefsNamespaceState::Error;
 }
+#endif
 
 #if defined(SIGURDOS_COMPANION_BLE) && SIGURDOS_COMPANION_BLE
 bool persistBleMigration(bool enabled, bool user_set) {

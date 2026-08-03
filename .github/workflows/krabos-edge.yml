@@ -38,7 +38,7 @@ jobs:
       github.repository == 'n30nex/KrabDeck' &&
       github.event_name == 'workflow_dispatch' &&
       (inputs.release_channel == 'validation' || github.ref == 'refs/heads/main')
-    runs-on: [self-hosted, Linux, ARM64, krabdeck-pi5]
+    runs-on: [self-hosted, Linux, ARM64, krabdeck-pi5, krabos-hardware-target]
     timeout-minutes: 120
     permissions:
       contents: read

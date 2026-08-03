@@ -284,11 +284,6 @@ void setup()
     sigurdos::ota_boot_health::markCoreReady();
     sigurdos::hal::boot_watchdog_enter_runtime();
 
-#if !defined(SIGURDOS_REMOTE_TEST) || !SIGURDOS_REMOTE_TEST
-    if (sigurdos::mesh::sendAdvert()) {
-        Serial.println("@krabos|event=boot_advert");
-    }
-#endif
 }
 
 void loop()

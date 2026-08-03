@@ -283,7 +283,6 @@ void setup()
 #endif
     sigurdos::ota_boot_health::markCoreReady();
     sigurdos::hal::boot_watchdog_enter_runtime();
-
 }
 
 void loop()

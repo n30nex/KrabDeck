@@ -21,6 +21,34 @@ name: KrabOS exact-device Pi 5 release
         required: true
         default: release/krabos-1.0-candidate
         type: string
+      observer_evidence_path:
+        description: Runner-local path to the exact independent RF observer packet
+        required: false
+        type: string
+      observer_bundle_path:
+        description: Runner-local path to the sanitized independent RF observer bundle
+        required: false
+        type: string
+      observer_source_run_id:
+        description: Exact GitHub Actions run ID that produced the observer artifact
+        required: false
+        type: string
+      observer_source_artifact_id:
+        description: Exact GitHub Actions artifact ID containing the observer packet
+        required: false
+        type: string
+      observer_source_artifact_digest:
+        description: Exact sha256:<64 lowercase hex> digest of the observer artifact
+        required: false
+        type: string
+      observer_artifact_metadata_path:
+        description: Runner-local path to the downloaded observer artifact metadata
+        required: false
+        type: string
+      observer_run_metadata_path:
+        description: Runner-local path to the downloaded observer workflow-run metadata
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -174,6 +202,38 @@ jobs:
           mkdir -m 700 "$artifact_dir"
 
           echo "KRABOS_ARTIFACTS=$artifact_dir" >> "$GITHUB_ENV"
+
+      - name: Admit independent RF observer inputs
+        id: observer
+        if: >-
+          steps.request.outputs.release_mode == 'true' &&
+          github.ref == 'refs/heads/main' &&
+          steps.request.outputs.candidate_branch == 'main'
+        shell: bash
+        env:
+          OBSERVER_EVIDENCE: ${{ inputs.observer_evidence_path }}
+          OBSERVER_BUNDLE: ${{ inputs.observer_bundle_path }}
+          OBSERVER_SOURCE_RUN_ID: ${{ inputs.observer_source_run_id }}
+          OBSERVER_SOURCE_ARTIFACT_ID: ${{ inputs.observer_source_artifact_id }}
+          OBSERVER_SOURCE_ARTIFACT_DIGEST: ${{ inputs.observer_source_artifact_digest }}
+          OBSERVER_ARTIFACT_METADATA: ${{ inputs.observer_artifact_metadata_path }}
+          OBSERVER_RUN_METADATA: ${{ inputs.observer_run_metadata_path }}
+        run: |
+          set -euo pipefail
+          for path in \
+            "$OBSERVER_EVIDENCE" \
+            "$OBSERVER_BUNDLE" \
+            "$OBSERVER_ARTIFACT_METADATA" \
+            "$OBSERVER_RUN_METADATA"; do
+            test -n "$path"
+            test -f "$path"
+            test ! -L "$path"
+          done
+          [[ "$OBSERVER_SOURCE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$OBSERVER_SOURCE_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$OBSERVER_SOURCE_ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          echo "source_evidence_sha256=$(sha256sum "$OBSERVER_EVIDENCE" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "evidence_bundle_sha256=$(sha256sum "$OBSERVER_BUNDLE" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
       - name: Create isolated Python environment
         shell: bash
@@ -380,6 +440,14 @@ jobs:
           steps.request.outputs.candidate_branch == 'main'
         continue-on-error: true
         shell: bash
+        env:
+          OBSERVER_EVIDENCE: ${{ inputs.observer_evidence_path }}
+          OBSERVER_BUNDLE: ${{ inputs.observer_bundle_path }}
+          OBSERVER_SOURCE_RUN_ID: ${{ inputs.observer_source_run_id }}
+          OBSERVER_SOURCE_ARTIFACT_ID: ${{ inputs.observer_source_artifact_id }}
+          OBSERVER_SOURCE_ARTIFACT_DIGEST: ${{ inputs.observer_source_artifact_digest }}
+          OBSERVER_ARTIFACT_METADATA: ${{ inputs.observer_artifact_metadata_path }}
+          OBSERVER_RUN_METADATA: ${{ inputs.observer_run_metadata_path }}
         run: >-
           "$RUNNER_TEMP/krabos-venv/bin/python"
           scripts/krabos/exact_device_release.py release
@@ -388,6 +456,14 @@ jobs:
           --state-directory "$HOME/.local/state/krabos/releases"
           --public-receipt "$KRABOS_ARTIFACTS/krabos-public-receipt.json"
           --smoke-evidence "$RUNNER_TEMP/krabos-smoke-evidence.json"
+          --observer-evidence "$OBSERVER_EVIDENCE"
+          --observer-bundle "$OBSERVER_BUNDLE"
+          --observer-source-repository "$GITHUB_REPOSITORY"
+          --observer-source-run-id "$OBSERVER_SOURCE_RUN_ID"
+          --observer-source-artifact-id "$OBSERVER_SOURCE_ARTIFACT_ID"
+          --observer-source-artifact-digest "$OBSERVER_SOURCE_ARTIFACT_DIGEST"
+          --observer-artifact-metadata "$OBSERVER_ARTIFACT_METADATA"
+          --observer-run-metadata "$OBSERVER_RUN_METADATA"
           --esptool-python "$RUNNER_TEMP/krabos-venv/bin/python"
 
       - name: Validate canonical redacted publication receipt
@@ -396,6 +472,8 @@ jobs:
         shell: bash
         env:
           HARDWARE_OUTCOME: ${{ steps.hardware.outcome }}
+          OBSERVER_SOURCE_EVIDENCE_SHA256: ${{ steps.observer.outputs.source_evidence_sha256 }}
+          OBSERVER_EVIDENCE_BUNDLE_SHA256: ${{ steps.observer.outputs.evidence_bundle_sha256 }}
         run: |
           set +e
           echo "release_eligible=false" >> "$GITHUB_OUTPUT"
@@ -403,6 +481,8 @@ jobs:
             "$RUNNER_TEMP/krabos-venv/bin/python" \
               scripts/krabos/exact_device_release.py check-public \
               --receipt "$KRABOS_ARTIFACTS/krabos-public-receipt.json" \
+              --source-evidence-sha256 "$OBSERVER_SOURCE_EVIDENCE_SHA256" \
+              --evidence-bundle-sha256 "$OBSERVER_EVIDENCE_BUNDLE_SHA256" \
               --github-output "$GITHUB_OUTPUT"
           fi
           exit 0

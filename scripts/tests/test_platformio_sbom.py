@@ -36,6 +36,14 @@ class PlatformioSbomTests(unittest.TestCase):
         lock = ROOT / "ci" / "platformio-packages.lock"
         self.assertEqual(MODULE.generate(lock), MODULE.generate(lock))
 
+    def test_firmware_component_uses_krabos_identity(self) -> None:
+        sbom = MODULE.generate(ROOT / "ci" / "platformio-packages.lock")
+        firmware = sbom["metadata"]["component"]
+        self.assertEqual("pkg:github/n30nex/KrabDeck", firmware["bom-ref"])
+        self.assertEqual("KrabOS T-Deck Plus", firmware["name"])
+        properties = sbom["metadata"]["properties"]
+        self.assertEqual("krabos:lock-sha256", properties[0]["name"])
+
 
 if __name__ == "__main__":
     unittest.main()

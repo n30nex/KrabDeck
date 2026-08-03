@@ -65,7 +65,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
           remote_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
           test "$remote_sha" = "$CANDIDATE_SHA"
-          test "$(git -C lib/meshcore rev-parse HEAD)" = "c5787ee46124d540944ea238ff443f8d87ca0899"
+          test "$(git ls-tree HEAD lib/meshcore | awk '{print $3}')" = "c5787ee46124d540944ea238ff443f8d87ca0899"
           python3 scripts/check_meshcore_pin.py
 
           evidence="release-evidence/v1.0.0.json"

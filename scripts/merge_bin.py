@@ -196,7 +196,7 @@ def merge_bin_action(target, source, env):
     for offset, path in parts:
         command.extend([hex(offset), path])
 
-    print(f"SigurdOS: merging firmware ({board_config.get('build.mcu', 'esp32s3')})...")
+    print(f"KrabOS: merging firmware ({board_config.get('build.mcu', 'esp32s3')})...")
     try:
         _subprocess.run(command, check=True)
     except (OSError, _subprocess.CalledProcessError) as exc:
@@ -205,14 +205,14 @@ def merge_bin_action(target, source, env):
         raise RuntimeError("esptool reported success without producing the merged image")
     _assert_image_flash_mode(merged_bin, expected_flash_mode, "merged image")
     _assert_embedded_app(merged_bin, firmware_bin, app_offset)
-    print(f"SigurdOS: merged -> firmware-merged.bin ({_os.path.getsize(merged_bin):,} bytes)")
+    print(f"KrabOS: merged -> firmware-merged.bin ({_os.path.getsize(merged_bin):,} bytes)")
 
-    launcher_bin = _os.path.join(build_dir, "SigurdOS-tdeck-launcher.bin")
+    launcher_bin = _os.path.join(build_dir, "KrabOS-tdeck-plus-launcher.bin")
     _shutil.copy2(merged_bin, launcher_bin)
     if _sha256(launcher_bin) != _sha256(merged_bin):
         raise RuntimeError("Launcher copy does not match the merged image")
     print(
-        "SigurdOS: launcher -> SigurdOS-tdeck-launcher.bin "
+        "KrabOS: launcher -> KrabOS-tdeck-plus-launcher.bin "
         f"({_os.path.getsize(launcher_bin):,} bytes)"
     )
 
@@ -225,7 +225,7 @@ def merge_bin_action(target, source, env):
     }
     artifact_metadata = {}
     for name, (source_path, offset) in artifact_sources.items():
-        destination_name = f"sigurdos-tdeck-{name}.bin"
+        destination_name = f"krabos-tdeck-plus-{name}.bin"
         destination = _os.path.join(web_dir, destination_name)
         _shutil.copy2(source_path, destination)
         if not _os.path.isfile(destination):
@@ -236,10 +236,10 @@ def merge_bin_action(target, source, env):
             "sha256": _sha256(destination),
             "offset": offset,
         }
-        print(f"SigurdOS webflasher: {destination_name} ({_os.path.getsize(destination):,} bytes)")
+        print(f"KrabOS webflasher: {destination_name} ({_os.path.getsize(destination):,} bytes)")
 
     manifest = {
-        "name": "SigurdOS T-Deck",
+        "name": "KrabOS T-Deck Plus",
         "version": version,
         "new_install_prompt_erase": True,
         "builds": [
@@ -254,9 +254,9 @@ def merge_bin_action(target, source, env):
     }
     metadata = {
         "schema_version": 1,
-        "name": "SigurdOS T-Deck",
+        "name": "KrabOS T-Deck Plus",
         "version": version,
-        "board": "LilyGo T-Deck",
+        "board": "LilyGo T-Deck Plus",
         "platformio_board": env.subst("$BOARD"),
         "mcu": board_config.get("build.mcu", "esp32s3"),
         "chip_family": "ESP32-S3",
@@ -282,7 +282,7 @@ def merge_bin_action(target, source, env):
             output.write("\n")
         if not _os.path.isfile(path):
             raise RuntimeError(f"failed to create mandatory release metadata: {path}")
-    print("SigurdOS webflasher: ESP Web Tools manifest and build metadata written")
+    print("KrabOS webflasher: ESP Web Tools manifest and build metadata written")
 
 
 env.AddPostAction("$BUILD_DIR/${PROGNAME}.bin", merge_bin_action)

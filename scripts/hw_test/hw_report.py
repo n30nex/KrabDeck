@@ -112,10 +112,14 @@ class HardwareReport:
 
     @property
     def exit_code(self) -> int:
+        if not self.results:
+            return 1
         failures = [item for item in self.results if item.status == TestStatus.FAIL]
         if any(item.critical for item in failures):
             return 2
         if failures:
+            return 1
+        if any(item.status in (TestStatus.WARN, TestStatus.SKIP) for item in self.results):
             return 1
         return 0
 

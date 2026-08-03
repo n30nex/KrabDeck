@@ -19,9 +19,55 @@ class KrabosReleaseWorkflowTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.text = (WORKFLOWS / "krabos-edge.yml").read_text(encoding="utf-8")
         cls.workflow = yaml.safe_load(cls.text)
+        cls.evidence_text = (WORKFLOWS / "krabos-evidence.yml").read_text(
+            encoding="utf-8"
+        )
+        cls.evidence_workflow = yaml.safe_load(cls.evidence_text)
         cls.pi5 = cls.workflow["jobs"]["pi5"]
         cls.steps = cls.pi5["steps"]
         cls.step_by_name = {step["name"]: step for step in cls.steps}
+
+    def test_evidence_handoff_is_manual_main_only_and_candidate_bound(self) -> None:
+        triggers = self.evidence_workflow["on"]
+        self.assertNotIn("push", triggers)
+        self.assertNotIn("pull_request", triggers)
+        self.assertIn("workflow_dispatch", triggers)
+        inputs = triggers["workflow_dispatch"]["inputs"]
+        self.assertTrue(inputs["candidate_sha"]["required"])
+
+        handoff = self.evidence_workflow["jobs"]["handoff"]
+        self.assertIn("github.repository == 'n30nex/KrabDeck'", handoff["if"])
+        self.assertIn("github.event_name == 'workflow_dispatch'", handoff["if"])
+        self.assertIn("github.ref == 'refs/heads/main'", handoff["if"])
+        self.assertEqual(handoff["permissions"], {"contents": "read", "actions": "write"})
+        steps = {step["name"]: step for step in handoff["steps"]}
+        admit = steps["Admit exact main candidate"]["run"]
+        self.assertIn('test "$candidate_sha" = "$GITHUB_SHA"', admit)
+        self.assertIn('test "$GITHUB_REF" = "refs/heads/main"', admit)
+        checkout = steps["Check out exact candidate"]
+        self.assertEqual(checkout["with"]["ref"], "${{ steps.admit.outputs.candidate_sha }}")
+        verify = steps["Verify exact source evidence contract"]["run"]
+        self.assertIn('test "$remote_sha" = "$CANDIDATE_SHA"', verify)
+        self.assertIn("c5787ee46124d540944ea238ff443f8d87ca0899", verify)
+        self.assertIn("scripts/verify_release_evidence.py", verify)
+        self.assertIn("--require-exact", verify)
+        upload = steps["Upload candidate-bound source evidence"]
+        self.assertEqual(
+            upload["with"]["name"],
+            "krabos-v1-evidence-${{ steps.admit.outputs.candidate_sha }}",
+        )
+        self.assertEqual(upload["with"]["path"], "release-evidence/v1.0.0.json")
+        self.assertEqual(upload["with"]["if-no-files-found"], "error")
+        identity = steps["Verify immutable evidence handoff identity"]["run"]
+        self.assertIn("artifact-digest", self.evidence_text)
+        self.assertIn("artifact-id", self.evidence_text)
+        self.assertIn("sha256:[0-9a-f]{64}", identity)
+
+    def test_evidence_handoff_actions_are_immutable(self) -> None:
+        refs = ACTION_REF.findall(self.evidence_text)
+        self.assertEqual(len(refs), 2)
+        for ref in refs:
+            self.assertRegex(ref, r"^[0-9a-f]{40}$")
 
     def test_workflow_is_manual_only_and_uses_main_definition(self) -> None:
         triggers = self.workflow["on"]

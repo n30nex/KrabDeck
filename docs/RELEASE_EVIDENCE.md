@@ -221,3 +221,41 @@ before promotion. Confirm those results in the release PR. The first-party
 warning gate parses only compiler warnings whose paths start with `src/`;
 third-party warnings do not spend this budget. When a warning is fixed, reduce
 `ci/first_party_warnings.json` in the same PR so the debt cannot return.
+
+## KrabOS M0 exact-device admission
+
+The KrabOS exact-device path is a hardware gate, not a substitute for hardware
+evidence. Before an operator runs the executor from PR #12, all of the
+following must be provisioned and reviewed privately:
+
+- a mode-0600, runner-owned fixture configuration naming one `/dev/serial/by-id`
+  T-Deck Plus and explicitly forbidding the D1L and RF-peer identities;
+- the pre-provisioned shared hardware lock and the approved, RF-off recovery
+  procedure; and
+- the authorized fixture, firmware commit, and release-role metadata. These
+  details, along with location, identity, full-flash backups, and raw serial
+  evidence, stay off GitHub.
+
+The executor must bind the exact USB properties and eFuse MAC, reject a busy or
+ambiguous target, capture and hash the complete 16 MiB flash before erase, and
+export the preserved state partitions before any candidate bytes run. It must
+install and read back the RF-off recovery image before the candidate boot and
+leave the fixture in that recovery posture after a failed or unqualified run.
+
+Target-local serial markers are structural diagnostics only. They do not prove
+that RF was silent or that a candidate advert/DM/channel reached a peer. The
+release receipt therefore requires an independently observed, exact-image-bound
+evidence packet for the RF gates. A receipt with only target-local markers must
+remain ineligible, even when its JSON schema and redaction checks pass.
+
+Current PR #12 invokes `exact_device_release.py release` without the required
+`--observer-*` admission inputs. That is an honest fail-closed blocker: the
+hardware path cannot produce an eligible release receipt until the independent
+observer packet, its source identity, and its bundle digest are wired into both
+the release command and `check-public`.
+
+Steward's remaining M0 operator gates are: provision and review the private
+fixture authorization; run the pinned native/script/build checks; perform the
+exact-device identity and full-backup checks; execute the RF-off recovery drill
+with the independent observer; verify the redacted receipt and exact artifact
+hashes; and retain the private recovery/backup evidence for supervised review.

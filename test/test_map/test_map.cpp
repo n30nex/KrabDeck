@@ -60,8 +60,8 @@ std::vector<uint8_t> complete_png_fixture() {
     std::vector<uint8_t> bytes = {
         0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a};
     std::vector<uint8_t> ihdr(13, 0);
-    ihdr[1] = 1;  // width = 256
-    ihdr[5] = 1;  // height = 256
+    ihdr[2] = 1;  // width = 256
+    ihdr[6] = 1;  // height = 256
     ihdr[8] = 8;  // bit depth
     ihdr[9] = 6;  // RGBA
     append_png_chunk(&bytes, "IHDR", ihdr);

@@ -162,7 +162,7 @@ TEST(GitHubOTAPlanTest, SkipsNestedUnknownReleaseFields) {
     const char* json = R"([
       {
         "assets":[{"name":"firmware.bin","size":1234}],
-        "body":{"notes":["ignored"]},
+        "metadata":{"notes":["ignored"]},
         "tag_name":"main-stable",
         "target_commitish":"main",
         "prerelease":false

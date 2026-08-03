@@ -83,7 +83,7 @@ The active-flag `SIGURDOS_DEBUG_ACTIVE` is derived from `SIGURDOS_DEBUG` in `src
 
 ```cpp
 SIG_LOGW("[ota] REFUSED: OTA not available under bmorcelli/Launcher ...");
-SIG_LOGD("[wifi-sta] connecting to %s...", ssid);
+SIG_LOGD("[wifi-sta] connecting to configured network");
 SIG_LOGD("[wifi-sta] connected! (%d dBm)", s_rssi);
 ```
 

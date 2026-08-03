@@ -153,7 +153,7 @@ bool start(const char* ssid, const char* password) {
         // Already connected to a WiFi network — keep STA, bind on local IP
         ip = WiFi.localIP();
         snprintf(server_ip, sizeof(server_ip), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-        SIG_LOGW("[ota] Using STA IP: %s", server_ip);
+        SIG_LOGW("[ota] Using existing STA connection");
     } else {
         // Not connected — start AP mode
         WiFi.mode(WIFI_AP);
@@ -178,7 +178,7 @@ bool start(const char* ssid, const char* password) {
 
         ip = WiFi.softAPIP();
         snprintf(server_ip, sizeof(server_ip), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-        SIG_LOGW("[ota] WiFi AP started: %s @ %s", ssid, server_ip);
+        SIG_LOGW("[ota] WiFi AP started");
     }
 
     // Set up web server
@@ -609,7 +609,7 @@ bool beginConnect(const char* ssid, const char* password) {
     s_conn_start = millis();
     s_connected = false;
     s_rssi = 0;
-    SIG_LOGD("[wifi-sta] connecting to %s...", ssid);
+    SIG_LOGD("[wifi-sta] connecting to configured network");
     return true;
 }
 
@@ -701,8 +701,7 @@ void loop() {
             last_reconnect = millis();
             const NodePrefs& p = sigurdos::prefs_get();
             if (p.wifi_ssid[0]) {
-                SIG_LOGD("[wifi-sta] auto-reconnecting to %s...",
-                         p.wifi_ssid);
+                SIG_LOGD("[wifi-sta] auto-reconnecting to configured network");
                 beginConnect(p.wifi_ssid, p.wifi_password);
             }
         }

@@ -80,7 +80,13 @@ class KrabosReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("github.ref == 'refs/heads/main'", job_if)
         self.assertEqual(
             self.pi5["runs-on"],
-            ["self-hosted", "Linux", "ARM64", "krabdeck-pi5"],
+            [
+                "self-hosted",
+                "Linux",
+                "ARM64",
+                "krabdeck-pi5",
+                "krabos-hardware-target",
+            ],
         )
         self.assertEqual(
             self.workflow["concurrency"]["group"],
@@ -285,6 +291,7 @@ class KrabosReleaseWorkflowTests(unittest.TestCase):
 
     def test_every_platformio_build_or_test_runs_only_on_pi5(self) -> None:
         pi5_runner = ["self-hosted", "Linux", "ARM64", "krabdeck-pi5"]
+        hardware_runner = pi5_runner + ["krabos-hardware-target"]
         command = re.compile(r"\bpio\s+(?:run|test|check)\b")
         for path in WORKFLOWS.glob("*.yml"):
             workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -293,9 +300,14 @@ class KrabosReleaseWorkflowTests(unittest.TestCase):
                     str(step.get("run", "")) for step in job.get("steps", [])
                 )
                 if command.search(runs):
+                    expected_runner = (
+                        hardware_runner
+                        if path.name == "krabos-edge.yml" and job_name == "pi5"
+                        else pi5_runner
+                    )
                     self.assertEqual(
                         job.get("runs-on"),
-                        pi5_runner,
+                        expected_runner,
                         f"{path.name}:{job_name} can build outside the Pi 5",
                     )
         nightly = yaml.safe_load(

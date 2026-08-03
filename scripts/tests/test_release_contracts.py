@@ -24,11 +24,19 @@ class ReleaseContractTests(unittest.TestCase):
             "bool set_keyboard_mode(uint8_t command) { return true; }\n"
             "void init() { set_keyboard_mode(CMD_MODE_KEY); }\n"
         )
+        (root / "src/main.cpp").write_text(
+            'sigurdos::diagnostics::diagnostic_logf(\n'
+            '    "", "@krabos|event=boot|status=ready|env=%s|sha=%.12s");\n'
+        )
         (root / "src/ui/screen.cpp").write_text(
             "void show() { lv_scr_load_anim(scr, anim, 0, 0, false); }\n"
         )
         (root / "docs/README.md").write_text(
             "Use /releases/download/v1.2.3/firmware.bin.\n"
+        )
+        (root / "docs/RELEASE_EVIDENCE.md").write_text(
+            "https://github.com/n30nex/KrabDeck/.github/workflows/"
+            "krabos-edge.yml@refs/heads/main\n"
         )
         (root / ".github/workflows/build-release.yml").write_text(
             "run: compare GITHUB_REF_NAME with SIGURDOS_VERSION\n"
@@ -89,12 +97,29 @@ class ReleaseContractTests(unittest.TestCase):
         )
         self.assertTrue(any("version literal" in item for item in MODULE.check(root)))
 
+    def test_rejects_inherited_release_provenance_identity(self):
+        temporary, root = self.make_root()
+        self.addCleanup(temporary.cleanup)
+        (root / "docs/RELEASE_EVIDENCE.md").write_text(
+            "https://github.com/hermes-gadget/SigurdOS-tdeck/.github/workflows/"
+            "build-release.yml@refs/tags/\n"
+        )
+        self.assertTrue(any("provenance" in item for item in MODULE.check(root)))
+
     def test_rejects_restored_obsolete_helper(self):
         temporary, root = self.make_root()
         self.addCleanup(temporary.cleanup)
         (root / "scripts").mkdir()
         (root / "scripts/screenshot.py").write_text("print('legacy')\n")
         self.assertTrue(any("obsolete unsafe" in item for item in MODULE.check(root)))
+
+    def test_rejects_direct_ready_marker_serial_printf(self):
+        temporary, root = self.make_root()
+        self.addCleanup(temporary.cleanup)
+        (root / "src/main.cpp").write_text(
+            'Serial.printf("@krabos|event=boot|status=ready|env=%s|sha=%.12s\\n");\n'
+        )
+        self.assertTrue(any("direct Serial.printf" in item for item in MODULE.check(root)))
 
 
 if __name__ == "__main__":

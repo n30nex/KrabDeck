@@ -55,6 +55,20 @@ int32_t commit(void* raw) {
     return nvs_commit(static_cast<NvsWriterContext*>(raw)->handle);
 }
 
+detail::PrefsNamespaceState prefsNamespaceState() {
+    nvs_handle_t handle = 0;
+    const esp_err_t error = nvs_open(NVS_NS, NVS_READONLY, &handle);
+    if (error == ESP_OK) {
+        nvs_close(handle);
+        return detail::PrefsNamespaceState::Present;
+    }
+    if (error == ESP_ERR_NVS_NOT_FOUND) {
+        return detail::PrefsNamespaceState::Missing;
+    }
+    SIG_LOGE("[prefs] namespace probe failed: %s", esp_err_to_name(error));
+    return detail::PrefsNamespaceState::Error;
+}
+
 #if defined(SIGURDOS_COMPANION_BLE) && SIGURDOS_COMPANION_BLE
 bool persistBleMigration(bool enabled, bool user_set) {
     nvs_handle_t handle = 0;
@@ -117,6 +131,8 @@ bool prefs_load(NodePrefs& p) {
     Preferences nvs;
     if (!nvs.begin(NVS_NS, true)) return false;
 
+    const NodePrefs missing = detail::existingInstallMissingKeyDefaults();
+
 #if defined(SIGURDOS_COMPANION_BLE) && SIGURDOS_COMPANION_BLE
     const detail::BlePrefsState ble_state = detail::resolveBlePrefs(
         nvs.isKey("ble_en"), nvs.getBool("ble_en", DEFAULT_BLE_ENABLED),
@@ -134,12 +150,12 @@ bool prefs_load(NodePrefs& p) {
         memcpy(p.node_name, name_tmp, sizeof(p.node_name) - 1);
         p.node_name[sizeof(p.node_name) - 1] = '\0';
     }
-    p.freq         = nvs.getFloat("freq", 0.0f);
-    p.bw           = nvs.getFloat("bw", 0.0f);
-    p.sf           = nvs.getUChar("sf", 0);
-    p.cr           = nvs.getUChar("cr", 0);
-    p.tx_power_dbm  = nvs.getChar("txpwr", 0);
-    p.configured    = nvs.getBool("cfg", false);
+    p.freq         = nvs.getFloat("freq", missing.freq);
+    p.bw           = nvs.getFloat("bw", missing.bw);
+    p.sf           = nvs.getUChar("sf", missing.sf);
+    p.cr           = nvs.getUChar("cr", missing.cr);
+    p.tx_power_dbm  = nvs.getChar("txpwr", missing.tx_power_dbm);
+    p.configured    = nvs.getBool("cfg", missing.configured);
     p.kbd_backlight = nvs.getUChar("kbd_bl", 127);
     p.kbd_layout = nvs.getUChar("kbd_layout", 0);
     if (p.kbd_layout >= 12) p.kbd_layout = 0;
@@ -150,7 +166,7 @@ bool prefs_load(NodePrefs& p) {
     p.auto_off_timeout = nvs.getUShort("auto_off", 30);
     p.chat_msg_cap  = nvs.getUShort("chat_cap", 200);
     p.flood_max_hops = nvs.getUChar("flood_mh", 0);
-    p.advert_loc_policy = nvs.getUChar("sh_loc", 0);
+    p.advert_loc_policy = nvs.getUChar("sh_loc", missing.advert_loc_policy);
     p.advert_location_valid = nvs.getBool("adv_loc", false);
     p.advert_lat = nvs.getInt("adv_lat", 0);
     p.advert_lon = nvs.getInt("adv_lon", 0);
@@ -175,10 +191,11 @@ bool prefs_load(NodePrefs& p) {
         nvs.getUChar("phash_mode", 0));
     p.multi_acks = nvs.getUChar("multi_ack", 0);
     p.buzzer_quiet = nvs.getBool("buzz_q", false);
-    p.gps_enabled = nvs.getBool("gps_en", false);
+    p.gps_enabled = nvs.getBool("gps_en", missing.gps_enabled);
     // NVS values are typed and the legacy gps_int key is uint16. Use a new
     // uint32 key so existing installations migrate without a type mismatch.
-    p.gps_interval = nvs.getULong("gps_int32", nvs.getUShort("gps_int", 5));
+    p.gps_interval = nvs.getULong(
+        "gps_int32", nvs.getUShort("gps_int", missing.gps_interval));
     if (p.gps_interval > 86400) p.gps_interval = 86400;
     p.gps_track_enabled = nvs.getBool("gps_trk_en", false);
     p.gps_track_interval = nvs.getULong("gps_trk_int", 15);
@@ -228,10 +245,19 @@ bool prefs_load(NodePrefs& p) {
     }
     p.ota_allow_prerelease = nvs.getBool("ota_pre", false);
 
-    // Radio profile (backward-compatible: empty = custom/unset)
-    size_t rf_prof_len = nvs.getString("rf_prof", p.radio_profile, sizeof(p.radio_profile));
-    if (rf_prof_len == 0 || rf_prof_len > sizeof(p.radio_profile)) { p.radio_profile[0] = '\0'; }
-    else { p.radio_profile[sizeof(p.radio_profile) - 1] = '\0'; }
+    // Radio profile (backward-compatible: empty = custom/unset). An existing
+    // namespace without this newer key must not silently adopt product RF.
+    if (nvs.isKey("rf_prof")) {
+        size_t rf_prof_len = nvs.getString(
+            "rf_prof", p.radio_profile, sizeof(p.radio_profile));
+        if (rf_prof_len == 0 || rf_prof_len > sizeof(p.radio_profile)) {
+            p.radio_profile[0] = '\0';
+        } else {
+            p.radio_profile[sizeof(p.radio_profile) - 1] = '\0';
+        }
+    } else {
+        p.radio_profile[0] = missing.radio_profile[0];
+    }
 
     nvs.end();
     if (!detail::normalizeAndValidate(p)) {
@@ -306,6 +332,11 @@ const NodePrefs& prefs_get() {
     static bool loaded = false;
     if (!loaded) {
         g_prefs.set_defaults();
+#if defined(KRABOS_PRODUCTION) && KRABOS_PRODUCTION
+        if (detail::useKrabosProductDefaults(prefsNamespaceState())) {
+            g_prefs.set_krabos_defaults();
+        }
+#endif
         prefs_load(g_prefs);
         loaded = true;
     }

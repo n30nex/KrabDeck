@@ -54,7 +54,7 @@ void init()
     theme::apply_dark_bg(splash_scr);
 
     lv_obj_t* logo = lv_label_create(splash_scr);
-    lv_label_set_text(logo, "SigurdOS");
+    lv_label_set_text(logo, "KrabOS");
     lv_obj_set_style_text_color(logo, lv_color_hex(theme::ACCENT), 0);
     lv_obj_set_style_text_font(logo, emoji_wrapped_montserrat_24, 0);
     lv_obj_align(logo, LV_ALIGN_CENTER, 0, -16);

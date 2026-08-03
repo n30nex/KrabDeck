@@ -326,7 +326,7 @@ bool startGitHubUpdate() {
         Serial.printf("[gh-ota] Reusing existing WiFi connection\n");
     }
 
-    Serial.printf("[gh-ota] Connecting to WiFi: %s\n", p.wifi_ssid);
+    Serial.println("[gh-ota] Connecting to configured WiFi");
 
     if (xTaskCreatePinnedToCore(
             [](void*) {
@@ -357,8 +357,7 @@ static void serviceWorker() {
     // ── Phase 1: WiFi connect ───────────────────────────────────
     if (st == GitHubOTAState::Connecting) {
         if (WiFi.status() == WL_CONNECTED) {
-            Serial.printf("[gh-ota] WiFi connected. IP: %s\n",
-                          WiFi.localIP().toString().c_str());
+            Serial.println("[gh-ota] WiFi connected");
 
             // Check if we need to fetch release info from API
             const NodePrefs& p = prefs_get();

@@ -26,6 +26,7 @@
 #include "ui/theme.h"
 #include "diagnostics/debug_cfg.h"
 #include "diagnostics/diagnostic_io.h"
+#include "diagnostics/build_info.h"
 #if SIGURDOS_DEBUG_DIAG
 #include "diagnostics/debug.h"
 #endif
@@ -137,7 +138,7 @@ void setup()
 
     sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::Ui);
     sigurdos::ui::init();
-    boot_status("Starting SigurdOS...");
+    boot_status("Starting KrabOS...");
     boot_log("first splash frame flushed");
 
     sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::Storage);
@@ -147,7 +148,7 @@ void setup()
     bool spiffs_ok = sigurdos::storage_init();
     if (!spiffs_ok) {
         if (sigurdos_is_under_launcher()) {
-            Serial.println("[boot] WARNING: SPIFFS mount failed — installed app-only under Launcher. Reinstall from the Launcher/merged image (SigurdOS-tdeck-launcher.bin) for persistence.");
+            Serial.println("[boot] WARNING: SPIFFS mount failed — installed app-only under Launcher. Reinstall from the Launcher/merged image (KrabOS-tdeck-plus-launcher.bin) for persistence.");
         } else {
             Serial.println("[boot] WARNING: SPIFFS mount failed — identity/contacts won't persist across reboots. Use factory reset to reformat and recover.");
         }
@@ -199,16 +200,24 @@ void setup()
     sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::Radio);
     boot_status("Starting radio...");
     const char* radio_status = "Radio ready";
-#if defined(SIGURDOS_REMOTE_TEST) && SIGURDOS_REMOTE_TEST
+#if defined(KRABOS_RECOVERY) && KRABOS_RECOVERY
+    Serial.println("[boot] RECOVERY MODE — LoRa radio disabled");
+    Serial.println("@krabos|event=rf_policy|tx=blocked|role=recovery");
+    radio_status = "Radio disabled";
+    sigurdos::mesh::init(spiffs_ok);
+#elif defined(KRABOS_DEBUG_IMAGE) && KRABOS_DEBUG_IMAGE
+    Serial.println("[boot] KRABOS DEBUG MODE — LoRa radio disabled");
+    Serial.println("@krabos|event=rf_policy|tx=blocked|role=debug");
+    radio_status = "Radio disabled";
+    sigurdos::mesh::init(spiffs_ok);
+#elif defined(SIGURDOS_REMOTE_TEST) && SIGURDOS_REMOTE_TEST
 #if defined(SIGURDOS_REMOTE_TEST_RADIO) && SIGURDOS_REMOTE_TEST_RADIO
-    Serial.println("[boot] REMOTE TEST MODE — LoRa radio enabled (test controller + mesh)");
+    Serial.println("[boot] REMOTE RADIO TEST MODE");
     if (!sigurdos::mesh::init(spiffs_ok)) {
+        Serial.println("[boot] WARNING: Radio init failed");
         radio_status = "Radio unavailable";
     }
 #else
-    // Remote test mode — no LoRa radio initialised, but the shared SPI bus
-    // (pins 40/38/41) must be initialised before SD card init or the card
-    // fails with FR_NOT_READY. mesh::init() handles this via sigurdos_shared_spi_begin().
     Serial.println("[boot] REMOTE TEST MODE — LoRa radio disabled");
     radio_status = "Radio disabled";
     sigurdos::mesh::init(spiffs_ok);
@@ -240,7 +249,15 @@ void setup()
     sigurdos_map_init();
 
     boot_status("Ready");
-    boot_log("SigurdOS T-Deck ready");
+    boot_log("KrabOS T-Deck Plus ready");
+#if (defined(KRABOS_PRODUCTION) && KRABOS_PRODUCTION) || \
+    (defined(KRABOS_RECOVERY) && KRABOS_RECOVERY) || \
+    (defined(KRABOS_DEBUG_IMAGE) && KRABOS_DEBUG_IMAGE)
+    const sigurdos::build::BuildInfo& build = sigurdos::build::info();
+    sigurdos::diagnostics::diagnostic_logf(
+        "", "@krabos|event=boot|status=ready|env=%s|sha=%.12s",
+        build.build_env, build.git_sha);
+#endif
 
     // Auto-connect WiFi if credentials are saved
     sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::Wifi);

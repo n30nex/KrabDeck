@@ -200,7 +200,7 @@ void terminal_screen_show()
 
     // Boot header lines
     const sigurdos::NodePrefs& p = sigurdos::prefs_get();
-    term_add_line(log, "SigurdOS T-Deck Terminal");
+    term_add_line(log, "KrabOS T-Deck Plus Terminal");
     term_add_line(log, "MeshCore protocol active");
     if (p.configured) {
         char radio_buf[64];

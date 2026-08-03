@@ -27,6 +27,7 @@
 #include "../hal/prefs.h"
 #include "../mesh/mesh_wrapper.h"
 #include "../fonts/emoji_font.h"
+#include "utils/local_time.h"
 #include <Arduino.h>
 #include <lvgl.h>
 #include <cstdio>
@@ -120,14 +121,9 @@ lv_obj_t* make_screen_full(const char* title)
 
     // Time (24h snapshot)
     {
-        uint32_t epoch = sigurdos::mesh::getCurrentTime();
         char t[8];
-        if (epoch == 0) {
-            snprintf(t, sizeof(t), "--:--");
-        } else {
-            uint32_t sec = epoch % 86400;
-            snprintf(t, sizeof(t), "%02d:%02d", (sec/3600)%24, (sec/60)%60);
-        }
+        sigurdos::local_time::formatHm(
+            t, sizeof(t), sigurdos::mesh::getCurrentTime());
         lv_obj_t* tl = lv_label_create(top);
         lv_label_set_text(tl, t);
         lv_obj_set_style_text_color(tl, lv_color_hex(TEXT_PRIMARY), 0);

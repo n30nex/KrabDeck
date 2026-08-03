@@ -9,18 +9,10 @@ namespace sigurdos::ui {
 namespace {
 
 constexpr HomeRoute ROUTES[] = {
-    {"CHATS",     true,  Screen::Chat,       {1, false}},
-    {"DMs",       false, Screen::Chat,       {2, false}},
-    {"ROOMS",     false, Screen::Contacts,   {0, true}},
-    {"CONTACTS",  false, Screen::Contacts,   {0, false}},
-    {"REPEATERS", false, Screen::Repeaters,  {0, false}},
-    {"ADVERTISE", false, Screen::Advertise,  {0, false}},
-    {"MAP",       false, Screen::Map,        {0, false}},
-    {"TERMINAL",  false, Screen::Terminal,   {0, false}},
-    {"PACKETS",   false, Screen::Heard,      {0, false}},
-    {"SETTINGS",  false, Screen::Settings,   {0, false}},
-    {"SETUP",     false, Screen::Onboarding, {0, false}},
-    {"SIGNAL",    false, Screen::Signal,     {0, false}},
+    {"CHATS",   true,  Screen::Chat,     {0, false}},
+    {"MAP",     false, Screen::Map,      {0, false}},
+    {"NETWORK", false, Screen::Network,  {0, false}},
+    {"MORE",    false, Screen::Settings, {0, false}},
 };
 static_assert(sizeof(ROUTES) / sizeof(ROUTES[0]) == HOME_ROUTE_COUNT);
 

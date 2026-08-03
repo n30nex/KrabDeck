@@ -26,6 +26,7 @@
 
 #define KRABOS_PRODUCT_NAME "KrabOS"
 #define KRABOS_DEVICE_NAME "KrabOS T-Deck Plus"
+#define KRABOS_TORONTO_TZ "EST5EDT,M3.2.0,M11.1.0"
 #define KRABOS_RADIO_PROFILE_ID "ca_902_928"
 
 #if defined(KRABOS_PRODUCTION) && KRABOS_PRODUCTION && \
@@ -121,8 +122,8 @@ static constexpr uint64_t SIGURDOS_LORA_DIO1_WAKE_MASK =
 // ════════════════════════════════════════════════════════
 #define PIN_GPS_RX       44  // ESP32-S3 RX; LILYGO GPSShield uses rx=44
 #define PIN_GPS_TX       43  // ESP32-S3 TX; LILYGO GPSShield uses tx=43
-#define GPS_PRIMARY_BAUD_RATE 9600
-#define GPS_FALLBACK_BAUD_RATE 38400
+#define GPS_PRIMARY_BAUD_RATE 38400
+#define GPS_FALLBACK_BAUD_RATE 9600
 #define GPS_BAUD_RATE GPS_PRIMARY_BAUD_RATE
 
 // ════════════════════════════════════════════════════════

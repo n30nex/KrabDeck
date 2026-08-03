@@ -55,7 +55,8 @@ enum SigurdosSdMountError : uint8_t {
 
 struct SigurdosSdMountDiagnostic {
     bool mounted;
-    uint8_t attempt_count;  // Total SD.begin() calls since the last boot init reset.
+    uint8_t attempt_count;  // Total real SD.begin() calls since boot init reset.
+    uint8_t begin_failure_count;
     SigurdosSdMountSource last_source;
     SigurdosSdMountError last_error;
     uint32_t last_backoff_ms;
@@ -86,6 +87,23 @@ bool sigurdos_sdcard_retry();
 
 // Check if SD card is currently mounted
 bool sigurdos_sdcard_mounted();
+
+// Serialize FATFS/SPI access shared by the renderer, downloader, and file UI.
+// The lock is recursive so HAL helpers remain safe inside a larger SD section.
+bool sigurdos_sdcard_lock(uint32_t timeout_ms = 5000);
+void sigurdos_sdcard_unlock();
+
+class SigurdosSdLock {
+public:
+    explicit SigurdosSdLock(uint32_t timeout_ms = 5000)
+        : locked_(sigurdos_sdcard_lock(timeout_ms)) {}
+    ~SigurdosSdLock() { if (locked_) sigurdos_sdcard_unlock(); }
+    explicit operator bool() const { return locked_; }
+    SigurdosSdLock(const SigurdosSdLock&) = delete;
+    SigurdosSdLock& operator=(const SigurdosSdLock&) = delete;
+private:
+    bool locked_;
+};
 
 // Last mount diagnostic state for telemetry/UI/debug surfaces.
 SigurdosSdMountDiagnostic sigurdos_sdcard_diagnostics();

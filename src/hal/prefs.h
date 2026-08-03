@@ -123,6 +123,10 @@ struct NodePrefs {
         radio_profile[0] = '\0';        // empty = not set / custom
     }
 
+    // KrabOS is a Canada-first product image, so its production and factory
+    // defaults are immediately usable without an onboarding RF write. Keeping
+    // this explicit preserves the upstream non-transmitting defaults for every
+    // diagnostic and compatibility build.
     void set_krabos_defaults() {
         set_defaults();
         strncpy(node_name, KRABOS_DEVICE_NAME, sizeof(node_name) - 1);
@@ -133,6 +137,8 @@ struct NodePrefs {
         cr = LORA_CR;
         tx_power_dbm = LORA_TX_PWR;
         configured = true;
+        advert_loc_policy = 1;  // MeshCore ADVERT_LOC_SHARE
+        gps_enabled = true;
         strncpy(radio_profile, KRABOS_RADIO_PROFILE_ID,
                 sizeof(radio_profile) - 1);
         radio_profile[sizeof(radio_profile) - 1] = '\0';
@@ -174,6 +180,9 @@ inline bool useKrabosProductDefaults(PrefsNamespaceState state) {
     return state == PrefsNamespaceState::Missing;
 }
 
+// Product defaults are only for a namespace that does not exist yet. When an
+// older namespace is present, absent keys must retain the legacy privacy and
+// radio posture instead of inheriting newly introduced product opt-ins.
 inline NodePrefs existingInstallMissingKeyDefaults() {
     NodePrefs prefs{};
     prefs.set_defaults();

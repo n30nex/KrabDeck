@@ -93,6 +93,21 @@ TEST(RadioProfilesTest, CustomMarksManualSettings) {
     EXPECT_STREQ("custom", prefs.radio_profile);
 }
 
+TEST(RadioProfilesTest, StatusLabelTracksNamedCustomAndUnconfiguredRadio) {
+    sigurdos::NodePrefs prefs;
+    prefs.set_defaults();
+    EXPECT_STREQ("Radio setup required",
+                 sigurdos::radio_profile_status_label(prefs));
+
+    const auto* us = sigurdos::radio_profile_find("us_902_928");
+    ASSERT_NE(nullptr, us);
+    sigurdos::radio_profile_apply(*us, prefs);
+    EXPECT_STREQ("USA 902-928", sigurdos::radio_profile_status_label(prefs));
+
+    prefs.freq = 916.250f;
+    EXPECT_STREQ("Custom RF", sigurdos::radio_profile_status_label(prefs));
+}
+
 TEST(RadioProfilesTest, RepeatFrequencyUsesExactActiveProfileFrequency) {
     sigurdos::NodePrefs prefs;
     prefs.set_defaults();

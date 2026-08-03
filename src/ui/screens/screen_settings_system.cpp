@@ -600,8 +600,12 @@ static void datetime_set_dialog(lv_obj_t* parent, bool is_date)
                 if (nd <= max_days) {
                     int cy, cmo, cd, ch, cmi;
                     sigurdos::mesh::getCurrentLocalDateTime(&cy, &cmo, &cd, &ch, &cmi);
-                    epoch = sigurdos::mesh::makeEpoch(ny, nm, nd, ch, cmi);
-                    valid = true;
+                    valid = sigurdos::mesh::makeLocalEpoch(
+                        ny, nm, nd, ch, cmi, &epoch);
+                    if (!valid) {
+                        lv_label_set_text(ctx->feedback,
+                                          "Invalid local date/time");
+                    }
                 } else {
                     lv_label_set_text(ctx->feedback, "Invalid day for month");
                 }
@@ -614,8 +618,12 @@ static void datetime_set_dialog(lv_obj_t* parent, bool is_date)
                 nh >= 0 && nh <= 23 && nm_v >= 0 && nm_v <= 59) {
                 int cy, cmo, cd, ch, cmi;
                 sigurdos::mesh::getCurrentLocalDateTime(&cy, &cmo, &cd, &ch, &cmi);
-                epoch = sigurdos::mesh::makeEpoch(cy, cmo, cd, nh, nm_v);
-                valid = true;
+                valid = sigurdos::mesh::makeLocalEpoch(
+                    cy, cmo, cd, nh, nm_v, &epoch);
+                if (!valid) {
+                    lv_label_set_text(ctx->feedback,
+                                      "Invalid local date/time");
+                }
             } else {
                 lv_label_set_text(ctx->feedback, "Invalid time (HH:MM)");
             }

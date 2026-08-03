@@ -38,7 +38,7 @@ using namespace responsive;
 // ════════════════════════════════════════════════════════
 void finder_screen_show()
 {
-    lv_obj_t* scr = make_screen_full("Finder");
+    lv_obj_t* scr = make_screen_full("Network");
 
     bool have_ping = sigurdos::mesh::getPingResultCount() > 0;
 

@@ -34,9 +34,9 @@ namespace github_ota {
 // ── Constants ───────────────────────────────────────────────────
 
 static const char* GITHUB_API_RELEASES =
-    "https://api.github.com/repos/hermes-gadget/SigurdOS-tdeck/releases?per_page=10";
+    "https://api.github.com/repos/n30nex/KrabDeck/releases?per_page=10";
 
-static const char* USER_AGENT = "SigurdOS-TDeck/1.0";
+static const char* USER_AGENT = "KrabOS-TDeck-Plus/1.0";
 
 // Constrained rotation set: GitHub's current Sectigo chain plus DigiCert Global
 // Root G2 as an independently operated transition anchor. This is transport
@@ -133,7 +133,7 @@ static uint32_t currentSecurityEpoch() {
 // Current download URL (constructed from API or fallback)
 static char                   s_download_url[256] = "";
 static char                   s_resolved_tag[64] = "";
-static char                   s_resolved_target[16] = "";
+static char                   s_resolved_target[GITHUB_OTA_TARGET_CAPACITY] = "";
 
 // API response buffer (heap-allocated during FetchingRelease)
 static char*                  s_api_buf = nullptr;
@@ -279,9 +279,9 @@ bool startGitHubUpdate() {
     if (s_active.load(std::memory_order_acquire)) return true;
 
     if (sigurdos_is_under_launcher()) {
-        Serial.println("[gh-ota] REFUSED: GitHub OTA not available under bmorcelli/Launcher — update SigurdOS through Launcher instead");
+        Serial.println("[gh-ota] REFUSED: GitHub OTA not available under bmorcelli/Launcher — update KrabOS through Launcher instead");
         setStatus(GitHubOTAState::Failed, 0, "Failed",
-                  "Update SigurdOS through Launcher instead");
+                  "Update KrabOS through Launcher instead");
         return false;
     }
 
@@ -443,7 +443,7 @@ static void serviceWorker() {
 
                     // Parse to find matching release
                     char tag_name[64] = "";
-                    char target_name[16] = "";
+                    char target_name[GITHUB_OTA_TARGET_CAPACITY] = "";
                     const ReleaseSelectionResult selection =
                         selectReleaseTagResultFromJson(
                             s_api_buf, p.ota_branch, p.ota_allow_prerelease,

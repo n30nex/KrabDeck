@@ -38,9 +38,13 @@
 #include "hal/radio_profiles.h"
 #include "hal/github_ota.h"
 #include "hal/wifi_ota.h"
+#include "app/map_download.h"
+#include "app/map_renderer.h"
+#include "hal/sdcard.h"
 #include "sigurd_mesh_v2.h"
 #include "regions.h"
 #include "utils/utf8_util.h"
+#include "utils/local_time.h"
 #include "../diagnostics/debug_cfg.h"
 #include "../diagnostics/telemetry.h"
 #include <helpers/sensors/LPPDataHelpers.h>
@@ -116,7 +120,37 @@ static char own_name[32] = KRABOS_PRODUCT_NAME;
 static uint32_t last_advert_time = 0;
 static bool     last_advert_success = false;
 static bool     last_advert_used_gps = false;
+static bool     boot_advert_attempted = false;
+static bool     boot_advert_queued = false;
+static uint32_t boot_advert_last_attempt_ms = 0;
+static constexpr uint32_t BOOT_ADVERT_RETRY_MS = 5000;
 static sigurdos::mesh::TimeSyncTracker time_sync_tracker;
+
+static bool sigurdos_mesh_radio_tx_allowed();
+
+static void serviceProductionBootAdvert()
+{
+#if defined(KRABOS_PRODUCTION) && KRABOS_PRODUCTION
+    const uint32_t now = millis();
+    if (!sigurdos::mesh::detail::shouldAttemptBootAdvert(
+            true, false, init_state, sigurdos_mesh_radio_tx_allowed(),
+            boot_advert_queued) ||
+        !sigurdos::mesh::detail::bootAdvertRetryDue(
+            boot_advert_attempted, boot_advert_queued, now,
+            boot_advert_last_attempt_ms, BOOT_ADVERT_RETRY_MS)) {
+        return;
+    }
+
+    boot_advert_attempted = true;
+    boot_advert_last_attempt_ms = now;
+    if (sigurdos::mesh::sendAdvert(false)) {
+        boot_advert_queued = true;
+        Serial.println("@krabos|event=boot_advert|status=queued|scope=wildcard");
+    } else {
+        Serial.println("[mesh] WARNING: production boot advert was not queued; retrying");
+    }
+#endif
+}
 
 static void cleanupRadioModule(Module& module)
 {
@@ -1368,6 +1402,11 @@ bool init(bool spiffs_ok)
     companionAdapterInit();
 
     init_state = sigurdos::mesh::detail::MeshInitState::Ready;
+
+    // KrabOS production announces itself once, immediately after the mesh is
+    // ready. sendAdvert() preserves the user's location policy and selects the
+    // current GPS fix or latest persisted companion location as appropriate.
+    serviceProductionBootAdvert();
 #if SIGURDOS_DEBUG_MESH
     Serial.println("[mesh] SigurdMeshV2 initialized");
 #endif
@@ -1375,7 +1414,8 @@ bool init(bool spiffs_ok)
     pushPacketLog("SYSTEM", 0, 0.0f, "BOOT");
     return true;
 #else
-    // Remote test without SIGURDOS_REMOTE_TEST_RADIO: init SPI bus for SD card only, no LoRa radio
+    // Recovery and every remote-test variant initialize only the shared SPI
+    // bus needed by SD. No SX1262 object is allocated or touched.
     sigurdos_shared_spi_begin(P_LORA_SCLK, P_LORA_MISO, P_LORA_MOSI);
     init_state = sigurdos::mesh::detail::MeshInitState::ClockOnly;
     return true;
@@ -1393,6 +1433,7 @@ void loop()
     // (host is null-safe for most commands; loop no-ops without a bridge).
     companionAdapterLoop();
     rtc_clock.tick();
+    serviceProductionBootAdvert();
 
     // ── Periodic auto-advert (interval in hours) ──────────
     {
@@ -1859,14 +1900,27 @@ void getCurrentLocalDateTime(int* year, int* month, int* day, int* hour, int* mi
         if (minute) *minute = 0;
         return;
     }
-    uint32_t epoch = rtc_clock.getCurrentTime();
-    time_t t = epoch;
-    struct tm* tm_info = gmtime(&t);
-    *year   = tm_info->tm_year + 1900;
-    *month  = tm_info->tm_mon + 1;
-    *day    = tm_info->tm_mday;
-    *hour   = tm_info->tm_hour;
-    *minute = tm_info->tm_min;
+    std::tm tm_info{};
+    if (!sigurdos::local_time::fromEpoch(
+            rtc_clock.getCurrentTime(), &tm_info)) {
+        *year = 2024;
+        *month = 1;
+        *day = 1;
+        *hour = 0;
+        *minute = 0;
+        return;
+    }
+    *year   = tm_info.tm_year + 1900;
+    *month  = tm_info.tm_mon + 1;
+    *day    = tm_info.tm_mday;
+    *hour   = tm_info.tm_hour;
+    *minute = tm_info.tm_min;
+}
+
+bool makeLocalEpoch(int year, int month, int day, int hour, int minute,
+                    uint32_t* out) {
+    return sigurdos::local_time::toEpochChecked(
+        year, month, day, hour, minute, 0, out);
 }
 
 uint32_t makeEpoch(int year, int month, int day, int hour, int minute) {
@@ -2152,6 +2206,16 @@ void shutdown(uint32_t wake_secs)
             sigurdos::hal::boot_watchdog_stop();
             sigurdos::github_ota::cancel();
             sigurdos::ota::stop();
+            while (!sigurdos_map_quiesce()) {
+                Serial.println(
+                    "[power] map renderer still active; delaying shutdown");
+                delay(1000);
+            }
+            while (!sigurdos::app::map_download::quiesce()) {
+                Serial.println(
+                    "[power] map downloader still active; delaying shutdown");
+                delay(1000);
+            }
         },
         []() {
             // Settings are normally committed on every change. Re-commit the
@@ -2171,7 +2235,19 @@ void shutdown(uint32_t wake_secs)
             // states, rail removal, and the final deep-sleep transition.
             Serial.printf("[power] orderly deep-sleep wake_secs=%lu\n",
                           (unsigned long)wake_secs);
-            board.sleep(wake_secs);
+            for (;;) {
+                // Keep the shared SD mutex held across TDeckBoard's SD.end().
+                // Both map workers are behind terminal barriers at this point,
+                // so no new file operation can queue behind this final lock.
+                SigurdosSdLock sd_lock;
+                if (sd_lock) {
+                    board.sleep(wake_secs);
+                    return;
+                }
+                Serial.println(
+                    "[power] SD bus still active; delaying shutdown");
+                delay(1000);
+            }
         });
 }
 

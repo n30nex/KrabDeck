@@ -1,6 +1,6 @@
 # KrabOS 1.0 RC1 integration manifest
 
-Status: draft integration candidate; not release-ready.
+Status: draft M2-M5 product checkpoint; not release-ready.
 
 Integration office: Commodore <commodore@canadaverse.org>
 
@@ -29,6 +29,24 @@ exact-device, hardware, RF, release, tag, and merge gates remain pending.
 | #20 | Superseded by #22 | Breakwater’s two commits are ancestors of #22 and are included once through that lineage. |
 | #21 | Accepted, focused | One-shot production boot advert is a small, isolated M3 handoff; keep remote-test RF silence and the existing guarded `sendAdvert()` path. |
 | #22 | Accepted lineage | Direct successor of #19 and #20; retains candidate-bound evidence handoff plus independent RF-observer admission wiring. Original Breakwater/Bulwark authorship is preserved in reused commits. |
+
+## M2-M5 product overlap checkpoint
+
+PR #11's four-commit candidate was not applied wholesale because it replaces
+the current M0/M1 safety and evidence lineage and touches protected policy and
+workflow paths. Architect applied the product hunks that close the documented
+gap:
+
+| Product area | Included checkpoint | Deferred or retained gate |
+|---|---|---|
+| M2 UI | Four primary touch surfaces (Chats, Map, Network, More), larger touch targets, and keyboard/trackball focus parity | Exact-device visual captures and memory soak |
+| M3 client parity | Canada-first GPS/time defaults, local-time conversion, companion/OTA channel validation, and existing guarded one-shot production advert | Correlated DM/channel/RF evidence and companion interoperability |
+| M4 maps/GPS/SD | NRCan/permitted XYZ downloader, HTTPS/PNG admission, `.part`/atomic writes, SD mutex/format-off path, map download dialog, and reboot/shutdown quiesce | Live GPS and offline reboot evidence on the exact T-Deck Plus |
+| M5 contracts | Typed map/release/source checks and native contract coverage added without replacing candidate-bound evidence | Full current-SHA Actions matrix, exact-device admission, release signing, and publication |
+
+The retained M0/M1 workflows, RF-off roles, private fixture binding, privacy
+redaction, and candidate-bound evidence remain authoritative. No release
+readiness is claimed by this checkpoint.
 
 ## Accepted commit provenance
 

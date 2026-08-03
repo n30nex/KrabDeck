@@ -10,6 +10,7 @@ from pathlib import Path
 
 COMMENT_RE = re.compile(r"/\*.*?\*/|//[^\n]*", re.DOTALL)
 LOAD_RE = re.compile(r"lv_scr_load_anim\s*\((.*?)\)\s*;", re.DOTALL)
+SD_BEGIN_RE = re.compile(r"\bSD\.begin\s*\((.*?)\)\s*;", re.DOTALL)
 
 
 def without_comments(text: str) -> str:
@@ -70,6 +71,28 @@ def check(root: Path) -> list[str]:
             if argument != "CMD_MODE_KEY":
                 violations.append(
                     f"src/hal/keyboard.cpp: set_keyboard_mode({argument}) is not key mode"
+                )
+
+    for relative_name in ("src/hal/sdcard.cpp", "src/hal/sdcard.h"):
+        sdcard = root / relative_name
+        if not sdcard.is_file():
+            continue
+        code = without_comments(sdcard.read_text(errors="replace"))
+        forbidden_sd_symbols = (
+            r"\bsigurdos_sdcard_recover_test_card\b",
+            r"\bsdcard_format_policy\.h\b",
+            r"\bformat_enabled_attempts\b",
+            r"\bsdcard_(?:init|mount|unmount|uninit|read_raw)\s*\(",
+        )
+        if any(re.search(pattern, code) for pattern in forbidden_sd_symbols):
+            violations.append(
+                f"{relative_name}: production SD formatting path is forbidden"
+            )
+        for call in SD_BEGIN_RE.findall(code):
+            arguments = [argument.strip() for argument in call.split(",")]
+            if arguments and arguments[-1] == "true":
+                violations.append(
+                    f"{relative_name}: SD.begin format-on-failure must be false"
                 )
 
     for path in documentation_files(root):

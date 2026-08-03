@@ -35,6 +35,7 @@ const RadioProfile* radio_profile_match(float freq_mhz, float bw_khz,
                                          uint8_t sf, uint8_t cr,
                                          int8_t tx_power_dbm);
 const RadioProfile* radio_profile_match(const NodePrefs& prefs);
+const char* radio_profile_status_label(const NodePrefs& prefs);
 void radio_profile_apply(const RadioProfile& profile, NodePrefs& prefs);
 void radio_profile_set_custom(NodePrefs& prefs);
 bool radio_profile_frequency_allowed(const RadioProfile& profile,

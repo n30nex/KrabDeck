@@ -3,7 +3,11 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdlib>
+#include <ctime>
+
 #include "mesh/time_state.h"
+#include "utils/local_time.h"
 
 namespace {
 
@@ -66,6 +70,52 @@ TEST(EpochValidation, RejectsValuesOutsideUnsignedUnixRange)
     EXPECT_EQ(epoch, UINT32_MAX);
     EXPECT_FALSE(sigurdos::mesh::utcToEpochChecked(
         1970, 1, 1, 0, 0, 0, nullptr));
+}
+
+TEST(LocalTimeTest, TorontoClockAppliesWinterAndSummerOffsets)
+{
+    ASSERT_EQ(setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1), 0);
+    tzset();
+
+    char value[9];
+    ASSERT_TRUE(sigurdos::local_time::formatHm(value, sizeof(value), 1767268800U));
+    EXPECT_STREQ(value, "07:00");
+    ASSERT_TRUE(sigurdos::local_time::formatHm(value, sizeof(value), 1783684800U));
+    EXPECT_STREQ(value, "08:00");
+}
+
+TEST(LocalTimeTest, TorontoClockSkipsSpringForwardHour)
+{
+    ASSERT_EQ(setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1), 0);
+    tzset();
+
+    char value[9];
+    ASSERT_TRUE(sigurdos::local_time::formatHms(value, sizeof(value), 1772953140U));
+    EXPECT_STREQ(value, "01:59:00");
+    ASSERT_TRUE(sigurdos::local_time::formatHms(value, sizeof(value), 1772953200U));
+    EXPECT_STREQ(value, "03:00:00");
+}
+
+TEST(LocalTimeTest, ManualWallClockConvertsWithDstAndRejectsGap)
+{
+    ASSERT_EQ(setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1), 0);
+    tzset();
+
+    uint32_t epoch = 123;
+    EXPECT_TRUE(sigurdos::local_time::toEpochChecked(
+        2026, 1, 1, 7, 0, 0, &epoch));
+    EXPECT_EQ(epoch, 1767268800U);
+    EXPECT_TRUE(sigurdos::local_time::toEpochChecked(
+        2026, 7, 10, 8, 0, 0, &epoch));
+    EXPECT_EQ(epoch, 1783684800U);
+
+    epoch = 123;
+    EXPECT_FALSE(sigurdos::local_time::toEpochChecked(
+        2026, 3, 8, 2, 30, 0, &epoch));
+    EXPECT_EQ(epoch, 123U);
+    EXPECT_FALSE(sigurdos::local_time::toEpochChecked(
+        2026, 2, 30, 12, 0, 0, &epoch));
+    EXPECT_EQ(epoch, 123U);
 }
 
 TEST(TimeSyncTrackerTest, StartsUnknownAndResetsCleanly)

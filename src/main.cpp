@@ -2,6 +2,8 @@
 // Copyright (C) 2025 Ben
 
 #include <Arduino.h>
+#include <cstdlib>
+#include <ctime>
 #include "hal/storage.h"
 #include "hal/tdeck_board.h"
 #include "hal/tdeck_pins.h"
@@ -18,6 +20,7 @@
 #include "hal/display_retry_state.h"
 #include "hal/ota_boot_health.h"
 #include "app/map_renderer.h"
+#include "app/map_download.h"
 #include "app/gps_track_log.h"
 #include "app/gps_clock_handoff.h"
 #include "mesh/mesh_wrapper.h"
@@ -77,6 +80,8 @@ void setup()
 {
     esp_log_write(ESP_LOG_ERROR, BOOT_TAG, "SETUP ENTRY - BEFORE Serial.begin");
     Serial.begin(115200);
+    setenv("TZ", KRABOS_TORONTO_TZ, 1);
+    tzset();
     const esp_reset_reason_t reset_reason = esp_reset_reason();
     sigurdos::ota_boot_health::begin();
     sigurdos::hal::boot_watchdog_begin(reset_reason);
@@ -211,6 +216,9 @@ void setup()
     radio_status = "Radio disabled";
     sigurdos::mesh::init(spiffs_ok);
 #elif defined(SIGURDOS_REMOTE_TEST) && SIGURDOS_REMOTE_TEST
+    // Base remote-test mode is RF-off. Explicit remote_test_radio variants
+    // retain the controller while initializing the real radio for the
+    // authoritative hardware protocol.
 #if defined(SIGURDOS_REMOTE_TEST_RADIO) && SIGURDOS_REMOTE_TEST_RADIO
     Serial.println("[boot] REMOTE RADIO TEST MODE");
     if (!sigurdos::mesh::init(spiffs_ok)) {
@@ -247,6 +255,7 @@ void setup()
     sigurdos::hal::boot_watchdog_progress(sigurdos::hal::BootStage::Map);
     boot_status("Preparing map...");
     sigurdos_map_init();
+    sigurdos::app::map_download::init();
 
     boot_status("Ready");
     boot_log("KrabOS T-Deck Plus ready");

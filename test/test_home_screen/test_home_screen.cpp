@@ -20,9 +20,8 @@
 /**
  * Unit tests for home screen icon routing
  *
- * Verifies that each home screen tile navigates to its intended screen.
- * The REPEATERS tile was incorrectly mapped to Screen::Heard (same as PACKETS)
- * instead of Screen::Network (Finder's screen which shows nearby nodes).
+ * Verifies that KrabOS exposes exactly four primary surfaces and routes them
+ * through the existing navigation layer.
  */
 #include <gtest/gtest.h>
 #include <cstring>
@@ -32,12 +31,11 @@ namespace {
 
 using sigurdos::ui::home_tile_filters;
 
-TEST(HomeScreenActivationTest, TouchAndTrackballShareStableFilterPolicy) {
-    EXPECT_EQ(home_tile_filters(0).chat_filter, 1);
-    EXPECT_EQ(home_tile_filters(1).chat_filter, 2);
-    EXPECT_TRUE(home_tile_filters(2).rooms_only);
-    EXPECT_EQ(home_tile_filters(3).chat_filter, 0);
-    EXPECT_FALSE(home_tile_filters(3).rooms_only);
+TEST(HomeScreenActivationTest, FourPrimarySurfacesShareNeutralFilterPolicy) {
+    for (int index = 0; index < 4; ++index) {
+        EXPECT_EQ(home_tile_filters(index).chat_filter, 0);
+        EXPECT_FALSE(home_tile_filters(index).rooms_only);
+    }
 }
 
 static int row_height(int base_h, int extra_h, int row) {
@@ -59,25 +57,19 @@ TEST(HomeScreenRouteTest, ProductionTableContainsEveryTile) {
     EXPECT_EQ(sigurdos::ui::homeRouteAt(sigurdos::ui::HOME_ROUTE_COUNT), nullptr);
 }
 
-TEST(HomeScreenRouteTest, ProductionTargetsMatchUserFacingRoutes) {
+TEST(HomeScreenRouteTest, ProductionTargetsMatchFourPrimaryKrabOSSurfaces) {
     using sigurdos::ui::Screen;
     EXPECT_EQ(sigurdos::ui::findHomeRoute("CHATS")->target, Screen::Chat);
-    EXPECT_EQ(sigurdos::ui::findHomeRoute("DMs")->target, Screen::Chat);
-    EXPECT_EQ(sigurdos::ui::findHomeRoute("ROOMS")->target, Screen::Contacts);
-    EXPECT_EQ(sigurdos::ui::findHomeRoute("CONTACTS")->target, Screen::Contacts);
-    EXPECT_EQ(sigurdos::ui::findHomeRoute("REPEATERS")->target, Screen::Repeaters);
-    EXPECT_EQ(sigurdos::ui::findHomeRoute("PACKETS")->target, Screen::Heard);
     EXPECT_EQ(sigurdos::ui::findHomeRoute("MAP")->target, Screen::Map);
-    EXPECT_EQ(sigurdos::ui::findHomeRoute("SETTINGS")->target, Screen::Settings);
-    EXPECT_EQ(sigurdos::ui::findHomeRoute("SIGNAL")->target, Screen::Signal);
+    EXPECT_EQ(sigurdos::ui::findHomeRoute("NETWORK")->target, Screen::Network);
+    EXPECT_EQ(sigurdos::ui::findHomeRoute("MORE")->target, Screen::Settings);
+    EXPECT_EQ(sigurdos::ui::findHomeRoute("DMs"), nullptr);
     EXPECT_EQ(sigurdos::ui::findHomeRoute("missing"), nullptr);
 }
 
 TEST(HomeScreenRouteTest, ProductionTableOwnsFilterPolicy) {
-    EXPECT_EQ(sigurdos::ui::findHomeRoute("CHATS")->filters.chat_filter, 1);
-    EXPECT_EQ(sigurdos::ui::findHomeRoute("DMs")->filters.chat_filter, 2);
-    EXPECT_TRUE(sigurdos::ui::findHomeRoute("ROOMS")->filters.rooms_only);
-    EXPECT_FALSE(sigurdos::ui::findHomeRoute("CONTACTS")->filters.rooms_only);
+    EXPECT_EQ(sigurdos::ui::findHomeRoute("CHATS")->filters.chat_filter, 0);
+    EXPECT_FALSE(sigurdos::ui::findHomeRoute("CHATS")->filters.rooms_only);
 }
 
 TEST(HomeScreenGridTest, SingleRemainderPixelOffsetsEveryFollowingRow) {

@@ -109,6 +109,13 @@ const RadioProfile* radio_profile_match(const NodePrefs& prefs)
                                prefs.tx_power_dbm);
 }
 
+const char* radio_profile_status_label(const NodePrefs& prefs)
+{
+    if (!prefs.configured) return "Radio setup required";
+    const RadioProfile* profile = radio_profile_match(prefs);
+    return profile ? profile->short_label : "Custom RF";
+}
+
 void radio_profile_apply(const RadioProfile& profile, NodePrefs& prefs)
 {
     prefs.freq = profile.freq_mhz;

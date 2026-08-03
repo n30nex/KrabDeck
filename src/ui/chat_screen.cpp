@@ -44,6 +44,7 @@
 #include <cstring>
 #include <cstdio>
 #include <esp_heap_caps.h>
+#include "utils/local_time.h"
 #include "utils/utf8_util.h"
 
 namespace sigurdos::ui {
@@ -542,9 +543,7 @@ static void mark_channel_used(int idx)
 // ════════════════════════════════════════════════════
 static void format_time(char* buf, size_t sz, uint32_t epoch)
 {
-    if (epoch == 0) { snprintf(buf, sz, "--:--"); return; }
-    uint32_t t = epoch % 86400;
-    snprintf(buf, sz, "%02d:%02d", (t / 3600) % 24, (t / 60) % 60);
+    sigurdos::local_time::formatHm(buf, sz, epoch);
 }
 
 static void apply_ch_row_selection(lv_obj_t* row, bool selected)
@@ -942,7 +941,7 @@ static lv_obj_t* make_chat_list_screen()
     // Chat title and active flood-scope chip.
     {
         lv_obj_t* ttl = lv_label_create(top);
-        lv_label_set_text(ttl, "Chat");
+        lv_label_set_text(ttl, "Chats");
         lv_obj_set_style_text_color(ttl, lv_color_hex(TEXT_SECONDARY), 0);
         lv_obj_set_style_text_font(ttl, emoji_wrapped_montserrat_10, 0);
         lv_obj_align(ttl, LV_ALIGN_LEFT_MID, 32, 0);
@@ -966,13 +965,9 @@ static lv_obj_t* make_chat_list_screen()
 
     // Time snapshot
     {
-        uint32_t epoch = sigurdos::mesh::getCurrentTime();
         char t[8];
-        if (epoch == 0) snprintf(t, sizeof(t), "--:--");
-        else {
-            uint32_t sec = epoch % 86400;
-            snprintf(t, sizeof(t), "%02d:%02d", (sec/3600)%24, (sec/60)%60);
-        }
+        sigurdos::local_time::formatHm(
+            t, sizeof(t), sigurdos::mesh::getCurrentTime());
         lv_obj_t* tl = lv_label_create(top);
         lv_label_set_text(tl, t);
         lv_obj_set_style_text_color(tl, lv_color_hex(TEXT_PRIMARY), 0);
@@ -1348,13 +1343,9 @@ static void create_top_bar()
 
     // 24h time (right side)
     {
-        uint32_t epoch = sigurdos::mesh::getCurrentTime();
         char t[8];
-        if (epoch == 0) snprintf(t, sizeof(t), "--:--");
-        else {
-            uint32_t sec = epoch % 86400;
-            snprintf(t, sizeof(t), "%02d:%02d", (sec/3600)%24, (sec/60)%60);
-        }
+        sigurdos::local_time::formatHm(
+            t, sizeof(t), sigurdos::mesh::getCurrentTime());
         lv_obj_t* tl = lv_label_create(top_bar);
         lv_label_set_text(tl, t);
         lv_obj_set_style_text_color(tl, lv_color_hex(TEXT_PRIMARY), 0);
@@ -1464,9 +1455,9 @@ static lv_obj_t* create_bubble(lv_obj_t* parent, const char* sender,
 
     char time_buf[10];
     if (is_self && acked) {
-        uint32_t t = timestamp % 86400;
-        snprintf(time_buf, sizeof(time_buf), "%02d:%02d \xe2\x9c\x85",
-                 (t / 3600) % 24, (t / 60) % 60);
+        char clock[6];
+        sigurdos::local_time::formatHm(clock, sizeof(clock), timestamp);
+        snprintf(time_buf, sizeof(time_buf), "%s \xe2\x9c\x85", clock);
     } else {
         format_time(time_buf, sizeof(time_buf), timestamp);
     }
@@ -1513,9 +1504,9 @@ static void bind_bubble(lv_obj_t* container, const char* sender,
 
     char time_buf[10];
     if (is_self && acked) {
-        const uint32_t t = timestamp % 86400;
-        snprintf(time_buf, sizeof(time_buf), "%02d:%02d \xe2\x9c\x85",
-                 (t / 3600) % 24, (t / 60) % 60);
+        char clock[6];
+        sigurdos::local_time::formatHm(clock, sizeof(clock), timestamp);
+        snprintf(time_buf, sizeof(time_buf), "%s \xe2\x9c\x85", clock);
     } else {
         format_time(time_buf, sizeof(time_buf), timestamp);
     }

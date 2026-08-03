@@ -18,6 +18,7 @@
 
 #include <gtest/gtest.h>
 #include <cstring>
+#include <string>
 
 #include "hal/github_ota.h"
 #include "hal/github_ota_plan.h"
@@ -31,6 +32,9 @@ using sigurdos::github_ota::githubOtaDownloadIdleTimedOut;
 using sigurdos::github_ota::branchNeedsReleaseApi;
 using sigurdos::github_ota::buildReleaseDownloadUrl;
 using sigurdos::github_ota::copyFallbackDownloadUrl;
+using sigurdos::github_ota::releaseTargetMatchesChannel;
+using sigurdos::github_ota::ReleaseSelectionResult;
+using sigurdos::github_ota::selectReleaseTagResultFromJson;
 using sigurdos::github_ota::selectReleaseTagFromJson;
 
 TEST(GitHubOTAContractTest, StateValuesStayStableForUiProgress) {
@@ -111,13 +115,13 @@ TEST(GitHubOTAPlanTest, BuildsReleaseAndFallbackUrlsWithinBuffer) {
     char url[256] = "";
     buildReleaseDownloadUrl("v2.0.0", url, sizeof(url));
     EXPECT_STREQ(url,
-        "https://github.com/hermes-gadget/SigurdOS-tdeck"
+        "https://github.com/n30nex/KrabDeck"
         "/releases/download/v2.0.0/firmware.bin");
 
     char fallback[256] = "";
     copyFallbackDownloadUrl(fallback, sizeof(fallback));
     EXPECT_STREQ(fallback,
-        "https://github.com/hermes-gadget/SigurdOS-tdeck"
+        "https://github.com/n30nex/KrabDeck"
         "/releases/latest/download/firmware.bin");
 }
 
@@ -177,6 +181,100 @@ TEST(GitHubOTAPlanTest, NoMatchingReleaseIsNegativeCase) {
     char tag[32] = "unchanged";
 
     EXPECT_FALSE(selectReleaseTagFromJson(json, "main", false, tag, sizeof(tag)));
+    EXPECT_STREQ(tag, "");
+}
+
+TEST(GitHubOTAPlanTest, ExactShaTargetRequiresMatchingCanonicalProvenance) {
+    const char* sha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const char* body =
+        "Release notes\n\n"
+        "KrabOS-OTA-Branch: main\n"
+        "KrabOS-OTA-Commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    EXPECT_TRUE(releaseTargetMatchesChannel("main", "main", nullptr));
+    EXPECT_TRUE(releaseTargetMatchesChannel("main", sha, body));
+    EXPECT_FALSE(releaseTargetMatchesChannel("dev", sha, body));
+    EXPECT_FALSE(releaseTargetMatchesChannel("main", sha, nullptr));
+    EXPECT_FALSE(releaseTargetMatchesChannel(
+        "main", sha,
+        "KrabOS-OTA-Branch: main\n"
+        "KrabOS-OTA-Commit: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
+    EXPECT_FALSE(releaseTargetMatchesChannel(
+        "main", sha,
+        "KrabOS-OTA-Branch: main\n"
+        "KrabOS-OTA-Branch: main\n"
+        "KrabOS-OTA-Commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+    EXPECT_FALSE(releaseTargetMatchesChannel(
+        "main", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", body));
+}
+
+TEST(GitHubOTAPlanTest, SelectsExactShaOnlyWhenBodyBindsBranchAndCommit) {
+    const char* json = R"([
+      {
+        "tag_name":"wrong-commit",
+        "target_commitish":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "body":"KrabOS-OTA-Branch: main\nKrabOS-OTA-Commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "prerelease":false
+      },
+      {
+        "tag_name":"v1.0.0",
+        "target_commitish":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "body":"Exact release\n\nKrabOS-OTA-Branch: main\nKrabOS-OTA-Commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "prerelease":false
+      }
+    ])";
+    char tag[32] = "";
+    char target[sigurdos::github_ota::GITHUB_OTA_TARGET_CAPACITY] = "";
+
+    ASSERT_EQ(ReleaseSelectionResult::Matched,
+              selectReleaseTagResultFromJson(
+                  json, "main", false, tag, sizeof(tag),
+                  target, sizeof(target)));
+    EXPECT_STREQ(tag, "v1.0.0");
+    EXPECT_STREQ(target, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+}
+
+TEST(GitHubOTAPlanTest, ExactShaWithoutCompleteMetadataFailsClosed) {
+    const char* missing_body = R"([
+      {
+        "tag_name":"v1.0.0",
+        "target_commitish":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "prerelease":false
+      }
+    ])";
+    const char* missing_prerelease = R"([
+      {
+        "tag_name":"v1.0.0",
+        "target_commitish":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "body":"KrabOS-OTA-Branch: main\nKrabOS-OTA-Commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ])";
+    char tag[32] = "unchanged";
+
+    EXPECT_EQ(ReleaseSelectionResult::NoMatch,
+              selectReleaseTagResultFromJson(
+                  missing_body, "main", false, tag, sizeof(tag)));
+    EXPECT_STREQ(tag, "");
+    EXPECT_EQ(ReleaseSelectionResult::NoMatch,
+              selectReleaseTagResultFromJson(
+                  missing_prerelease, "main", false, tag, sizeof(tag)));
+    EXPECT_STREQ(tag, "");
+}
+
+TEST(GitHubOTAPlanTest, TruncatedReleaseBodyCannotAuthorizeExactSha) {
+    std::string body =
+        "KrabOS-OTA-Branch: main\\n"
+        "KrabOS-OTA-Commit: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\n";
+    body.append(600, 'x');
+    const std::string json =
+        "[{\"tag_name\":\"v1.0.0\","
+        "\"target_commitish\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\","
+        "\"body\":\"" + body + "\",\"prerelease\":false}]";
+    char tag[32] = "unchanged";
+
+    EXPECT_EQ(ReleaseSelectionResult::NoMatch,
+              selectReleaseTagResultFromJson(
+                  json.c_str(), "main", false, tag, sizeof(tag)));
     EXPECT_STREQ(tag, "");
 }
 

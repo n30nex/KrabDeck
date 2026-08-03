@@ -113,7 +113,7 @@ bool start(const char* ssid, const char* password) {
     if (sigurdos_is_under_launcher()) {
         strncpy(last_error, "Update through Launcher instead", sizeof(last_error) - 1);
         last_error[sizeof(last_error) - 1] = '\0';
-        SIG_LOGW("[ota] REFUSED: OTA not available under bmorcelli/Launcher — update SigurdOS through Launcher instead");
+        SIG_LOGW("[ota] REFUSED: OTA not available under bmorcelli/Launcher — update KrabOS through Launcher instead");
         return false;
     }
 
@@ -207,7 +207,7 @@ bool start(const char* ssid, const char* password) {
         // Build page dynamically with embedded CSRF token
         String html = F("<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
             "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-            "<title>SigurdOS OTA</title>"
+            "<title>KrabOS OTA</title>"
             "<style>"
             "body{background:#0F0F0F;color:#00BFFF;font-family:monospace;text-align:center;padding:20px}"
             "h1{font-size:20px;margin-bottom:10px}"
@@ -219,7 +219,7 @@ bool start(const char* ssid, const char* password) {
             "#status{margin-top:10px;font-size:14px}"
             "#error{color:#FF4444;margin-top:10px;display:none}"
             "</style></head><body>"
-            "<h1>SigurdOS Firmware Update</h1>"
+            "<h1>KrabOS Firmware Update</h1>"
             "<p>Enter device PIN and select firmware.bin.</p>"
             "<form method=\"POST\" action=\"/update\" enctype=\"multipart/form-data\" id=\"otaform\">");
         html += F("<input type=\"hidden\" name=\"csrf\" value=\"");

@@ -88,6 +88,10 @@ TEST(PrefsDefaultsTest, KrabOsProductionDefaultsUseCanadaProfile) {
     EXPECT_EQ(7, prefs.sf);
     EXPECT_EQ(5, prefs.cr);
     EXPECT_EQ(20, prefs.tx_power_dbm);
+    EXPECT_EQ(1, prefs.advert_loc_policy);
+    EXPECT_TRUE(prefs.gps_enabled);
+    EXPECT_EQ(5u, prefs.gps_interval);
+    EXPECT_FALSE(prefs.gps_track_enabled);
     EXPECT_STREQ("ca_902_928", prefs.radio_profile);
 }
 
@@ -101,6 +105,9 @@ TEST(PrefsDefaultsTest, ExistingInstallMissingOptInKeysStayLegacySafe) {
     EXPECT_EQ(0, prefs.sf);
     EXPECT_EQ(0, prefs.cr);
     EXPECT_EQ(0, prefs.tx_power_dbm);
+    EXPECT_EQ(0, prefs.advert_loc_policy);
+    EXPECT_FALSE(prefs.gps_enabled);
+    EXPECT_EQ(5u, prefs.gps_interval);
     EXPECT_STREQ("", prefs.radio_profile);
 }
 
@@ -122,6 +129,9 @@ TEST(PrefsDefaultsTest, KrabOsFactoryResetKeepsRadioReadyAndRevokesBle) {
     EXPECT_FLOAT_EQ(910.525f, prefs.freq);
     EXPECT_EQ(5, prefs.cr);
     EXPECT_EQ(20, prefs.tx_power_dbm);
+    EXPECT_EQ(1, prefs.advert_loc_policy);
+    EXPECT_TRUE(prefs.gps_enabled);
+    EXPECT_FALSE(prefs.gps_track_enabled);
     EXPECT_STREQ("ca_902_928", prefs.radio_profile);
     EXPECT_FALSE(prefs.ble_enabled);
     EXPECT_TRUE(prefs.ble_user_set);

@@ -277,7 +277,14 @@ static void build_step2()
             return;
         }
 
-        uint32_t epoch = sigurdos::mesh::makeEpoch(ny, nm, nd, nh, nmi);
+        uint32_t epoch = 0;
+        if (!sigurdos::mesh::makeLocalEpoch(
+                ny, nm, nd, nh, nmi, &epoch)) {
+            if (s_dt_error_label) {
+                lv_label_set_text(s_dt_error_label, "Invalid local date/time");
+            }
+            return;
+        }
         if (!sigurdos::mesh::setSystemTime(
                 epoch, sigurdos::mesh::TimeSource::Manual)) {
             if (s_dt_error_label) lv_label_set_text(s_dt_error_label, "Clock not ready");

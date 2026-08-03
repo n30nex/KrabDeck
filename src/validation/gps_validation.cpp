@@ -109,7 +109,7 @@ void setup()
     Serial.begin(115200);
     delay(500);
 
-    Serial.println("[gps-validation] SigurdOS T-Deck GPS validation firmware");
+    Serial.println("[gps-validation] KrabOS T-Deck Plus GPS validation firmware");
     Serial.printf("[gps-validation] uart rx=%d tx=%d primary=%lu fallback=%lu\n",
                   PIN_GPS_RX,
                   PIN_GPS_TX,

@@ -23,10 +23,12 @@ bool copyBounded(char* out, size_t out_size, const char* begin, size_t len) {
     return true;
 }
 
-bool readJsonString(const char*& p, char* out, size_t out_size) {
+bool readJsonString(const char*& p, char* out, size_t out_size,
+                    bool* truncated = nullptr) {
     p = skipWs(p);
     if (!p || *p != '"') return false;
     ++p;
+    if (truncated) *truncated = false;
 
     size_t i = 0;
     bool escaped = false;
@@ -39,6 +41,8 @@ bool readJsonString(const char*& p, char* out, size_t out_size) {
                 else if (c == 'r') out[i++] = '\r';
                 else if (c == 't') out[i++] = '\t';
                 else out[i++] = c;
+            } else if (out && truncated) {
+                *truncated = true;
             }
             continue;
         }
@@ -52,6 +56,8 @@ bool readJsonString(const char*& p, char* out, size_t out_size) {
         }
         if (out && out_size > 0 && i < out_size - 1) {
             out[i++] = c;
+        } else if (out && truncated) {
+            *truncated = true;
         }
     }
 
@@ -135,11 +141,23 @@ bool skipJsonValue(const char*& p) {
     return skipBareToken(p);
 }
 
-bool parseReleaseObject(const char*& p, char* tag, size_t tag_size,
-                        char* target, size_t target_size,
-                        bool* prerelease) {
+struct ParsedRelease {
+    char tag[96] = "";
+    char target[GITHUB_OTA_TARGET_CAPACITY] = "";
+    char body[512] = "";
+    bool prerelease = false;
+    bool has_tag = false;
+    bool has_target = false;
+    bool has_body = false;
+    bool has_prerelease = false;
+    bool tag_complete = true;
+    bool target_complete = true;
+    bool body_complete = true;
+};
+
+bool parseReleaseObject(const char*& p, ParsedRelease* release) {
     p = skipWs(p);
-    if (!p || *p != '{') return false;
+    if (!p || *p != '{' || !release) return false;
     ++p;
 
     while (*p) {
@@ -156,11 +174,46 @@ bool parseReleaseObject(const char*& p, char* tag, size_t tag_size,
         ++p;
 
         if (std::strcmp(key, "tag_name") == 0) {
-            if (!readJsonString(p, tag, tag_size)) return false;
+            if (release->has_tag) return false;
+            bool truncated = false;
+            if (!readJsonString(p, release->tag, sizeof(release->tag),
+                                &truncated)) {
+                return false;
+            }
+            release->has_tag = true;
+            release->tag_complete = !truncated;
         } else if (std::strcmp(key, "target_commitish") == 0) {
-            if (!readJsonString(p, target, target_size)) return false;
+            if (release->has_target) return false;
+            bool truncated = false;
+            if (!readJsonString(p, release->target, sizeof(release->target),
+                                &truncated)) {
+                return false;
+            }
+            release->has_target = true;
+            release->target_complete = !truncated;
+        } else if (std::strcmp(key, "body") == 0) {
+            if (release->has_body) return false;
+            release->has_body = true;
+            p = skipWs(p);
+            if (p && *p == '"') {
+                bool truncated = false;
+                if (!readJsonString(p, release->body, sizeof(release->body),
+                                    &truncated)) {
+                    return false;
+                }
+                release->body_complete = !truncated;
+            } else if (p && std::strncmp(p, "null", 4) == 0) {
+                p += 4;
+                release->body_complete = false;
+            } else {
+                return false;
+            }
         } else if (std::strcmp(key, "prerelease") == 0) {
-            if (!readBool(p, prerelease)) return false;
+            if (release->has_prerelease ||
+                !readBool(p, &release->prerelease)) {
+                return false;
+            }
+            release->has_prerelease = true;
         } else if (!skipJsonValue(p)) {
             return false;
         }
@@ -182,6 +235,40 @@ bool parseReleaseObject(const char*& p, char* tag, size_t tag_size,
     return false;
 }
 
+bool isExactLowerSha(const char* value) {
+    if (!value || std::strlen(value) != GITHUB_OTA_SHA_HEX_LENGTH) return false;
+    for (size_t i = 0; i < GITHUB_OTA_SHA_HEX_LENGTH; ++i) {
+        const char c = value[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+    }
+    return true;
+}
+
+bool hasUniqueMetadataLine(const char* body, const char* prefix,
+                           const char* expected) {
+    if (!body || !prefix || !expected) return false;
+    const size_t prefix_length = std::strlen(prefix);
+    const size_t expected_length = std::strlen(expected);
+    size_t matches = 0;
+    const char* line = body;
+    while (*line) {
+        const char* end = std::strchr(line, '\n');
+        if (!end) end = line + std::strlen(line);
+        const size_t length = static_cast<size_t>(end - line);
+        if (length >= prefix_length &&
+            std::memcmp(line, prefix, prefix_length) == 0) {
+            ++matches;
+            if (matches > 1 || length != prefix_length + expected_length ||
+                std::memcmp(line + prefix_length, expected, expected_length) != 0) {
+                return false;
+            }
+        }
+        if (*end == '\0') break;
+        line = end + 1;
+    }
+    return matches == 1;
+}
+
 }  // namespace
 
 bool isSupportedReleaseChannel(const char* branch) {
@@ -198,6 +285,22 @@ bool branchNeedsReleaseApi(const char* branch, bool allow_prerelease) {
     if (!isSupportedReleaseChannel(branch)) return false;
     if (std::strcmp(branch, "latest") == 0) return allow_prerelease;  // API needed to filter prereleases
     return true;
+}
+
+bool releaseTargetMatchesChannel(const char* branch, const char* target,
+                                 const char* release_body) {
+    if (!isSupportedReleaseChannel(branch) || !target || target[0] == '\0') {
+        return false;
+    }
+    if (std::strcmp(branch, "latest") == 0 ||
+        std::strcmp(target, branch) == 0) {
+        return true;
+    }
+    if (!isExactLowerSha(target)) return false;
+    return hasUniqueMetadataLine(
+               release_body, "KrabOS-OTA-Branch: ", branch) &&
+        hasUniqueMetadataLine(
+               release_body, "KrabOS-OTA-Commit: ", target);
 }
 
 ApiBodyStatus classifyApiResponseBody(int content_length, size_t bytes_read,
@@ -237,7 +340,7 @@ ReleaseSelectionResult selectReleaseTagResultFromJson(
 
     bool matched = false;
     char matched_tag[96] = "";
-    char matched_target[32] = "";
+    char matched_target[GITHUB_OTA_TARGET_CAPACITY] = "";
 
     while (*p) {
         p = skipWs(p);
@@ -261,21 +364,23 @@ ReleaseSelectionResult selectReleaseTagResultFromJson(
             return ReleaseSelectionResult::InvalidJson;
         }
 
-        char tag[96] = "";
-        char target[32] = "";
-        bool prerelease = false;
-        if (!parseReleaseObject(p, tag, sizeof(tag), target, sizeof(target),
-                                &prerelease)) {
+        ParsedRelease release;
+        if (!parseReleaseObject(p, &release)) {
             clear_outputs();
             return ReleaseSelectionResult::InvalidJson;
         }
 
-        if (!matched && tag[0] &&
-            (std::strcmp(branch, "latest") == 0 || std::strcmp(target, branch) == 0) &&
-            (allow_prerelease || !prerelease)) {
-            copyBounded(matched_tag, sizeof(matched_tag), tag, std::strlen(tag));
-            copyBounded(matched_target, sizeof(matched_target), target,
-                        std::strlen(target));
+        const char* body = release.has_body && release.body_complete
+            ? release.body : nullptr;
+        if (!matched && release.has_tag && release.tag_complete &&
+            release.has_target && release.target_complete &&
+            release.has_prerelease && release.tag[0] &&
+            releaseTargetMatchesChannel(branch, release.target, body) &&
+            (allow_prerelease || !release.prerelease)) {
+            copyBounded(matched_tag, sizeof(matched_tag), release.tag,
+                        std::strlen(release.tag));
+            copyBounded(matched_target, sizeof(matched_target), release.target,
+                        std::strlen(release.target));
             matched = true;
         }
 
@@ -315,7 +420,7 @@ void buildReleaseDownloadUrl(const char* tag, char* out, size_t out_size) {
     }
 
     static constexpr const char* kPrefix =
-        "https://github.com/hermes-gadget/SigurdOS-tdeck/releases/download/";
+        "https://github.com/n30nex/KrabDeck/releases/download/";
     static constexpr const char* kSuffix = "/firmware.bin";
 
     size_t pos = 0;

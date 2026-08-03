@@ -23,6 +23,14 @@ TEST(RadioProfilesTest, DefaultProfileIsKrabOsCanada) {
     EXPECT_EQ(20, profile->tx_power_dbm);
 }
 
+TEST(RadioProfilesTest, ProfileAtRejectsTheCountBoundary) {
+    const size_t count = sigurdos::radio_profile_count();
+
+    ASSERT_GT(count, 0u);
+    EXPECT_EQ(sigurdos::radio_profile_default(), sigurdos::radio_profile_at(0));
+    EXPECT_EQ(nullptr, sigurdos::radio_profile_at(count));
+}
+
 TEST(RadioProfilesTest, CanadaUsesKrabOsProductionTuple) {
     const auto* us = sigurdos::radio_profile_find("us_902_928");
     const auto* ca = sigurdos::radio_profile_find("ca_902_928");

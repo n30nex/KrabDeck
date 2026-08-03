@@ -1639,7 +1639,10 @@ class WorkflowContractTests(unittest.TestCase):
         workflow_path = ROOT / ".github" / "workflows" / "krabos-edge.yml"
         workflow = workflow_path.read_text(encoding="utf-8")
         self.assertIn("krabdeck-pi5", workflow)
-        self.assertIn("[self-hosted, Linux, ARM64, krabdeck-pi5]", workflow)
+        self.assertIn(
+            "[self-hosted, Linux, ARM64, krabdeck-pi5, krabos-hardware-target]",
+            workflow,
+        )
         self.assertIn(
             "KRABOS_FIXTURE_CONFIG: /etc/krabos/tdeck-plus-fixture.json", workflow
         )

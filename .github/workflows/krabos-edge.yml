@@ -441,6 +441,7 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
+          KRABOS_FIXTURE_CONFIG: /etc/krabos/tdeck-plus-fixture.json
           OBSERVER_EVIDENCE: ${{ inputs.observer_evidence_path }}
           OBSERVER_BUNDLE: ${{ inputs.observer_bundle_path }}
           OBSERVER_SOURCE_RUN_ID: ${{ inputs.observer_source_run_id }}

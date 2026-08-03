@@ -42,7 +42,7 @@ gap:
 | M2 UI | Four primary touch surfaces (Chats, Map, Network, More), larger touch targets, and keyboard/trackball focus parity | Exact-device visual captures and memory soak |
 | M3 client parity | Canada-first GPS/time defaults, local-time conversion, companion/OTA channel validation, and existing guarded one-shot production advert | Correlated DM/channel/RF evidence and companion interoperability |
 | M4 maps/GPS/SD | NRCan/permitted XYZ downloader, HTTPS/PNG admission, `.part`/atomic writes, SD mutex/format-off path, map download dialog, and reboot/shutdown quiesce | Live GPS and offline reboot evidence on the exact T-Deck Plus |
-| M5 contracts | Typed map/release/source checks and native contract coverage added without replacing candidate-bound evidence | Full current-SHA Actions matrix, exact-device admission, release signing, and publication |
+| M5 contracts | SD and stable-issue release contracts are now executable; existing typed candidate-bound evidence/OTA checks remain in place with focused native/script coverage | Full current-SHA Actions matrix, exact-device admission, release signing, and publication |
 
 The retained M0/M1 workflows, RF-off roles, private fixture binding, privacy
 redaction, and candidate-bound evidence remain authoritative. No release

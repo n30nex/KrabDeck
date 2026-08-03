@@ -142,8 +142,8 @@ class KrabosReleaseWorkflowTests(unittest.TestCase):
             "Enforce stable source evidence and open-priority gate"
         ]["run"]
         self.assertIn("scripts/verify_release_evidence.py", gate)
+        self.assertIn("scripts/check_release_issue_gate.py", gate)
         self.assertIn("--paginate --slurp", gate)
-        self.assertIn("p[01]", gate)
         postbuild = self.step_by_name[
             "Bind stable evidence to produced public bytes"
         ]["run"]

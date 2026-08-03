@@ -270,28 +270,7 @@ jobs:
           issues="$RUNNER_TEMP/open-issues.json"
           gh api --paginate --slurp \
             "repos/${GITHUB_REPOSITORY}/issues?state=open&per_page=100" > "$issues"
-          ISSUES_PATH="$issues" "$PY" - <<'PY'
-          import json
-          import os
-          import re
-
-          with open(os.environ["ISSUES_PATH"], encoding="utf-8") as source:
-              pages = json.load(source)
-          issues = [issue for page in pages for issue in page]
-          priority = re.compile(r"(^|[^a-z0-9])p[01]([^a-z0-9]|$)", re.IGNORECASE)
-          blocked = []
-          for issue in issues:
-              if "pull_request" in issue:
-                  continue
-              searchable = " ".join(
-                  [str(issue.get("title", ""))]
-                  + [str(label.get("name", "")) for label in issue.get("labels", [])]
-              )
-              if priority.search(searchable):
-                  blocked.append(f"#{issue['number']} {issue['title']}")
-          if blocked:
-              raise SystemExit("open P0/P1 release blockers: " + "; ".join(blocked))
-          PY
+          "$PY" scripts/check_release_issue_gate.py "$issues"
 
       - name: Run exact-device safety tests
         shell: bash
